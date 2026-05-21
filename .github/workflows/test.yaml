@@ -168,7 +168,7 @@ jobs:
           active_address: ~
           YAML
           printf '[]\n' > "$HOME/.sui/sui_config/sui.keystore"
-          printf '[]\n' > "$HOME/.sui/sui_config/external.keystore"
+          printf '{}\n' > "$HOME/.sui/sui_config/external.keystore"
 
       - name: Check Sui package compilation
         if: steps.package.outputs.exists == 'true'
