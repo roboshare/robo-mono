@@ -5,13 +5,17 @@ on:
     branches:
       - main
       - dev
+      - "integration/**"
     paths:
+      - ".github/workflows/coverage.yaml"
       - "protocols/evm/**"
   push:
     branches:
       - main
       - dev
+      - "integration/**"
     paths:
+      - ".github/workflows/coverage.yaml"
       - "protocols/evm/**"
 
 jobs:
@@ -25,7 +29,7 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: stable
+          version: v1.5.1
 
       - name: Run coverage
         working-directory: protocols/evm
