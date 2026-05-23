@@ -166,7 +166,7 @@ jobs:
           active_address: ~
           YAML
           printf '[]\n' > "$HOME/.sui/sui_config/sui.keystore"
-          printf '[]\n' > "$HOME/.sui/sui_config/external.keystore"
+          printf '{}\n' > "$HOME/.sui/sui_config/external.keystore"
 
       - name: Run Sui Move lint
         if: steps.package.outputs.exists == 'true'
