@@ -8,12 +8,16 @@ import {
   ShieldCheckIcon,
   TruckIcon,
 } from "@heroicons/react/24/outline";
+import { buildAgentReviewInput, reviewBorrowingBase } from "~~/lib/robomata/agentProviders";
 import { calculateBorrowingBase, demoPortfolio, formatPercentFromBps, formatUsd } from "~~/lib/robomata/borrowingBase";
 import { buildEvidenceAnchor } from "~~/lib/robomata/evidence";
 
-const RobomataPage = () => {
+export const dynamic = "force-dynamic";
+
+const RobomataPage = async () => {
   const borrowingBase = calculateBorrowingBase(demoPortfolio);
   const evidenceAnchor = buildEvidenceAnchor(demoPortfolio.facilityName, demoPortfolio.evidence);
+  const agentReview = await reviewBorrowingBase(buildAgentReviewInput(borrowingBase));
   const totalVehicles = demoPortfolio.receivables.reduce((sum, receivable) => sum + receivable.vehicleCount, 0);
   const verifiedEvidenceCount = evidenceAnchor.commitments.filter(
     commitment => commitment.status === "verified",
@@ -255,22 +259,57 @@ const RobomataPage = () => {
             </section>
 
             <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
-              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">Reserved Rails</p>
-              <div className="mt-4 grid gap-4">
-                <div className="rounded-3xl border border-dashed border-base-300 bg-base-200/40 p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
+                    Agent diligence review
+                  </p>
+                  <h2 className="mt-2 text-2xl font-black tracking-tight text-base-content">Exception workflow memo</h2>
+                </div>
+                <span className="rounded-full border border-base-300 bg-base-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/60">
+                  {agentReview.provider}
+                </span>
+              </div>
+
+              <div className="mt-5 space-y-4">
+                <div className="rounded-3xl border border-base-300 bg-base-200/50 p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <div className="text-sm font-semibold text-base-content">Agent diligence review</div>
-                      <p className="mt-1 text-sm text-base-content/70">
-                        Ready to consume {borrowingBase.receivableResults.filter(item => !item.eligible).length}{" "}
-                        receivable exceptions and {borrowingBase.evidenceExceptions.length} evidence exceptions.
-                      </p>
+                      <div className="text-sm font-semibold text-base-content">{agentReview.headline}</div>
+                      <p className="mt-2 text-sm leading-relaxed text-base-content/70">{agentReview.memo}</p>
                     </div>
                     <ArrowRightIcon className="h-5 w-5 text-base-content/40" />
                   </div>
-                  <p className="mt-3 text-xs uppercase tracking-[0.16em] text-base-content/50">
-                    Full memo and next actions land in ROB-118
-                  </p>
+                </div>
+
+                <div className="rounded-3xl border border-base-300 bg-base-100/80 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-sm font-semibold text-base-content">Exceptions to clear</div>
+                    <span className="rounded-full bg-base-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-base-content/60">
+                      {borrowingBase.exceptionCount} flagged items
+                    </span>
+                  </div>
+                  <div className="mt-3 space-y-3">
+                    {agentReview.exceptionReview.map(exception => (
+                      <div
+                        key={exception}
+                        className="rounded-2xl bg-base-200/60 px-4 py-3 text-sm text-base-content/80"
+                      >
+                        {exception}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-3xl border border-base-300 bg-base-100/80 p-4">
+                  <div className="text-sm font-semibold text-base-content">Recommended next actions</div>
+                  <div className="mt-3 space-y-3">
+                    {agentReview.nextActions.map(action => (
+                      <div key={action} className="rounded-2xl bg-base-200/60 px-4 py-3 text-sm text-base-content/80">
+                        {action}
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="rounded-3xl border border-dashed border-base-300 bg-base-200/40 p-4">
