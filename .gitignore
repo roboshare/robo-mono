@@ -24,3 +24,6 @@ dist
 .claude/
 CLAUDE.md
 CLAUDE.local.md
+
+# Sui Move build artifacts
+protocols/sui/build/

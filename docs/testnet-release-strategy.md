@@ -8,10 +8,12 @@ It covers phase ordering, release gates, branching, versioning, and launch messa
 Current release defaults:
 
 - Default chain: `Sepolia`
-- Current active quiet-beta chain: `Sepolia`
-- Planned follow-on deployments in this release line: `Polygon Amoy`, `Arbitrum Sepolia`
+- Historical first release line: `release/testnet-v0.2.0`
+- Current status: `release/testnet-v0.2.0` has been merged into `main`
+- Follow-on deployment added in this release line: `Monad Testnet`
+- Earlier planned follow-on deployments in this release line: `Polygon Amoy`, `Arbitrum Sepolia`
 - Deferred to a later release line: `Base Sepolia`
-- Repo posture: public, `MIT`
+- Repo posture: private-source, all rights reserved
 - Launch sequence: `internal hardening -> quiet beta -> public testnet launch`
 - Indexing: managed The Graph deployment path
 - Incentives: none in the first public testnet cycle
@@ -107,18 +109,6 @@ Public launch is ready only when:
 - Avoid changing the Vercel production-branch setting for every release line.
 - Avoid relying on manual deployment promotion as the default release mechanism.
 
-### Deployment Model
-
-- Vercel production stays pinned to the stable long-lived branch: `main`.
-- `dev` and `release/*` branches are used for preview and release-stabilization deployments, not as the long-term production branch setting.
-- The release branch is the place to stabilize a version line and verify internal and beta environments.
-- The final ship step is:
-  - merge the approved `release/*` branch into `main`
-  - let Vercel deploy `main` automatically as production
-  - tag the shipped commit on the release line with the appropriate channel tag
-- Avoid changing the Vercel production-branch setting for every release line.
-- Avoid relying on manual deployment promotion as the default release mechanism.
-
 ### Versioning Model
 
 - Use pre-release SemVer tags for the testnet lifecycle.
@@ -128,6 +118,8 @@ Public launch is ready only when:
   - `v0.2.0-testnet.1`
 - Use patch bumps for launch fixes.
 - Use minor bumps for meaningful user-facing capability changes before mainnet.
+- Treat `release/robomata-overflow-v0.1.0` as a separate Robomata MVP line, not
+  a continuation of the historical Roboshare testnet `v0.2.0` line.
 
 ### Release Truth
 
@@ -141,12 +133,6 @@ Every public-facing release should be traceable through:
 - known limitations
 
 Do not treat monorepo `package.json` versions as the public release truth.
-
-In practice for hosted environments, this means:
-
-- release-candidate validation happens from `release/*` preview deployments
-- the externally served production deployment comes from `main`
-- the release tag identifies the exact approved code state for that release stage
 
 In practice for hosted environments, this means:
 
@@ -205,7 +191,8 @@ Keep these materials in a private ops system, such as a Linear doc:
 
 - `Sepolia` remains the primary/default launch network.
 - `Base Sepolia` is out of scope for the first public launch.
-- The repo remains public and MIT-licensed for this cycle.
+- The repo remains private-source for this cycle; third-party dependencies keep
+  their own license terms.
 - Managed The Graph indexing is available for the supported first-launch testnets.
 - Smart-wallet work is not on the critical path unless the base wallet UX proves inadequate.
 - There is only one active public testnet release line at a time.

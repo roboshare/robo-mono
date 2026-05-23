@@ -1,0 +1,6 @@
+[package]
+name = "robomata_overflow"
+edition = "2024.beta"
+
+[addresses]
+robomata_overflow = "0x0"
