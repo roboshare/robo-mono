@@ -1,0 +1,56 @@
+{
+  "network": {
+    "mode": "isolated-localnet",
+    "rpcUrl": "http://127.0.0.1:9000",
+    "configDir": "/tmp/robomata-sui-demo.GqYfEL",
+    "clientConfig": "/tmp/robomata-sui-demo.GqYfEL/client.yaml",
+    "activeAddress": "0xbe1811b22b187342a0213be8d64986c475522326862a61ea6cc59a3cde6a241d"
+  },
+  "package": {
+    "packageId": "0xecc03fff23404114fe77f67abf8171de4897468c2f54741ac60d723f46851930",
+    "publishDigest": "EvAa6xtJuzdadJHWkgbwiSxSccrxmoXVLzVdJEGNB7FX",
+    "upgradeCapId": "0x0cd76ce6071451716031ad1ccde176f75d6f41da689e064abf042e761b7c4f2a",
+    "moduleNames": [
+      "facility"
+    ]
+  },
+  "facility": {
+    "objectId": "0x8fce10bd12c0bbb712de1e753674a23c69f5d494586fab4e481bf010e720f00e",
+    "createDigest": "3M7zt3KJgCSTsytUxUx7GZy6NpdY85prcojFUytBL1at",
+    "initialSharedVersion": "2365",
+    "grossReceivablesCents": 124010000,
+    "eligibleReceivablesCents": 69530000,
+    "advanceRateBps": 8200,
+    "availableCents": 36155600,
+    "evidenceRootHex": "0x65766964656e63652d726f6f742d7631",
+    "createEvent": {
+      "available_cents": "36155600",
+      "facility_id": "0x8fce10bd12c0bbb712de1e753674a23c69f5d494586fab4e481bf010e720f00e"
+    }
+  },
+  "update": {
+    "digest": "7Lc7Bn9ZxrKNsH11h3ZLrbEsnyejE6mBV4GWvHYvbQba",
+    "eligibleReceivablesCents": 71200000,
+    "availableCents": 40200400,
+    "evidenceRootHex": "0x757064617465642d65766964656e63652d726f6f742d7632",
+    "updateEvent": {
+      "available_cents": "40200400",
+      "eligible_receivables_cents": "71200000",
+      "facility_id": "0x8fce10bd12c0bbb712de1e753674a23c69f5d494586fab4e481bf010e720f00e"
+    }
+  },
+  "evidenceCommit": {
+    "digest": "GENcwKVUAmwPgH5Z5SZ22kdGySFBL4ktydn1QEhHuGEQ",
+    "evidenceKind": "lockbox_extract",
+    "evidenceDigestHex": "0x6c6f636b626f782d6469676573742d7631",
+    "evidenceEvent": {
+      "evidence_digest": "bG9ja2JveC1kaWdlc3QtdjE=",
+      "evidence_kind": "lockbox_extract",
+      "facility_id": "0x8fce10bd12c0bbb712de1e753674a23c69f5d494586fab4e481bf010e720f00e"
+    }
+  },
+  "notes": [
+    "This fixture comes from an isolated localnet run started from a disposable config directory.",
+    "No default ~/.sui client state or recovery phrase is required for the scripted demo path."
+  ]
+}
