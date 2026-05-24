@@ -9,6 +9,7 @@ PUBFILE_PATH="$CONFIG_DIR/Published.toml"
 OUTPUT_PATH="${1:-$ROOT_DIR/fixtures/localnet-demo-run.generated.json}"
 FULLNODE_PORT="${ROBOMATA_SUI_DEMO_FULLNODE_PORT:-9000}"
 RPC_URL="http://127.0.0.1:${FULLNODE_PORT}"
+STARTUP_LOG="${ROBOMATA_SUI_DEMO_STARTUP_LOG:-/tmp/robomata-sui-demo.log}"
 
 PACKAGE_ID=""
 FACILITY_ID=""
@@ -21,6 +22,18 @@ cleanup() {
     kill "$SUI_START_PID" >/dev/null 2>&1 || true
     wait "$SUI_START_PID" >/dev/null 2>&1 || true
   fi
+}
+
+fail_startup() {
+  echo "sui localnet demo startup failed before isolated RPC readiness was confirmed" >&2
+
+  if [[ -f "$STARTUP_LOG" ]]; then
+    echo "--- sui start log ---" >&2
+    cat "$STARTUP_LOG" >&2
+    echo "--- end sui start log ---" >&2
+  fi
+
+  exit 1
 }
 
 trap cleanup EXIT
@@ -58,15 +71,31 @@ for line in lines:
 
 client_config.write_text("\n".join(rewritten) + "\n")
 PY
-sui start --network.config "$CONFIG_DIR" --fullnode-rpc-port "$FULLNODE_PORT" >/tmp/robomata-sui-demo.log 2>&1 &
+sui start --network.config "$CONFIG_DIR" --fullnode-rpc-port "$FULLNODE_PORT" >"$STARTUP_LOG" 2>&1 &
 SUI_START_PID=$!
 
+LOCALNET_READY=0
 for _ in {1..30}; do
+  if ! kill -0 "$SUI_START_PID" >/dev/null 2>&1; then
+    fail_startup
+  fi
+
   if sui client --client.config "$CLIENT_CONFIG" chain-identifier >/dev/null 2>&1; then
+    if ! kill -0 "$SUI_START_PID" >/dev/null 2>&1; then
+      fail_startup
+    fi
+
+    LOCALNET_READY=1
     break
   fi
+
   sleep 1
 done
+
+if [[ "$LOCALNET_READY" -ne 1 ]]; then
+  echo "timed out waiting for isolated Sui localnet RPC readiness on ${RPC_URL}" >&2
+  fail_startup
+fi
 
 ACTIVE_ADDRESS="$(sui client --client.config "$CLIENT_CONFIG" active-address)"
 
