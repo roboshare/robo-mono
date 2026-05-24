@@ -18,6 +18,24 @@ export type EvidenceAnchor = {
   nautilusRole: string;
 };
 
+export type EvidenceGroup = {
+  id: string;
+  title: string;
+  description: string;
+  commitments: EvidenceCommitment[];
+};
+
+export type EvidenceAnchorReference = {
+  label: string;
+  value: string;
+};
+
+export type EvidenceRail = {
+  groups: EvidenceGroup[];
+  anchorReferences: EvidenceAnchorReference[];
+  demoDisclosures: string[];
+};
+
 export const demoEvidenceCommitments: EvidenceCommitment[] = [
   {
     id: "EVD-UCC-2026-05",
@@ -89,4 +107,91 @@ export function buildEvidenceAnchor(
 
 export function getEvidenceExceptions(commitments: EvidenceCommitment[]): EvidenceCommitment[] {
   return commitments.filter(commitment => commitment.status !== "verified");
+}
+
+function getEvidenceGroupMetadata(commitment: EvidenceCommitment): Omit<EvidenceGroup, "commitments"> {
+  if (commitment.id.includes("AGING")) {
+    return {
+      id: "receivables",
+      title: "Receivables",
+      description: "Operator accounting exports used to prove invoice balances and aging eligibility.",
+    };
+  }
+
+  if (commitment.id.includes("INS")) {
+    return {
+      id: "insurance",
+      title: "Insurance",
+      description: "Broker-authorized schedule references that support lender diligence on policy coverage.",
+    };
+  }
+
+  if (commitment.id.includes("LOCKBOX")) {
+    return {
+      id: "lockbox",
+      title: "Lockbox",
+      description: "Cash-control and bank reporting artifacts that tie collections back to the borrowing base.",
+    };
+  }
+
+  if (commitment.id.includes("TEL")) {
+    return {
+      id: "servicing",
+      title: "Servicing & Utilization",
+      description: "Fleet monitoring evidence used to support servicing quality and operational utilization checks.",
+    };
+  }
+
+  return {
+    id: "collateral",
+    title: "Collateral",
+    description: "Collateral-control references for lien, title, and public-record style diligence in the demo flow.",
+  };
+}
+
+export function buildEvidenceRail(anchor: EvidenceAnchor): EvidenceRail {
+  const groupsById = new Map<string, EvidenceGroup>();
+
+  for (const commitment of anchor.commitments) {
+    const metadata = getEvidenceGroupMetadata(commitment);
+    const existing = groupsById.get(metadata.id);
+
+    if (existing) {
+      existing.commitments.push(commitment);
+      continue;
+    }
+
+    groupsById.set(metadata.id, {
+      ...metadata,
+      commitments: [commitment],
+    });
+  }
+
+  const sealPolicies = Array.from(new Set(anchor.commitments.map(commitment => commitment.sealPolicyId))).join(", ");
+
+  return {
+    groups: Array.from(groupsById.values()),
+    anchorReferences: [
+      {
+        label: "Commitment root",
+        value: `${anchor.evidenceRoot.slice(0, 24)}...`,
+      },
+      {
+        label: "Sui commit path",
+        value: anchor.suiPackagePath,
+      },
+      {
+        label: "Walrus objects",
+        value: `${anchor.commitments.length} demo object references`,
+      },
+      {
+        label: "Seal policies",
+        value: sealPolicies,
+      },
+    ],
+    demoDisclosures: [
+      "Demo commitments reference authorized sample exports and illustrative identifiers, not production public-record or carrier API access.",
+      anchor.nautilusRole,
+    ],
+  };
 }
