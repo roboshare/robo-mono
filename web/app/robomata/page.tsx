@@ -11,6 +11,7 @@ import {
 import { buildAgentReviewInput, reviewBorrowingBase } from "~~/lib/robomata/agentProviders";
 import { calculateBorrowingBase, demoPortfolio, formatPercentFromBps, formatUsd } from "~~/lib/robomata/borrowingBase";
 import { buildEvidenceAnchor } from "~~/lib/robomata/evidence";
+import { buildLenderPacket } from "~~/lib/robomata/lenderPacket";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,7 @@ const RobomataPage = async () => {
   const borrowingBase = calculateBorrowingBase(demoPortfolio);
   const evidenceAnchor = buildEvidenceAnchor(demoPortfolio.facilityName, demoPortfolio.evidence);
   const agentReview = await reviewBorrowingBase(buildAgentReviewInput(borrowingBase));
+  const lenderPacket = buildLenderPacket(borrowingBase, agentReview, evidenceAnchor);
   const totalVehicles = demoPortfolio.receivables.reduce((sum, receivable) => sum + receivable.vehicleCount, 0);
   const verifiedEvidenceCount = evidenceAnchor.commitments.filter(
     commitment => commitment.status === "verified",
@@ -235,10 +237,29 @@ const RobomataPage = async () => {
 
           <div className="space-y-6">
             <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
-              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
-                Borrowing-Base Certificate
-              </p>
-              <h2 className="mt-2 text-2xl font-black tracking-tight text-base-content">Lender-ready summary</h2>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
+                    Borrowing-Base Certificate
+                  </p>
+                  <h2 className="mt-2 text-2xl font-black tracking-tight text-base-content">
+                    Lender-ready certificate
+                  </h2>
+                </div>
+                <span className="rounded-full border border-base-300 bg-base-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/60">
+                  {lenderPacket.certificateId}
+                </span>
+              </div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl bg-base-200/60 px-4 py-3">
+                  <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">Prepared For</div>
+                  <div className="mt-1 text-sm font-semibold text-base-content">{lenderPacket.preparedFor}</div>
+                </div>
+                <div className="rounded-2xl bg-base-200/60 px-4 py-3">
+                  <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">Prepared On</div>
+                  <div className="mt-1 text-sm font-semibold text-base-content">{lenderPacket.preparedOn}</div>
+                </div>
+              </div>
               <div className="mt-5 space-y-4">
                 {[
                   ["Gross receivables", formatUsd(borrowingBase.grossReceivablesCents)],
@@ -256,15 +277,20 @@ const RobomataPage = async () => {
                   </div>
                 ))}
               </div>
+              <div className="mt-5 space-y-3 rounded-3xl border border-base-300 bg-base-200/40 p-4">
+                <div className="text-sm font-semibold text-base-content">Certificate statement</div>
+                <p className="text-sm leading-relaxed text-base-content/70">{lenderPacket.certificationStatement}</p>
+                <p className="text-sm text-base-content/80">{lenderPacket.borrowerCoverageLine}</p>
+              </div>
             </section>
 
             <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
-                    Agent diligence review
+                    Exception Memo
                   </p>
-                  <h2 className="mt-2 text-2xl font-black tracking-tight text-base-content">Exception workflow memo</h2>
+                  <h2 className="mt-2 text-2xl font-black tracking-tight text-base-content">Lender follow-up packet</h2>
                 </div>
                 <span className="rounded-full border border-base-300 bg-base-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/60">
                   {agentReview.provider}
@@ -283,28 +309,32 @@ const RobomataPage = async () => {
                 </div>
 
                 <div className="rounded-3xl border border-base-300 bg-base-100/80 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-sm font-semibold text-base-content">Exceptions to clear</div>
-                    <span className="rounded-full bg-base-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-base-content/60">
-                      {borrowingBase.exceptionCount} flagged items
-                    </span>
-                  </div>
-                  <div className="mt-3 space-y-3">
-                    {agentReview.exceptionReview.map(exception => (
-                      <div
-                        key={exception}
-                        className="rounded-2xl bg-base-200/60 px-4 py-3 text-sm text-base-content/80"
-                      >
-                        {exception}
+                  <div className="text-sm font-semibold text-base-content">Exceptions to clear</div>
+                  <div className="mt-3 space-y-4">
+                    {lenderPacket.exceptionSections.map(section => (
+                      <div key={section.title} className="rounded-2xl bg-base-200/60 p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-sm font-semibold text-base-content">{section.title}</div>
+                          <span className="rounded-full bg-base-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-base-content/60">
+                            {section.count}
+                          </span>
+                        </div>
+                        <div className="mt-3 space-y-3">
+                          {section.items.map(item => (
+                            <div key={item} className="text-sm text-base-content/80">
+                              {item}
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     ))}
                   </div>
                 </div>
 
                 <div className="rounded-3xl border border-base-300 bg-base-100/80 p-4">
-                  <div className="text-sm font-semibold text-base-content">Recommended next actions</div>
+                  <div className="text-sm font-semibold text-base-content">Borrower requests before lender send</div>
                   <div className="mt-3 space-y-3">
-                    {agentReview.nextActions.map(action => (
+                    {lenderPacket.borrowerRequests.map(action => (
                       <div key={action} className="rounded-2xl bg-base-200/60 px-4 py-3 text-sm text-base-content/80">
                         {action}
                       </div>
@@ -313,13 +343,17 @@ const RobomataPage = async () => {
                 </div>
 
                 <div className="rounded-3xl border border-dashed border-base-300 bg-base-200/40 p-4">
-                  <div className="text-sm font-semibold text-base-content">Evidence commitment rail</div>
+                  <div className="text-sm font-semibold text-base-content">Lender delivery checklist</div>
                   <p className="mt-1 text-sm text-base-content/70">
                     {verifiedEvidenceCount} verified, {exceptionEvidenceCount} exception, {pendingEvidenceCount} pending
-                    commitments are already modeled for the operator packet.
+                    commitments are present in the operator packet.
                   </p>
-                  <div className="mt-3 rounded-2xl bg-base-100/80 px-3 py-2 text-xs text-base-content/70">
-                    Evidence root preview: {evidenceAnchor.evidenceRoot.slice(0, 32)}...
+                  <div className="mt-3 space-y-3">
+                    {lenderPacket.deliveryChecklist.map(item => (
+                      <div key={item} className="rounded-2xl bg-base-100/80 px-3 py-2 text-xs text-base-content/70">
+                        {item}
+                      </div>
+                    ))}
                   </div>
                   <p className="mt-3 text-xs uppercase tracking-[0.16em] text-base-content/50">
                     Full anchor surface lands in ROB-120
