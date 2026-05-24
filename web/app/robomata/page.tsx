@@ -10,7 +10,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { buildAgentReviewInput, reviewBorrowingBase } from "~~/lib/robomata/agentProviders";
 import { calculateBorrowingBase, demoPortfolio, formatPercentFromBps, formatUsd } from "~~/lib/robomata/borrowingBase";
-import { buildEvidenceAnchor } from "~~/lib/robomata/evidence";
+import { buildEvidenceAnchor, buildEvidenceRail } from "~~/lib/robomata/evidence";
 import { buildLenderPacket } from "~~/lib/robomata/lenderPacket";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +18,7 @@ export const dynamic = "force-dynamic";
 const RobomataPage = async () => {
   const borrowingBase = calculateBorrowingBase(demoPortfolio);
   const evidenceAnchor = buildEvidenceAnchor(demoPortfolio.facilityName, demoPortfolio.evidence);
+  const evidenceRail = buildEvidenceRail(evidenceAnchor);
   const agentReview = await reviewBorrowingBase(buildAgentReviewInput(borrowingBase));
   const lenderPacket = buildLenderPacket(borrowingBase, agentReview, evidenceAnchor);
   const totalVehicles = demoPortfolio.receivables.reduce((sum, receivable) => sum + receivable.vehicleCount, 0);
@@ -343,24 +344,112 @@ const RobomataPage = async () => {
                 </div>
 
                 <div className="rounded-3xl border border-dashed border-base-300 bg-base-200/40 p-4">
-                  <div className="text-sm font-semibold text-base-content">Lender delivery checklist</div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-sm font-semibold text-base-content">Evidence anchor trail</div>
+                    <span className="rounded-full border border-base-300 bg-base-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-base-content/60">
+                      Demo references
+                    </span>
+                  </div>
                   <p className="mt-1 text-sm text-base-content/70">
                     {verifiedEvidenceCount} verified, {exceptionEvidenceCount} exception, {pendingEvidenceCount} pending
-                    commitments are present in the operator packet.
+                    commitments are grouped below and tied to an explicit Sui/Walrus/Seal anchor path.
                   </p>
+                  <div className="mt-3 grid gap-3">
+                    {evidenceRail.anchorReferences.map(reference => (
+                      <div key={reference.label} className="rounded-2xl bg-base-100/80 px-3 py-3">
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-base-content/50">
+                          {reference.label}
+                        </div>
+                        <div className="mt-1 break-all text-xs text-base-content/80">{reference.value}</div>
+                      </div>
+                    ))}
+                  </div>
                   <div className="mt-3 space-y-3">
-                    {lenderPacket.deliveryChecklist.map(item => (
+                    {evidenceRail.demoDisclosures.map(item => (
                       <div key={item} className="rounded-2xl bg-base-100/80 px-3 py-2 text-xs text-base-content/70">
                         {item}
                       </div>
                     ))}
                   </div>
-                  <p className="mt-3 text-xs uppercase tracking-[0.16em] text-base-content/50">
-                    Full anchor surface lands in ROB-120
-                  </p>
                 </div>
               </div>
             </section>
+          </div>
+        </section>
+
+        <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">Evidence Library</p>
+              <h2 className="mt-2 text-2xl font-black tracking-tight text-base-content">
+                Controlled evidence references
+              </h2>
+            </div>
+            <span className="rounded-full border border-base-300 bg-base-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/60">
+              Demo commitments only
+            </span>
+          </div>
+
+          <div className="mt-6 grid gap-4 lg:grid-cols-2">
+            {evidenceRail.groups.map(group => (
+              <div key={group.id} className="rounded-[1.5rem] border border-base-300 bg-base-200/35 p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-lg font-bold text-base-content">{group.title}</div>
+                    <p className="mt-1 text-sm leading-relaxed text-base-content/70">{group.description}</p>
+                  </div>
+                  <span className="rounded-full border border-base-300 bg-base-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-base-content/60">
+                    {group.commitments.length} refs
+                  </span>
+                </div>
+
+                <div className="mt-4 space-y-3">
+                  {group.commitments.map(commitment => (
+                    <div key={commitment.id} className="rounded-2xl border border-base-300 bg-base-100/80 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold text-base-content">{commitment.label}</div>
+                          <div className="mt-1 text-xs text-base-content/60">{commitment.source}</div>
+                        </div>
+                        <span
+                          className={`badge rounded-full border-0 ${
+                            commitment.status === "verified"
+                              ? "badge-success text-success-content"
+                              : commitment.status === "exception"
+                                ? "badge-error text-error-content"
+                                : "badge-warning text-warning-content"
+                          }`}
+                        >
+                          {commitment.status}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        <div className="rounded-xl bg-base-200/60 px-3 py-2">
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-base-content/50">
+                            Walrus object
+                          </div>
+                          <div className="mt-1 break-all text-xs text-base-content/75">{commitment.walrusObjectId}</div>
+                        </div>
+                        <div className="rounded-xl bg-base-200/60 px-3 py-2">
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-base-content/50">
+                            Seal policy
+                          </div>
+                          <div className="mt-1 break-all text-xs text-base-content/75">{commitment.sealPolicyId}</div>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 rounded-xl bg-base-200/60 px-3 py-2">
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-base-content/50">
+                          Digest
+                        </div>
+                        <div className="mt-1 break-all text-xs text-base-content/75">{commitment.digest}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         </section>
       </div>
