@@ -18,3 +18,29 @@ Run from this directory when the Sui CLI is installed:
 ```sh
 sui move build
 ```
+
+## Localnet Demo Path
+
+`ROB-117` uses an isolated localnet flow rather than the default `~/.sui`
+client state or a public faucet dependency.
+
+Run the end-to-end demo path from the repo root:
+
+```sh
+./protocols/sui/scripts/run_localnet_demo.sh
+```
+
+The script will:
+
+* create a disposable Sui config directory under `/tmp`
+* bootstrap a local network with `sui genesis` and `sui start`
+* test-publish `protocols/sui`
+* execute `create_facility`, `update_borrowing_base`, and `commit_evidence`
+* write a JSON fixture with the resulting package ID, facility ID, and
+  transaction digests
+
+A committed sample fixture from a real localnet execution lives at:
+
+```text
+protocols/sui/fixtures/localnet-demo-run.json
+```

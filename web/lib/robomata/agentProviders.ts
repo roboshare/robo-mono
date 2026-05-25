@@ -1,3 +1,5 @@
+import type { BorrowingBaseResult } from "~~/lib/robomata/borrowingBase";
+
 export type AgentProviderName = "mock" | "openai" | "anthropic" | "google" | "disabled";
 
 export type AgentReviewInput = {
@@ -46,6 +48,27 @@ function formatUsd(cents: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(cents / 100);
+}
+
+export function buildAgentReviewInput(result: BorrowingBaseResult): AgentReviewInput {
+  return {
+    portfolio: {
+      operator: result.portfolio.operator,
+    },
+    availableBorrowingBaseCents: result.availableBorrowingBaseCents,
+    exceptionCount: result.exceptionCount,
+    receivableResults: result.receivableResults.map(receivable => ({
+      id: receivable.id,
+      obligor: receivable.obligor,
+      eligible: receivable.eligible,
+      ineligibleReasons: receivable.ineligibleReasons,
+    })),
+    evidenceExceptions: result.evidenceExceptions.map(evidence => ({
+      id: evidence.id,
+      label: evidence.label,
+      status: evidence.status,
+    })),
+  };
 }
 
 function buildMockReview(result: AgentReviewInput, provider: AgentProviderName = "mock"): AgentReview {
