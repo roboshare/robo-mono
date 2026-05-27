@@ -226,6 +226,7 @@ contract PositionManagerAccountingInvariantTest is StdInvariant, Test {
     address internal partnerManager = makeAddr("partnerManager");
     address internal marketplace = makeAddr("marketplace");
     address internal treasury = makeAddr("treasury");
+    address internal earningsManager = makeAddr("earningsManager");
     address internal usdc = makeAddr("usdc");
 
     uint256 internal constant REVENUE_TOKEN_ID = 102;
@@ -233,6 +234,7 @@ contract PositionManagerAccountingInvariantTest is StdInvariant, Test {
     uint256 internal constant MAX_SUPPLY = 500;
 
     function setUp() public {
+        vm.etch(earningsManager, hex"00");
         roboshareTokens = RoboshareTokens(
             address(
                 new ERC1967Proxy(address(new RoboshareTokens()), abi.encodeCall(RoboshareTokens.initialize, (admin)))
@@ -244,7 +246,16 @@ contract PositionManagerAccountingInvariantTest is StdInvariant, Test {
                     address(new PositionManager()),
                     abi.encodeCall(
                         PositionManager.initialize,
-                        (admin, registryRouter, address(roboshareTokens), partnerManager, marketplace, treasury, usdc)
+                        (
+                            admin,
+                            registryRouter,
+                            address(roboshareTokens),
+                            partnerManager,
+                            marketplace,
+                            treasury,
+                            earningsManager,
+                            usdc
+                        )
                     )
                 )
             )

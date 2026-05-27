@@ -135,12 +135,15 @@ contract RoboshareTokensTest is AssetMetadataBaseTest {
                     address(partnerManager),
                     address(marketplace),
                     address(treasury),
+                    address(earningsManager),
                     address(usdc)
                 )
             )
         );
-
-        return PositionManager(address(proxy));
+        PositionManager manager = PositionManager(address(proxy));
+        vm.prank(admin);
+        earningsManager.updatePositionManager(address(manager));
+        return manager;
     }
 
     function _setupRevenueTokenForLocks(address holder, uint256 amount) internal returns (uint256 tokenId) {

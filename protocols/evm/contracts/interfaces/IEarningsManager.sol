@@ -12,6 +12,7 @@ interface IEarningsManager {
     event EarningsClaimed(uint256 indexed assetId, address indexed holder, uint256 amount);
     event TreasuryUpdated(address indexed oldAddress, address indexed newAddress);
     event RouterUpdated(address indexed oldAddress, address indexed newAddress);
+    event PositionManagerUpdated(address indexed oldAddress, address indexed newAddress);
     event PartnerManagerUpdated(address indexed oldAddress, address indexed newAddress);
     event RoboshareTokensUpdated(address indexed oldAddress, address indexed newAddress);
     event UsdcUpdated(address indexed oldAddress, address indexed newAddress);
@@ -56,6 +57,15 @@ interface IEarningsManager {
     function snapshotAndClaimEarnings(uint256 assetId, address holder, bool autoClaim)
         external
         returns (uint256 snapshotAmount);
+
+    function transferPositionClaimState(
+        uint256 assetId,
+        address from,
+        address to,
+        uint256 tokenId,
+        uint256 fromPositionUid,
+        uint256 toPositionUid
+    ) external;
 
     function getAssetEarningsSummary(uint256 assetId) external view returns (EarningsSummary memory);
 

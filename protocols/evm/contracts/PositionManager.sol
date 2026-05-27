@@ -6,6 +6,7 @@ import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/ac
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { IERC1155 } from "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import { ProtocolLib, TokenLib } from "./Libraries.sol";
+import { IEarningsManager } from "./interfaces/IEarningsManager.sol";
 import { IPositionManager } from "./interfaces/IPositionManager.sol";
 
 interface IRoboshareTokenPriceReader {
@@ -55,6 +56,7 @@ contract PositionManager is Initializable, AccessControlUpgradeable, UUPSUpgrade
     address public partnerManager;
     address public marketplace;
     address public treasury;
+    address public earningsManager;
     address public usdc;
 
     mapping(uint256 => TokenLib.TokenInfo) private _revenueTokenInfos;
@@ -62,6 +64,7 @@ contract PositionManager is Initializable, AccessControlUpgradeable, UUPSUpgrade
     mapping(uint256 => uint256) private _listingSalePenalties;
     mapping(uint256 => SettlementStateInternal) private _settlementStates;
     mapping(uint256 => mapping(uint256 => mapping(address => SettlementClaimStateInternal))) private _settlementClaims;
+    mapping(uint256 => mapping(address => mapping(uint256 => uint256))) private _positionHoldingStartedAt;
     bool private _currentEpochBurnActive;
     address private _currentEpochBurnHolder;
     uint256 private _currentEpochBurnTokenId;
@@ -78,12 +81,13 @@ contract PositionManager is Initializable, AccessControlUpgradeable, UUPSUpgrade
         address _partnerManager,
         address _marketplace,
         address _treasury,
+        address _earningsManager,
         address _usdc
     ) external initializer {
         if (
             admin == address(0) || _registryRouter == address(0) || _roboshareTokens == address(0)
                 || _partnerManager == address(0) || _marketplace == address(0) || _treasury == address(0)
-                || _usdc == address(0)
+                || _earningsManager == address(0) || _usdc == address(0)
         ) {
             revert ZeroAddress();
         }
@@ -106,10 +110,11 @@ contract PositionManager is Initializable, AccessControlUpgradeable, UUPSUpgrade
         partnerManager = _partnerManager;
         marketplace = _marketplace;
         treasury = _treasury;
+        earningsManager = _earningsManager;
         usdc = _usdc;
 
         emit PositionManagerInitialized(
-            admin, _registryRouter, _roboshareTokens, _partnerManager, _marketplace, _treasury, _usdc
+            admin, _registryRouter, _roboshareTokens, _partnerManager, _marketplace, _treasury, _earningsManager, _usdc
         );
     }
 
@@ -178,6 +183,16 @@ contract PositionManager is Initializable, AccessControlUpgradeable, UUPSUpgrade
         emit TreasuryUpdated(oldTreasury, newTreasury);
     }
 
+    function updateEarningsManager(address newEarningsManager) external onlyRole(POSITION_ADMIN_ROLE) {
+        if (newEarningsManager == address(0)) {
+            revert ZeroAddress();
+        }
+
+        address oldEarningsManager = earningsManager;
+        earningsManager = newEarningsManager;
+        emit EarningsManagerUpdated(oldEarningsManager, newEarningsManager);
+    }
+
     function updateUsdc(address newUsdc) external onlyRole(POSITION_ADMIN_ROLE) {
         if (newUsdc == address(0)) {
             revert ZeroAddress();
@@ -200,7 +215,14 @@ contract PositionManager is Initializable, AccessControlUpgradeable, UUPSUpgrade
 
         if (mutation.mutationType == PositionMutationType.Mint) {
             tokenInfo.tokenSupply += mutation.amount;
-            TokenLib.addPosition(tokenInfo, mutation.account, mutation.amount);
+            _appendPosition(
+                tokenInfo,
+                mutation.account,
+                mutation.amount,
+                block.timestamp,
+                block.timestamp,
+                tokenInfo.currentRedemptionEpoch
+            );
             _increaseCurrentEpochState(tokenInfo, mutation.tokenId, mutation.amount);
         } else if (mutation.mutationType == PositionMutationType.Burn) {
             tokenInfo.tokenSupply -= mutation.amount;
@@ -251,7 +273,7 @@ contract PositionManager is Initializable, AccessControlUpgradeable, UUPSUpgrade
 
         if (from == address(0)) {
             tokenInfo.tokenSupply += amount;
-            TokenLib.addPosition(tokenInfo, to, amount);
+            _appendPosition(tokenInfo, to, amount, block.timestamp, block.timestamp, tokenInfo.currentRedemptionEpoch);
             _increaseCurrentEpochState(tokenInfo, tokenId, amount);
         } else if (to == address(0)) {
             _burnRevenueToken(tokenInfo, from, tokenId, amount);
@@ -417,7 +439,7 @@ contract PositionManager is Initializable, AccessControlUpgradeable, UUPSUpgrade
             return 0;
         }
 
-        return TokenLib.calculateSalesPenalty(_revenueTokenInfos[revenueTokenId], seller, amount);
+        return _calculateSalesPenalty(_revenueTokenInfos[revenueTokenId], seller, amount);
     }
 
     function preparePrimaryRedemptionBurn(address holder, uint256 tokenId) external {
@@ -737,6 +759,7 @@ contract PositionManager is Initializable, AccessControlUpgradeable, UUPSUpgrade
     {
         TokenLib.PositionQueue storage queue = info.positions[from];
         uint256 remaining = amount;
+        uint256 assetId = TokenLib.getAssetIdFromTokenId(info.tokenId);
 
         for (uint256 i = queue.head; i < queue.tail && remaining > 0; i++) {
             TokenLib.TokenPosition storage pos = queue.items[i];
@@ -750,9 +773,9 @@ contract PositionManager is Initializable, AccessControlUpgradeable, UUPSUpgrade
                 pos.soldAt = block.timestamp;
             }
 
-            // Stamp transferred lots just after the current block timestamp so they cannot
-            // re-qualify the current earnings period under same-timestamp transfer/claim sequences.
-            _appendPosition(info, to, toMove, block.timestamp + 1, epoch);
+            uint256 newPositionUid = _appendPosition(info, to, toMove, pos.acquiredAt, block.timestamp, epoch);
+            IEarningsManager(earningsManager)
+                .transferPositionClaimState(assetId, from, to, info.tokenId, pos.uid, newPositionUid);
             remaining -= toMove;
         }
 
@@ -766,10 +789,11 @@ contract PositionManager is Initializable, AccessControlUpgradeable, UUPSUpgrade
         address holder,
         uint256 amount,
         uint256 acquiredAt,
+        uint256 holdingStartedAt,
         uint256 redemptionEpoch
-    ) internal {
+    ) internal returns (uint256 id) {
         TokenLib.PositionQueue storage queue = info.positions[holder];
-        uint256 id = queue.tail;
+        id = queue.tail;
         queue.items[id] = TokenLib.TokenPosition({
             uid: id,
             tokenId: info.tokenId,
@@ -778,7 +802,38 @@ contract PositionManager is Initializable, AccessControlUpgradeable, UUPSUpgrade
             soldAt: 0,
             redemptionEpoch: redemptionEpoch
         });
+        _positionHoldingStartedAt[info.tokenId][holder][id] = holdingStartedAt;
         queue.tail++;
+    }
+
+    function _calculateSalesPenalty(TokenLib.TokenInfo storage info, address holder, uint256 amountToSell)
+        internal
+        view
+        returns (uint256 penaltyAmount)
+    {
+        if (amountToSell == 0) return 0;
+
+        TokenLib.PositionQueue storage queue = info.positions[holder];
+        uint256 remaining = amountToSell;
+        uint256 totalPenalty;
+
+        for (uint256 i = queue.head; i < queue.tail && remaining > 0; i++) {
+            TokenLib.TokenPosition storage pos = queue.items[i];
+            if (pos.amount == 0) continue;
+
+            uint256 toConsider = remaining > pos.amount ? pos.amount : remaining;
+            uint256 holdingStartedAt = _positionHoldingStartedAt[info.tokenId][holder][pos.uid];
+            if (holdingStartedAt == 0) {
+                holdingStartedAt = pos.acquiredAt;
+            }
+
+            if (block.timestamp < holdingStartedAt + info.minHoldingPeriod) {
+                totalPenalty += ProtocolLib.calculatePenalty(toConsider * info.tokenPrice);
+            }
+            remaining -= toConsider;
+        }
+
+        return totalPenalty;
     }
 
     function _requireTokenRouterOrTreasuryCaller() internal view {

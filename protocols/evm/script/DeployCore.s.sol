@@ -135,13 +135,14 @@ abstract contract DeployCore is ScaffoldETHDeploy {
         {
             PositionManager positionManagerImplementation = new PositionManager();
             bytes memory positionManagerInitData = abi.encodeWithSignature(
-                "initialize(address,address,address,address,address,address,address)",
+                "initialize(address,address,address,address,address,address,address,address)",
                 _deployer,
                 address(contracts.router),
                 address(contracts.roboshareTokens),
                 address(contracts.partnerManager),
                 address(contracts.marketplace),
                 address(contracts.treasury),
+                address(contracts.earningsManager),
                 config.usdcToken
             );
             ERC1967Proxy positionManagerProxy =
@@ -164,6 +165,7 @@ abstract contract DeployCore is ScaffoldETHDeploy {
         contracts.router.setMarketplace(address(contracts.marketplace));
         contracts.treasury.setEarningsManager(address(contracts.earningsManager));
         contracts.roboshareTokens.setPositionManager(address(contracts.positionManager));
+        contracts.earningsManager.updatePositionManager(address(contracts.positionManager));
 
         // 2. Grant Roles
         // Grant AUTHORIZED_REGISTRY_ROLE to VehicleRegistry

@@ -18,6 +18,7 @@ contract PositionManagerTest is Test {
     address public partnerManager = makeAddr("partnerManager");
     address public marketplace = makeAddr("marketplace");
     address public treasury = makeAddr("treasury");
+    address public earningsManager = makeAddr("earningsManager");
     address public usdc = makeAddr("usdc");
     address public unauthorized = makeAddr("unauthorized");
     address public alice = makeAddr("alice");
@@ -92,8 +93,10 @@ contract PositionManagerTest is Test {
 
     function setUp() public {
         vm.etch(roboshareTokens, hex"00");
-        positionManager =
-            _deployPositionManager(admin, registryRouter, roboshareTokens, partnerManager, marketplace, treasury, usdc);
+        vm.etch(earningsManager, hex"00");
+        positionManager = _deployPositionManager(
+            admin, registryRouter, roboshareTokens, partnerManager, marketplace, treasury, earningsManager, usdc
+        );
         _mockTokenPrice(TOKEN_ID, TOKEN_PRICE);
     }
 
@@ -103,6 +106,7 @@ contract PositionManagerTest is Test {
         assertEq(positionManager.partnerManager(), partnerManager);
         assertEq(positionManager.marketplace(), marketplace);
         assertEq(positionManager.treasury(), treasury);
+        assertEq(positionManager.earningsManager(), earningsManager);
         assertEq(positionManager.usdc(), usdc);
 
         assertEq(positionManager.UPGRADER_ROLE(), keccak256("UPGRADER_ROLE"));
@@ -140,7 +144,7 @@ contract PositionManagerTest is Test {
             address(implementation),
             abi.encodeCall(
                 PositionManager.initialize,
-                (admin, registryRouter, roboshareTokens, partnerManager, address(0), treasury, usdc)
+                (admin, registryRouter, roboshareTokens, partnerManager, address(0), treasury, earningsManager, usdc)
             )
         );
     }
@@ -280,8 +284,8 @@ contract PositionManagerTest is Test {
         assertEq(bobPositions[0].redemptionEpoch, 0);
         assertEq(bobPositions[1].amount, 20);
         assertEq(bobPositions[1].redemptionEpoch, 0);
-        assertEq(bobPositions[0].acquiredAt, bobPositions[1].acquiredAt);
-        assertGt(bobPositions[0].acquiredAt, alicePositions[1].acquiredAt);
+        assertLt(bobPositions[0].acquiredAt, bobPositions[1].acquiredAt);
+        assertEq(bobPositions[1].acquiredAt, alicePositions[1].acquiredAt);
         assertEq(positionManager.getCurrentPrimaryRedemptionEpochSupply(TOKEN_ID), 150);
         assertEq(positionManager.getCurrentPrimaryRedemptionBackedPrincipal(TOKEN_ID), 150 * TOKEN_PRICE);
         assertEq(positionManager.getPrimaryRedemptionEligibleBalance(alice, TOKEN_ID), 30);
@@ -863,6 +867,7 @@ contract PositionManagerTest is Test {
         address _partnerManager,
         address _marketplace,
         address _treasury,
+        address _earningsManager,
         address _usdc
     ) internal returns (PositionManager) {
         PositionManager implementation = new PositionManager();
@@ -870,7 +875,16 @@ contract PositionManagerTest is Test {
             address(implementation),
             abi.encodeCall(
                 PositionManager.initialize,
-                (_admin, _registryRouter, _roboshareTokens, _partnerManager, _marketplace, _treasury, _usdc)
+                (
+                    _admin,
+                    _registryRouter,
+                    _roboshareTokens,
+                    _partnerManager,
+                    _marketplace,
+                    _treasury,
+                    _earningsManager,
+                    _usdc
+                )
             )
         );
 

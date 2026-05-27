@@ -19,12 +19,14 @@ contract EarningsManagerTest is TreasuryFlowBaseTest {
         assertEq(address(earningsManager.partnerManager()), address(partnerManager));
         assertEq(address(earningsManager.router()), address(router));
         assertEq(address(earningsManager.treasury()), address(treasury));
+        assertEq(earningsManager.positionManager(), address(positionManager));
         assertEq(address(earningsManager.usdc()), address(usdc));
 
         assertTrue(earningsManager.hasRole(earningsManager.DEFAULT_ADMIN_ROLE(), admin));
         assertTrue(earningsManager.hasRole(earningsManager.UPGRADER_ROLE(), admin));
         assertTrue(earningsManager.hasRole(earningsManager.AUTHORIZED_CONTRACT_ROLE(), address(treasury)));
         assertTrue(earningsManager.hasRole(earningsManager.AUTHORIZED_CONTRACT_ROLE(), address(router)));
+        assertTrue(earningsManager.hasRole(earningsManager.AUTHORIZED_CONTRACT_ROLE(), address(positionManager)));
     }
 
     function testInitializationZeroAddress() public {
@@ -54,6 +56,11 @@ contract EarningsManagerTest is TreasuryFlowBaseTest {
         vm.prank(address(treasury));
         uint256 amount = earningsManager.snapshotAndClaimEarnings(999, buyer, false);
         assertEq(amount, 0);
+    }
+
+    function testTransferPositionClaimStateAllowsPositionManager() public {
+        vm.prank(address(positionManager));
+        earningsManager.transferPositionClaimState(999, buyer, unauthorized, 2, 0, 0);
     }
 
     function testSnapshotAndClaimEarningsUnauthorizedCaller() public {
@@ -96,6 +103,18 @@ contract EarningsManagerTest is TreasuryFlowBaseTest {
         );
         vm.prank(unauthorized);
         earningsManager.updateTreasury(makeAddr("newTreasury"));
+    }
+
+    function testUpdatePositionManager() public {
+        address newPositionManager = makeAddr("newPositionManager");
+        address oldPositionManager = earningsManager.positionManager();
+
+        vm.prank(admin);
+        earningsManager.updatePositionManager(newPositionManager);
+
+        assertEq(earningsManager.positionManager(), newPositionManager);
+        assertFalse(earningsManager.hasRole(earningsManager.AUTHORIZED_CONTRACT_ROLE(), oldPositionManager));
+        assertTrue(earningsManager.hasRole(earningsManager.AUTHORIZED_CONTRACT_ROLE(), newPositionManager));
     }
 
     function testUpdateRouter() public {

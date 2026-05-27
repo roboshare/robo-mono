@@ -57,6 +57,7 @@ interface IPositionManager {
         address partnerManager,
         address marketplace,
         address treasury,
+        address earningsManager,
         address usdc
     );
 
@@ -65,6 +66,7 @@ interface IPositionManager {
     event PartnerManagerUpdated(address indexed oldAddress, address indexed newAddress);
     event MarketplaceUpdated(address indexed oldAddress, address indexed newAddress);
     event TreasuryUpdated(address indexed oldAddress, address indexed newAddress);
+    event EarningsManagerUpdated(address indexed oldAddress, address indexed newAddress);
     event UsdcUpdated(address indexed oldAddress, address indexed newAddress);
 
     event PositionMutated(
@@ -142,6 +144,7 @@ interface IPositionManager {
         address partnerManager,
         address marketplace,
         address treasury,
+        address earningsManager,
         address usdc
     ) external;
 
@@ -156,6 +159,7 @@ interface IPositionManager {
     function partnerManager() external view returns (address);
     function marketplace() external view returns (address);
     function treasury() external view returns (address);
+    function earningsManager() external view returns (address);
     function usdc() external view returns (address);
 
     function updateRegistryRouter(address newRegistryRouter) external;
@@ -163,6 +167,7 @@ interface IPositionManager {
     function updatePartnerManager(address newPartnerManager) external;
     function updateMarketplace(address newMarketplace) external;
     function updateTreasury(address newTreasury) external;
+    function updateEarningsManager(address newEarningsManager) external;
     function updateUsdc(address newUsdc) external;
 
     function recordPositionMutation(PositionMutation calldata mutation) external;

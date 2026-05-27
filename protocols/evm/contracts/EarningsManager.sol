@@ -32,6 +32,7 @@ contract EarningsManager is
     PartnerManager public partnerManager;
     RegistryRouter public router;
     ITreasury public treasury;
+    address public positionManager;
     IERC20 public usdc;
 
     mapping(uint256 => EarningsLib.EarningsInfo) private _assetEarnings;
@@ -395,6 +396,23 @@ contract EarningsManager is
         }
     }
 
+    function transferPositionClaimState(
+        uint256 assetId,
+        address from,
+        address to,
+        uint256 tokenId,
+        uint256 fromPositionUid,
+        uint256 toPositionUid
+    ) external onlyRole(AUTHORIZED_CONTRACT_ROLE) {
+        EarningsLib.EarningsInfo storage earningsInfo = _assetEarnings[assetId];
+        uint256 lastClaimedPeriod = earningsInfo.positionsLastClaimedPeriod[from][tokenId][fromPositionUid];
+        uint256 currentClaimedPeriod = earningsInfo.positionsLastClaimedPeriod[to][tokenId][toPositionUid];
+
+        if (lastClaimedPeriod > currentClaimedPeriod) {
+            earningsInfo.positionsLastClaimedPeriod[to][tokenId][toPositionUid] = lastClaimedPeriod;
+        }
+    }
+
     function _claimEarningsFor(address holder, uint256 assetId) internal returns (uint256 unclaimedAmount) {
         if (!router.assetExists(assetId)) {
             revert ITreasury.AssetNotFound();
@@ -449,6 +467,17 @@ contract EarningsManager is
         treasury = ITreasury(_treasury);
         _grantRole(AUTHORIZED_CONTRACT_ROLE, _treasury);
         emit TreasuryUpdated(oldTreasury, _treasury);
+    }
+
+    function updatePositionManager(address newPositionManager) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newPositionManager == address(0)) revert ZeroAddress();
+        address oldPositionManager = positionManager;
+        if (oldPositionManager != address(0)) {
+            _revokeRole(AUTHORIZED_CONTRACT_ROLE, oldPositionManager);
+        }
+        positionManager = newPositionManager;
+        _grantRole(AUTHORIZED_CONTRACT_ROLE, newPositionManager);
+        emit PositionManagerUpdated(oldPositionManager, newPositionManager);
     }
 
     function updateRouter(address _router) external onlyRole(DEFAULT_ADMIN_ROLE) {
