@@ -140,10 +140,10 @@ contract RoboshareTokensTest is AssetMetadataBaseTest {
                 )
             )
         );
-        PositionManager manager = PositionManager(address(proxy));
+        PositionManager deployedManager = PositionManager(address(proxy));
         vm.prank(admin);
-        earningsManager.updatePositionManager(address(manager));
-        return manager;
+        earningsManager.updatePositionManager(address(deployedManager));
+        return deployedManager;
     }
 
     function _setupRevenueTokenForLocks(address holder, uint256 amount) internal returns (uint256 tokenId) {
