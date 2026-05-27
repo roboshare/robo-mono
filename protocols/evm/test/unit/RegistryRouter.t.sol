@@ -226,16 +226,6 @@ contract RegistryRouterTest is AssetMetadataBaseTest {
         router.claimSettlement(scenario.assetId, false);
     }
 
-    function testClaimSettlementForRejectsArbitraryAccount() public {
-        _ensureState(SetupState.AssetRegistered);
-
-        vm.prank(unauthorized);
-        vm.expectRevert(
-            abi.encodeWithSelector(RegistryRouter.UnauthorizedSettlementClaimer.selector, unauthorized, partner1)
-        );
-        router.claimSettlementFor(partner1, scenario.assetId, false);
-    }
-
     function testRecordImmediateProceedsReleaseNotTreasury() public {
         vm.expectRevert(RegistryRouter.NotTreasury.selector);
         router.recordImmediateProceedsRelease(102, 1);

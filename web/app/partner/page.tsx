@@ -20,7 +20,7 @@ import { useScaffoldWriteContract, useSelectedNetwork } from "~~/hooks/scaffold-
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
 import { getDeployedContract } from "~~/utils/contracts";
-import { fetchIpfsMetadata, ipfsToHttp } from "~~/utils/ipfsGateway";
+import { fetchIpfsMetadata, mergeVehicleMetadata } from "~~/utils/ipfsGateway";
 import { normalizeVehicleMetadata } from "~~/utils/protocolState";
 import { getTargetNetworks, notification } from "~~/utils/scaffold-eth";
 import { getSubgraphQueryUrl } from "~~/utils/subgraph";
@@ -337,17 +337,20 @@ const PartnerDashboard: NextPage = () => {
   // Fetch image URLs from IPFS metadata
   useEffect(() => {
     const fetchImageUrls = async () => {
-      const assetsWithMetadata = assetRecords.filter(a => a.metadataURI && !a.imageUrl);
-      if (assetsWithMetadata.length === 0) return;
+      const assetsNeedingMetadata = assetRecords.filter(
+        a => a.metadataURI && (!a.imageUrl || !a.vin || !a.make || !a.model || !a.year),
+      );
+      if (assetsNeedingMetadata.length === 0) return;
 
       const updatedAssets = await Promise.all(
         assetRecords.map(async asset => {
-          if (asset.imageUrl || !asset.metadataURI) return asset;
+          const needsHydration = !asset.imageUrl || !asset.vin || !asset.make || !asset.model || !asset.year;
+          if (!needsHydration || !asset.metadataURI) return asset;
 
           try {
             const metadata = await fetchIpfsMetadata(asset.metadataURI);
-            if (metadata?.image) {
-              return { ...asset, imageUrl: ipfsToHttp(metadata.image) || undefined };
+            if (metadata) {
+              return mergeVehicleMetadata(asset, metadata);
             }
           } catch (error) {
             console.error(`Error fetching metadata for asset ${asset.id}:`, error);
@@ -356,8 +359,17 @@ const PartnerDashboard: NextPage = () => {
         }),
       );
 
-      const hasNewImages = updatedAssets.some((a, i) => a.imageUrl !== assetRecords[i].imageUrl);
-      if (hasNewImages) {
+      const hasMetadataChanges = updatedAssets.some((asset, index) => {
+        const previous = assetRecords[index];
+        return (
+          asset.imageUrl !== previous.imageUrl ||
+          asset.vin !== previous.vin ||
+          asset.make !== previous.make ||
+          asset.model !== previous.model ||
+          asset.year !== previous.year
+        );
+      });
+      if (hasMetadataChanges) {
         setAllAssets(updatedAssets);
       }
     };

@@ -154,11 +154,7 @@ contract MockRegistry is IAssetRegistry {
         assets[assetId].info.status = AssetLib.AssetStatus.Expired;
     }
 
-    function claimSettlement(uint256, bool) external pure override returns (uint256, uint256) {
-        return (0, 0);
-    }
-
-    function claimSettlementFor(address, uint256, bool) external pure override returns (uint256, uint256) {
+    function executeSettlementClaimFor(address, uint256, bool) external pure override returns (uint256, uint256) {
         return (0, 0);
     }
 
@@ -440,29 +436,6 @@ contract RegistryRouterIntegrationTest is TreasuryFlowBaseTest {
         uint256 nonExistentAssetId = 999;
         vm.expectRevert(abi.encodeWithSelector(RegistryRouter.RegistryNotFound.selector, nonExistentAssetId));
         router.liquidateAsset(nonExistentAssetId);
-    }
-
-    function testClaimSettlementForRegistryNotFound() public {
-        uint256 nonExistentAssetId = 999;
-        vm.expectRevert(abi.encodeWithSelector(RegistryRouter.RegistryNotFound.selector, nonExistentAssetId));
-        router.claimSettlementFor(partner1, nonExistentAssetId, false);
-    }
-
-    function testClaimSettlementForRejectsArbitraryAccount() public {
-        _ensureState(SetupState.EarningsDistributed);
-
-        vm.prank(partner1);
-        assetRegistry.settleAsset(scenario.assetId, 0);
-
-        uint256 buyerBalanceBefore = roboshareTokens.balanceOf(buyer, scenario.revenueTokenId);
-
-        vm.prank(unauthorized);
-        vm.expectRevert(
-            abi.encodeWithSelector(RegistryRouter.UnauthorizedSettlementClaimer.selector, unauthorized, buyer)
-        );
-        router.claimSettlementFor(buyer, scenario.assetId, true);
-
-        assertEq(roboshareTokens.balanceOf(buyer, scenario.revenueTokenId), buyerBalanceBefore);
     }
 
     // RegistryNotBoundToAsset Tests

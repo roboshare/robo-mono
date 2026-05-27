@@ -46,7 +46,7 @@ contract RegistryRouter is Initializable, AccessControlUpgradeable, UUPSUpgradea
     error NotTreasury();
     error NotMarketplace();
     error DirectCallNotAllowed();
-    error UnauthorizedSettlementClaimer(address caller, address account);
+    error InvalidTokenPrice();
     error PositionManagerNotSet();
     error InvalidPositionManager(address manager);
 
@@ -364,34 +364,26 @@ contract RegistryRouter is Initializable, AccessControlUpgradeable, UUPSUpgradea
         IAssetRegistry(registry).liquidateAsset(assetId);
     }
 
-    function claimSettlement(uint256 assetId, bool autoClaimEarnings) external override returns (uint256, uint256) {
-        return _claimSettlementFor(msg.sender, assetId, autoClaimEarnings);
+    function claimSettlement(uint256 assetId, bool autoClaimEarnings)
+        external
+        returns (uint256 claimedAmount, uint256 earningsClaimed)
+    {
+        address registry = idToRegistry[assetId];
+        if (registry == address(0)) {
+            revert RegistryNotFound(assetId);
+        }
+        return IAssetRegistry(registry).executeSettlementClaimFor(msg.sender, assetId, autoClaimEarnings);
     }
 
-    function claimSettlementFor(address account, uint256 assetId, bool autoClaimEarnings)
+    function executeSettlementClaimFor(address, uint256, bool)
         external
+        pure
         override
         returns (uint256 claimedAmount, uint256 earningsClaimed)
     {
-        address registry = idToRegistry[assetId];
-        if (registry == address(0)) {
-            revert RegistryNotFound(assetId);
-        }
-        if (account != msg.sender && msg.sender != registry) {
-            revert UnauthorizedSettlementClaimer(msg.sender, account);
-        }
-        return IAssetRegistry(registry).claimSettlementFor(account, assetId, autoClaimEarnings);
-    }
-
-    function _claimSettlementFor(address account, uint256 assetId, bool autoClaimEarnings)
-        internal
-        returns (uint256 claimedAmount, uint256 earningsClaimed)
-    {
-        address registry = idToRegistry[assetId];
-        if (registry == address(0)) {
-            revert RegistryNotFound(assetId);
-        }
-        return IAssetRegistry(registry).claimSettlementFor(account, assetId, autoClaimEarnings);
+        claimedAmount;
+        earningsClaimed;
+        revert DirectCallNotAllowed();
     }
 
     function burnRevenueTokens(uint256 assetId, uint256 amount) external override {
@@ -601,6 +593,15 @@ contract RegistryRouter is Initializable, AccessControlUpgradeable, UUPSUpgradea
         address registry = idToRegistry[assetId];
         if (registry == address(0)) {
             revert RegistryNotFound(assetId);
+        }
+        if (tokenPrice == 0) {
+            revert InvalidTokenPrice();
+        }
+
+        uint256 assetValue = IAssetRegistry(registry).getAssetInfo(assetId).assetValue;
+        uint256 maxSupportedSupply = assetValue / tokenPrice;
+        if (maxSupply == 0 || maxSupply > maxSupportedSupply) {
+            revert IAssetRegistry.InvalidPoolSupply();
         }
 
         (tokenId, supply) = IAssetRegistry(registry).previewCreateRevenueTokenPool(assetId, partner, maxSupply);

@@ -27,7 +27,7 @@ import { useScaffoldWriteContract, useSelectedNetwork } from "~~/hooks/scaffold-
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
 import { getDeployedContract } from "~~/utils/contracts";
-import { fetchIpfsMetadata, ipfsToHttp } from "~~/utils/ipfsGateway";
+import { fetchIpfsMetadata, mergeVehicleMetadata } from "~~/utils/ipfsGateway";
 import {
   POSITION_MANAGER_PRIMARY_REDEMPTION_READER_ABI,
   ROBOSHARE_TOKENS_MANAGER_READER_ABI,
@@ -79,6 +79,7 @@ interface SubgraphVehicle {
   model?: string;
   year?: string;
   metadataURI?: string;
+  imageUrl?: string;
 }
 
 interface SubgraphToken {
@@ -128,6 +129,9 @@ const MarketsPage: NextPage = () => {
   const [recentPrimaryPoolPurchases, setRecentPrimaryPoolPurchases] = useState<Set<string>>(new Set());
   const [soldOutAtByListing, setSoldOutAtByListing] = useState<Record<string, string>>({});
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
+  const [vehicleMetadataOverrides, setVehicleMetadataOverrides] = useState<Record<string, Partial<SubgraphVehicle>>>(
+    {},
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -244,6 +248,10 @@ const MarketsPage: NextPage = () => {
     (vehicle: Pick<SubgraphVehicle, "id" | "metadataURI">) => `${chainId}:${vehicle.id}:${vehicle.metadataURI || ""}`,
     [chainId],
   );
+  const getVehicleMetadataKey = useCallback(
+    (vehicle: Pick<SubgraphVehicle, "id">) => `${chainId}:${vehicle.id}`,
+    [chainId],
+  );
 
   const { data: pendingWithdrawal, refetch: refetchPendingWithdrawal } = useReadContract({
     address: treasuryContract?.address,
@@ -273,13 +281,16 @@ const MarketsPage: NextPage = () => {
 
     return vehicles.map((vehicle, index) => {
       const result = results?.[index];
-      if (result?.status !== "success" || result.result === undefined) {
-        return vehicle;
-      }
-
-      return normalizeVehicleMetadata(result.result, vehicle);
+      const normalizedVehicle =
+        result?.status === "success" && result.result !== undefined
+          ? normalizeVehicleMetadata(result.result, vehicle)
+          : vehicle;
+      return {
+        ...normalizedVehicle,
+        ...vehicleMetadataOverrides[getVehicleMetadataKey(vehicle)],
+      };
     });
-  }, [vehicleInfoData, vehicles]);
+  }, [getVehicleMetadataKey, vehicleInfoData, vehicleMetadataOverrides, vehicles]);
 
   const { data: targetYieldData } = useReadContracts({
     allowFailure: true,
@@ -778,18 +789,32 @@ const MarketsPage: NextPage = () => {
   // Fetch IPFS images
   useEffect(() => {
     const fetchImages = async () => {
-      const vehiclesWithMetadata = marketVehicles.filter(v => v.metadataURI && !imageUrls[getVehicleImageKey(v)]);
-      if (vehiclesWithMetadata.length === 0) return;
+      const vehiclesNeedingMetadata = marketVehicles.filter(
+        vehicle =>
+          vehicle.metadataURI &&
+          (!imageUrls[getVehicleImageKey(vehicle)] || !vehicle.vin || !vehicle.make || !vehicle.model || !vehicle.year),
+      );
+      if (vehiclesNeedingMetadata.length === 0) return;
 
       const newImageUrls: Record<string, string> = { ...imageUrls };
+      const metadataOverrides: Record<string, Partial<SubgraphVehicle>> = {};
 
       await Promise.all(
-        vehiclesWithMetadata.map(async vehicle => {
+        vehiclesNeedingMetadata.map(async vehicle => {
           if (!vehicle.metadataURI) return;
           try {
             const metadata = await fetchIpfsMetadata(vehicle.metadataURI);
-            if (metadata?.image) {
-              newImageUrls[getVehicleImageKey(vehicle)] = ipfsToHttp(metadata.image) || "";
+            if (metadata) {
+              const hydratedVehicle = mergeVehicleMetadata(vehicle, metadata);
+              metadataOverrides[getVehicleMetadataKey(vehicle)] = {
+                vin: hydratedVehicle.vin,
+                make: hydratedVehicle.make,
+                model: hydratedVehicle.model,
+                year: hydratedVehicle.year,
+              };
+              if (hydratedVehicle.imageUrl) {
+                newImageUrls[getVehicleImageKey(vehicle)] = hydratedVehicle.imageUrl;
+              }
             }
           } catch (err) {
             console.error(`Error fetching metadata for vehicle ${vehicle.id}:`, err);
@@ -797,11 +822,17 @@ const MarketsPage: NextPage = () => {
         }),
       );
 
-      setImageUrls(newImageUrls);
+      const imageUrlsChanged = Object.keys(newImageUrls).some(key => newImageUrls[key] !== imageUrls[key]);
+      if (imageUrlsChanged) {
+        setImageUrls(newImageUrls);
+      }
+      if (Object.keys(metadataOverrides).length > 0) {
+        setVehicleMetadataOverrides(prev => ({ ...prev, ...metadataOverrides }));
+      }
     };
 
     fetchImages();
-  }, [getVehicleImageKey, imageUrls, marketVehicles]);
+  }, [getVehicleImageKey, getVehicleMetadataKey, imageUrls, marketVehicles]);
 
   const tokenSoldTotals = useMemo(() => {
     const totals = new Map<string, bigint>();

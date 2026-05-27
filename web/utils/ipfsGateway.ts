@@ -35,7 +35,37 @@ export interface IpfsMetadata {
   name?: string;
   description?: string;
   properties?: Record<string, unknown>;
+  vin?: string;
+  make?: string;
+  model?: string;
+  year?: string | number;
 }
+
+type VehicleMetadataTarget = {
+  vin?: string;
+  make?: string;
+  model?: string;
+  year?: string | bigint;
+  imageUrl?: string;
+};
+
+export const mergeVehicleMetadata = <T extends VehicleMetadataTarget>(target: T, metadata: IpfsMetadata): T => {
+  const hydratedYear =
+    target.year !== undefined && target.year !== null
+      ? target.year
+      : metadata.year !== undefined && metadata.year !== null
+        ? String(metadata.year)
+        : undefined;
+
+  return {
+    ...target,
+    vin: target.vin || metadata.vin,
+    make: target.make || metadata.make,
+    model: target.model || metadata.model,
+    year: hydratedYear,
+    imageUrl: target.imageUrl || ipfsToHttp(metadata.image) || undefined,
+  };
+};
 
 /**
  * Fetch and parse IPFS metadata JSON

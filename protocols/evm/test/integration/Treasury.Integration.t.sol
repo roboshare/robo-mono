@@ -477,7 +477,7 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
         assetRegistry.settleAsset(scenario.assetId, 0);
 
         vm.prank(buyer);
-        assetRegistry.claimSettlement(scenario.assetId, false);
+        router.claimSettlement(scenario.assetId, false);
 
         uint256 settledEarningsPreview = earningsManager.previewClaimEarnings(scenario.assetId, buyer);
         assertEq(settledEarningsPreview, initialEarningsPreview);
@@ -942,7 +942,7 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
         );
 
         vm.prank(buyer);
-        (uint256 settlementClaimed,) = assetRegistry.claimSettlement(scenario.assetId, false);
+        (uint256 settlementClaimed,) = router.claimSettlement(scenario.assetId, false);
 
         assertEq(settlementClaimed, previewAmount, "Preview should match settlement claimed");
         settlementState = positionManager.getSettlementState(scenario.assetId);
@@ -1592,7 +1592,7 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
         (, uint256 settlementPerToken,) = treasury.assetSettlements(scenario.assetId);
 
         vm.startPrank(buyer);
-        (uint256 claimed,) = assetRegistry.claimSettlement(scenario.assetId, false);
+        (uint256 claimed,) = router.claimSettlement(scenario.assetId, false);
         // Settlement now uses pendingWithdrawals pattern - need to withdraw
         treasury.processWithdrawal();
         vm.stopPrank();
@@ -1713,7 +1713,7 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
 
         // Claim settlement with autoClaimEarnings=true
         vm.prank(buyer);
-        (uint256 settlementClaimed, uint256 earningsClaimed) = assetRegistry.claimSettlement(scenario.assetId, true);
+        (uint256 settlementClaimed, uint256 earningsClaimed) = router.claimSettlement(scenario.assetId, true);
 
         assertGt(settlementClaimed, 0, "Settlement should be > 0");
         assertGt(earningsClaimed, 0, "Earnings should be > 0 with autoClaim");
@@ -1765,13 +1765,12 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
 
         // Buyer1 claims with autoClaim, buyer2 claims without then claims earnings separately
         vm.prank(buyer);
-        (uint256 buyer1Settlement, uint256 buyer1Earnings) = assetRegistry.claimSettlement(scenario.assetId, true);
+        (uint256 buyer1Settlement, uint256 buyer1Earnings) = router.claimSettlement(scenario.assetId, true);
         assertGt(buyer1Settlement, 0, "Buyer1 settlement should be > 0");
         assertGt(buyer1Earnings, 0, "Buyer1 should have auto-claimed earnings");
 
         vm.prank(buyer2);
-        (uint256 buyer2Settlement, uint256 buyer2EarningsClaimed) =
-            assetRegistry.claimSettlement(scenario.assetId, false);
+        (uint256 buyer2Settlement, uint256 buyer2EarningsClaimed) = router.claimSettlement(scenario.assetId, false);
         assertGt(buyer2Settlement, 0, "Buyer2 settlement should be > 0");
         assertEq(buyer2EarningsClaimed, 0, "Buyer2 did not auto-claim");
 
@@ -1804,7 +1803,7 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
 
         // Claim settlement with autoClaim - should work, but earnings should be 0
         vm.prank(buyer);
-        (uint256 settlement, uint256 earnings) = assetRegistry.claimSettlement(scenario.assetId, true);
+        (uint256 settlement, uint256 earnings) = router.claimSettlement(scenario.assetId, true);
 
         assertGt(settlement, 0, "Should still get settlement");
         assertEq(earnings, 0, "No unclaimed earnings");

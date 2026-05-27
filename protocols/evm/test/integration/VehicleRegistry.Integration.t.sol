@@ -172,16 +172,12 @@ contract VehicleRegistryIntegrationTest is VehicleRegistryBaseTest, MarketplaceF
         assertEq(roboshareTokens.getNextTokenId(), 3);
     }
 
-    function testRegisterAssetAcceptsLegacyPartnerFormPayload() public {
+    function testRegisterAssetRejectsLegacyPartnerFormPayload() public {
         (string memory vin, string memory metadataURI) = _generateVehicleData(2);
 
+        vm.expectRevert(VehicleRegistry.UnsupportedVehicleRegistrationPayload.selector);
         vm.prank(partner1);
-        uint256 newVehicleId =
-            assetRegistry.registerAsset(_legacyVehicleRegistrationData(vin, metadataURI), ASSET_VALUE);
-
-        _assertVehicleState(newVehicleId, partner1, vin, true);
-        assertEq(roboshareTokens.uri(newVehicleId), metadataURI);
-        assertEq(roboshareTokens.uri(newVehicleId + 1), metadataURI);
+        assetRegistry.registerAsset(_legacyVehicleRegistrationData(vin, metadataURI), ASSET_VALUE);
     }
 
     function testRegisterMultipleVehicles() public {
@@ -399,6 +395,25 @@ contract VehicleRegistryIntegrationTest is VehicleRegistryBaseTest, MarketplaceF
         assetRegistry.previewCreateRevenueTokenPool(scenario.assetId, partner1, 0);
     }
 
+    function testCreateRevenueTokenPoolRejectsSupplyAboveAssetBacking() public {
+        _ensureState(SetupState.AssetRegistered);
+
+        uint256 excessiveSupply = (ASSET_VALUE / REVENUE_TOKEN_PRICE) + 1;
+
+        vm.expectRevert(IAssetRegistry.InvalidPoolSupply.selector);
+        vm.prank(partner1);
+        assetRegistry.createRevenueTokenPool(
+            scenario.assetId,
+            REVENUE_TOKEN_PRICE,
+            block.timestamp + 365 days,
+            10_000,
+            1_000,
+            excessiveSupply,
+            false,
+            false
+        );
+    }
+
     // View Function Tests
 
     function testVehicleExists() public {
@@ -430,14 +445,10 @@ contract VehicleRegistryIntegrationTest is VehicleRegistryBaseTest, MarketplaceF
     // Fuzz Tests
 
     function testFuzzRegisterAssetAndMintTokens(uint256 assetValue, uint256 tokenPrice, uint256 explicitSupply) public {
-        // Constraints:
-        // 1. tokenPrice > 0 and realistically bounded
-        // 2. explicitSupply > 0 to satisfy explicit pool sizing
-        // 3. Cap assetValue at 1B USDC to avoid unrealistic scenarios
-        vm.assume(tokenPrice > 0);
-        vm.assume(tokenPrice <= 1_000_000_000 * 1e6);
-        vm.assume(assetValue <= 1_000_000_000 * 1e6);
-        vm.assume(explicitSupply > 0 && explicitSupply <= 1_000_000_000);
+        tokenPrice = bound(tokenPrice, 1, 1_000_000_000 * 1e6);
+        assetValue = bound(assetValue, tokenPrice, 1_000_000_000 * 1e6);
+        uint256 maxSupportedSupply = assetValue / tokenPrice;
+        explicitSupply = bound(explicitSupply, 1, maxSupportedSupply);
 
         _ensureState(SetupState.InitialAccountsSetup);
 
@@ -474,14 +485,10 @@ contract VehicleRegistryIntegrationTest is VehicleRegistryBaseTest, MarketplaceF
         uint256 tokenPrice,
         uint256 explicitSupply
     ) public {
-        // Constraints:
-        // 1. tokenPrice >= 1 USDC (1e6) and realistically bounded
-        // 2. explicitSupply > 0 to satisfy explicit pool sizing
-        // 3. Cap assetValue at 1B USDC to avoid unrealistic scenarios
-        vm.assume(tokenPrice >= 1e6);
-        vm.assume(tokenPrice <= 1_000_000_000 * 1e6);
-        vm.assume(assetValue <= 1_000_000_000 * 1e6);
-        vm.assume(explicitSupply > 0 && explicitSupply <= 1_000_000_000);
+        tokenPrice = bound(tokenPrice, 1e6, 1_000_000_000 * 1e6);
+        assetValue = bound(assetValue, tokenPrice, 1_000_000_000 * 1e6);
+        uint256 maxSupportedSupply = assetValue / tokenPrice;
+        explicitSupply = bound(explicitSupply, 1, maxSupportedSupply);
 
         _ensureState(SetupState.InitialAccountsSetup);
 
@@ -925,7 +932,7 @@ contract VehicleRegistryIntegrationTest is VehicleRegistryBaseTest, MarketplaceF
     function testClaimSettlementAssetNotFound() public {
         vm.expectRevert(abi.encodeWithSelector(bytes4(keccak256("RegistryNotFound(uint256)")), 999));
         vm.prank(partner1);
-        assetRegistry.claimSettlement(999, false);
+        router.claimSettlement(999, false);
     }
 
     function testClaimSettlementNotSettled() public {
@@ -936,7 +943,7 @@ contract VehicleRegistryIntegrationTest is VehicleRegistryBaseTest, MarketplaceF
                 IAssetRegistry.AssetNotSettled.selector, scenario.assetId, AssetLib.AssetStatus.Active
             )
         );
-        assetRegistry.claimSettlement(scenario.assetId, false);
+        router.claimSettlement(scenario.assetId, false);
     }
 
     function testClaimSettlementNoTokens() public {
@@ -955,7 +962,7 @@ contract VehicleRegistryIntegrationTest is VehicleRegistryBaseTest, MarketplaceF
             abi.encodeWithSelector(IAssetRegistry.InsufficientTokenBalance.selector, scenario.revenueTokenId, 1, 0)
         );
 
-        assetRegistry.claimSettlement(scenario.assetId, false);
+        router.claimSettlement(scenario.assetId, false);
     }
 
     function testClaimSettlementTracksManagerPayout() public {
@@ -968,7 +975,7 @@ contract VehicleRegistryIntegrationTest is VehicleRegistryBaseTest, MarketplaceF
         uint256 expectedPayout = _positionManager().previewSettlementClaim(scenario.assetId, buyerBalance);
 
         vm.prank(buyer);
-        (uint256 claimedAmount, uint256 earningsClaimed) = assetRegistry.claimSettlement(scenario.assetId, false);
+        (uint256 claimedAmount, uint256 earningsClaimed) = router.claimSettlement(scenario.assetId, false);
 
         assertEq(earningsClaimed, 0);
         assertEq(claimedAmount, expectedPayout);
@@ -980,7 +987,7 @@ contract VehicleRegistryIntegrationTest is VehicleRegistryBaseTest, MarketplaceF
         assertEq(claimState.payout, claimedAmount);
     }
 
-    function testClaimSettlementForUnauthorizedCaller() public {
+    function testExecuteSettlementClaimForUnauthorizedCaller() public {
         _ensureState(SetupState.PrimaryPoolCreated);
 
         vm.startPrank(unauthorized);
@@ -989,7 +996,7 @@ contract VehicleRegistryIntegrationTest is VehicleRegistryBaseTest, MarketplaceF
                 IAccessControl.AccessControlUnauthorizedAccount.selector, unauthorized, assetRegistry.ROUTER_ROLE()
             )
         );
-        assetRegistry.claimSettlementFor(partner1, scenario.assetId, false);
+        assetRegistry.executeSettlementClaimFor(partner1, scenario.assetId, false);
         vm.stopPrank();
     }
 

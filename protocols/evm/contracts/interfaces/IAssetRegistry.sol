@@ -46,8 +46,7 @@ interface IAssetRegistry {
     /**
      * @dev Asset registration and revenue token pool creation.
      * @param data Registry-specific ABI payload. VehicleRegistry expects
-     *        abi.encode(string vin, string assetMetadataURI, string revenueTokenMetadataURI),
-     *        while remaining backward-compatible with the legacy 7-field partner-form payload.
+     *        abi.encode(string vin, string assetMetadataURI, string revenueTokenMetadataURI).
      */
     function registerAsset(bytes calldata data, uint256 assetValue) external returns (uint256 assetId);
 
@@ -93,10 +92,7 @@ interface IAssetRegistry {
      */
     function settleAsset(uint256 assetId, uint256 topUpAmount) external;
     function liquidateAsset(uint256 assetId) external;
-    function claimSettlement(uint256 assetId, bool autoClaimEarnings)
-        external
-        returns (uint256 claimedAmount, uint256 earningsClaimed);
-    function claimSettlementFor(address account, uint256 assetId, bool autoClaimEarnings)
+    function executeSettlementClaimFor(address account, uint256 assetId, bool autoClaimEarnings)
         external
         returns (uint256 claimedAmount, uint256 earningsClaimed);
     function burnRevenueTokens(uint256 assetId, uint256 amount) external;

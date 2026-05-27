@@ -210,7 +210,7 @@ contract EarningsManagerIntegrationTest is MarketplaceFlowBaseTest {
 
         uint256 buyerBalance = roboshareTokens.balanceOf(buyer, scenario.revenueTokenId);
         vm.prank(buyer);
-        assetRegistry.claimSettlement(scenario.assetId, false);
+        router.claimSettlement(scenario.assetId, false);
         assertEq(roboshareTokens.balanceOf(buyer, scenario.revenueTokenId), 0);
         IPositionManager.SettlementClaimState memory claimState =
             roboshareTokens.positionManager().getSettlementClaimState(scenario.assetId, buyer);
@@ -358,7 +358,7 @@ contract EarningsManagerIntegrationTest is MarketplaceFlowBaseTest {
         uint256 pendingBefore = treasury.pendingWithdrawals(buyer);
 
         vm.prank(buyer);
-        (uint256 settlement, uint256 earnings) = assetRegistry.claimSettlement(scenario.assetId, true);
+        (uint256 settlement, uint256 earnings) = router.claimSettlement(scenario.assetId, true);
 
         assertGt(settlement, 0);
         assertGt(earnings, 0);
@@ -409,7 +409,7 @@ contract EarningsManagerIntegrationTest is MarketplaceFlowBaseTest {
         uint256 buyerPendingBefore = treasury.pendingWithdrawals(buyer);
 
         vm.prank(buyer);
-        (uint256 settlementClaimed, uint256 earningsClaimed) = assetRegistry.claimSettlement(scenario.assetId, false);
+        (uint256 settlementClaimed, uint256 earningsClaimed) = router.claimSettlement(scenario.assetId, false);
 
         assertGt(settlementClaimed, 0);
         assertEq(earningsClaimed, 0);
@@ -430,7 +430,7 @@ contract EarningsManagerIntegrationTest is MarketplaceFlowBaseTest {
         assetRegistry.settleAsset(scenario.assetId, 0);
 
         vm.prank(buyer);
-        assetRegistry.claimSettlement(scenario.assetId, false);
+        router.claimSettlement(scenario.assetId, false);
 
         vm.prank(buyer);
         earningsManager.claimEarnings(scenario.assetId);
@@ -605,7 +605,7 @@ contract EarningsManagerIntegrationTest is MarketplaceFlowBaseTest {
         assetRegistry.settleAsset(scenario.assetId, 0);
 
         vm.prank(buyer);
-        assetRegistry.claimSettlement(scenario.assetId, false);
+        router.claimSettlement(scenario.assetId, false);
 
         uint256 buyerUsdcBefore = usdc.balanceOf(buyer);
         uint256 buyerPendingBefore = treasury.pendingWithdrawals(buyer);

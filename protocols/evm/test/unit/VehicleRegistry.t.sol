@@ -128,22 +128,14 @@ contract VehicleRegistryTest is VehicleRegistryBaseTest {
         );
     }
 
-    function testRegisterVehicleAcceptsLegacyPartnerFormPayload() public {
+    function testRegisterVehicleRejectsLegacyPartnerFormPayload() public {
         _ensureState(SetupState.InitialAccountsSetup);
 
         bytes memory legacyPayload = _legacyVehicleRegistrationData(TEST_VIN, TEST_METADATA_URI);
 
+        vm.expectRevert(VehicleRegistry.UnsupportedVehicleRegistrationPayload.selector);
         vm.prank(partner1);
-        uint256 assetId = assetRegistry.registerAsset(legacyPayload, ASSET_VALUE);
-
-        (bytes32 vinHash, string memory assetMetadataURI, string memory revenueTokenMetadataURI) =
-            assetRegistry.getVehicleInfo(assetId);
-
-        assertEq(vinHash, keccak256(bytes(TEST_VIN)));
-        assertEq(assetMetadataURI, TEST_METADATA_URI);
-        assertEq(revenueTokenMetadataURI, TEST_METADATA_URI);
-        assertEq(roboshareTokens.uri(assetId), TEST_METADATA_URI);
-        assertEq(roboshareTokens.uri(assetId + 1), TEST_METADATA_URI);
+        assetRegistry.registerAsset(legacyPayload, ASSET_VALUE);
     }
 
     function testGetRegistryForAsset() public {

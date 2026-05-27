@@ -297,31 +297,14 @@ contract VehicleRegistry is Initializable, AccessControlUpgradeable, UUPSUpgrade
     }
 
     /**
-     * @dev Claim settlement funds.
-     * Burns all revenue tokens held by caller and transfers settlement payout from Treasury.
-     * @param assetId The ID of the settled asset
-     * @param autoClaimEarnings If true, claims any unclaimed earnings before settlement in same tx.
-     *                           If false, earnings are snapshotted and can be claimed via claimEarnings later.
-     * @return claimedAmount The settlement USDC amount received
-     * @return earningsClaimed The earnings USDC amount received (0 if autoClaimEarnings is false)
-     */
-    function claimSettlement(uint256 assetId, bool autoClaimEarnings)
-        external
-        override
-        returns (uint256 claimedAmount, uint256 earningsClaimed)
-    {
-        return router.claimSettlementFor(msg.sender, assetId, autoClaimEarnings);
-    }
-
-    /**
-     * @dev Router-forwarded settlement claim preserving original caller identity.
+     * @dev Router-only settlement claim execution preserving original caller identity.
      * @param account The end-user claiming settlement
      * @param assetId The ID of the settled asset
      * @param autoClaimEarnings If true, claims any unclaimed earnings before settlement in same tx.
      * @return claimedAmount The settlement USDC amount received
      * @return earningsClaimed The earnings USDC amount received (0 if autoClaimEarnings is false)
      */
-    function claimSettlementFor(address account, uint256 assetId, bool autoClaimEarnings)
+    function executeSettlementClaimFor(address account, uint256 assetId, bool autoClaimEarnings)
         external
         override
         onlyRole(ROUTER_ROLE)
@@ -575,22 +558,6 @@ contract VehicleRegistry is Initializable, AccessControlUpgradeable, UUPSUpgrade
 
         if (firstOffset == 0x60) {
             return abi.decode(data, (string, string, string));
-        }
-
-        if (firstOffset == 0xe0) {
-            string memory _make;
-            string memory _model;
-            uint256 _year;
-            uint256 _manufacturerId;
-            string memory _optionCodes;
-            string memory dynamicMetadataURI;
-            (vin, _make, _model, _year, _manufacturerId, _optionCodes, dynamicMetadataURI) =
-                abi.decode(data, (string, string, string, uint256, uint256, string, string));
-
-            // Legacy partner form payloads only carried one metadata pointer.
-            assetMetadataURI = dynamicMetadataURI;
-            revenueTokenMetadataURI = dynamicMetadataURI;
-            return (vin, assetMetadataURI, revenueTokenMetadataURI);
         }
 
         revert UnsupportedVehicleRegistrationPayload();
