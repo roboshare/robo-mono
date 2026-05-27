@@ -4,6 +4,7 @@ import { join, dirname } from "path";
 import { readFileSync, existsSync } from "fs";
 import { parse } from "toml";
 import { fileURLToPath } from "url";
+import readline from "readline";
 import { selectOrCreateKeystore } from "./selectOrCreateKeystore.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -187,6 +188,54 @@ function validateKeystore(keystoreName) {
   return existsSync(keystorePath);
 }
 
+function isTreasuryFeeRecipientRequired(networkName) {
+  return networkName !== "localhost";
+}
+
+function isAddress(value) {
+  return /^0x[a-fA-F0-9]{40}$/.test(value);
+}
+
+async function promptTreasuryFeeRecipient() {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    console.log(
+      "\n❌ Error: TREASURY_FEE_RECIPIENT is required for non-local deployments and no interactive TTY is available."
+    );
+    console.log(
+      "Please export TREASURY_FEE_RECIPIENT in your shell before running the deploy command."
+    );
+    process.exit(1);
+  }
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  try {
+    while (true) {
+      const answer = await new Promise((resolve) => {
+        rl.question(
+          "\nEnter TREASURY_FEE_RECIPIENT address for this deploy: ",
+          resolve
+        );
+      });
+
+      const trimmed = answer.trim();
+      if (!isAddress(trimmed)) {
+        console.log(
+          "\n❌ Invalid address. Expected a 20-byte hex address like 0x1234..."
+        );
+        continue;
+      }
+
+      return trimmed;
+    }
+  } finally {
+    rl.close();
+  }
+}
+
 // Check if the network exists in rpc_endpoints
 try {
   const foundryTomlPath = join(__dirname, "..", "foundry.toml");
@@ -242,6 +291,17 @@ if (keystoreArg) {
   }
   console.log(
     `\n🔑 Using keystore from ETH_KEYSTORE_ACCOUNT: ${selectedKeystore}`
+  );
+}
+
+if (
+  command === "deploy" &&
+  isTreasuryFeeRecipientRequired(network) &&
+  !process.env.TREASURY_FEE_RECIPIENT
+) {
+  process.env.TREASURY_FEE_RECIPIENT = await promptTreasuryFeeRecipient();
+  console.log(
+    `\n🏦 Using TREASURY_FEE_RECIPIENT: ${process.env.TREASURY_FEE_RECIPIENT}`
   );
 }
 
