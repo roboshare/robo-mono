@@ -744,14 +744,15 @@ contract PositionManager is Initializable, AccessControlUpgradeable, UUPSUpgrade
 
             uint256 toMove = remaining > pos.amount ? pos.amount : remaining;
             uint256 epoch = pos.redemptionEpoch;
-            uint256 acquiredAt = pos.acquiredAt;
 
             pos.amount -= toMove;
             if (pos.amount == 0) {
                 pos.soldAt = block.timestamp;
             }
 
-            _appendPosition(info, to, toMove, acquiredAt, epoch);
+            // Stamp transferred lots just after the current block timestamp so they cannot
+            // re-qualify the current earnings period under same-timestamp transfer/claim sequences.
+            _appendPosition(info, to, toMove, block.timestamp + 1, epoch);
             remaining -= toMove;
         }
 

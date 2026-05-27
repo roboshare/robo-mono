@@ -280,7 +280,8 @@ contract PositionManagerTest is Test {
         assertEq(bobPositions[0].redemptionEpoch, 0);
         assertEq(bobPositions[1].amount, 20);
         assertEq(bobPositions[1].redemptionEpoch, 0);
-        assertLt(bobPositions[0].acquiredAt, bobPositions[1].acquiredAt);
+        assertEq(bobPositions[0].acquiredAt, bobPositions[1].acquiredAt);
+        assertGt(bobPositions[0].acquiredAt, alicePositions[1].acquiredAt);
         assertEq(positionManager.getCurrentPrimaryRedemptionEpochSupply(TOKEN_ID), 150);
         assertEq(positionManager.getCurrentPrimaryRedemptionBackedPrincipal(TOKEN_ID), 150 * TOKEN_PRICE);
         assertEq(positionManager.getPrimaryRedemptionEligibleBalance(alice, TOKEN_ID), 30);
@@ -316,6 +317,25 @@ contract PositionManagerTest is Test {
         assertEq(bobPositions.length, 0);
         assertEq(positionManager.getCurrentPrimaryRedemptionEpochSupply(TOKEN_ID), 50);
         assertEq(positionManager.getCurrentPrimaryRedemptionBackedPrincipal(TOKEN_ID), 50 * TOKEN_PRICE);
+    }
+
+    function testTransferredPositionsRestartHoldingPeriodForBuyerPenalty() public {
+        vm.prank(admin);
+        positionManager.syncRevenueTokenPolicy(TOKEN_ID, TOKEN_PRICE, 30 days);
+
+        vm.prank(roboshareTokens);
+        positionManager.beforeRevenueTokenUpdate(address(0), alice, TOKEN_ID, 100);
+
+        vm.warp(block.timestamp + 30 days + 1);
+        vm.prank(roboshareTokens);
+        positionManager.beforeRevenueTokenUpdate(alice, bob, TOKEN_ID, 100);
+
+        _mockRevenueTokenBalance(bob, ASSET_ID, 0);
+
+        assertGt(positionManager.getSalesPenalty(bob, TOKEN_ID, 100), 0);
+
+        vm.warp(block.timestamp + 365 days);
+        assertEq(positionManager.getSalesPenalty(bob, TOKEN_ID, 100), 0);
     }
 
     function testBurnConsumesPositionsFifo() public {
