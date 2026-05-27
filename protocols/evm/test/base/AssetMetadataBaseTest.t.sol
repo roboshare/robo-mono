@@ -100,4 +100,12 @@ abstract contract AssetMetadataBaseTest is BaseTest {
     ) internal pure returns (bytes memory) {
         return abi.encode(vin, assetMetadataURI, revenueTokenMetadataURI);
     }
+
+    function _legacyVehicleRegistrationData(string memory vin, string memory metadataURI)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return abi.encode(vin, TEST_MAKE, TEST_MODEL, TEST_YEAR, TEST_MANUFACTURER_ID, TEST_OPTION_CODES, metadataURI);
+    }
 }

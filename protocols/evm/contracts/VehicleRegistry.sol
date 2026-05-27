@@ -36,6 +36,7 @@ contract VehicleRegistry is Initializable, AccessControlUpgradeable, UUPSUpgrade
     error OutstandingTokensHeldByOthers();
     error PositionManagerNotSet();
     error InvalidPositionManager(address manager);
+    error UnsupportedVehicleRegistrationPayload();
     error SettlementPayoutMismatch(uint256 expected, uint256 actual);
 
     // Events
@@ -544,7 +545,7 @@ contract VehicleRegistry is Initializable, AccessControlUpgradeable, UUPSUpgrade
         returns (uint256 vehicleId, uint256 revenueTokenId)
     {
         (string memory vin, string memory assetMetadataURI, string memory revenueTokenMetadataURI) =
-            abi.decode(data, (string, string, string));
+            _decodeVehicleRegistrationData(data);
 
         bytes32 vinHash = VehicleLib.toVINHash(vin);
         if (vinHashExists[vinHash]) revert VehicleAlreadyExists();
@@ -560,6 +561,39 @@ contract VehicleRegistry is Initializable, AccessControlUpgradeable, UUPSUpgrade
 
         emit AssetRegistered(vehicleId, msg.sender, assetValue, vehicle.assetInfo.status);
         emit VehicleRegistered(vehicleId, msg.sender, vinHash);
+    }
+
+    function _decodeVehicleRegistrationData(bytes calldata data)
+        internal
+        pure
+        returns (string memory vin, string memory assetMetadataURI, string memory revenueTokenMetadataURI)
+    {
+        uint256 firstOffset;
+        assembly ("memory-safe") {
+            firstOffset := calldataload(data.offset)
+        }
+
+        if (firstOffset == 0x60) {
+            return abi.decode(data, (string, string, string));
+        }
+
+        if (firstOffset == 0xe0) {
+            string memory _make;
+            string memory _model;
+            uint256 _year;
+            uint256 _manufacturerId;
+            string memory _optionCodes;
+            string memory dynamicMetadataURI;
+            (vin, _make, _model, _year, _manufacturerId, _optionCodes, dynamicMetadataURI) =
+                abi.decode(data, (string, string, string, uint256, uint256, string, string));
+
+            // Legacy partner form payloads only carried one metadata pointer.
+            assetMetadataURI = dynamicMetadataURI;
+            revenueTokenMetadataURI = dynamicMetadataURI;
+            return (vin, assetMetadataURI, revenueTokenMetadataURI);
+        }
+
+        revert UnsupportedVehicleRegistrationPayload();
     }
 
     // UUPS Upgrade authorization

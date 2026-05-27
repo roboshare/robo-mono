@@ -448,6 +448,23 @@ contract RegistryRouterIntegrationTest is TreasuryFlowBaseTest {
         router.claimSettlementFor(partner1, nonExistentAssetId, false);
     }
 
+    function testClaimSettlementForRejectsArbitraryAccount() public {
+        _ensureState(SetupState.EarningsDistributed);
+
+        vm.prank(partner1);
+        assetRegistry.settleAsset(scenario.assetId, 0);
+
+        uint256 buyerBalanceBefore = roboshareTokens.balanceOf(buyer, scenario.revenueTokenId);
+
+        vm.prank(unauthorized);
+        vm.expectRevert(
+            abi.encodeWithSelector(RegistryRouter.UnauthorizedSettlementClaimer.selector, unauthorized, buyer)
+        );
+        router.claimSettlementFor(buyer, scenario.assetId, true);
+
+        assertEq(roboshareTokens.balanceOf(buyer, scenario.revenueTokenId), buyerBalanceBefore);
+    }
+
     // RegistryNotBoundToAsset Tests
 
     function testReleaseCollateralForRegistryNotBoundToAsset() public {

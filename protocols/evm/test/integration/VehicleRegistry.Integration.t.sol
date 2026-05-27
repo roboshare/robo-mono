@@ -172,6 +172,18 @@ contract VehicleRegistryIntegrationTest is VehicleRegistryBaseTest, MarketplaceF
         assertEq(roboshareTokens.getNextTokenId(), 3);
     }
 
+    function testRegisterAssetAcceptsLegacyPartnerFormPayload() public {
+        (string memory vin, string memory metadataURI) = _generateVehicleData(2);
+
+        vm.prank(partner1);
+        uint256 newVehicleId =
+            assetRegistry.registerAsset(_legacyVehicleRegistrationData(vin, metadataURI), ASSET_VALUE);
+
+        _assertVehicleState(newVehicleId, partner1, vin, true);
+        assertEq(roboshareTokens.uri(newVehicleId), metadataURI);
+        assertEq(roboshareTokens.uri(newVehicleId + 1), metadataURI);
+    }
+
     function testRegisterMultipleVehicles() public {
         uint256[] memory p1Assets = _createMultipleTestVehicles(partner1, 1);
         uint256[] memory p2Assets = _createMultipleTestVehicles(partner2, 1);

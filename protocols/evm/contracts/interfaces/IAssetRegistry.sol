@@ -46,7 +46,8 @@ interface IAssetRegistry {
     /**
      * @dev Asset registration and revenue token pool creation.
      * @param data Registry-specific ABI payload. VehicleRegistry expects
-     *        abi.encode(string vin, string assetMetadataURI, string revenueTokenMetadataURI).
+     *        abi.encode(string vin, string assetMetadataURI, string revenueTokenMetadataURI),
+     *        while remaining backward-compatible with the legacy 7-field partner-form payload.
      */
     function registerAsset(bytes calldata data, uint256 assetValue) external returns (uint256 assetId);
 

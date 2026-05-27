@@ -46,6 +46,7 @@ contract RegistryRouter is Initializable, AccessControlUpgradeable, UUPSUpgradea
     error NotTreasury();
     error NotMarketplace();
     error DirectCallNotAllowed();
+    error UnauthorizedSettlementClaimer(address caller, address account);
     error PositionManagerNotSet();
     error InvalidPositionManager(address manager);
 
@@ -372,7 +373,14 @@ contract RegistryRouter is Initializable, AccessControlUpgradeable, UUPSUpgradea
         override
         returns (uint256 claimedAmount, uint256 earningsClaimed)
     {
-        return _claimSettlementFor(account, assetId, autoClaimEarnings);
+        address registry = idToRegistry[assetId];
+        if (registry == address(0)) {
+            revert RegistryNotFound(assetId);
+        }
+        if (account != msg.sender && msg.sender != registry) {
+            revert UnauthorizedSettlementClaimer(msg.sender, account);
+        }
+        return IAssetRegistry(registry).claimSettlementFor(account, assetId, autoClaimEarnings);
     }
 
     function _claimSettlementFor(address account, uint256 assetId, bool autoClaimEarnings)
