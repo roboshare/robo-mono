@@ -262,10 +262,16 @@ library VehicleLib {
      * @dev Build VIN hash and validate VIN format.
      */
     function toVINHash(string memory vin) internal pure returns (bytes32) {
-        if (bytes(vin).length < 10 || bytes(vin).length > 17) {
+        bytes memory vinBytes = bytes(vin);
+        if (vinBytes.length < 10 || vinBytes.length > 17) {
             revert InvalidVINLength();
         }
-        return keccak256(bytes(vin));
+
+        bytes32 vinHash;
+        assembly ("memory-safe") {
+            vinHash := keccak256(add(vinBytes, 0x20), mload(vinBytes))
+        }
+        return vinHash;
     }
 
     /**
