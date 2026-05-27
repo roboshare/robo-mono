@@ -5,27 +5,6 @@ schema:
   file: ./src/schema.graphql
 dataSources:
   - kind: ethereum/contract
-    name: MockUSDC
-    network: {{network}}
-    source:
-      abi: MockUSDC
-      address: "{{MockUSDC.address}}"
-      startBlock: {{MockUSDC.startBlock}}
-    mapping:
-      kind: ethereum/events
-      apiVersion: 0.0.6
-      language: wasm/assemblyscript
-      entities:
-        - MockUSDCContract
-        - Transfer
-      abis:
-        - name: MockUSDC
-          file: ./abis/MockUSDC.json
-      eventHandlers:
-        - event: Transfer(indexed address,indexed address,uint256)
-          handler: handleMockUSDCTransfer
-      file: ./src/mapping.ts
-  - kind: ethereum/contract
     name: RoboshareTokens
     network: {{network}}
     source:
@@ -50,29 +29,6 @@ dataSources:
         - event: RevenueTokenInfoSet(indexed
             uint256,uint256,uint256,uint256,uint256,bool,bool)
           handler: handleRevenueTokenInfoSet
-        - event: TokenMetadataURISet(indexed uint256,string)
-          handler: handleTokenMetadataURISet
-      file: ./src/mapping.ts
-  - kind: ethereum/contract
-    name: PartnerManager
-    network: {{network}}
-    source:
-      abi: PartnerManager
-      address: "{{PartnerManager.address}}"
-      startBlock: {{PartnerManager.startBlock}}
-    mapping:
-      kind: ethereum/events
-      apiVersion: 0.0.6
-      language: wasm/assemblyscript
-      entities:
-        - PartnerManagerContract
-        - PartnerAuthorized
-      abis:
-        - name: PartnerManager
-          file: ./abis/PartnerManager.json
-      eventHandlers:
-        - event: PartnerAuthorized(indexed address,string)
-          handler: handlePartnerAuthorized
       file: ./src/mapping.ts
   - kind: ethereum/contract
     name: RegistryRouter
@@ -116,8 +72,6 @@ dataSources:
           handler: handleAssetRegistered
         - event: VehicleRegistered(indexed uint256,indexed address,indexed bytes32)
           handler: handleVehicleRegistered
-        - event: VehicleMetadataUpdated(indexed uint256,string,string)
-          handler: handleVehicleMetadataUpdated
       file: ./src/mapping.ts
   - kind: ethereum/contract
     name: Treasury

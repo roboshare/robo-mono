@@ -101,7 +101,7 @@ interface SubgraphAssetEarnings {
   lastDistributionAt: string;
 }
 
-interface SubgraphPartner {
+interface MarketPartner {
   id: string;
   name: string;
   address: string;
@@ -125,7 +125,6 @@ const MarketsPage: NextPage = () => {
   const [vehicles, setVehicles] = useState<SubgraphVehicle[]>([]);
   const [tokens, setTokens] = useState<SubgraphToken[]>([]);
   const [assetEarnings, setAssetEarnings] = useState<SubgraphAssetEarnings[]>([]);
-  const [partners, setPartners] = useState<SubgraphPartner[]>([]);
   const [recentPrimaryPoolPurchases, setRecentPrimaryPoolPurchases] = useState<Set<string>>(new Set());
   const [soldOutAtByListing, setSoldOutAtByListing] = useState<Record<string, string>>({});
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
@@ -224,6 +223,7 @@ const MarketsPage: NextPage = () => {
   const targetNetworks = getTargetNetworks();
   const subgraphUrl = getSubgraphQueryUrl(chainId);
   const roboshareTokensContract = getDeployedContract(chainId, "RoboshareTokens");
+  const partnerManagerContract = getDeployedContract(chainId, "PartnerManager");
   const marketplaceContract = getDeployedContract(chainId, "Marketplace");
   const treasuryContract = getDeployedContract(chainId, "Treasury");
   const registryRouterContract = getDeployedContract(chainId, "RegistryRouter");
@@ -310,6 +310,49 @@ const MarketsPage: NextPage = () => {
     });
   }, [targetYieldData, tokens]);
 
+  const partnerAddresses = useMemo(() => {
+    const uniquePartners = new Set<string>();
+
+    vehicles.forEach(vehicle => {
+      if (vehicle.partner) uniquePartners.add(vehicle.partner);
+    });
+
+    primaryPools.forEach(pool => {
+      if (pool.partner) uniquePartners.add(pool.partner);
+    });
+
+    return Array.from(uniquePartners);
+  }, [primaryPools, vehicles]);
+
+  const { data: partnerNameData } = useReadContracts({
+    allowFailure: true,
+    contracts: partnerManagerContract
+      ? partnerAddresses.map(partnerAddress => ({
+          address: partnerManagerContract.address,
+          abi: partnerManagerContract.abi,
+          functionName: "getPartnerName",
+          args: [partnerAddress],
+        }))
+      : ([] as any),
+    query: { enabled: !!partnerManagerContract && partnerAddresses.length > 0 },
+  });
+
+  const marketPartners = useMemo(() => {
+    const results = partnerNameData as Array<{ result?: string; status: string }> | undefined;
+
+    return partnerAddresses.map((partnerAddress, index) => {
+      const result = results?.[index];
+      return {
+        id: partnerAddress.toLowerCase(),
+        address: partnerAddress,
+        name:
+          result?.status === "success" && result.result !== undefined && result.result.length > 0
+            ? result.result
+            : partnerAddress,
+      } satisfies MarketPartner;
+    });
+  }, [partnerAddresses, partnerNameData]);
+
   // Fetch data from subgraph
   const fetchData = useCallback(
     async (showLoading = true) => {
@@ -375,11 +418,6 @@ const MarketsPage: NextPage = () => {
                 targetYieldBP
                 maturityDate
               }
-              partners(first: 100) {
-                id
-                name
-                address
-              }
               assetEarnings(first: 100) {
                 id
                 assetId
@@ -428,7 +466,6 @@ const MarketsPage: NextPage = () => {
         setPrimaryPools(data?.primaryPools || []);
         setTokens(data?.roboshareTokens || []);
         setAssetEarnings(data?.assetEarnings || []);
-        setPartners(data?.partners || []);
       } catch (e: any) {
         console.error("Error fetching market data:", e);
         setError(e.message || "Failed to fetch market data");
@@ -1550,7 +1587,7 @@ const MarketsPage: NextPage = () => {
               {visiblePrimaryPools.map(pool => {
                 const vehicle = marketVehicles.find(v => v.id === pool.assetId);
                 const token = marketTokens.find(t => t.revenueTokenId === pool.tokenId);
-                const partner = partners.find(p => p.address.toLowerCase() === pool.partner.toLowerCase());
+                const partner = marketPartners.find(p => p.address.toLowerCase() === pool.partner.toLowerCase());
 
                 return (
                   <PrimaryPoolCard
@@ -1685,7 +1722,7 @@ const MarketsPage: NextPage = () => {
                 : undefined;
               const earning = assetEarnings.find(e => e.assetId === listing.assetId);
               const partner = vehicle
-                ? partners.find(p => p.address.toLowerCase() === vehicle.partner.toLowerCase())
+                ? marketPartners.find(p => p.address.toLowerCase() === vehicle.partner.toLowerCase())
                 : undefined;
 
               return (
@@ -1802,7 +1839,7 @@ const MarketsPage: NextPage = () => {
           </div>
           <div className="stat">
             <div className="stat-title">Partners</div>
-            <div className="stat-value">{partners.length}</div>
+            <div className="stat-value">{marketPartners.length}</div>
           </div>
         </div>
       )}
@@ -1867,7 +1904,7 @@ const MarketsPage: NextPage = () => {
             const targetAssetId = selectedListing?.assetId || selectedPool?.assetId;
             const vehicle = targetAssetId ? marketVehicles.find(v => v.id === targetAssetId) : undefined;
             if (vehicle) {
-              const partner = partners.find(p => p.address.toLowerCase() === vehicle.partner.toLowerCase());
+              const partner = marketPartners.find(p => p.address.toLowerCase() === vehicle.partner.toLowerCase());
               return partner?.name;
             }
             return undefined;

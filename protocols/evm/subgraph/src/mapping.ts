@@ -1,18 +1,9 @@
 import { Address, BigInt, ethereum } from "@graphprotocol/graph-ts"
 import {
-  MockUSDC,
-  Transfer as MockUSDCTransferEvent
-} from "../generated/MockUSDC/MockUSDC"
-import {
   RoboshareTokens,
   TransferSingle as RoboshareTokensTransferSingleEvent,
-  RevenueTokenInfoSet as RevenueTokenInfoSetEvent,
-  TokenMetadataURISet as TokenMetadataURISetEvent
+  RevenueTokenInfoSet as RevenueTokenInfoSetEvent
 } from "../generated/RoboshareTokens/RoboshareTokens"
-import {
-  PartnerManager,
-  PartnerAuthorized as PartnerAuthorizedEvent
-} from "../generated/PartnerManager/PartnerManager"
 import {
   RegistryRouter,
   IdBoundToRegistry as IdBoundToRegistryEvent
@@ -20,7 +11,6 @@ import {
 import {
   VehicleRegistry,
   AssetRegistered as AssetRegisteredEvent,
-  VehicleMetadataUpdated as VehicleMetadataUpdatedEvent,
   VehicleRegistered as VehicleRegisteredEvent
 } from "../generated/VehicleRegistry/VehicleRegistry"
 import {
@@ -45,13 +35,9 @@ import {
 } from "../generated/Marketplace/Marketplace"
 
 import {
-  MockUSDCContract,
-  Transfer,
   RoboshareTokensContract,
   RoboshareToken,
   TransferSingleEvent,
-  PartnerManagerContract,
-  Partner,
   RegistryRouterContract,
   BoundId,
   VehicleRegistryContract,
@@ -101,32 +87,14 @@ function getOrCreateVehicle(id: string, event: ethereum.Event): Vehicle {
   return vehicle
 }
 
-export function handleMockUSDCTransfer(event: MockUSDCTransferEvent): void {
-  let entity = new Transfer(
-    event.transaction.hash.toHex() + "-" + event.logIndex.toString()
-  )
-  entity.from = event.params.from
-  entity.to = event.params.to
-  entity.value = event.params.value
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-  entity.save()
-
-  let contract = MockUSDCContract.load("1")
-  if (!contract) {
-    contract = new MockUSDCContract("1")
-    contract.address = event.address
-    contract.save()
-  }
+function eventEntityId(event: ethereum.Event): string {
+  return event.transaction.hash.concatI32(event.logIndex.toI32()).toHexString()
 }
 
 export function handleRoboshareTokensTransferSingle(
   event: RoboshareTokensTransferSingleEvent
 ): void {
-  let entity = new TransferSingleEvent(
-    event.transaction.hash.toHex() + "-" + event.logIndex.toString()
-  )
+  let entity = new TransferSingleEvent(eventEntityId(event))
   entity.operator = event.params.operator
   entity.from = event.params.from
   entity.to = event.params.to
@@ -154,32 +122,6 @@ export function handleRevenueTokenInfoSet(event: RevenueTokenInfoSetEvent): void
   token.createdAt = event.block.timestamp
   token.setAtBlock = event.block.number
   token.save()
-}
-
-export function handleTokenMetadataURISet(event: TokenMetadataURISetEvent): void {
-  if (!isAssetTokenId(event.params.tokenId)) return
-
-  let vehicle = getOrCreateVehicle(event.params.tokenId.toString(), event)
-  vehicle.metadataURI = event.params.metadataURI
-  vehicle.blockNumber = event.block.number
-  vehicle.blockTimestamp = event.block.timestamp
-  vehicle.transactionHash = event.transaction.hash
-  vehicle.save()
-}
-
-export function handlePartnerAuthorized(event: PartnerAuthorizedEvent): void {
-  let partner = new Partner(event.params.partner.toHex())
-  partner.address = event.params.partner
-  partner.name = event.params.name
-  partner.authorizedAt = event.block.timestamp
-  partner.save()
-
-  let contract = PartnerManagerContract.load("1")
-  if (!contract) {
-    contract = new PartnerManagerContract("1")
-    contract.address = event.address
-    contract.save()
-  }
 }
 
 export function handleIdBoundToRegistry(event: IdBoundToRegistryEvent): void {
@@ -230,16 +172,6 @@ export function handleVehicleRegistered(event: VehicleRegisteredEvent): void {
   }
 }
 
-export function handleVehicleMetadataUpdated(event: VehicleMetadataUpdatedEvent): void {
-  let vehicle = getOrCreateVehicle(event.params.vehicleId.toString(), event)
-
-  vehicle.metadataURI = event.params.assetMetadataURI
-  vehicle.blockNumber = event.block.number
-  vehicle.blockTimestamp = event.block.timestamp
-  vehicle.transactionHash = event.transaction.hash
-  vehicle.save()
-}
-
 
 export function handleCollateralLocked(event: CollateralLockedEvent): void {
   let collateralLock = new CollateralLock(
@@ -263,9 +195,7 @@ export function handleCollateralLocked(event: CollateralLockedEvent): void {
 
 export function handleEarningsDistributed(event: EarningsDistributedEvent): void {
   // Create individual distribution record
-  let distribution = new EarningsDistribution(
-    event.transaction.hash.toHex() + "-" + event.logIndex.toString()
-  )
+  let distribution = new EarningsDistribution(eventEntityId(event))
   distribution.assetId = event.params.assetId
   distribution.partner = event.params.partner
   distribution.totalRevenue = event.params.totalRevenue
@@ -400,9 +330,7 @@ export function handlePrimaryPoolClosed(event: PrimaryPoolClosedEvent): void {
 }
 
 export function handlePrimaryPoolPurchased(event: PrimaryPoolPurchasedEvent): void {
-  let purchase = new PrimaryPoolPurchase(
-    event.transaction.hash.toHex() + "-" + event.logIndex.toString()
-  )
+  let purchase = new PrimaryPoolPurchase(eventEntityId(event))
   purchase.tokenId = event.params.tokenId
   purchase.buyer = event.params.buyer
   purchase.amount = event.params.amount
@@ -422,9 +350,7 @@ export function handlePrimaryPoolPurchased(event: PrimaryPoolPurchasedEvent): vo
 }
 
 export function handlePrimaryPoolRedeemed(event: PrimaryPoolRedeemedEvent): void {
-  let redemption = new PrimaryPoolRedemption(
-    event.transaction.hash.toHex() + "-" + event.logIndex.toString()
-  )
+  let redemption = new PrimaryPoolRedemption(eventEntityId(event))
   redemption.tokenId = event.params.tokenId
   redemption.holder = event.params.holder
   redemption.amountBurned = event.params.amountBurned
