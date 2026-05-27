@@ -74,6 +74,8 @@
     "test:fork": "yarn evm:test:fork",
     "coverage": "yarn evm:coverage",
     "vercel": "yarn workspace web vercel",
+    "vercel:link": "sh -c 'cd web && vercel link'",
+    "vercel:start": "sh -c 'cd web && vercel env run -- yarn dev'",
     "vercel:login": "yarn workspace web vercel:login",
     "vercel:yolo": "yarn workspace web vercel:yolo",
     "verify": "yarn evm:verify"
@@ -84,6 +86,6 @@
   },
   "packageManager": "yarn@3.2.3",
   "engines": {
-    "node": ">=20.18.3"
+    "node": ">=24 <25"
   }
 }
