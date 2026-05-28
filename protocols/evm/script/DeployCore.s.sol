@@ -165,7 +165,6 @@ abstract contract DeployCore is ScaffoldETHDeploy {
         contracts.router.setMarketplace(address(contracts.marketplace));
         contracts.treasury.setEarningsManager(address(contracts.earningsManager));
         contracts.roboshareTokens.setPositionManager(address(contracts.positionManager));
-        contracts.earningsManager.updatePositionManager(address(contracts.positionManager));
 
         // 2. Grant Roles
         // Grant AUTHORIZED_REGISTRY_ROLE to VehicleRegistry

@@ -141,8 +141,6 @@ contract RoboshareTokensTest is AssetMetadataBaseTest {
             )
         );
         PositionManager deployedManager = PositionManager(address(proxy));
-        vm.prank(admin);
-        earningsManager.updatePositionManager(address(deployedManager));
         return deployedManager;
     }
 

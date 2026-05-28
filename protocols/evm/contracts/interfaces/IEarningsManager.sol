@@ -12,7 +12,6 @@ interface IEarningsManager {
     event EarningsClaimed(uint256 indexed assetId, address indexed holder, uint256 amount);
     event TreasuryUpdated(address indexed oldAddress, address indexed newAddress);
     event RouterUpdated(address indexed oldAddress, address indexed newAddress);
-    event PositionManagerUpdated(address indexed oldAddress, address indexed newAddress);
     event PartnerManagerUpdated(address indexed oldAddress, address indexed newAddress);
     event RoboshareTokensUpdated(address indexed oldAddress, address indexed newAddress);
     event UsdcUpdated(address indexed oldAddress, address indexed newAddress);
