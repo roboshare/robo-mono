@@ -316,11 +316,15 @@ contract EarningsManager is
     }
 
     modifier onlyActivePositionManager() {
+        _onlyActivePositionManager();
+        _;
+    }
+
+    function _onlyActivePositionManager() internal view {
         IPositionManager activeManager = _positionManager();
         if (msg.sender != address(activeManager)) {
             revert UnauthorizedPositionManager(msg.sender, address(activeManager));
         }
-        _;
     }
 
     function _getRevenuePositions(uint256 revenueTokenId, address holder)
