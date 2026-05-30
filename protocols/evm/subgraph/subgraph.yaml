@@ -15,10 +15,23 @@ dataSources:
       kind: ethereum/events
       apiVersion: 0.0.6
       language: wasm/assemblyscript
-      entities:
+      entities: &entities
         - RoboshareTokensContract
-        - TransferSingle
-        - RevenueTokenInfoSet
+        - RoboshareToken
+        - TransferSingleEvent
+        - RegistryRouterContract
+        - BoundId
+        - VehicleRegistryContract
+        - Vehicle
+        - TreasuryContract
+        - CollateralLock
+        - MarketplaceContract
+        - Listing
+        - EarningsDistribution
+        - AssetEarning
+        - PrimaryPool
+        - PrimaryPoolPurchase
+        - PrimaryPoolRedemption
       abis:
         - name: RoboshareTokens
           file: ./abis/RoboshareTokens.json
@@ -29,6 +42,8 @@ dataSources:
         - event: RevenueTokenInfoSet(indexed
             uint256,uint256,uint256,uint256,uint256,bool,bool)
           handler: handleRevenueTokenInfoSet
+        - event: TokenMetadataURISet(indexed uint256,string)
+          handler: handleTokenMetadataURISet
       file: ./src/mapping.ts
   - kind: ethereum/contract
     name: RegistryRouter
@@ -41,8 +56,7 @@ dataSources:
       kind: ethereum/events
       apiVersion: 0.0.6
       language: wasm/assemblyscript
-      entities:
-        - RegistryRouterContract
+      entities: *entities
       abis:
         - name: RegistryRouter
           file: ./abis/RegistryRouter.json
@@ -61,9 +75,7 @@ dataSources:
       kind: ethereum/events
       apiVersion: 0.0.6
       language: wasm/assemblyscript
-      entities:
-        - VehicleRegistryContract
-        - VehicleRegistered
+      entities: *entities
       abis:
         - name: VehicleRegistry
           file: ./abis/VehicleRegistry.json
@@ -72,6 +84,8 @@ dataSources:
           handler: handleAssetRegistered
         - event: VehicleRegistered(indexed uint256,indexed address,indexed bytes32)
           handler: handleVehicleRegistered
+        - event: VehicleMetadataUpdated(indexed uint256,string,string)
+          handler: handleVehicleMetadataUpdated
       file: ./src/mapping.ts
   - kind: ethereum/contract
     name: Treasury
@@ -84,9 +98,7 @@ dataSources:
       kind: ethereum/events
       apiVersion: 0.0.6
       language: wasm/assemblyscript
-      entities:
-        - TreasuryContract
-        - CollateralLocked
+      entities: *entities
       abis:
         - name: Treasury
           file: ./abis/Treasury.json
@@ -105,9 +117,7 @@ dataSources:
       kind: ethereum/events
       apiVersion: 0.0.6
       language: wasm/assemblyscript
-      entities:
-        - EarningsDistribution
-        - AssetEarning
+      entities: *entities
       abis:
         - name: EarningsManager
           file: ./abis/EarningsManager.json
@@ -127,9 +137,7 @@ dataSources:
       kind: ethereum/events
       apiVersion: 0.0.6
       language: wasm/assemblyscript
-      entities:
-        - MarketplaceContract
-        - ListingCreated
+      entities: *entities
       abis:
         - name: Marketplace
           file: ./abis/Marketplace.json

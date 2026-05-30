@@ -8,6 +8,7 @@ type RoboshareToken @entity(immutable: true) {
   revenueTokenId: BigInt!
   price: BigInt!
   supply: BigInt!
+  maxSupply: BigInt!
   targetYieldBP: BigInt
   maturityDate: BigInt!
   createdAt: BigInt!

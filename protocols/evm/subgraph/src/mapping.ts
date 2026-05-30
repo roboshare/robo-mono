@@ -2,7 +2,8 @@ import { Address, BigInt, ethereum } from "@graphprotocol/graph-ts"
 import {
   RoboshareTokens,
   TransferSingle as RoboshareTokensTransferSingleEvent,
-  RevenueTokenInfoSet as RevenueTokenInfoSetEvent
+  RevenueTokenInfoSet as RevenueTokenInfoSetEvent,
+  TokenMetadataURISet as TokenMetadataURISetEvent
 } from "../generated/RoboshareTokens/RoboshareTokens"
 import {
   RegistryRouter,
@@ -11,6 +12,7 @@ import {
 import {
   VehicleRegistry,
   AssetRegistered as AssetRegisteredEvent,
+  VehicleMetadataUpdated as VehicleMetadataUpdatedEvent,
   VehicleRegistered as VehicleRegisteredEvent
 } from "../generated/VehicleRegistry/VehicleRegistry"
 import {
@@ -91,10 +93,42 @@ function eventEntityId(event: ethereum.Event): string {
   return event.transaction.hash.concatI32(event.logIndex.toI32()).toHexString()
 }
 
+function saveRoboshareTokensContract(event: RoboshareTokensTransferSingleEvent): void {
+  let contract = RoboshareTokensContract.load("1")
+  if (!contract) {
+    contract = new RoboshareTokensContract("1")
+    contract.address = event.address
+    contract.save()
+  }
+}
+
+function saveRegistryRouterContract(event: IdBoundToRegistryEvent): void {
+  let contract = RegistryRouterContract.load("1")
+  if (!contract) {
+    contract = new RegistryRouterContract("1")
+    contract.address = event.address
+    contract.save()
+  }
+}
+
+function saveVehicleRegistryContract(event: VehicleRegisteredEvent): void {
+  let registryContract = VehicleRegistryContract.load("1")
+  if (!registryContract) {
+    registryContract = new VehicleRegistryContract("1")
+    registryContract.address = event.address
+    registryContract.save()
+  }
+}
+
 export function handleRoboshareTokensTransferSingle(
   event: RoboshareTokensTransferSingleEvent
 ): void {
-  let entity = new TransferSingleEvent(eventEntityId(event))
+  let entityId = eventEntityId(event)
+  if (TransferSingleEvent.load(entityId) != null) {
+    return
+  }
+
+  let entity = new TransferSingleEvent(entityId)
   entity.operator = event.params.operator
   entity.from = event.params.from
   entity.to = event.params.to
@@ -105,27 +139,45 @@ export function handleRoboshareTokensTransferSingle(
   entity.transactionHash = event.transaction.hash
   entity.save()
 
-  let contract = RoboshareTokensContract.load("1")
-  if (!contract) {
-    contract = new RoboshareTokensContract("1")
-    contract.address = event.address
-    contract.save()
-  }
+  saveRoboshareTokensContract(event)
 }
 
 export function handleRevenueTokenInfoSet(event: RevenueTokenInfoSetEvent): void {
-  let token = new RoboshareToken(event.params.revenueTokenId.toString())
+  let id = event.params.revenueTokenId.toString()
+  if (RoboshareToken.load(id) != null) {
+    return
+  }
+
+  let token = new RoboshareToken(id)
   token.revenueTokenId = event.params.revenueTokenId
   token.price = event.params.price
   token.supply = event.params.supply
+  token.maxSupply = event.params.maxSupply
   token.maturityDate = event.params.maturityDate
   token.createdAt = event.block.timestamp
   token.setAtBlock = event.block.number
   token.save()
 }
 
+export function handleTokenMetadataURISet(event: TokenMetadataURISetEvent): void {
+  if (!isAssetTokenId(event.params.tokenId)) return
+
+  let vehicle = getOrCreateVehicle(event.params.tokenId.toString(), event)
+  vehicle.metadataURI = event.params.metadataURI
+  vehicle.blockNumber = event.block.number
+  vehicle.blockTimestamp = event.block.timestamp
+  vehicle.transactionHash = event.transaction.hash
+  vehicle.save()
+}
+
 export function handleIdBoundToRegistry(event: IdBoundToRegistryEvent): void {
-  let boundId = new BoundId(event.params.id.toString())
+  let entityId = eventEntityId(event)
+  if (BoundId.load(entityId) != null) {
+    return
+  }
+
+  // Use a log-scoped entity id. BigInt.toString() on indexed params can panic in WASM.
+  let boundId = new BoundId(entityId)
   boundId.idValue = event.params.id
   boundId.registry = event.params.registry
   boundId.blockNumber = event.block.number
@@ -133,12 +185,7 @@ export function handleIdBoundToRegistry(event: IdBoundToRegistryEvent): void {
   boundId.transactionHash = event.transaction.hash
   boundId.save()
 
-  let contract = RegistryRouterContract.load("1")
-  if (!contract) {
-    contract = new RegistryRouterContract("1")
-    contract.address = event.address
-    contract.save()
-  }
+  saveRegistryRouterContract(event)
 }
 
 export function handleAssetRegistered(event: AssetRegisteredEvent): void {
@@ -164,19 +211,27 @@ export function handleVehicleRegistered(event: VehicleRegisteredEvent): void {
   vehicle.transactionHash = event.transaction.hash
   vehicle.save()
 
-  let registryContract = VehicleRegistryContract.load("1")
-  if (!registryContract) {
-    registryContract = new VehicleRegistryContract("1")
-    registryContract.address = event.address
-    registryContract.save()
-  }
+  saveVehicleRegistryContract(event)
+}
+
+export function handleVehicleMetadataUpdated(event: VehicleMetadataUpdatedEvent): void {
+  let vehicle = getOrCreateVehicle(event.params.vehicleId.toString(), event)
+
+  vehicle.metadataURI = event.params.assetMetadataURI
+  vehicle.blockNumber = event.block.number
+  vehicle.blockTimestamp = event.block.timestamp
+  vehicle.transactionHash = event.transaction.hash
+  vehicle.save()
 }
 
 
 export function handleCollateralLocked(event: CollateralLockedEvent): void {
-  let collateralLock = new CollateralLock(
-    event.params.assetId.toString() + "-" + event.transaction.hash.toHex()
-  )
+  let lockId = event.params.assetId.toString() + "-" + event.transaction.hash.toHex()
+  if (CollateralLock.load(lockId) != null) {
+    return
+  }
+
+  let collateralLock = new CollateralLock(lockId)
   collateralLock.assetId = event.params.assetId
   collateralLock.partner = event.params.partner
   collateralLock.amount = event.params.amount
@@ -194,8 +249,13 @@ export function handleCollateralLocked(event: CollateralLockedEvent): void {
 }
 
 export function handleEarningsDistributed(event: EarningsDistributedEvent): void {
+  let distributionId = eventEntityId(event)
+  if (EarningsDistribution.load(distributionId) != null) {
+    return
+  }
+
   // Create individual distribution record
-  let distribution = new EarningsDistribution(eventEntityId(event))
+  let distribution = new EarningsDistribution(distributionId)
   distribution.assetId = event.params.assetId
   distribution.partner = event.params.partner
   distribution.totalRevenue = event.params.totalRevenue
@@ -227,7 +287,12 @@ export function handleEarningsDistributed(event: EarningsDistributedEvent): void
 }
 
 export function handleListingCreated(event: ListingCreatedEvent): void {
-  let listing = new Listing(event.params.listingId.toString())
+  let listingId = event.params.listingId.toString()
+  if (Listing.load(listingId) != null) {
+    return
+  }
+
+  let listing = new Listing(listingId)
   listing.tokenId = event.params.tokenId
   listing.assetId = event.params.assetId
   listing.seller = event.params.seller
@@ -287,7 +352,12 @@ export function handleListingExtended(event: ListingExtendedEvent): void {
 }
 
 export function handlePrimaryPoolCreated(event: PrimaryPoolCreatedEvent): void {
-  let pool = new PrimaryPool(event.params.tokenId.toString())
+  let poolId = event.params.tokenId.toString()
+  if (PrimaryPool.load(poolId) != null) {
+    return
+  }
+
+  let pool = new PrimaryPool(poolId)
   pool.tokenId = event.params.tokenId
   pool.assetId = assetIdFromTokenId(event.params.tokenId)
   pool.partner = event.params.partner
@@ -330,7 +400,12 @@ export function handlePrimaryPoolClosed(event: PrimaryPoolClosedEvent): void {
 }
 
 export function handlePrimaryPoolPurchased(event: PrimaryPoolPurchasedEvent): void {
-  let purchase = new PrimaryPoolPurchase(eventEntityId(event))
+  let purchaseId = eventEntityId(event)
+  if (PrimaryPoolPurchase.load(purchaseId) != null) {
+    return
+  }
+
+  let purchase = new PrimaryPoolPurchase(purchaseId)
   purchase.tokenId = event.params.tokenId
   purchase.buyer = event.params.buyer
   purchase.amount = event.params.amount
@@ -350,7 +425,12 @@ export function handlePrimaryPoolPurchased(event: PrimaryPoolPurchasedEvent): vo
 }
 
 export function handlePrimaryPoolRedeemed(event: PrimaryPoolRedeemedEvent): void {
-  let redemption = new PrimaryPoolRedemption(eventEntityId(event))
+  let redemptionId = eventEntityId(event)
+  if (PrimaryPoolRedemption.load(redemptionId) != null) {
+    return
+  }
+
+  let redemption = new PrimaryPoolRedemption(redemptionId)
   redemption.tokenId = event.params.tokenId
   redemption.holder = event.params.holder
   redemption.amountBurned = event.params.amountBurned
