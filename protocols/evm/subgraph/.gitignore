@@ -3,3 +3,4 @@ generated/*
 graph-node/data/*
 abis/*.json
 subgraph.rendered.yaml
+tests/.bin/
