@@ -6,6 +6,7 @@ import { encodeFunctionData, erc20Abi } from "viem";
 import { useAccount, useWriteContract } from "wagmi";
 import { useSelectedNetwork, useTransactor } from "~~/hooks/scaffold-eth";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
+import { sendSmartWalletCalls } from "~~/hooks/useSmartWalletTransaction";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
 import { notification } from "~~/utils/scaffold-eth";
 import { TransactorFuncOptions } from "~~/utils/scaffold-eth/contract";
@@ -22,7 +23,7 @@ export const usePaymentTokenWriteContract = () => {
   const { address: paymentTokenAddress } = usePaymentToken();
   const selectedNetwork = useSelectedNetwork();
   const { chain: accountChain } = useAccount();
-  const { chainId: transactingChainId, smartWalletClient } = useTransactingAccount();
+  const { chainId: transactingChainId, getSmartWalletClientForChain, isSmartWallet } = useTransactingAccount();
   const writeTx = useTransactor();
   const wagmiWrite = useWriteContract();
   const [isMining, setIsMining] = useState(false);
@@ -51,20 +52,18 @@ export const usePaymentTokenWriteContract = () => {
     try {
       setIsMining(true);
       return await writeTx(() => {
-        if (smartWalletClient) {
-          return smartWalletClient.sendTransaction({
-            calls: [
-              {
-                to: paymentTokenAddress,
-                data: encodeFunctionData({
-                  abi: erc20Abi,
-                  functionName: variables.functionName as never,
-                  args: variables.args as never,
-                } as never),
-                value: variables.value,
-              },
-            ],
-          });
+        if (isSmartWallet && getSmartWalletClientForChain) {
+          return sendSmartWalletCalls(getSmartWalletClientForChain, activeChainId, [
+            {
+              to: paymentTokenAddress,
+              data: encodeFunctionData({
+                abi: erc20Abi,
+                functionName: variables.functionName as never,
+                args: variables.args as never,
+              } as never),
+              value: variables.value,
+            },
+          ]);
         }
 
         return wagmiWrite.writeContractAsync({
