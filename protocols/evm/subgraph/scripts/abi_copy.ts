@@ -64,10 +64,17 @@ function publishContract(
     }
     graphConfigObject[networkName][contractName].address =
       contractObject.address;
-    graphConfigObject[networkName][contractName].startBlock =
-      contractObject.startBlock ??
-      graphConfigObject[networkName][contractName].startBlock ??
-      0;
+    const broadcastStartBlock = contractObject.startBlock;
+    const existingStartBlock = graphConfigObject[networkName][contractName].startBlock;
+    if (broadcastStartBlock != null && existingStartBlock != null) {
+      graphConfigObject[networkName][contractName].startBlock = Math.max(
+        broadcastStartBlock,
+        existingStartBlock
+      );
+    } else {
+      graphConfigObject[networkName][contractName].startBlock =
+        broadcastStartBlock ?? existingStartBlock ?? 0;
+    }
 
     fs.writeFileSync(
       graphConfigPath,

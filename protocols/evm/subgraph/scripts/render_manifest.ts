@@ -1,4 +1,5 @@
 import * as fs from "fs";
+import yaml from "js-yaml";
 
 const DEFAULT_NETWORK = "localhost";
 const MANIFEST_TEMPLATE_FILE = "./subgraph.yaml";
@@ -23,19 +24,11 @@ function parseCliArgs() {
   };
 }
 
-function main() {
-  const { networkName } = parseCliArgs();
-  const manifestTemplate = fs.readFileSync(MANIFEST_TEMPLATE_FILE, "utf8");
-  const networks = JSON.parse(fs.readFileSync(NETWORKS_FILE, "utf8")) as Record<
-    string,
-    Record<string, { address?: string; startBlock?: number }>
-  >;
-
-  const networkConfig = networks[networkName];
-  if (!networkConfig) {
-    throw new Error(`No subgraph network config found for '${networkName}'.`);
-  }
-
+function substituteTemplatePlaceholders(
+  manifestTemplate: string,
+  networkName: string,
+  networkConfig: Record<string, { address?: string; startBlock?: number }>
+): string {
   let renderedManifest = manifestTemplate.replace(/{{\s*network\s*}}/g, networkName);
 
   for (const [contractName, contractConfig] of Object.entries(networkConfig)) {
@@ -56,6 +49,37 @@ function main() {
       String(contractConfig.startBlock)
     );
   }
+
+  return renderedManifest;
+}
+
+function main() {
+  const { networkName } = parseCliArgs();
+  const manifestTemplate = fs.readFileSync(MANIFEST_TEMPLATE_FILE, "utf8");
+  const networks = JSON.parse(fs.readFileSync(NETWORKS_FILE, "utf8")) as Record<
+    string,
+    Record<string, { address?: string; startBlock?: number }>
+  >;
+
+  const networkConfig = networks[networkName];
+  if (!networkConfig) {
+    throw new Error(`No subgraph network config found for '${networkName}'.`);
+  }
+
+  const substitutedManifest = substituteTemplatePlaceholders(
+    manifestTemplate,
+    networkName,
+    networkConfig
+  );
+
+  // Expand YAML anchors so Studio receives a fully inlined manifest.
+  const manifestDocument = yaml.load(substitutedManifest) as Record<string, unknown>;
+  const renderedManifest = yaml.dump(manifestDocument, {
+    lineWidth: -1,
+    noRefs: true,
+    quotingType: '"',
+    forceQuotes: false,
+  });
 
   fs.writeFileSync(RENDERED_MANIFEST_FILE, renderedManifest);
   console.log(`✅  Rendered subgraph manifest for ${networkName} at ${RENDERED_MANIFEST_FILE}.`);

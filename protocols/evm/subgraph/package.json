@@ -5,11 +5,11 @@
   "scripts": {
     "auth": "sh -c 'test -n \"${GRAPH_DEPLOY_KEY:-}\" || { echo \"GRAPH_DEPLOY_KEY is required\"; exit 1; }; graph auth \"$GRAPH_DEPLOY_KEY\"' --",
     "abi-copy": "ts-node-esm scripts/abi_copy.ts",
-    "build": "sh -c 'ts-node-esm scripts/render_manifest.ts \"$@\" && graph build subgraph.rendered.yaml' --",
+    "build": "sh -c 'rm -rf build generated && ts-node-esm scripts/render_manifest.ts \"$@\" && graph codegen subgraph.rendered.yaml && graph build subgraph.rendered.yaml && ts-node-esm scripts/verify-build-manifest.ts' --",
     "clean-node": "rm -rf graph-node/data/",
     "codegen": "sh -c 'ts-node-esm scripts/render_manifest.ts \"$@\" && graph codegen subgraph.rendered.yaml' --",
     "create-local": "sh -c 'graph create --node \"${GRAPH_NODE_URL:-http://localhost:8020/}\" roboshare/protocol'",
-    "deploy": "sh -c 'ts-node-esm scripts/render_manifest.ts \"$@\" && test -n \"${GRAPH_DEPLOY_KEY:-}\" || { echo \"GRAPH_DEPLOY_KEY is required\"; exit 1; } && test -n \"${GRAPH_SUBGRAPH_SLUG:-}\" || { echo \"GRAPH_SUBGRAPH_SLUG is required\"; exit 1; } && graph deploy --node https://api.studio.thegraph.com/deploy/ --deploy-key \"$GRAPH_DEPLOY_KEY\" \"$GRAPH_SUBGRAPH_SLUG\" subgraph.rendered.yaml \"$@\"' --",
+    "deploy": "sh scripts/deploy_studio.sh",
     "deploy-local": "sh -c 'ts-node-esm scripts/render_manifest.ts \"$@\" && graph deploy --node \"${GRAPH_NODE_URL:-http://localhost:8020/}\" --ipfs \"${IPFS_URL:-http://localhost:5001}\" roboshare/protocol subgraph.rendered.yaml \"$@\"' --",
     "deploy-local-auto": "sh -c 'ts-node-esm scripts/render_manifest.ts \"$@\" && graph deploy --node \"${GRAPH_NODE_URL:-http://localhost:8020/}\" --ipfs \"${IPFS_URL:-http://localhost:5001}\" --version-label v0.0.1 roboshare/protocol subgraph.rendered.yaml \"$@\"' --",
     "graph": "graph",
@@ -23,6 +23,7 @@
   "dependencies": {
     "@graphprotocol/graph-cli": "0.97.0",
     "@graphprotocol/graph-ts": "0.38.0",
+    "js-yaml": "4.1.0",
     "ts-node": "10.9.2",
     "typescript": "5.7.2"
   },
