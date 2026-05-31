@@ -284,8 +284,8 @@ contract PositionManagerTest is Test {
         assertEq(bobPositions[0].redemptionEpoch, 0);
         assertEq(bobPositions[1].amount, 20);
         assertEq(bobPositions[1].redemptionEpoch, 0);
-        assertLt(bobPositions[0].acquiredAt, bobPositions[1].acquiredAt);
-        assertEq(bobPositions[1].acquiredAt, alicePositions[1].acquiredAt);
+        assertEq(bobPositions[0].acquiredAt, bobPositions[1].acquiredAt);
+        assertEq(bobPositions[0].acquiredAt, block.timestamp);
         assertEq(positionManager.getCurrentPrimaryRedemptionEpochSupply(TOKEN_ID), 150);
         assertEq(positionManager.getCurrentPrimaryRedemptionBackedPrincipal(TOKEN_ID), 150 * TOKEN_PRICE);
         assertEq(positionManager.getPrimaryRedemptionEligibleBalance(alice, TOKEN_ID), 30);
