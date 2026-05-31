@@ -768,12 +768,15 @@ contract PositionManager is Initializable, AccessControlUpgradeable, UUPSUpgrade
             uint256 toMove = remaining > pos.amount ? pos.amount : remaining;
             uint256 epoch = pos.redemptionEpoch;
 
+            IEarningsManager(earningsManager)
+                .preserveTransferredPositionEarnings(assetId, from, info.tokenId, pos.uid, toMove, pos.acquiredAt);
+
             pos.amount -= toMove;
             if (pos.amount == 0) {
                 pos.soldAt = block.timestamp;
             }
 
-            uint256 newPositionUid = _appendPosition(info, to, toMove, pos.acquiredAt, block.timestamp, epoch);
+            uint256 newPositionUid = _appendPosition(info, to, toMove, block.timestamp, block.timestamp, epoch);
             IEarningsManager(earningsManager)
                 .transferPositionClaimState(assetId, from, to, info.tokenId, pos.uid, newPositionUid);
             remaining -= toMove;

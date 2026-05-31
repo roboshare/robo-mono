@@ -1258,6 +1258,8 @@ library EarningsLib {
         mapping(uint256 => EarningsPeriod) periods; // period => earnings data
         // Track last claimed period for each individual position
         mapping(address => mapping(uint256 => mapping(uint256 => uint256))) positionsLastClaimedPeriod; // holder => tokenId => positionId => lastClaimedPeriod
+        // Preserved earnings for transferred slices that no longer map 1:1 to live positions
+        mapping(address => uint256) transferredEarningsCredit; // holder => preserved earnings
         // Settlement earnings snapshot - allows claiming earnings after tokens are burned
         mapping(address => uint256) settledEarningsSnapshot; // holder => unclaimed earnings at settlement
         mapping(address => bool) hasClaimedSettledEarnings; // holder => whether they claimed snapshot

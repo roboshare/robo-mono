@@ -630,6 +630,67 @@ contract EarningsManagerIntegrationTest is MarketplaceFlowBaseTest {
         earningsManager.claimEarnings(scenario.assetId);
     }
 
+    function testTransferredPositionsCannotClaimAlreadyClaimedHistoricalEarnings() public {
+        _ensureState(SetupState.EarningsDistributed);
+
+        vm.prank(buyer);
+        earningsManager.claimEarnings(scenario.assetId);
+
+        uint256 transferAmount = roboshareTokens.balanceOf(buyer, scenario.revenueTokenId) / 2;
+        vm.prank(buyer);
+        roboshareTokens.safeTransferFrom(buyer, partner2, scenario.revenueTokenId, transferAmount, "");
+
+        assertEq(earningsManager.previewClaimEarnings(scenario.assetId, partner2), 0);
+    }
+
+    function testTransferredPositionsCannotClaimUnclaimedHistoricalEarnings() public {
+        _ensureState(SetupState.EarningsDistributed);
+
+        uint256 buyerUnclaimed = earningsManager.previewClaimEarnings(scenario.assetId, buyer);
+        assertGt(buyerUnclaimed, 0);
+
+        uint256 transferAmount = roboshareTokens.balanceOf(buyer, scenario.revenueTokenId) / 2;
+        vm.prank(buyer);
+        roboshareTokens.safeTransferFrom(buyer, partner2, scenario.revenueTokenId, transferAmount, "");
+
+        assertEq(earningsManager.previewClaimEarnings(scenario.assetId, partner2), 0);
+        assertGt(earningsManager.previewClaimEarnings(scenario.assetId, buyer), 0);
+    }
+
+    function testPartialTransferPreservesSellerHistoricalEarnings() public {
+        _ensureState(SetupState.EarningsDistributed);
+
+        uint256 buyerUnclaimedBefore = earningsManager.previewClaimEarnings(scenario.assetId, buyer);
+        assertGt(buyerUnclaimedBefore, 0);
+
+        uint256 transferAmount = roboshareTokens.balanceOf(buyer, scenario.revenueTokenId) / 2;
+        vm.prank(buyer);
+        roboshareTokens.safeTransferFrom(buyer, partner2, scenario.revenueTokenId, transferAmount, "");
+
+        assertEq(earningsManager.previewClaimEarnings(scenario.assetId, partner2), 0);
+        assertEq(earningsManager.previewClaimEarnings(scenario.assetId, buyer), buyerUnclaimedBefore);
+    }
+
+    function testFullTransferPreservesSellerHistoricalEarningsWithoutRemainingBalance() public {
+        _ensureState(SetupState.EarningsDistributed);
+
+        uint256 buyerUnclaimedBefore = earningsManager.previewClaimEarnings(scenario.assetId, buyer);
+        assertGt(buyerUnclaimedBefore, 0);
+
+        uint256 transferAmount = roboshareTokens.balanceOf(buyer, scenario.revenueTokenId);
+        vm.prank(buyer);
+        roboshareTokens.safeTransferFrom(buyer, partner2, scenario.revenueTokenId, transferAmount, "");
+
+        assertEq(roboshareTokens.balanceOf(buyer, scenario.revenueTokenId), 0);
+        assertEq(earningsManager.previewClaimEarnings(scenario.assetId, partner2), 0);
+        assertEq(earningsManager.previewClaimEarnings(scenario.assetId, buyer), buyerUnclaimedBefore);
+
+        vm.prank(buyer);
+        earningsManager.claimEarnings(scenario.assetId);
+
+        assertEq(earningsManager.previewClaimEarnings(scenario.assetId, buyer), 0);
+    }
+
     function testCompleteEarningsLifecycle() public {
         _ensureState(SetupState.EarningsDistributed);
 
