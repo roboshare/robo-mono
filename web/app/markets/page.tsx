@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NextPage } from "next";
 import { formatUnits } from "viem";
 import { useChainId, useChains, useReadContract, useReadContracts, useSwitchChain } from "wagmi";
@@ -116,6 +116,7 @@ const BENCHMARK_EARNINGS_BP = 1000n;
 const BP_PRECISION = 10000n;
 const NEW_POOL_BADGE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MARKETS_PAGE_BATCH_SIZE = 12;
+const METADATA_FETCH_MAX_ATTEMPTS = 3;
 const MARKETS_PAGE_PREFS_KEY = "roboshare:markets-page-prefs";
 
 const MarketsPage: NextPage = () => {
@@ -132,6 +133,8 @@ const MarketsPage: NextPage = () => {
   const [vehicleMetadataOverrides, setVehicleMetadataOverrides] = useState<Record<string, Partial<SubgraphVehicle>>>(
     {},
   );
+  const metadataFetchAttempts = useRef<Map<string, number>>(new Map());
+  const [metadataFetchRetryNonce, setMetadataFetchRetryNonce] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -788,25 +791,36 @@ const MarketsPage: NextPage = () => {
 
   // Fetch IPFS images
   useEffect(() => {
+    let retryTimeoutId: number | undefined;
+
     const fetchImages = async () => {
-      const vehiclesNeedingMetadata = marketVehicles.filter(
-        vehicle =>
-          vehicle.metadataURI &&
-          (!imageUrls[getVehicleImageKey(vehicle)] || !vehicle.vin || !vehicle.make || !vehicle.model || !vehicle.year),
-      );
+      const vehiclesNeedingMetadata = marketVehicles.filter(vehicle => {
+        if (!vehicle.metadataURI) return false;
+
+        const metadataKey = getVehicleMetadataKey(vehicle);
+        const attempts = metadataFetchAttempts.current.get(metadataKey) ?? 0;
+        if (attempts >= METADATA_FETCH_MAX_ATTEMPTS) return false;
+
+        return (
+          !imageUrls[getVehicleImageKey(vehicle)] || !vehicle.vin || !vehicle.make || !vehicle.model || !vehicle.year
+        );
+      });
       if (vehiclesNeedingMetadata.length === 0) return;
 
       const newImageUrls: Record<string, string> = { ...imageUrls };
       const metadataOverrides: Record<string, Partial<SubgraphVehicle>> = {};
+      const retryDelaysMs: number[] = [];
 
       await Promise.all(
         vehiclesNeedingMetadata.map(async vehicle => {
           if (!vehicle.metadataURI) return;
+          const metadataKey = getVehicleMetadataKey(vehicle);
+
           try {
             const metadata = await fetchIpfsMetadata(vehicle.metadataURI);
             if (metadata) {
               const hydratedVehicle = mergeVehicleMetadata(vehicle, metadata);
-              metadataOverrides[getVehicleMetadataKey(vehicle)] = {
+              metadataOverrides[metadataKey] = {
                 vin: hydratedVehicle.vin,
                 make: hydratedVehicle.make,
                 model: hydratedVehicle.model,
@@ -815,9 +829,17 @@ const MarketsPage: NextPage = () => {
               if (hydratedVehicle.imageUrl) {
                 newImageUrls[getVehicleImageKey(vehicle)] = hydratedVehicle.imageUrl;
               }
+              metadataFetchAttempts.current.set(metadataKey, METADATA_FETCH_MAX_ATTEMPTS);
+              return;
             }
           } catch (err) {
             console.error(`Error fetching metadata for vehicle ${vehicle.id}:`, err);
+          }
+
+          const nextAttempts = (metadataFetchAttempts.current.get(metadataKey) ?? 0) + 1;
+          metadataFetchAttempts.current.set(metadataKey, nextAttempts);
+          if (nextAttempts < METADATA_FETCH_MAX_ATTEMPTS) {
+            retryDelaysMs.push(2000 * nextAttempts);
           }
         }),
       );
@@ -829,10 +851,22 @@ const MarketsPage: NextPage = () => {
       if (Object.keys(metadataOverrides).length > 0) {
         setVehicleMetadataOverrides(prev => ({ ...prev, ...metadataOverrides }));
       }
+      if (retryDelaysMs.length > 0) {
+        const retryDelayMs = Math.min(...retryDelaysMs);
+        retryTimeoutId = window.setTimeout(() => {
+          setMetadataFetchRetryNonce(n => n + 1);
+        }, retryDelayMs);
+      }
     };
 
-    fetchImages();
-  }, [getVehicleImageKey, getVehicleMetadataKey, imageUrls, marketVehicles]);
+    void fetchImages();
+
+    return () => {
+      if (retryTimeoutId !== undefined) {
+        window.clearTimeout(retryTimeoutId);
+      }
+    };
+  }, [getVehicleImageKey, getVehicleMetadataKey, imageUrls, marketVehicles, metadataFetchRetryNonce]);
 
   const tokenSoldTotals = useMemo(() => {
     const totals = new Map<string, bigint>();
