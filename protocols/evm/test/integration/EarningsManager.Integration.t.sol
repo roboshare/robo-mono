@@ -444,6 +444,30 @@ contract EarningsManagerIntegrationTest is MarketplaceFlowBaseTest {
         assertGt(buyerPendingAfter, buyerPendingBefore);
     }
 
+    function testClaimSettlementAutoClaimIncludesTransferredCredits() public {
+        _ensureState(SetupState.EarningsDistributed);
+
+        uint256 transferAmount = roboshareTokens.balanceOf(buyer, scenario.revenueTokenId) / 2;
+        vm.prank(buyer);
+        roboshareTokens.safeTransferFrom(buyer, partner2, scenario.revenueTokenId, transferAmount, "");
+
+        uint256 expectedEarnings = earningsManager.previewClaimEarnings(scenario.assetId, buyer);
+        assertGt(expectedEarnings, 0);
+
+        vm.prank(partner1);
+        assetRegistry.settleAsset(scenario.assetId, 0);
+
+        uint256 pendingBefore = treasury.pendingWithdrawals(buyer);
+
+        vm.prank(buyer);
+        (uint256 settlementClaimed, uint256 earningsClaimed) = router.claimSettlement(scenario.assetId, true);
+
+        assertGt(settlementClaimed, 0);
+        assertEq(earningsClaimed, expectedEarnings);
+        assertEq(treasury.pendingWithdrawals(buyer), pendingBefore + settlementClaimed + earningsClaimed);
+        assertEq(earningsManager.previewClaimEarnings(scenario.assetId, buyer), 0);
+    }
+
     function testClaimEarningsCannotClaimSnapshotTwice() public {
         _ensureState(SetupState.EarningsDistributed);
 

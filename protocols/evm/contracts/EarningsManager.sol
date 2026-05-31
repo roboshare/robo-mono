@@ -397,6 +397,14 @@ contract EarningsManager is
         TokenLib.TokenPosition[] memory positions = _getRevenuePositions(revenueTokenId, holder);
         snapshotAmount = EarningsLib.snapshotHolderEarnings(earningsInfo, holder, positions);
 
+        if (autoClaim) {
+            uint256 transferredCredit = earningsInfo.transferredEarningsCredit[holder];
+            if (transferredCredit > 0) {
+                earningsInfo.transferredEarningsCredit[holder] = 0;
+                snapshotAmount += transferredCredit;
+            }
+        }
+
         if (autoClaim && snapshotAmount > 0) {
             earningsInfo.hasClaimedSettledEarnings[holder] = true;
             treasury.creditEarningsWithdrawal(holder, snapshotAmount);
