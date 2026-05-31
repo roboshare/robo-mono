@@ -290,7 +290,7 @@ const MarketsPage: NextPage = () => {
           : vehicle;
       return {
         ...normalizedVehicle,
-        ...vehicleMetadataOverrides[getVehicleMetadataKey(vehicle)],
+        ...vehicleMetadataOverrides[getVehicleMetadataKey(normalizedVehicle)],
       };
     });
   }, [getVehicleMetadataKey, vehicleInfoData, vehicleMetadataOverrides, vehicles]);

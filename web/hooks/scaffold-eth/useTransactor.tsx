@@ -83,9 +83,18 @@ export const useTransactor = (_walletClient?: WalletClient): TransactionFunc => 
       blockExplorerTxURL = network ? getBlockExplorerTxLink(network, transactionHash) : "";
 
       if (isSmartWallet) {
-        // Privy smart-wallet sendTransaction already waits for bundler inclusion and returns
-        // the mined transaction hash. Waiting again on the public RPC often times out when
-        // the returned hash is still a user-operation hash or the bundler path differs.
+        notificationId = notification.loading(
+          <TxnNotification message="Waiting for transaction to complete." blockExplorerLink={blockExplorerTxURL} />,
+        );
+
+        transactionReceipt = await publicClient.waitForTransactionReceipt({
+          hash: transactionHash,
+          confirmations: options?.blockConfirmations,
+        });
+        notification.remove(notificationId);
+
+        if (transactionReceipt.status === "reverted") throw new Error("Transaction reverted");
+
         notification.success(
           <TxnNotification message="Transaction completed successfully!" blockExplorerLink={blockExplorerTxURL} />,
           {
@@ -95,15 +104,7 @@ export const useTransactor = (_walletClient?: WalletClient): TransactionFunc => 
 
         queryClient.invalidateQueries();
 
-        if (options?.onBlockConfirmation && transactionHash) {
-          try {
-            transactionReceipt = await publicClient.getTransactionReceipt({ hash: transactionHash });
-            options.onBlockConfirmation(transactionReceipt);
-          } catch {
-            // Receipt may lag slightly behind the smart-wallet client resolution.
-          }
-        }
-
+        if (options?.onBlockConfirmation) options.onBlockConfirmation(transactionReceipt);
         return transactionHash;
       }
 
