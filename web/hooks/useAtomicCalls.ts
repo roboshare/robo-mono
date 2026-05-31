@@ -95,8 +95,8 @@ const useAtomicCallsBase = (
             chainId: desiredChainId,
             id: hash,
             receipts: [receipt] as WaitForCallsStatusReturnType["receipts"],
-            status: "success",
-            statusCode: 200,
+            status: receipt.status === "success" ? "success" : "failure",
+            statusCode: receipt.status === "success" ? 200 : 500,
             version: "privy-smart-wallet",
           } as unknown as WaitForCallsStatusReturnType;
         } finally {

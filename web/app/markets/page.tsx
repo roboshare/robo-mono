@@ -252,7 +252,7 @@ const MarketsPage: NextPage = () => {
     [chainId],
   );
   const getVehicleMetadataKey = useCallback(
-    (vehicle: Pick<SubgraphVehicle, "id">) => `${chainId}:${vehicle.id}`,
+    (vehicle: Pick<SubgraphVehicle, "id" | "metadataURI">) => `${chainId}:${vehicle.id}:${vehicle.metadataURI || ""}`,
     [chainId],
   );
 

@@ -9,7 +9,7 @@
     "clean-node": "rm -rf graph-node/data/",
     "codegen": "sh -c 'ts-node-esm scripts/render_manifest.ts \"$@\" && graph codegen subgraph.rendered.yaml' --",
     "create-local": "sh -c 'graph create --node \"${GRAPH_NODE_URL:-http://localhost:8020/}\" roboshare/protocol'",
-    "deploy": "sh scripts/deploy_studio.sh",
+    "deploy": "bash scripts/deploy_studio.sh",
     "deploy-local": "sh -c 'ts-node-esm scripts/render_manifest.ts \"$@\" && graph deploy --node \"${GRAPH_NODE_URL:-http://localhost:8020/}\" --ipfs \"${IPFS_URL:-http://localhost:5001}\" roboshare/protocol subgraph.rendered.yaml \"$@\"' --",
     "deploy-local-auto": "sh -c 'ts-node-esm scripts/render_manifest.ts \"$@\" && graph deploy --node \"${GRAPH_NODE_URL:-http://localhost:8020/}\" --ipfs \"${IPFS_URL:-http://localhost:5001}\" --version-label v0.0.1 roboshare/protocol subgraph.rendered.yaml \"$@\"' --",
     "graph": "graph",

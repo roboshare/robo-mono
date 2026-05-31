@@ -56,6 +56,27 @@ contract EarningsManagerIntegrationTest is MarketplaceFlowBaseTest {
         earningsManager.claimEarnings(scenario.assetId);
     }
 
+    function testAssetOwnerTransfersDoNotCreateHistoricalEarningsCredit() public {
+        _ensureState(SetupState.BuffersFunded);
+        uint256 earningsAmount = EARNINGS_AMOUNT;
+        uint256 revenueTokenId = scenario.revenueTokenId;
+        uint256 buyerBalance = roboshareTokens.balanceOf(buyer, revenueTokenId);
+        uint256 transferAmount = buyerBalance / 2;
+
+        vm.prank(buyer);
+        roboshareTokens.safeTransferFrom(buyer, partner1, revenueTokenId, transferAmount, "");
+
+        uint256 investorAmount = _calculateInvestorAmountFromRevenue(revenueTokenId, partner1, earningsAmount);
+
+        vm.startPrank(partner1);
+        usdc.approve(address(earningsManager), investorAmount);
+        earningsManager.distributeEarnings(scenario.assetId, earningsAmount, false);
+        roboshareTokens.safeTransferFrom(partner1, partner2, revenueTokenId, transferAmount, "");
+        vm.stopPrank();
+
+        assertEq(earningsManager.previewClaimEarnings(scenario.assetId, partner1), 0);
+    }
+
     function testDistributeEarningsUnauthorizedPartner() public {
         _ensureState(SetupState.PurchasedFromPrimaryPool);
         vm.expectRevert(PartnerManager.UnauthorizedPartner.selector);

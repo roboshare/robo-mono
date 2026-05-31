@@ -439,6 +439,10 @@ contract EarningsManager is
             return;
         }
 
+        if (roboshareTokens.balanceOf(holder, assetId) > 0) {
+            return;
+        }
+
         uint256 lastClaimedPeriod = earningsInfo.positionsLastClaimedPeriod[holder][tokenId][positionUid];
         uint256 cutoffPeriod = EarningsLib.getPeriodAtTimestamp(earningsInfo, block.timestamp);
         if (cutoffPeriod <= lastClaimedPeriod) {
