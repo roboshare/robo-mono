@@ -7,7 +7,7 @@ import { GenericContractsDeclaration } from "~~/utils/scaffold-eth/contract";
 const deployedContracts = {
   10143: {
     MockUSDC: {
-      address: "0x8Dc576151e0b295C62a517bBE4a82c43E1a55cf2",
+      address: "0xB4Ed99d993ADd47B2d10A51Fb3222E603852eee6",
       abi: [
         {
           type: "constructor",
@@ -360,11 +360,11 @@ const deployedContracts = {
         },
       ],
       inheritedFunctions: {},
-      deploymentFile: "run-1779860510301.json",
+      deploymentFile: "run-1780289515022.json",
       deploymentScript: "Deploy.s.sol",
     },
     RoboshareTokens: {
-      address: "0xdF82DBFAA1BfCBE74930a1B006df67C117150173",
+      address: "0xc4898D5557Acb470467002F5BE57b43d7654e023",
       abi: [
         {
           type: "constructor",
@@ -2245,11 +2245,11 @@ const deployedContracts = {
         },
       ],
       inheritedFunctions: {},
-      deploymentFile: "run-1779860510301.json",
+      deploymentFile: "run-1780289515022.json",
       deploymentScript: "Deploy.s.sol",
     },
     PartnerManager: {
-      address: "0x7351D1896043Ec6a61465Dc8A360a506c82e29D3",
+      address: "0x98a6A81e4e95723e2f60A517be8fbc7fF228cd9e",
       abi: [
         {
           type: "constructor",
@@ -2895,11 +2895,11 @@ const deployedContracts = {
         },
       ],
       inheritedFunctions: {},
-      deploymentFile: "run-1779860510301.json",
+      deploymentFile: "run-1780289515022.json",
       deploymentScript: "Deploy.s.sol",
     },
     RegistryRouter: {
-      address: "0xa9347dB6B85eA6c079Dc42A001921b480eebcBe0",
+      address: "0xD5884108a9060602BBb34bd27901A1724a5905FD",
       abi: [
         {
           type: "constructor",
@@ -3035,40 +3035,6 @@ const deployedContracts = {
           type: "function",
           name: "claimSettlement",
           inputs: [
-            {
-              name: "assetId",
-              type: "uint256",
-              internalType: "uint256",
-            },
-            {
-              name: "autoClaimEarnings",
-              type: "bool",
-              internalType: "bool",
-            },
-          ],
-          outputs: [
-            {
-              name: "",
-              type: "uint256",
-              internalType: "uint256",
-            },
-            {
-              name: "",
-              type: "uint256",
-              internalType: "uint256",
-            },
-          ],
-          stateMutability: "nonpayable",
-        },
-        {
-          type: "function",
-          name: "claimSettlementFor",
-          inputs: [
-            {
-              name: "account",
-              type: "address",
-              internalType: "address",
-            },
             {
               name: "assetId",
               type: "uint256",
@@ -3253,6 +3219,40 @@ const deployedContracts = {
             },
           ],
           stateMutability: "nonpayable",
+        },
+        {
+          type: "function",
+          name: "executeSettlementClaimFor",
+          inputs: [
+            {
+              name: "",
+              type: "address",
+              internalType: "address",
+            },
+            {
+              name: "",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "",
+              type: "bool",
+              internalType: "bool",
+            },
+          ],
+          outputs: [
+            {
+              name: "claimedAmount",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "earningsClaimed",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+          stateMutability: "pure",
         },
         {
           type: "function",
@@ -4665,6 +4665,11 @@ const deployedContracts = {
         },
         {
           type: "error",
+          name: "InvalidTokenPrice",
+          inputs: [],
+        },
+        {
+          type: "error",
           name: "MarketplaceNotSet",
           inputs: [],
         },
@@ -4769,11 +4774,11 @@ const deployedContracts = {
         },
       ],
       inheritedFunctions: {},
-      deploymentFile: "run-1779860510301.json",
+      deploymentFile: "run-1780289515022.json",
       deploymentScript: "Deploy.s.sol",
     },
     VehicleRegistry: {
-      address: "0x9a38Df0Ef0C0BaAA418Be25363970bd71372dbC6",
+      address: "0xeAfcB93Ac526AD26ccf2C1212C21eec980a1dC85",
       abi: [
         {
           type: "constructor",
@@ -4871,69 +4876,6 @@ const deployedContracts = {
         },
         {
           type: "function",
-          name: "claimSettlement",
-          inputs: [
-            {
-              name: "assetId",
-              type: "uint256",
-              internalType: "uint256",
-            },
-            {
-              name: "autoClaimEarnings",
-              type: "bool",
-              internalType: "bool",
-            },
-          ],
-          outputs: [
-            {
-              name: "claimedAmount",
-              type: "uint256",
-              internalType: "uint256",
-            },
-            {
-              name: "earningsClaimed",
-              type: "uint256",
-              internalType: "uint256",
-            },
-          ],
-          stateMutability: "nonpayable",
-        },
-        {
-          type: "function",
-          name: "claimSettlementFor",
-          inputs: [
-            {
-              name: "account",
-              type: "address",
-              internalType: "address",
-            },
-            {
-              name: "assetId",
-              type: "uint256",
-              internalType: "uint256",
-            },
-            {
-              name: "autoClaimEarnings",
-              type: "bool",
-              internalType: "bool",
-            },
-          ],
-          outputs: [
-            {
-              name: "claimedAmount",
-              type: "uint256",
-              internalType: "uint256",
-            },
-            {
-              name: "earningsClaimed",
-              type: "uint256",
-              internalType: "uint256",
-            },
-          ],
-          stateMutability: "nonpayable",
-        },
-        {
-          type: "function",
           name: "createRevenueTokenPool",
           inputs: [
             {
@@ -4985,6 +4927,40 @@ const deployedContracts = {
             },
             {
               name: "supply",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+          stateMutability: "nonpayable",
+        },
+        {
+          type: "function",
+          name: "executeSettlementClaimFor",
+          inputs: [
+            {
+              name: "account",
+              type: "address",
+              internalType: "address",
+            },
+            {
+              name: "assetId",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "autoClaimEarnings",
+              type: "bool",
+              internalType: "bool",
+            },
+          ],
+          outputs: [
+            {
+              name: "claimedAmount",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "earningsClaimed",
               type: "uint256",
               internalType: "uint256",
             },
@@ -6354,6 +6330,11 @@ const deployedContracts = {
         },
         {
           type: "error",
+          name: "UnsupportedVehicleRegistrationPayload",
+          inputs: [],
+        },
+        {
+          type: "error",
           name: "VehicleAlreadyExists",
           inputs: [],
         },
@@ -6369,11 +6350,11 @@ const deployedContracts = {
         },
       ],
       inheritedFunctions: {},
-      deploymentFile: "run-1779860510301.json",
+      deploymentFile: "run-1780289515022.json",
       deploymentScript: "Deploy.s.sol",
     },
     Treasury: {
-      address: "0xCEB1Cb04B914fF2aB9d3DaA543536A6b662d265f",
+      address: "0x0AB527e36abb4435f2D8d927336738aAeA1B50E7",
       abi: [
         {
           type: "constructor",
@@ -8165,11 +8146,11 @@ const deployedContracts = {
         },
       ],
       inheritedFunctions: {},
-      deploymentFile: "run-1779860510301.json",
+      deploymentFile: "run-1780289515022.json",
       deploymentScript: "Deploy.s.sol",
     },
     EarningsManager: {
-      address: "0x20896fD729BCA167df95d6a352a934E729486E74",
+      address: "0x0157cdf73bA8565be1237383BCEB3Ea16EBe8DF6",
       abi: [
         {
           type: "constructor",
@@ -8507,6 +8488,44 @@ const deployedContracts = {
         },
         {
           type: "function",
+          name: "preserveTransferredPositionEarnings",
+          inputs: [
+            {
+              name: "assetId",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "holder",
+              type: "address",
+              internalType: "address",
+            },
+            {
+              name: "tokenId",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "positionUid",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "transferredAmount",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "acquiredAt",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+          outputs: [],
+          stateMutability: "nonpayable",
+        },
+        {
+          type: "function",
           name: "previewClaimEarnings",
           inputs: [
             {
@@ -8759,6 +8778,44 @@ const deployedContracts = {
           inputs: [
             {
               name: "assetId",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+          outputs: [],
+          stateMutability: "nonpayable",
+        },
+        {
+          type: "function",
+          name: "transferPositionClaimState",
+          inputs: [
+            {
+              name: "assetId",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "from",
+              type: "address",
+              internalType: "address",
+            },
+            {
+              name: "to",
+              type: "address",
+              internalType: "address",
+            },
+            {
+              name: "tokenId",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "fromPositionUid",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "toPositionUid",
               type: "uint256",
               internalType: "uint256",
             },
@@ -9296,16 +9353,32 @@ const deployedContracts = {
         },
         {
           type: "error",
+          name: "UnauthorizedPositionManager",
+          inputs: [
+            {
+              name: "caller",
+              type: "address",
+              internalType: "address",
+            },
+            {
+              name: "activeManager",
+              type: "address",
+              internalType: "address",
+            },
+          ],
+        },
+        {
+          type: "error",
           name: "ZeroAddress",
           inputs: [],
         },
       ],
       inheritedFunctions: {},
-      deploymentFile: "run-1779860510301.json",
+      deploymentFile: "run-1780289515022.json",
       deploymentScript: "Deploy.s.sol",
     },
     Marketplace: {
-      address: "0x73C84698f265c23E93fa23c338c9cc2db632b2a9",
+      address: "0xC768bd528A657Ace35847D6E39dB34313C07be35",
       abi: [
         {
           type: "constructor",
@@ -11157,11 +11230,11 @@ const deployedContracts = {
         },
       ],
       inheritedFunctions: {},
-      deploymentFile: "run-1779860510301.json",
+      deploymentFile: "run-1780289515022.json",
       deploymentScript: "Deploy.s.sol",
     },
     PositionManager: {
-      address: "0x62E125007BBa8223951D41bcf13940c848F52d7B",
+      address: "0x07e803236337c38293bE475eCa1210313b5C4756",
       abi: [
         {
           type: "constructor",
@@ -11417,6 +11490,19 @@ const deployedContracts = {
             },
           ],
           stateMutability: "nonpayable",
+        },
+        {
+          type: "function",
+          name: "earningsManager",
+          inputs: [],
+          outputs: [
+            {
+              name: "",
+              type: "address",
+              internalType: "address",
+            },
+          ],
+          stateMutability: "view",
         },
         {
           type: "function",
@@ -11835,6 +11921,11 @@ const deployedContracts = {
             },
             {
               name: "_treasury",
+              type: "address",
+              internalType: "address",
+            },
+            {
+              name: "_earningsManager",
               type: "address",
               internalType: "address",
             },
@@ -12382,6 +12473,19 @@ const deployedContracts = {
         },
         {
           type: "function",
+          name: "updateEarningsManager",
+          inputs: [
+            {
+              name: "newEarningsManager",
+              type: "address",
+              internalType: "address",
+            },
+          ],
+          outputs: [],
+          stateMutability: "nonpayable",
+        },
+        {
+          type: "function",
           name: "updateMarketplace",
           inputs: [
             {
@@ -12488,6 +12592,25 @@ const deployedContracts = {
             },
           ],
           stateMutability: "view",
+        },
+        {
+          type: "event",
+          name: "EarningsManagerUpdated",
+          inputs: [
+            {
+              name: "oldAddress",
+              type: "address",
+              indexed: true,
+              internalType: "address",
+            },
+            {
+              name: "newAddress",
+              type: "address",
+              indexed: true,
+              internalType: "address",
+            },
+          ],
+          anonymous: false,
         },
         {
           type: "event",
@@ -12694,6 +12817,12 @@ const deployedContracts = {
             },
             {
               name: "treasury",
+              type: "address",
+              indexed: false,
+              internalType: "address",
+            },
+            {
+              name: "earningsManager",
               type: "address",
               indexed: false,
               internalType: "address",
@@ -13281,13 +13410,13 @@ const deployedContracts = {
         },
       ],
       inheritedFunctions: {},
-      deploymentFile: "run-1779860510301.json",
+      deploymentFile: "run-1780289515022.json",
       deploymentScript: "Deploy.s.sol",
     },
   },
   421614: {
     MockUSDC: {
-      address: "0x16b614597FBbD9027086eF1EBE2926509A74f4c5",
+      address: "0x07e803236337c38293bE475eCa1210313b5C4756",
       abi: [
         {
           type: "constructor",
@@ -13640,11 +13769,11 @@ const deployedContracts = {
         },
       ],
       inheritedFunctions: {},
-      deploymentFile: "run-1779861785288.json",
+      deploymentFile: "run-1780289890068.json",
       deploymentScript: "Deploy.s.sol",
     },
     RoboshareTokens: {
-      address: "0x6534F43E4335eA236207421dbcdB7c6f20a9E3d3",
+      address: "0x749c1301DF768905c0B755619f8d4a74fB96081A",
       abi: [
         {
           type: "constructor",
@@ -15525,11 +15654,11 @@ const deployedContracts = {
         },
       ],
       inheritedFunctions: {},
-      deploymentFile: "run-1779861785288.json",
+      deploymentFile: "run-1780289890068.json",
       deploymentScript: "Deploy.s.sol",
     },
     PartnerManager: {
-      address: "0xae228e4E53325042b042767Cb171fF280743740D",
+      address: "0xD72dE6dEf92324428da6B948242d1c92E6e9c117",
       abi: [
         {
           type: "constructor",
@@ -16175,11 +16304,11 @@ const deployedContracts = {
         },
       ],
       inheritedFunctions: {},
-      deploymentFile: "run-1779861785288.json",
+      deploymentFile: "run-1780289890068.json",
       deploymentScript: "Deploy.s.sol",
     },
     RegistryRouter: {
-      address: "0x85ae632d257f3073649609d1912A99D0647b7FDc",
+      address: "0x0cb1745CD5BE5Ba94a9c08294a0929A94808A3DD",
       abi: [
         {
           type: "constructor",
@@ -16315,40 +16444,6 @@ const deployedContracts = {
           type: "function",
           name: "claimSettlement",
           inputs: [
-            {
-              name: "assetId",
-              type: "uint256",
-              internalType: "uint256",
-            },
-            {
-              name: "autoClaimEarnings",
-              type: "bool",
-              internalType: "bool",
-            },
-          ],
-          outputs: [
-            {
-              name: "",
-              type: "uint256",
-              internalType: "uint256",
-            },
-            {
-              name: "",
-              type: "uint256",
-              internalType: "uint256",
-            },
-          ],
-          stateMutability: "nonpayable",
-        },
-        {
-          type: "function",
-          name: "claimSettlementFor",
-          inputs: [
-            {
-              name: "account",
-              type: "address",
-              internalType: "address",
-            },
             {
               name: "assetId",
               type: "uint256",
@@ -16533,6 +16628,40 @@ const deployedContracts = {
             },
           ],
           stateMutability: "nonpayable",
+        },
+        {
+          type: "function",
+          name: "executeSettlementClaimFor",
+          inputs: [
+            {
+              name: "",
+              type: "address",
+              internalType: "address",
+            },
+            {
+              name: "",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "",
+              type: "bool",
+              internalType: "bool",
+            },
+          ],
+          outputs: [
+            {
+              name: "claimedAmount",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "earningsClaimed",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+          stateMutability: "pure",
         },
         {
           type: "function",
@@ -17945,6 +18074,11 @@ const deployedContracts = {
         },
         {
           type: "error",
+          name: "InvalidTokenPrice",
+          inputs: [],
+        },
+        {
+          type: "error",
           name: "MarketplaceNotSet",
           inputs: [],
         },
@@ -18049,11 +18183,11 @@ const deployedContracts = {
         },
       ],
       inheritedFunctions: {},
-      deploymentFile: "run-1779861785288.json",
+      deploymentFile: "run-1780289890068.json",
       deploymentScript: "Deploy.s.sol",
     },
     VehicleRegistry: {
-      address: "0x10eBb0cbCaEE83e299f5Fb392E326922A1cCDe50",
+      address: "0x37bD72287De351a051c231026C47d562Eb48A4F3",
       abi: [
         {
           type: "constructor",
@@ -18151,69 +18285,6 @@ const deployedContracts = {
         },
         {
           type: "function",
-          name: "claimSettlement",
-          inputs: [
-            {
-              name: "assetId",
-              type: "uint256",
-              internalType: "uint256",
-            },
-            {
-              name: "autoClaimEarnings",
-              type: "bool",
-              internalType: "bool",
-            },
-          ],
-          outputs: [
-            {
-              name: "claimedAmount",
-              type: "uint256",
-              internalType: "uint256",
-            },
-            {
-              name: "earningsClaimed",
-              type: "uint256",
-              internalType: "uint256",
-            },
-          ],
-          stateMutability: "nonpayable",
-        },
-        {
-          type: "function",
-          name: "claimSettlementFor",
-          inputs: [
-            {
-              name: "account",
-              type: "address",
-              internalType: "address",
-            },
-            {
-              name: "assetId",
-              type: "uint256",
-              internalType: "uint256",
-            },
-            {
-              name: "autoClaimEarnings",
-              type: "bool",
-              internalType: "bool",
-            },
-          ],
-          outputs: [
-            {
-              name: "claimedAmount",
-              type: "uint256",
-              internalType: "uint256",
-            },
-            {
-              name: "earningsClaimed",
-              type: "uint256",
-              internalType: "uint256",
-            },
-          ],
-          stateMutability: "nonpayable",
-        },
-        {
-          type: "function",
           name: "createRevenueTokenPool",
           inputs: [
             {
@@ -18265,6 +18336,40 @@ const deployedContracts = {
             },
             {
               name: "supply",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+          stateMutability: "nonpayable",
+        },
+        {
+          type: "function",
+          name: "executeSettlementClaimFor",
+          inputs: [
+            {
+              name: "account",
+              type: "address",
+              internalType: "address",
+            },
+            {
+              name: "assetId",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "autoClaimEarnings",
+              type: "bool",
+              internalType: "bool",
+            },
+          ],
+          outputs: [
+            {
+              name: "claimedAmount",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "earningsClaimed",
               type: "uint256",
               internalType: "uint256",
             },
@@ -19634,6 +19739,11 @@ const deployedContracts = {
         },
         {
           type: "error",
+          name: "UnsupportedVehicleRegistrationPayload",
+          inputs: [],
+        },
+        {
+          type: "error",
           name: "VehicleAlreadyExists",
           inputs: [],
         },
@@ -19649,11 +19759,11 @@ const deployedContracts = {
         },
       ],
       inheritedFunctions: {},
-      deploymentFile: "run-1779861785288.json",
+      deploymentFile: "run-1780289890068.json",
       deploymentScript: "Deploy.s.sol",
     },
     Treasury: {
-      address: "0xbF9D8bc28234383D1b2b7B48892f3CcCbE7342a7",
+      address: "0xc068a74e6F20AAF0F5d346AB558eB5d8897E915A",
       abi: [
         {
           type: "constructor",
@@ -21445,11 +21555,11 @@ const deployedContracts = {
         },
       ],
       inheritedFunctions: {},
-      deploymentFile: "run-1779861785288.json",
+      deploymentFile: "run-1780289890068.json",
       deploymentScript: "Deploy.s.sol",
     },
     EarningsManager: {
-      address: "0x3730fA73bb9620fAD467615913D5f0c2dD213D00",
+      address: "0x8549d9e890C082b03F5794976377D2db2aa99151",
       abi: [
         {
           type: "constructor",
@@ -21787,6 +21897,44 @@ const deployedContracts = {
         },
         {
           type: "function",
+          name: "preserveTransferredPositionEarnings",
+          inputs: [
+            {
+              name: "assetId",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "holder",
+              type: "address",
+              internalType: "address",
+            },
+            {
+              name: "tokenId",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "positionUid",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "transferredAmount",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "acquiredAt",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+          outputs: [],
+          stateMutability: "nonpayable",
+        },
+        {
+          type: "function",
           name: "previewClaimEarnings",
           inputs: [
             {
@@ -22039,6 +22187,44 @@ const deployedContracts = {
           inputs: [
             {
               name: "assetId",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+          outputs: [],
+          stateMutability: "nonpayable",
+        },
+        {
+          type: "function",
+          name: "transferPositionClaimState",
+          inputs: [
+            {
+              name: "assetId",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "from",
+              type: "address",
+              internalType: "address",
+            },
+            {
+              name: "to",
+              type: "address",
+              internalType: "address",
+            },
+            {
+              name: "tokenId",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "fromPositionUid",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "toPositionUid",
               type: "uint256",
               internalType: "uint256",
             },
@@ -22576,16 +22762,32 @@ const deployedContracts = {
         },
         {
           type: "error",
+          name: "UnauthorizedPositionManager",
+          inputs: [
+            {
+              name: "caller",
+              type: "address",
+              internalType: "address",
+            },
+            {
+              name: "activeManager",
+              type: "address",
+              internalType: "address",
+            },
+          ],
+        },
+        {
+          type: "error",
           name: "ZeroAddress",
           inputs: [],
         },
       ],
       inheritedFunctions: {},
-      deploymentFile: "run-1779861785288.json",
+      deploymentFile: "run-1780289890068.json",
       deploymentScript: "Deploy.s.sol",
     },
     Marketplace: {
-      address: "0xba91259bB76F5D7d40234930CF74308E7A6DA72f",
+      address: "0xf8Fcd7D0b91AaDdb094639A13f2473C6c45a0862",
       abi: [
         {
           type: "constructor",
@@ -24437,11 +24639,11 @@ const deployedContracts = {
         },
       ],
       inheritedFunctions: {},
-      deploymentFile: "run-1779861785288.json",
+      deploymentFile: "run-1780289890068.json",
       deploymentScript: "Deploy.s.sol",
     },
     PositionManager: {
-      address: "0x04e170ab7979b2d33646eA60eDDA3618549186E7",
+      address: "0xcA8f9e450901C55969F9533c4bA2fe4b168231b5",
       abi: [
         {
           type: "constructor",
@@ -24697,6 +24899,19 @@ const deployedContracts = {
             },
           ],
           stateMutability: "nonpayable",
+        },
+        {
+          type: "function",
+          name: "earningsManager",
+          inputs: [],
+          outputs: [
+            {
+              name: "",
+              type: "address",
+              internalType: "address",
+            },
+          ],
+          stateMutability: "view",
         },
         {
           type: "function",
@@ -25115,6 +25330,11 @@ const deployedContracts = {
             },
             {
               name: "_treasury",
+              type: "address",
+              internalType: "address",
+            },
+            {
+              name: "_earningsManager",
               type: "address",
               internalType: "address",
             },
@@ -25662,6 +25882,19 @@ const deployedContracts = {
         },
         {
           type: "function",
+          name: "updateEarningsManager",
+          inputs: [
+            {
+              name: "newEarningsManager",
+              type: "address",
+              internalType: "address",
+            },
+          ],
+          outputs: [],
+          stateMutability: "nonpayable",
+        },
+        {
+          type: "function",
           name: "updateMarketplace",
           inputs: [
             {
@@ -25768,6 +26001,25 @@ const deployedContracts = {
             },
           ],
           stateMutability: "view",
+        },
+        {
+          type: "event",
+          name: "EarningsManagerUpdated",
+          inputs: [
+            {
+              name: "oldAddress",
+              type: "address",
+              indexed: true,
+              internalType: "address",
+            },
+            {
+              name: "newAddress",
+              type: "address",
+              indexed: true,
+              internalType: "address",
+            },
+          ],
+          anonymous: false,
         },
         {
           type: "event",
@@ -25974,6 +26226,12 @@ const deployedContracts = {
             },
             {
               name: "treasury",
+              type: "address",
+              indexed: false,
+              internalType: "address",
+            },
+            {
+              name: "earningsManager",
               type: "address",
               indexed: false,
               internalType: "address",
@@ -26561,7 +26819,7 @@ const deployedContracts = {
         },
       ],
       inheritedFunctions: {},
-      deploymentFile: "run-1779861785288.json",
+      deploymentFile: "run-1780289890068.json",
       deploymentScript: "Deploy.s.sol",
     },
   },
