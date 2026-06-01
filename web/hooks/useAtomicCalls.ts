@@ -88,7 +88,11 @@ const useAtomicCallsBase = (
               value: call.value,
             })) as never,
           });
-          const receipt = await waitForTransactionReceipt(config, { chainId: desiredChainId, hash });
+          const receipt = await waitForTransactionReceipt(config, {
+            chainId: desiredChainId,
+            hash,
+            timeout,
+          });
 
           return {
             atomic: true,
