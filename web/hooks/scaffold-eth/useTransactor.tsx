@@ -60,7 +60,7 @@ export const useTransactor = (_walletClient?: WalletClient): TransactionFunc => 
         throw new Error("No active network configured for the transacting account");
       }
       // Get full transaction from public client
-      const publicClient = getPublicClient(getWagmiConfig());
+      const publicClient = getPublicClient(getWagmiConfig(), { chainId: network });
       if (!publicClient) {
         throw new Error("No public client configured for the active network");
       }
