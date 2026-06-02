@@ -45,8 +45,6 @@ interface ListingCardProps {
   earnings?: {
     totalEarnings: string;
     totalRevenue: string;
-    distributionCount: string;
-    firstDistributionAt: string;
     lastDistributionAt: string;
   };
   partner?: {
@@ -105,7 +103,7 @@ export function ListingCard({
     args: [BigInt(listing.assetId)],
   });
   const hasAvailableTokens = BigInt(listing.amount) > 0n;
-  const hasEarnings = Boolean(earnings && (earnings.distributionCount !== "0" || earnings.totalEarnings !== "0"));
+  const hasEarnings = Boolean(earnings && earnings.totalEarnings !== "0");
   const hasHoldings = (walletTokenBalance || 0n) > 0n;
   const canClaimEarnings = (previewClaimAmount || 0n) > 0n;
   const canClaimEarningsOnThisListing = canClaimEarnings && hasHoldings;
@@ -270,7 +268,7 @@ export function ListingCard({
     const durationSec = Math.max(0, Math.floor(soldOutAt - createdAt));
     return `Sold Out In ${formatDuration(durationSec)}`;
   }, [hasAvailableTokens, listing.createdAt, listing.soldOutAt]);
-  const isNewlyListed = hasAvailableTokens && !isEnded && (!earnings || earnings.distributionCount === "0");
+  const isNewlyListed = hasAvailableTokens && !isEnded && !hasEarnings;
   const isSellerOfListing = Boolean(address && listing.seller.toLowerCase() === address.toLowerCase());
   const showSecondaryListingBadge = !isInactive;
   const listableTokensAmount = walletTokenBalance || 0n;

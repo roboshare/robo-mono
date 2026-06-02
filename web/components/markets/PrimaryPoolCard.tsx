@@ -39,7 +39,6 @@ interface PrimaryPoolCardProps {
   };
   earnings?: {
     totalEarnings: string;
-    firstDistributionAt?: string;
     lastDistributionAt: string;
   };
   partner?: {

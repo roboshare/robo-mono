@@ -5,66 +5,6 @@ schema:
   file: ./src/schema.graphql
 dataSources:
   - kind: ethereum/contract
-    name: RoboshareTokens
-    network: {{network}}
-    source:
-      abi: RoboshareTokens
-      address: "{{RoboshareTokens.address}}"
-      startBlock: {{RoboshareTokens.startBlock}}
-    mapping:
-      kind: ethereum/events
-      apiVersion: 0.0.6
-      language: wasm/assemblyscript
-      entities: &entities
-        - RoboshareTokensContract
-        - RoboshareToken
-        - TransferSingleEvent
-        - RegistryRouterContract
-        - BoundId
-        - VehicleRegistryContract
-        - Vehicle
-        - TreasuryContract
-        - CollateralLock
-        - MarketplaceContract
-        - Listing
-        - EarningsDistribution
-        - AssetEarning
-        - PrimaryPool
-        - PrimaryPoolPurchase
-        - PrimaryPoolRedemption
-      abis:
-        - name: RoboshareTokens
-          file: ./abis/RoboshareTokens.json
-      eventHandlers:
-        - event: TransferSingle(indexed address,indexed address,indexed
-            address,uint256,uint256)
-          handler: handleRoboshareTokensTransferSingle
-        - event: RevenueTokenInfoSet(indexed
-            uint256,uint256,uint256,uint256,uint256,bool,bool)
-          handler: handleRevenueTokenInfoSet
-        - event: TokenMetadataURISet(indexed uint256,string)
-          handler: handleTokenMetadataURISet
-      file: ./src/mapping.ts
-  - kind: ethereum/contract
-    name: RegistryRouter
-    network: {{network}}
-    source:
-      abi: RegistryRouter
-      address: "{{RegistryRouter.address}}"
-      startBlock: {{RegistryRouter.startBlock}}
-    mapping:
-      kind: ethereum/events
-      apiVersion: 0.0.6
-      language: wasm/assemblyscript
-      entities: *entities
-      abis:
-        - name: RegistryRouter
-          file: ./abis/RegistryRouter.json
-      eventHandlers:
-        - event: IdBoundToRegistry(indexed uint256,indexed address)
-          handler: handleIdBoundToRegistry
-      file: ./src/mapping.ts
-  - kind: ethereum/contract
     name: VehicleRegistry
     network: {{network}}
     source:
@@ -75,56 +15,18 @@ dataSources:
       kind: ethereum/events
       apiVersion: 0.0.6
       language: wasm/assemblyscript
-      entities: *entities
+      entities: &entities
+        - Vehicle
+        - Listing
+        - PrimaryPool
       abis:
         - name: VehicleRegistry
           file: ./abis/VehicleRegistry.json
       eventHandlers:
         - event: AssetRegistered(indexed uint256,indexed address,uint256,uint8)
           handler: handleAssetRegistered
-        - event: VehicleRegistered(indexed uint256,indexed address,indexed bytes32)
-          handler: handleVehicleRegistered
         - event: VehicleMetadataUpdated(indexed uint256,string,string)
           handler: handleVehicleMetadataUpdated
-      file: ./src/mapping.ts
-  - kind: ethereum/contract
-    name: Treasury
-    network: {{network}}
-    source:
-      abi: Treasury
-      address: "{{Treasury.address}}"
-      startBlock: {{Treasury.startBlock}}
-    mapping:
-      kind: ethereum/events
-      apiVersion: 0.0.6
-      language: wasm/assemblyscript
-      entities: *entities
-      abis:
-        - name: Treasury
-          file: ./abis/Treasury.json
-      eventHandlers:
-        - event: CollateralLocked(indexed uint256,indexed address,uint256)
-          handler: handleCollateralLocked
-      file: ./src/mapping.ts
-  - kind: ethereum/contract
-    name: EarningsManager
-    network: {{network}}
-    source:
-      abi: EarningsManager
-      address: "{{EarningsManager.address}}"
-      startBlock: {{EarningsManager.startBlock}}
-    mapping:
-      kind: ethereum/events
-      apiVersion: 0.0.6
-      language: wasm/assemblyscript
-      entities: *entities
-      abis:
-        - name: EarningsManager
-          file: ./abis/EarningsManager.json
-      eventHandlers:
-        - event: EarningsDistributed(indexed uint256,indexed
-            address,uint256,uint256,uint256)
-          handler: handleEarningsDistributed
       file: ./src/mapping.ts
   - kind: ethereum/contract
     name: Marketplace
@@ -161,12 +63,6 @@ dataSources:
           handler: handlePrimaryPoolUnpaused
         - event: PrimaryPoolClosed(indexed uint256)
           handler: handlePrimaryPoolClosed
-        - event: PrimaryPoolPurchased(indexed uint256,indexed
-            address,uint256,uint256,uint256,uint256)
-          handler: handlePrimaryPoolPurchased
-        - event: PrimaryPoolRedeemed(indexed uint256,indexed
-            address,uint256,uint256,uint256)
-          handler: handlePrimaryPoolRedeemed
       file: ./src/mapping.ts
 features:
   - fullTextSearch

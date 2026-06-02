@@ -25,11 +25,6 @@ query GetMarketsPageData {
     isPaused
     isClosed
     createdAt
-    pausedAt
-    closedAt
-    totalPurchased
-    totalRedeemed
-    totalPartnerProceedsReleased
   }
   vehicles(first: 100) {
     id
@@ -39,27 +34,5 @@ query GetMarketsPageData {
     model
     year
     metadataURI
-  }
-  roboshareTokens(first: 100) {
-    id
-    revenueTokenId
-    price
-    supply
-    createdAt
-    maturityDate
-  }
-  assetEarnings(first: 100) {
-    id
-    assetId
-    totalEarnings
-    totalRevenue
-    distributionCount
-    lastDistributionAt
-    firstDistributionAt
-  }
-  partners(first: 100) {
-    id
-    name
-    address
   }
 }
