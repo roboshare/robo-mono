@@ -713,7 +713,9 @@ const MarketsPage: NextPage = () => {
         assetId,
         totalRevenue: String((tuple?.[0] as bigint | undefined) ?? 0n),
         totalEarnings: String((tuple?.[1] as bigint | undefined) ?? 0n),
-        lastDistributionAt: String((tuple?.[4] as bigint | undefined) ?? 0n),
+        // assetEarnings()[4] is lastEventTimestamp, not a distribution timestamp.
+        // Using it for APR annualization inflates yields after non-distribution events.
+        lastDistributionAt: "0",
       };
     });
   }, [assetEarningsData, uniqueAssetIds]);
