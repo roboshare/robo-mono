@@ -23,7 +23,7 @@ import { CreateSecondaryListingModal } from "~~/components/partner/CreateSeconda
 import { EndSecondaryListingModal } from "~~/components/partner/EndSecondaryListingModal";
 import { WithdrawProceedsModal } from "~~/components/partner/WithdrawProceedsModal";
 import { ASSET_REGISTRIES, AssetType } from "~~/config/assetTypes";
-import { useScaffoldWriteContract, useSelectedNetwork } from "~~/hooks/scaffold-eth";
+import { useScaffoldEventHistory, useScaffoldWriteContract, useSelectedNetwork } from "~~/hooks/scaffold-eth";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
 import { getDeployedContract } from "~~/utils/contracts";
@@ -561,6 +561,15 @@ const MarketsPage: NextPage = () => {
       : ([] as any),
     query: { enabled: !!earningsManagerContract && uniqueAssetIds.length > 0 },
   });
+  const { data: earningsDistributedEvents } = useScaffoldEventHistory({
+    contractName: "EarningsManager",
+    eventName: "EarningsDistributed",
+    fromBlock: 0n,
+    chainId,
+    blockData: true as const,
+    watch: true,
+    enabled: !!earningsManagerContract,
+  });
 
   const { data: actionPreviewData, refetch: refetchActionPreviewData } = useReadContracts({
     allowFailure: true,
@@ -701,6 +710,20 @@ const MarketsPage: NextPage = () => {
     });
   }, [maturityDateData, primaryPoolSupplyByTokenId, primaryPools, targetYieldData]);
 
+  const latestDistributionTimestampByAssetId = useMemo(() => {
+    const byAssetId = new Map<string, string>();
+
+    for (const event of earningsDistributedEvents || []) {
+      const eventWithBlockData = event as typeof event & { blockData?: { timestamp?: bigint } | null };
+      const assetId = String(event.args.assetId);
+      if (!byAssetId.has(assetId)) {
+        byAssetId.set(assetId, eventWithBlockData.blockData?.timestamp?.toString() || "0");
+      }
+    }
+
+    return byAssetId;
+  }, [earningsDistributedEvents]);
+
   const assetEarnings = useMemo<MarketAssetEarnings[]>(() => {
     const results = assetEarningsData as Array<{ result?: readonly unknown[]; status: string }> | undefined;
 
@@ -713,12 +736,10 @@ const MarketsPage: NextPage = () => {
         assetId,
         totalRevenue: String((tuple?.[0] as bigint | undefined) ?? 0n),
         totalEarnings: String((tuple?.[1] as bigint | undefined) ?? 0n),
-        // assetEarnings()[4] is lastEventTimestamp, not a distribution timestamp.
-        // Using it for APR annualization inflates yields after non-distribution events.
-        lastDistributionAt: "0",
+        lastDistributionAt: latestDistributionTimestampByAssetId.get(assetId) || "0",
       };
     });
-  }, [assetEarningsData, uniqueAssetIds]);
+  }, [assetEarningsData, latestDistributionTimestampByAssetId, uniqueAssetIds]);
 
   const primaryPoolCreatedAtByTokenId = useMemo(() => {
     const byTokenId = new Map<string, string>();
