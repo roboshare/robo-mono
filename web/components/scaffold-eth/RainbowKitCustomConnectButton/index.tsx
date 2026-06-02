@@ -6,13 +6,13 @@ import { AddressInfoDropdown } from "./AddressInfoDropdown";
 import { AddressQRCodeModal } from "./AddressQRCodeModal";
 import { WrongNetworkDropdown } from "./WrongNetworkDropdown";
 import { useLogout, usePrivy } from "@privy-io/react-auth";
-import { useSmartWallets } from "@privy-io/react-auth/smart-wallets";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { Address, formatUnits } from "viem";
 import { useAccount, useDisconnect } from "wagmi";
-import { useNetworkColor, useWatchTokenBalance } from "~~/hooks/scaffold-eth";
+import { useNetworkColor, useSelectedNetwork, useWatchTokenBalance } from "~~/hooks/scaffold-eth";
 import { useTargetNetwork } from "~~/hooks/scaffold-eth/useTargetNetwork";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
+import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
 import { isPrivyEnabled } from "~~/services/web3/privyConfig";
 import { getPrivyIdentityLabel } from "~~/services/web3/privyIdentity";
 import { getBlockExplorerAddressLink } from "~~/utils/scaffold-eth";
@@ -133,13 +133,13 @@ const LegacyRainbowKitConnectButton = () => {
 
 const PrivyConnectButton = () => {
   const { targetNetwork } = useTargetNetwork();
-  const { address, chain, connector } = useAccount();
-  const { client: smartWalletClient } = useSmartWallets();
+  const { chain, connector } = useAccount();
+  const { address: transactingAddress, chainId: transactingChainId } = useTransactingAccount();
   const { disconnect } = useDisconnect();
   const { ready, authenticated, login, connectWallet, user } = usePrivy();
   const { logout } = useLogout();
-  const transactingAddress = (smartWalletClient?.account?.address as Address | undefined) ?? address;
-  const transactingChainName = smartWalletClient?.chain?.name ?? chain?.name;
+  const selectedNetwork = useSelectedNetwork(transactingChainId);
+  const transactingChainName = selectedNetwork.name;
 
   const handleDisconnect = async () => {
     const isPrivyConnector = connector?.id.startsWith("io.privy");
