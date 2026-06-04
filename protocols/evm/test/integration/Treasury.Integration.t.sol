@@ -24,6 +24,42 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
         _ensureState(SetupState.InitialAccountsSetup);
     }
 
+    function _setupImmediateProceedsSettlementAsset()
+        internal
+        returns (uint256 assetId, uint256 revenueTokenId, uint256 releasedPrincipal)
+    {
+        vm.prank(partner1);
+        assetId = assetRegistry.registerAsset(_vehicleRegistrationData(TEST_VIN), ASSET_VALUE);
+
+        uint256 supply = ASSET_VALUE / REVENUE_TOKEN_PRICE;
+        uint256 targetYieldBP = 2_500;
+
+        vm.prank(partner1);
+        (revenueTokenId,) = assetRegistry.createRevenueTokenPool(
+            assetId, REVENUE_TOKEN_PRICE, block.timestamp + 365 days, 10_000, targetYieldBP, supply, true, true
+        );
+
+        releasedPrincipal = 10_000e6;
+        uint256 purchaseAmount = releasedPrincipal / REVENUE_TOKEN_PRICE;
+        uint256 protocolFee = ProtocolLib.calculateProtocolFee(releasedPrincipal);
+
+        vm.startPrank(buyer);
+        usdc.approve(address(marketplace), releasedPrincipal + protocolFee);
+        marketplace.buyFromPrimaryPool(revenueTokenId, purchaseAmount);
+        vm.stopPrank();
+
+        uint256 requiredCollateral = _getTotalBufferRequirement(releasedPrincipal, targetYieldBP, true);
+        vm.prank(partner1);
+        usdc.approve(address(treasury), requiredCollateral);
+        vm.prank(partner1);
+        treasury.enableProceeds(assetId);
+
+        CollateralLib.CollateralInfo memory infoAfterEnable = _getCollateralInfo(assetId);
+        assertEq(infoAfterEnable.baseCollateral, 0, "Immediate proceeds should release covered base");
+        assertEq(infoAfterEnable.releasedProtectedBase, releasedPrincipal, "Released protected base mismatch");
+        assertGt(infoAfterEnable.earningsBuffer, 0, "Protection buffer should be funded");
+    }
+
     function _getProtectedBenchmarkPrincipal(uint256 assetId, uint256 revenueTokenId)
         internal
         view
@@ -1288,6 +1324,45 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
 
         assertEq(settlementAmount, expectedSettlementAmount);
         assertEq(settlementPerToken, expectedSettlementPerToken);
+    }
+
+    function testEarlySettlementRequiresImmediateProceedsResidualTopUp() public {
+        (uint256 assetId,, uint256 releasedPrincipal) = _setupImmediateProceedsSettlementAsset();
+
+        uint256 requiredTopUp = treasury.previewRequiredSettlementTopUp(assetId);
+        assertEq(requiredTopUp, releasedPrincipal, "Required top-up should cover released protected base");
+
+        vm.prank(partner1);
+        vm.expectRevert(
+            abi.encodeWithSelector(ITreasury.InsufficientSettlementTopUp.selector, assetId, requiredTopUp, 0)
+        );
+        assetRegistry.settleAsset(assetId, 0);
+    }
+
+    function testEarlySettlementPaysImmediateProceedsResidualAndEarningsBuffer() public {
+        (uint256 assetId, uint256 revenueTokenId,) = _setupImmediateProceedsSettlementAsset();
+
+        uint256 requiredTopUp = treasury.previewRequiredSettlementTopUp(assetId);
+        CollateralLib.CollateralInfo memory infoBefore = _getCollateralInfo(assetId);
+        uint256 expectedSettlementAmount =
+            infoBefore.baseCollateral + infoBefore.reservedForLiquidation + infoBefore.earningsBuffer + requiredTopUp;
+        uint256 totalSupply = roboshareTokens.getRevenueTokenSupply(revenueTokenId);
+        uint256 feeRecipientPendingBefore = treasury.pendingWithdrawals(config.treasuryFeeRecipient);
+
+        vm.prank(partner1);
+        usdc.approve(address(treasury), requiredTopUp);
+        vm.prank(partner1);
+        assetRegistry.settleAsset(assetId, requiredTopUp);
+
+        IPositionManager.SettlementState memory settlementState = positionManager.getSettlementState(assetId);
+        assertEq(settlementState.settlementAmount, expectedSettlementAmount);
+        assertEq(settlementState.settlementPerToken, expectedSettlementAmount / totalSupply);
+        assertEq(
+            treasury.pendingWithdrawals(config.treasuryFeeRecipient) - feeRecipientPendingBefore,
+            infoBefore.protocolBuffer,
+            "Protocol buffer should be routed to protocol fees"
+        );
+        assertFalse(_getCollateralInfo(assetId).isLocked, "Settlement should clear collateral state");
     }
 
     function testInitiateSettlementPartnerRefundAfterMaturity() public {

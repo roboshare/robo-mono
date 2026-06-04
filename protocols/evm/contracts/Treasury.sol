@@ -952,6 +952,11 @@ contract Treasury is Initializable, AccessControlUpgradeable, UUPSUpgradeable, R
         return _positionManager().previewSettlementClaim(assetId, tokenBalance);
     }
 
+    function previewRequiredSettlementTopUp(uint256 assetId) external view override returns (uint256) {
+        _requireAssetExists(assetId);
+        return _previewRequiredSettlementTopUp(assetId);
+    }
+
     function initiateSettlement(address partner, uint256 assetId, uint256 topUpAmount)
         external
         override
@@ -964,6 +969,13 @@ contract Treasury is Initializable, AccessControlUpgradeable, UUPSUpgradeable, R
         }
 
         CollateralLib.SettlementInfo storage settlement = assetSettlements[assetId];
+
+        _applyMissedEarningsShortfall(assetId);
+
+        uint256 requiredTopUp = _previewRequiredSettlementTopUp(assetId);
+        if (topUpAmount < requiredTopUp) {
+            revert ITreasury.InsufficientSettlementTopUp(assetId, requiredTopUp, topUpAmount);
+        }
 
         // Transfer top-up if any
         if (topUpAmount > 0) {
@@ -997,6 +1009,39 @@ contract Treasury is Initializable, AccessControlUpgradeable, UUPSUpgradeable, R
             );
         settlementPerToken = settlement.settlementPerToken;
         return (settlementAmount, settlementPerToken);
+    }
+
+    function _previewRequiredSettlementTopUp(uint256 assetId) internal view returns (uint256 requiredTopUp) {
+        uint256 revenueTokenId = TokenLib.getTokenIdFromAssetId(assetId);
+        if (!roboshareTokens.getRevenueTokenImmediateProceedsEnabled(revenueTokenId)) {
+            return 0;
+        }
+
+        uint256 maturityDate = roboshareTokens.getTokenMaturityDate(revenueTokenId);
+        if (block.timestamp >= maturityDate) {
+            return 0;
+        }
+
+        CollateralLib.CollateralInfo memory info = assetCollateral[assetId];
+        uint256 residualBaseValue = _calculateResidualBaseValue(info);
+        if (residualBaseValue <= info.baseCollateral) {
+            return 0;
+        }
+        return residualBaseValue - info.baseCollateral;
+    }
+
+    function _calculateResidualBaseValue(CollateralLib.CollateralInfo memory info)
+        internal
+        view
+        returns (uint256 residualBaseValue)
+    {
+        if (info.unredeemedBasePrincipal == 0) {
+            return 0;
+        }
+
+        uint256 elapsedSinceLock = info.lockedAt == 0 ? 0 : block.timestamp - info.lockedAt;
+        uint256 depreciated = CollateralLib.calculateDepreciation(info.unredeemedBasePrincipal, elapsedSinceLock);
+        return depreciated >= info.unredeemedBasePrincipal ? 0 : info.unredeemedBasePrincipal - depreciated;
     }
 
     function processSettlementClaimFor(address recipient, uint256 assetId, uint256 amount)
@@ -1067,7 +1112,7 @@ contract Treasury is Initializable, AccessControlUpgradeable, UUPSUpgradeable, R
                 investorPool = claimable + additionalAmount;
             } else {
                 // Standard settlement / Liquidation before maturity
-                investorPool = claimable + additionalAmount;
+                investorPool = claimable + earningsBuffer + additionalAmount;
                 partnerRefund = 0;
             }
         }

@@ -57,6 +57,7 @@ interface ITreasury {
     error AssetNotOperationalForSettlement(uint256 assetId, AssetLib.AssetStatus currentStatus);
     error AssetNotOperationalForLiquidation(uint256 assetId, AssetLib.AssetStatus currentStatus);
     error AssetNotEligibleForLiquidation(uint256 assetId);
+    error InsufficientSettlementTopUp(uint256 assetId, uint256 requiredAmount, uint256 providedAmount);
     error CollateralAlreadyLocked();
     error InsufficientCollateral();
     error NotRouter();
@@ -229,6 +230,14 @@ interface ITreasury {
      * @return Amount of USDC currently claimable through the settlement flow
      */
     function previewSettlementClaim(uint256 assetId, address holder) external view returns (uint256);
+
+    /**
+     * @notice Previews the minimum additional USDC a partner must contribute for voluntary early settlement.
+     * @dev Non-immediate-proceeds pools and matured assets return zero.
+     * @param assetId Asset to inspect
+     * @return Amount of USDC required before `initiateSettlement` can proceed
+     */
+    function previewRequiredSettlementTopUp(uint256 assetId) external view returns (uint256);
 
     /**
      * @notice Settles an asset through the voluntary settlement path.
