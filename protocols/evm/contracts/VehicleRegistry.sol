@@ -544,6 +544,7 @@ contract VehicleRegistry is Initializable, AccessControlUpgradeable, UUPSUpgrade
 
         emit AssetRegistered(vehicleId, msg.sender, assetValue, vehicle.assetInfo.status);
         emit VehicleRegistered(vehicleId, msg.sender, vinHash);
+        emit VehicleMetadataUpdated(vehicleId, assetMetadataURI, revenueTokenMetadataURI);
     }
 
     function _decodeVehicleRegistrationData(bytes calldata data)

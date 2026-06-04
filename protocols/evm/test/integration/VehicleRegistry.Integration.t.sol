@@ -160,6 +160,9 @@ contract VehicleRegistryIntegrationTest is VehicleRegistryBaseTest, MarketplaceF
         vm.expectEmit(true, true, false, true, address(assetRegistry));
         emit VehicleRegistry.VehicleRegistered(1, partner1, keccak256(bytes(vin)));
 
+        vm.expectEmit(true, false, false, true, address(assetRegistry));
+        emit VehicleRegistry.VehicleMetadataUpdated(1, metadataURI, TEST_REVENUE_TOKEN_METADATA_URI);
+
         vm.prank(partner1);
         uint256 newVehicleId = assetRegistry.registerAsset(
             _vehicleRegistrationData(vin, metadataURI, TEST_REVENUE_TOKEN_METADATA_URI), ASSET_VALUE
