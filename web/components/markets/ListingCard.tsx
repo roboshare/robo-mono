@@ -7,6 +7,7 @@ import { ASSET_REGISTRIES, AssetType } from "~~/config/assetTypes";
 import { useScaffoldReadContract } from "~~/hooks/scaffold-eth";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
+import { isSettledAssetStatus } from "~~/utils/assetStatus";
 
 const BP_PRECISION = 10000n;
 const BENCHMARK_YIELD_BP = 1000n;
@@ -107,7 +108,7 @@ export function ListingCard({
   const hasHoldings = (walletTokenBalance || 0n) > 0n;
   const canClaimEarnings = (previewClaimAmount || 0n) > 0n;
   const canClaimEarningsOnThisListing = canClaimEarnings && hasHoldings;
-  const isAssetSettled = Number(assetStatus ?? -1) === 3 || Number(assetStatus ?? -1) === 4;
+  const isAssetSettled = isSettledAssetStatus(Number(assetStatus ?? -1));
   const canClaimSettlement = hasHoldings && isAssetSettled;
   const listingSoldAmount = useMemo(() => {
     if (listing.amountSold && listing.amountSold !== "0") return BigInt(listing.amountSold);

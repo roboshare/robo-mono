@@ -26,6 +26,7 @@ import { ASSET_REGISTRIES, AssetType } from "~~/config/assetTypes";
 import { useScaffoldEventHistory, useScaffoldWriteContract, useSelectedNetwork } from "~~/hooks/scaffold-eth";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
+import { isSettledAssetStatus } from "~~/utils/assetStatus";
 import { getDeployedContract } from "~~/utils/contracts";
 import { fetchIpfsMetadata, mergeVehicleMetadata } from "~~/utils/ipfsGateway";
 import {
@@ -1001,7 +1002,7 @@ const MarketsPage: NextPage = () => {
       const hasTokensForListing = userHoldingsIds.has(listing.id);
       const preview = assetActionPreview.get(listing.assetId);
       const assetStatus = assetStatusById.get(listing.assetId) ?? -1;
-      const isAssetSettled = assetStatus === 3 || assetStatus === 4;
+      const isAssetSettled = isSettledAssetStatus(assetStatus);
       const hasClaimableEarnings = (preview?.claimableEarnings ?? 0n) > 0n;
       const hasClaimableSettlement = (preview?.claimableSettlement ?? 0n) > 0n;
 
@@ -1179,9 +1180,10 @@ const MarketsPage: NextPage = () => {
     () =>
       holdingsAssetIds.filter(assetId => {
         const preview = assetActionPreview.get(assetId);
-        return (preview?.claimableSettlement ?? 0n) > 0n;
+        const status = assetStatusById.get(assetId) ?? -1;
+        return (preview?.claimableSettlement ?? 0n) > 0n || isSettledAssetStatus(status);
       }),
-    [assetActionPreview, holdingsAssetIds],
+    [assetActionPreview, assetStatusById, holdingsAssetIds],
   );
 
   const claimableEarningsOnlyAssetIds = useMemo(
@@ -1312,8 +1314,9 @@ const MarketsPage: NextPage = () => {
       const canList = hasHolding;
       const claimableEarnings = assetActionPreview.get(pool.assetId)?.claimableEarnings ?? 0n;
       const claimableSettlement = assetActionPreview.get(pool.assetId)?.claimableSettlement ?? 0n;
+      const assetStatus = assetStatusById.get(pool.assetId) ?? -1;
       const canClaimEarnings = hasHolding && claimableEarnings > 0n;
-      const canClaimSettlement = hasHolding && claimableSettlement > 0n;
+      const canClaimSettlement = hasHolding && (claimableSettlement > 0n || isSettledAssetStatus(assetStatus));
       const liquidationPreview = liquidationPreviewByAssetId.get(pool.assetId);
       const canForceFinalPayout =
         liquidationPreview?.eligible && (liquidationPreview.reason === 0 || liquidationPreview.reason === 1);
@@ -1406,6 +1409,7 @@ const MarketsPage: NextPage = () => {
   }, [
     activeSellerTokenIdCounts,
     assetActionPreview,
+    assetStatusById,
     liquidationPreviewByAssetId,
     primaryPoolHoldingsByTokenId,
     primaryPoolRedemptionByTokenId,
