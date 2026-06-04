@@ -21,6 +21,7 @@ node_modules
 
 # cli
 dist
+.antigravitycli/
 .claude/
 CLAUDE.md
 CLAUDE.local.md

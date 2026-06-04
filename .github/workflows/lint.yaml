@@ -5,12 +5,12 @@ on:
     branches:
       - main
       - dev
-      - "integration/**"
+      - "release/**"
   pull_request:
     branches:
       - main
       - dev
-      - "integration/**"
+      - "release/**"
 
 permissions:
   contents: read

@@ -91,17 +91,20 @@ Public launch is ready only when:
 
 ### Branching Model
 
-- `dev` is the integration branch.
-- Feature work happens on short-lived feature and fix branches.
-- The active launch line is isolated on `release/testnet-v0.2.0`.
-- Launch blockers and hotfixes are fixed on the release branch first.
-- Every release-branch fix shipped externally must be merged back into `dev`.
+- `dev` is the only long-lived integration branch for day-to-day work.
+- Feature work happens on short-lived feature and fix branches cut from `dev`.
+- Cut `release/*` branches only from a green `dev` commit when a version line is ready to stabilize.
+- Treat an active `release/*` branch as stabilization-only: launch blockers, release QA fixes, and launch notes.
+- Merge the approved `release/*` branch into `main` when it is stable enough to ship externally.
+- Merge every `release/*` fix back into `dev` immediately so the next cut does not regress.
+- Do not create long-lived `integration/*` branches; split large work into smaller branches or use flags/config gates instead.
 
 ### Deployment Model
 
 - Vercel production stays pinned to the stable long-lived branch: `main`.
 - `dev` and `release/*` branches are used for preview and release-stabilization deployments, not as the long-term production branch setting.
-- The release branch is the place to stabilize a version line and verify internal and beta environments.
+- `dev` is the default preview branch for ongoing integration work.
+- The release branch is the place to stabilize a version line and verify internal and beta environments without freezing all development.
 - The final ship step is:
   - merge the approved `release/*` branch into `main`
   - let Vercel deploy `main` automatically as production
