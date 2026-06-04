@@ -38,6 +38,7 @@ process.exit(coins.length > 0 ? 0 : 1);
   exit 1
 fi
 
+rm -f "$ROOT_DIR/Published.toml"
 PUBLISH_JSON="$(sui client --client.config "$CLIENT_CONFIG" publish "$ROOT_DIR" --gas-budget "$PUBLISH_GAS_BUDGET" --json)"
 PACKAGE_ID="$(printf '%s' "$PUBLISH_JSON" | node -e '
 const fs = require("fs");
