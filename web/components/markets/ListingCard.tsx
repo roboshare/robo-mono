@@ -460,7 +460,7 @@ export function ListingCard({
   if (isListMode) {
     return (
       <article
-        className={`overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-sm transition-all duration-200 ${
+        className={`relative overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-sm transition-all duration-200 ${
           hasAvailableActions ? "hover:shadow-md" : "opacity-70 saturate-50"
         } ${isCardPressable ? "cursor-pointer" : ""}`}
         onClick={handleCardClick}
@@ -638,7 +638,7 @@ export function ListingCard({
 
   return (
     <article
-      className={`rounded-2xl border border-base-300 bg-base-100 shadow-lg transition-all duration-300 overflow-hidden flex flex-col group ${
+      className={`relative rounded-2xl border border-base-300 bg-base-100 shadow-lg transition-all duration-300 overflow-hidden flex flex-col group ${
         hasAvailableActions ? "hover:shadow-xl" : "opacity-70 saturate-50"
       } ${isCardPressable ? "cursor-pointer hover:-translate-y-1 active:translate-y-0 active:scale-[0.995]" : ""}`}
       onClick={handleCardClick}
