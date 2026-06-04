@@ -117,14 +117,14 @@ export const useScaffoldEventHistory = <
       },
     ],
     queryFn: async ({ pageParam }) => {
-      if (!isContractAddressAndClientReady) return undefined;
+      if (!isContractAddressAndClientReady) return [];
       const data = await getEvents(
         { address: deployedContractData?.address, event, fromBlock: pageParam, args: filters },
         publicClient,
         { blockData, transactionData, receiptData },
       );
 
-      return data;
+      return data ?? [];
     },
     enabled: enabled && isContractAddressAndClientReady,
     initialPageParam: fromBlock,
@@ -142,7 +142,9 @@ export const useScaffoldEventHistory = <
       return nextBlock;
     },
     select: data => {
-      const events = data.pages.flat() as unknown as UseScaffoldEventHistoryData<
+      const events = data.pages
+        .filter((page): page is NonNullable<typeof page> => Array.isArray(page))
+        .flat() as unknown as UseScaffoldEventHistoryData<
         TContractName,
         TEventName,
         TBlockData,
@@ -150,8 +152,10 @@ export const useScaffoldEventHistory = <
         TReceiptData
       >;
 
+      const sanitizedEvents = (events ?? []).filter(event => event != null);
+
       return {
-        pages: events?.reverse(),
+        pages: [...sanitizedEvents].reverse(),
         pageParams: data.pageParams,
       };
     },

@@ -714,10 +714,13 @@ const MarketsPage: NextPage = () => {
     const byAssetId = new Map<string, string>();
 
     for (const event of earningsDistributedEvents || []) {
+      if (!event?.args) continue;
       const eventWithBlockData = event as typeof event & { blockData?: { timestamp?: bigint } | null };
-      const assetId = String(event.args.assetId);
-      if (!byAssetId.has(assetId)) {
-        byAssetId.set(assetId, eventWithBlockData.blockData?.timestamp?.toString() || "0");
+      const assetId = event.args.assetId;
+      if (assetId === undefined) continue;
+      const assetIdKey = String(assetId);
+      if (!byAssetId.has(assetIdKey)) {
+        byAssetId.set(assetIdKey, eventWithBlockData.blockData?.timestamp?.toString() || "0");
       }
     }
 
