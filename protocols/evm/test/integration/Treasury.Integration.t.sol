@@ -1329,7 +1329,7 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
     function testEarlySettlementRequiresImmediateProceedsResidualTopUp() public {
         (uint256 assetId,, uint256 releasedPrincipal) = _setupImmediateProceedsSettlementAsset();
 
-        uint256 requiredTopUp = treasury.previewRequiredSettlementTopUp(assetId);
+        uint256 requiredTopUp = releasedPrincipal;
         assertEq(requiredTopUp, releasedPrincipal, "Required top-up should cover released protected base");
 
         vm.prank(partner1);
@@ -1340,9 +1340,8 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
     }
 
     function testEarlySettlementPaysImmediateProceedsResidualAndEarningsBuffer() public {
-        (uint256 assetId, uint256 revenueTokenId,) = _setupImmediateProceedsSettlementAsset();
+        (uint256 assetId, uint256 revenueTokenId, uint256 requiredTopUp) = _setupImmediateProceedsSettlementAsset();
 
-        uint256 requiredTopUp = treasury.previewRequiredSettlementTopUp(assetId);
         CollateralLib.CollateralInfo memory infoBefore = _getCollateralInfo(assetId);
         uint256 expectedSettlementAmount =
             infoBefore.baseCollateral + infoBefore.reservedForLiquidation + infoBefore.earningsBuffer + requiredTopUp;

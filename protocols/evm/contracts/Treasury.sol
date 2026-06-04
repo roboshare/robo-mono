@@ -952,11 +952,6 @@ contract Treasury is Initializable, AccessControlUpgradeable, UUPSUpgradeable, R
         return _positionManager().previewSettlementClaim(assetId, tokenBalance);
     }
 
-    function previewRequiredSettlementTopUp(uint256 assetId) external view override returns (uint256) {
-        _requireAssetExists(assetId);
-        return _previewRequiredSettlementTopUp(assetId);
-    }
-
     function initiateSettlement(address partner, uint256 assetId, uint256 topUpAmount)
         external
         override

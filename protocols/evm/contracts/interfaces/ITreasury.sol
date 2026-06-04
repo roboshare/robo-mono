@@ -232,14 +232,6 @@ interface ITreasury {
     function previewSettlementClaim(uint256 assetId, address holder) external view returns (uint256);
 
     /**
-     * @notice Previews the minimum additional USDC a partner must contribute for voluntary early settlement.
-     * @dev Non-immediate-proceeds pools and matured assets return zero.
-     * @param assetId Asset to inspect
-     * @return Amount of USDC required before `initiateSettlement` can proceed
-     */
-    function previewRequiredSettlementTopUp(uint256 assetId) external view returns (uint256);
-
-    /**
      * @notice Settles an asset through the voluntary settlement path.
      * @param partner Asset owner responsible for any settlement top-up and recipient of any partner refund
      * @param assetId Asset being voluntarily settled
