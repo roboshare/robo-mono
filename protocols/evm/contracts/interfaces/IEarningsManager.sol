@@ -57,6 +57,24 @@ interface IEarningsManager {
         external
         returns (uint256 snapshotAmount);
 
+    function transferPositionClaimState(
+        uint256 assetId,
+        address from,
+        address to,
+        uint256 tokenId,
+        uint256 fromPositionUid,
+        uint256 toPositionUid
+    ) external;
+
+    function preserveTransferredPositionEarnings(
+        uint256 assetId,
+        address holder,
+        uint256 tokenId,
+        uint256 positionUid,
+        uint256 transferredAmount,
+        uint256 acquiredAt
+    ) external;
+
     function getAssetEarningsSummary(uint256 assetId) external view returns (EarningsSummary memory);
 
     function sumRealizedEarnings(uint256 assetId, uint256 fromPeriodExclusive, uint256 toPeriodInclusive)

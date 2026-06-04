@@ -3,6 +3,7 @@ import { Hash, SendTransactionParameters, TransactionReceipt, WalletClient } fro
 import { Config, useWalletClient } from "wagmi";
 import { getPublicClient } from "wagmi/actions";
 import { SendTransactionMutate } from "wagmi/query";
+import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
 import { getWagmiConfig } from "~~/services/web3/wagmiConfig";
 import { getBlockExplorerTxLink, getParsedError, notification } from "~~/utils/scaffold-eth";
 import { TransactorFuncOptions } from "~~/utils/scaffold-eth/contract";
@@ -36,13 +37,14 @@ const TxnNotification = ({ message, blockExplorerLink }: { message: string; bloc
 export const useTransactor = (_walletClient?: WalletClient): TransactionFunc => {
   let walletClient = _walletClient;
   const { data } = useWalletClient();
+  const { isSmartWallet, chainId: transactingChainId } = useTransactingAccount();
   const queryClient = useQueryClient();
   if (walletClient === undefined && data) {
     walletClient = data;
   }
 
   const result: TransactionFunc = async (tx, options) => {
-    if (!walletClient) {
+    if (!walletClient && !isSmartWallet) {
       notification.error("Cannot access account");
       console.error("⚡️ ~ file: useTransactor.tsx ~ error");
       return;
@@ -53,9 +55,12 @@ export const useTransactor = (_walletClient?: WalletClient): TransactionFunc => 
     let transactionReceipt: TransactionReceipt | undefined;
     let blockExplorerTxURL = "";
     try {
-      const network = await walletClient.getChainId();
+      const network = walletClient ? await walletClient.getChainId() : transactingChainId;
+      if (!network) {
+        throw new Error("No active network configured for the transacting account");
+      }
       // Get full transaction from public client
-      const publicClient = getPublicClient(getWagmiConfig());
+      const publicClient = getPublicClient(getWagmiConfig(), { chainId: network });
       if (!publicClient) {
         throw new Error("No public client configured for the active network");
       }
@@ -66,6 +71,9 @@ export const useTransactor = (_walletClient?: WalletClient): TransactionFunc => 
         const result = await tx();
         transactionHash = result;
       } else if (tx != null) {
+        if (!walletClient) {
+          throw new Error("Cannot send a direct transaction without a connected wallet client");
+        }
         transactionHash = await walletClient.sendTransaction(tx as SendTransactionParameters);
       } else {
         throw new Error("Incorrect transaction passed to transactor");
@@ -73,6 +81,32 @@ export const useTransactor = (_walletClient?: WalletClient): TransactionFunc => 
       notification.remove(notificationId);
 
       blockExplorerTxURL = network ? getBlockExplorerTxLink(network, transactionHash) : "";
+
+      if (isSmartWallet) {
+        notificationId = notification.loading(
+          <TxnNotification message="Waiting for transaction to complete." blockExplorerLink={blockExplorerTxURL} />,
+        );
+
+        transactionReceipt = await publicClient.waitForTransactionReceipt({
+          hash: transactionHash,
+          confirmations: options?.blockConfirmations,
+        });
+        notification.remove(notificationId);
+
+        if (transactionReceipt.status === "reverted") throw new Error("Transaction reverted");
+
+        notification.success(
+          <TxnNotification message="Transaction completed successfully!" blockExplorerLink={blockExplorerTxURL} />,
+          {
+            icon: "🎉",
+          },
+        );
+
+        queryClient.invalidateQueries();
+
+        if (options?.onBlockConfirmation) options.onBlockConfirmation(transactionReceipt);
+        return transactionHash;
+      }
 
       notificationId = notification.loading(
         <TxnNotification message="Waiting for transaction to complete." blockExplorerLink={blockExplorerTxURL} />,

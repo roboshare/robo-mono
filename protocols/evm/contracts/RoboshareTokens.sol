@@ -9,6 +9,7 @@ import {
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { ProtocolLib, TokenLib } from "./Libraries.sol";
+import { IPositionManager } from "./interfaces/IPositionManager.sol";
 
 /**
  * @title RoboshareTokens
@@ -26,6 +27,7 @@ contract RoboshareTokens is
     bytes32 public constant URI_SETTER_ROLE = keccak256("URI_SETTER_ROLE");
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
     bytes32 public constant BURNER_ROLE = keccak256("BURNER_ROLE");
+    bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
     bytes32 public constant AUTHORIZED_CONTRACT_ROLE = keccak256("AUTHORIZED_CONTRACT_ROLE");
 
     // Errors
@@ -35,6 +37,8 @@ contract RoboshareTokens is
     error InvalidLockAmount();
     error InsufficientUnlockedBalance();
     error InsufficientLockedBalance();
+    error EmptyMetadataURI();
+    error PositionManagerNotSet();
 
     // Events
     event RevenueTokenPositionsUpdated(
@@ -54,11 +58,17 @@ contract RoboshareTokens is
     event PrimaryRedemptionStateUpdated(
         uint256 indexed revenueTokenId, uint256 redemptionEpoch, uint256 epochSupply, uint256 backedPrincipal
     );
+    event TokenMetadataURISet(uint256 indexed tokenId, string metadataURI);
+    event PositionManagerUpdated(address indexed previousManager, address indexed newManager);
 
     // Token state
     uint256 private _tokenIdCounter;
     mapping(uint256 => TokenLib.TokenInfo) private _revenueTokenInfos;
+    // Deprecated token-owned lock bookkeeping kept only for storage-layout compatibility.
     mapping(address => mapping(uint256 => uint256)) private _lockedRevenueTokenAmounts;
+    mapping(uint256 => string) private _tokenMetadataURIs;
+    IPositionManager public positionManager;
+    // Deprecated token-owned redemption burn context kept only for storage-layout compatibility.
     bool private _currentEpochBurnActive;
     address private _currentEpochBurnHolder;
     uint256 private _currentEpochBurnTokenId;
@@ -137,6 +147,9 @@ contract RoboshareTokens is
             immediateProceeds,
             protectionEnabled
         );
+        if (address(positionManager) != address(0)) {
+            positionManager.syncRevenueTokenPolicy(revenueTokenId, tokenInfo.tokenPrice, tokenInfo.minHoldingPeriod);
+        }
         emit RevenueTokenInfoSet(
             revenueTokenId, price, supply, maxSupply, maturityDate, immediateProceeds, protectionEnabled
         );
@@ -187,12 +200,60 @@ contract RoboshareTokens is
         _burnBatch(from, ids, amounts);
     }
 
+    function managerBurnCurrentEpoch(address holder, uint256 revenueTokenId, uint256 amount)
+        external
+        onlyRole(MANAGER_ROLE)
+    {
+        _managerBurnCurrentEpoch(holder, revenueTokenId, amount);
+    }
+
     /**
      * @dev Sets the base URI for all token types. Requires URI_SETTER_ROLE.
      * @param newuri The new URI for tokens.
      */
     function setURI(string memory newuri) external onlyRole(URI_SETTER_ROLE) {
         _setURI(newuri);
+    }
+
+    function setPositionManager(address newPositionManager) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newPositionManager == address(0)) revert ZeroAddress();
+
+        IPositionManager manager = IPositionManager(newPositionManager);
+        _syncRevenueTokenPolicies(manager);
+
+        address previousManager = address(positionManager);
+        if (previousManager != address(0)) {
+            _revokeRole(MANAGER_ROLE, previousManager);
+        }
+
+        positionManager = manager;
+        _grantRole(MANAGER_ROLE, newPositionManager);
+
+        emit PositionManagerUpdated(previousManager, newPositionManager);
+    }
+
+    /**
+     * @dev Sets metadata URI for a specific token ID.
+     * Can be called by token minters (registries) and URI setters (admin/ops).
+     */
+    function setTokenMetadataURI(uint256 tokenId, string calldata metadataURI) external {
+        if (!hasRole(URI_SETTER_ROLE, msg.sender) && !hasRole(MINTER_ROLE, msg.sender)) {
+            revert AccessControlUnauthorizedAccount(msg.sender, URI_SETTER_ROLE);
+        }
+        if (bytes(metadataURI).length == 0) revert EmptyMetadataURI();
+        _tokenMetadataURIs[tokenId] = metadataURI;
+        emit TokenMetadataURISet(tokenId, metadataURI);
+    }
+
+    /**
+     * @dev Returns metadata URI for a token ID if present, else falls back to ERC1155 base URI pattern.
+     */
+    function uri(uint256 id) public view override returns (string memory) {
+        string memory tokenMetadataURI = _tokenMetadataURIs[id];
+        if (bytes(tokenMetadataURI).length > 0) {
+            return tokenMetadataURI;
+        }
+        return super.uri(id);
     }
 
     /**
@@ -298,110 +359,32 @@ contract RoboshareTokens is
         if (!TokenLib.isRevenueToken(revenueTokenId)) {
             revert NotRevenueToken();
         }
-        return _lockedRevenueTokenAmounts[holder][revenueTokenId];
+        return _requirePositionManager().getLockedAmount(holder, revenueTokenId);
     }
 
-    function lockForListing(address holder, uint256 revenueTokenId, uint256 amount)
-        external
-        onlyRole(AUTHORIZED_CONTRACT_ROLE)
-    {
+    function lockForListing(address holder, uint256 revenueTokenId, uint256 amount) external onlyRole(MANAGER_ROLE) {
         if (!TokenLib.isRevenueToken(revenueTokenId)) {
             revert NotRevenueToken();
         }
         if (amount == 0) revert InvalidLockAmount();
-
-        uint256 balance = balanceOf(holder, revenueTokenId);
-        uint256 lockedAmount = _lockedRevenueTokenAmounts[holder][revenueTokenId];
-        if (balance < lockedAmount + amount) revert InsufficientUnlockedBalance();
-
-        _lockedRevenueTokenAmounts[holder][revenueTokenId] = lockedAmount + amount;
-        emit RevenueTokenLocked(revenueTokenId, holder, amount);
+        _requirePositionManager().lockForListing(holder, revenueTokenId, amount);
     }
 
-    function unlockForListing(address holder, uint256 revenueTokenId, uint256 amount)
-        external
-        onlyRole(AUTHORIZED_CONTRACT_ROLE)
-    {
+    function unlockForListing(address holder, uint256 revenueTokenId, uint256 amount) external onlyRole(MANAGER_ROLE) {
         if (!TokenLib.isRevenueToken(revenueTokenId)) {
             revert NotRevenueToken();
         }
         if (amount == 0) revert InvalidLockAmount();
-
-        uint256 lockedAmount = _lockedRevenueTokenAmounts[holder][revenueTokenId];
-        if (lockedAmount < amount) revert InsufficientLockedBalance();
-
-        _lockedRevenueTokenAmounts[holder][revenueTokenId] = lockedAmount - amount;
-        emit RevenueTokenUnlocked(revenueTokenId, holder, amount);
+        _requirePositionManager().unlockForListing(holder, revenueTokenId, amount);
     }
 
-    function burnCurrentEpochForPrimaryRedemption(address holder, uint256 revenueTokenId, uint256 amount)
-        external
-        onlyRole(BURNER_ROLE)
-    {
+    function _managerBurnCurrentEpoch(address holder, uint256 revenueTokenId, uint256 amount) internal {
         if (!TokenLib.isRevenueToken(revenueTokenId)) {
             revert NotRevenueToken();
         }
         if (amount == 0) revert InvalidLockAmount();
-
-        _currentEpochBurnActive = true;
-        _currentEpochBurnHolder = holder;
-        _currentEpochBurnTokenId = revenueTokenId;
-
+        _requirePositionManager().preparePrimaryRedemptionBurn(holder, revenueTokenId);
         _burn(holder, revenueTokenId, amount);
-
-        _currentEpochBurnActive = false;
-        _currentEpochBurnHolder = address(0);
-        _currentEpochBurnTokenId = 0;
-    }
-
-    function recordImmediateProceedsRelease(uint256 revenueTokenId, uint256 releasedAmount)
-        external
-        onlyRole(BURNER_ROLE)
-    {
-        if (!TokenLib.isRevenueToken(revenueTokenId)) {
-            revert NotRevenueToken();
-        }
-        if (releasedAmount == 0) return;
-
-        TokenLib.TokenInfo storage tokenInfo = _revenueTokenInfos[revenueTokenId];
-        uint256 backedPrincipal = tokenInfo.currentRedemptionBackedPrincipal;
-        if (backedPrincipal == 0) return;
-
-        tokenInfo.currentRedemptionBackedPrincipal =
-            releasedAmount >= backedPrincipal ? 0 : backedPrincipal - releasedAmount;
-
-        _rollRedemptionEpochIfExhausted(tokenInfo);
-
-        emit PrimaryRedemptionStateUpdated(
-            revenueTokenId,
-            tokenInfo.currentRedemptionEpoch,
-            tokenInfo.currentRedemptionEpochSupply,
-            tokenInfo.currentRedemptionBackedPrincipal
-        );
-    }
-
-    function recordPrimaryRedemptionPayout(uint256 revenueTokenId, uint256 payoutAmount)
-        external
-        onlyRole(BURNER_ROLE)
-    {
-        if (!TokenLib.isRevenueToken(revenueTokenId)) {
-            revert NotRevenueToken();
-        }
-        if (payoutAmount == 0) return;
-
-        TokenLib.TokenInfo storage tokenInfo = _revenueTokenInfos[revenueTokenId];
-        uint256 backedPrincipal = tokenInfo.currentRedemptionBackedPrincipal;
-        tokenInfo.currentRedemptionBackedPrincipal =
-            payoutAmount >= backedPrincipal ? 0 : backedPrincipal - payoutAmount;
-
-        _rollRedemptionEpochIfExhausted(tokenInfo);
-
-        emit PrimaryRedemptionStateUpdated(
-            revenueTokenId,
-            tokenInfo.currentRedemptionEpoch,
-            tokenInfo.currentRedemptionEpochSupply,
-            tokenInfo.currentRedemptionBackedPrincipal
-        );
     }
 
     function transferLockedForListing(
@@ -410,18 +393,13 @@ contract RoboshareTokens is
         uint256 revenueTokenId,
         uint256 amount,
         bytes memory data
-    ) external onlyRole(AUTHORIZED_CONTRACT_ROLE) {
+    ) external onlyRole(MANAGER_ROLE) {
         if (!TokenLib.isRevenueToken(revenueTokenId)) {
             revert NotRevenueToken();
         }
         if (amount == 0) revert InvalidLockAmount();
-
-        uint256 lockedAmount = _lockedRevenueTokenAmounts[from][revenueTokenId];
-        if (lockedAmount < amount) revert InsufficientLockedBalance();
-        _lockedRevenueTokenAmounts[from][revenueTokenId] = lockedAmount - amount;
-
+        _requirePositionManager().settleLockedTransfer(from, to, revenueTokenId, amount);
         _safeTransferFrom(from, to, revenueTokenId, amount, data);
-        emit RevenueTokenUnlocked(revenueTokenId, from, amount);
     }
 
     /**
@@ -438,17 +416,7 @@ contract RoboshareTokens is
         if (!TokenLib.isRevenueToken(revenueTokenId)) {
             revert NotRevenueToken();
         }
-        TokenLib.TokenInfo storage info = _revenueTokenInfos[revenueTokenId];
-        TokenLib.PositionQueue storage queue = info.positions[holder];
-
-        uint256 size = queue.tail - queue.head;
-        positions = new TokenLib.TokenPosition[](size);
-
-        for (uint256 i = 0; i < size; i++) {
-            positions[i] = queue.items[queue.head + i];
-        }
-
-        return positions;
+        return _requirePositionManager().getUserPositions(revenueTokenId, holder);
     }
 
     function getPrimaryRedemptionEligibleBalance(address holder, uint256 revenueTokenId)
@@ -459,34 +427,21 @@ contract RoboshareTokens is
         if (!TokenLib.isRevenueToken(revenueTokenId)) {
             revert NotRevenueToken();
         }
-
-        TokenLib.TokenInfo storage info = _revenueTokenInfos[revenueTokenId];
-        TokenLib.PositionQueue storage queue = info.positions[holder];
-        uint256 currentEpoch = info.currentRedemptionEpoch;
-        uint256 eligibleBalance = 0;
-
-        for (uint256 i = queue.head; i < queue.tail; i++) {
-            TokenLib.TokenPosition storage position = queue.items[i];
-            if (position.amount > 0 && position.redemptionEpoch == currentEpoch) {
-                eligibleBalance += position.amount;
-            }
-        }
-
-        return eligibleBalance;
+        return _requirePositionManager().getPrimaryRedemptionEligibleBalance(holder, revenueTokenId);
     }
 
     function getCurrentPrimaryRedemptionEpochSupply(uint256 revenueTokenId) external view returns (uint256) {
         if (!TokenLib.isRevenueToken(revenueTokenId)) {
             revert NotRevenueToken();
         }
-        return _revenueTokenInfos[revenueTokenId].currentRedemptionEpochSupply;
+        return _requirePositionManager().getCurrentPrimaryRedemptionEpochSupply(revenueTokenId);
     }
 
     function getCurrentPrimaryRedemptionBackedPrincipal(uint256 revenueTokenId) external view returns (uint256) {
         if (!TokenLib.isRevenueToken(revenueTokenId)) {
             revert NotRevenueToken();
         }
-        return _revenueTokenInfos[revenueTokenId].currentRedemptionBackedPrincipal;
+        return _requirePositionManager().getCurrentPrimaryRedemptionBackedPrincipal(revenueTokenId);
     }
 
     /**
@@ -505,15 +460,7 @@ contract RoboshareTokens is
         if (!TokenLib.isRevenueToken(revenueTokenId)) {
             revert NotRevenueToken();
         }
-
-        // If the seller is the current owner of the corresponding Asset NFT, they are exempt from the penalty.
-        uint256 assetId = TokenLib.getAssetIdFromTokenId(revenueTokenId);
-        if (balanceOf(seller, assetId) > 0) {
-            penaltyAmount = 0;
-        } else {
-            // Otherwise, calculate the penalty based on token positions
-            penaltyAmount = TokenLib.calculateSalesPenalty(_revenueTokenInfos[revenueTokenId], seller, amount);
-        }
+        return _requirePositionManager().getSalesPenalty(seller, revenueTokenId, amount);
     }
 
     /**
@@ -521,9 +468,21 @@ contract RoboshareTokens is
      * Called on all mints, burns, and transfers.
      */
     function _update(address from, address to, uint256[] memory ids, uint256[] memory values) internal override {
+        IPositionManager manager;
+        bool hasRevenueToken;
+        for (uint256 i = 0; i < ids.length; i++) {
+            if (TokenLib.isRevenueToken(ids[i])) {
+                hasRevenueToken = true;
+                break;
+            }
+        }
+        if (hasRevenueToken) {
+            manager = _requirePositionManager();
+        }
+
         // Disallow transferring/burning listed (locked) revenue tokens through normal token paths.
         // Marketplace listing fills unlock before transfer via transferLockedForListing().
-        if (from != address(0)) {
+        if (hasRevenueToken && from != address(0)) {
             for (uint256 i = 0; i < ids.length; i++) {
                 uint256 tokenId = ids[i];
                 uint256 amount = values[i];
@@ -536,9 +495,15 @@ contract RoboshareTokens is
                     }
                 }
 
-                uint256 lockedAmount = _lockedRevenueTokenAmounts[from][tokenId];
-                uint256 available = balanceOf(from, tokenId) - lockedAmount;
+                uint256 available = manager.getAvailableAmount(from, tokenId, balanceOf(from, tokenId));
                 if (cumulative > available) revert InsufficientUnlockedBalance();
+            }
+        }
+
+        for (uint256 i = 0; i < ids.length; i++) {
+            uint256 tokenId = ids[i];
+            if (hasRevenueToken && TokenLib.isRevenueToken(tokenId)) {
+                manager.beforeRevenueTokenUpdate(from, to, tokenId, values[i]);
             }
         }
 
@@ -561,7 +526,6 @@ contract RoboshareTokens is
                     tokenInfo.tokenSupply -= amount;
                 }
 
-                _updateRevenueTokenPositions(tokenId, from, to, amount);
                 emit RevenueTokenPositionsUpdated(tokenId, from, to, amount);
             }
         }
@@ -579,156 +543,18 @@ contract RoboshareTokens is
         return super.supportsInterface(interfaceId);
     }
 
-    /**
-     * @dev Internal function to update token positions using FIFO logic.
-     * @param from The address transferring from (address(0) for mints).
-     * @param to The address transferring to (address(0) for burns).
-     * @param revenueTokenId The token ID being transferred.
-     * @param amount The amount being transferred.
-     */
-    function _updateRevenueTokenPositions(uint256 revenueTokenId, address from, address to, uint256 amount) internal {
-        TokenLib.TokenInfo storage tokenInfo = _revenueTokenInfos[revenueTokenId];
-
-        if (from == address(0)) {
-            // Minting - add position to receiver in the current redemption tranche.
-            TokenLib.addPosition(tokenInfo, to, amount);
-            tokenInfo.currentRedemptionEpochSupply += amount;
-            tokenInfo.currentRedemptionBackedPrincipal += amount * tokenInfo.tokenPrice;
-            emit PrimaryRedemptionStateUpdated(
-                revenueTokenId,
-                tokenInfo.currentRedemptionEpoch,
-                tokenInfo.currentRedemptionEpochSupply,
-                tokenInfo.currentRedemptionBackedPrincipal
-            );
-        } else if (to == address(0)) {
-            if (
-                _currentEpochBurnActive && from == _currentEpochBurnHolder && revenueTokenId == _currentEpochBurnTokenId
-            ) {
-                _burnCurrentEpochPositions(tokenInfo, from, amount);
-            } else {
-                _burnPositionsFifo(tokenInfo, from, amount);
-            }
-        } else {
-            _transferPositionsFifo(tokenInfo, from, to, amount);
-        }
+    function _requirePositionManager() internal view returns (IPositionManager manager) {
+        manager = positionManager;
+        if (address(manager) == address(0)) revert PositionManagerNotSet();
     }
 
-    function _appendPositionWithEpoch(TokenLib.TokenInfo storage info, address holder, uint256 amount, uint256 epoch)
-        private
-    {
-        TokenLib.PositionQueue storage queue = info.positions[holder];
-        uint256 id = queue.tail;
-        queue.items[id] = TokenLib.TokenPosition({
-            uid: id,
-            tokenId: info.tokenId,
-            amount: amount,
-            acquiredAt: block.timestamp,
-            soldAt: 0,
-            redemptionEpoch: epoch
-        });
-        queue.tail++;
-    }
+    function _syncRevenueTokenPolicies(IPositionManager manager) internal {
+        for (uint256 revenueTokenId = 2; revenueTokenId < _tokenIdCounter; revenueTokenId += 2) {
+            TokenLib.TokenInfo storage tokenInfo = _revenueTokenInfos[revenueTokenId];
+            if (tokenInfo.tokenId == 0) continue;
 
-    function _rollRedemptionEpochIfExhausted(TokenLib.TokenInfo storage info) private {
-        if (info.currentRedemptionEpochSupply > 0 && info.currentRedemptionBackedPrincipal > 0) {
-            return;
+            manager.syncRevenueTokenPolicy(revenueTokenId, tokenInfo.tokenPrice, tokenInfo.minHoldingPeriod);
         }
-
-        info.currentRedemptionEpoch++;
-        info.currentRedemptionEpochSupply = 0;
-        info.currentRedemptionBackedPrincipal = 0;
-    }
-
-    function _transferPositionsFifo(TokenLib.TokenInfo storage info, address from, address to, uint256 amount) private {
-        TokenLib.PositionQueue storage queue = info.positions[from];
-        uint256 remaining = amount;
-
-        for (uint256 i = queue.head; i < queue.tail && remaining > 0; i++) {
-            TokenLib.TokenPosition storage pos = queue.items[i];
-            if (pos.amount == 0) continue;
-
-            uint256 toMove = remaining > pos.amount ? pos.amount : remaining;
-            uint256 epoch = pos.redemptionEpoch;
-
-            pos.amount -= toMove;
-            if (pos.amount == 0) {
-                pos.soldAt = block.timestamp;
-            }
-
-            _appendPositionWithEpoch(info, to, toMove, epoch);
-            remaining -= toMove;
-        }
-
-        if (remaining > 0) {
-            revert TokenLib.InsufficientTokenBalance();
-        }
-    }
-
-    function _burnPositionsFifo(TokenLib.TokenInfo storage info, address holder, uint256 amount) private {
-        TokenLib.PositionQueue storage queue = info.positions[holder];
-        uint256 remaining = amount;
-        uint256 currentEpoch = info.currentRedemptionEpoch;
-        uint256 burnedFromCurrentEpoch = 0;
-
-        for (uint256 i = queue.head; i < queue.tail && remaining > 0; i++) {
-            TokenLib.TokenPosition storage pos = queue.items[i];
-            if (pos.amount == 0) continue;
-
-            uint256 toBurn = remaining > pos.amount ? pos.amount : remaining;
-            if (pos.redemptionEpoch == currentEpoch) {
-                burnedFromCurrentEpoch += toBurn;
-            }
-
-            pos.amount -= toBurn;
-            if (pos.amount == 0) {
-                pos.soldAt = block.timestamp;
-            }
-            remaining -= toBurn;
-        }
-
-        if (remaining > 0) {
-            revert TokenLib.InsufficientTokenBalance();
-        }
-
-        if (burnedFromCurrentEpoch > 0) {
-            info.currentRedemptionEpochSupply -= burnedFromCurrentEpoch;
-            emit PrimaryRedemptionStateUpdated(
-                info.tokenId,
-                info.currentRedemptionEpoch,
-                info.currentRedemptionEpochSupply,
-                info.currentRedemptionBackedPrincipal
-            );
-        }
-    }
-
-    function _burnCurrentEpochPositions(TokenLib.TokenInfo storage info, address holder, uint256 amount) private {
-        TokenLib.PositionQueue storage queue = info.positions[holder];
-        uint256 remaining = amount;
-        uint256 currentEpoch = info.currentRedemptionEpoch;
-
-        for (uint256 i = queue.head; i < queue.tail && remaining > 0; i++) {
-            TokenLib.TokenPosition storage pos = queue.items[i];
-            if (pos.amount == 0 || pos.redemptionEpoch != currentEpoch) continue;
-
-            uint256 toBurn = remaining > pos.amount ? pos.amount : remaining;
-            pos.amount -= toBurn;
-            if (pos.amount == 0) {
-                pos.soldAt = block.timestamp;
-            }
-            remaining -= toBurn;
-        }
-
-        if (remaining > 0) {
-            revert TokenLib.InsufficientTokenBalance();
-        }
-
-        info.currentRedemptionEpochSupply -= amount;
-        emit PrimaryRedemptionStateUpdated(
-            info.tokenId,
-            info.currentRedemptionEpoch,
-            info.currentRedemptionEpochSupply,
-            info.currentRedemptionBackedPrincipal
-        );
     }
 
     /**

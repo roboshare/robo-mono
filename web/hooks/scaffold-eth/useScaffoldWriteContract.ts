@@ -7,6 +7,7 @@ import { WriteContractErrorType, WriteContractReturnType } from "wagmi/actions";
 import { WriteContractVariables } from "wagmi/query";
 import { useSelectedNetwork } from "~~/hooks/scaffold-eth";
 import { useDeployedContractInfo, useTransactor } from "~~/hooks/scaffold-eth";
+import { sendSmartWalletCalls } from "~~/hooks/useSmartWalletTransaction";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
 import { AllowedChainIds, notification } from "~~/utils/scaffold-eth";
 import {
@@ -74,7 +75,12 @@ export function useScaffoldWriteContract<TContractName extends ContractName>(
   }, [configOrName]);
 
   const { chain: accountChain } = useAccount();
-  const { address: transactingAddress, chainId: transactingChainId, smartWalletClient } = useTransactingAccount();
+  const {
+    address: transactingAddress,
+    chainId: transactingChainId,
+    getSmartWalletClientForChain,
+    isSmartWallet,
+  } = useTransactingAccount();
   const writeTx = useTransactor();
   const [isMining, setIsMining] = useState(false);
 
@@ -131,20 +137,18 @@ export function useScaffoldWriteContract<TContractName extends ContractName>(
       }
 
       const makeWriteWithParams = () => {
-        if (smartWalletClient) {
-          return smartWalletClient.sendTransaction({
-            calls: [
-              {
-                to: deployedContractData.address,
-                data: encodeFunctionData({
-                  abi: deployedContractData.abi as Abi,
-                  functionName: variables.functionName as string,
-                  args: variables.args as readonly unknown[] | undefined,
-                }),
-                value: variables.value,
-              },
-            ],
-          });
+        if (isSmartWallet && getSmartWalletClientForChain) {
+          return sendSmartWalletCalls(getSmartWalletClientForChain, activeChainId, [
+            {
+              to: deployedContractData.address,
+              data: encodeFunctionData({
+                abi: deployedContractData.abi as Abi,
+                functionName: variables.functionName as string,
+                args: variables.args as readonly unknown[] | undefined,
+              }),
+              value: variables.value,
+            },
+          ]);
         }
 
         return wagmiContractWrite.writeContractAsync(

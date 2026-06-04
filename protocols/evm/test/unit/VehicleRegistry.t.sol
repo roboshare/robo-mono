@@ -102,66 +102,40 @@ contract VehicleRegistryTest is VehicleRegistryBaseTest {
         assetRegistry.getVehicleInfo(999);
     }
 
-    function testGetVehicleDisplayNameVehicleDoesNotExist() public {
-        vm.expectRevert(VehicleRegistry.VehicleDoesNotExist.selector);
-        assetRegistry.getVehicleDisplayName(999);
-    }
-
     function testRegisterVehicleInvalidVINLength() public {
         _ensureState(SetupState.InitialAccountsSetup);
         string memory shortVin = "VIN123"; // <10 length
         vm.expectRevert(VehicleLib.InvalidVINLength.selector);
         vm.prank(partner1);
+        assetRegistry.registerAsset(_vehicleRegistrationData(shortVin), ASSET_VALUE);
+    }
+
+    function testRegisterVehicleInvalidMetadataURI() public {
+        _ensureState(SetupState.InitialAccountsSetup);
+        vm.expectRevert(VehicleLib.InvalidMetadataURI.selector);
+        vm.prank(partner1);
         assetRegistry.registerAsset(
-            abi.encode(
-                shortVin, TEST_MAKE, TEST_MODEL, TEST_YEAR, TEST_MANUFACTURER_ID, TEST_OPTION_CODES, TEST_METADATA_URI
-            ),
-            ASSET_VALUE
+            _vehicleRegistrationData(TEST_VIN, "http://invalid-uri", TEST_REVENUE_TOKEN_METADATA_URI), ASSET_VALUE
         );
     }
 
-    function testRegisterVehicleEmptyMake() public {
+    function testRegisterVehicleInvalidRevenueTokenMetadataURI() public {
         _ensureState(SetupState.InitialAccountsSetup);
-        vm.expectRevert(VehicleLib.InvalidMake.selector);
+        vm.expectRevert(VehicleLib.InvalidMetadataURI.selector);
         vm.prank(partner1);
         assetRegistry.registerAsset(
-            abi.encode(TEST_VIN, "", TEST_MODEL, TEST_YEAR, TEST_MANUFACTURER_ID, TEST_OPTION_CODES, TEST_METADATA_URI),
-            ASSET_VALUE
+            _vehicleRegistrationData(TEST_VIN, TEST_METADATA_URI, "http://invalid-uri"), ASSET_VALUE
         );
     }
 
-    function testRegisterVehicleEmptyModel() public {
+    function testRegisterVehicleRejectsLegacyPartnerFormPayload() public {
         _ensureState(SetupState.InitialAccountsSetup);
-        vm.expectRevert(VehicleLib.InvalidModel.selector);
-        vm.prank(partner1);
-        assetRegistry.registerAsset(
-            abi.encode(TEST_VIN, TEST_MAKE, "", TEST_YEAR, TEST_MANUFACTURER_ID, TEST_OPTION_CODES, TEST_METADATA_URI),
-            ASSET_VALUE
-        );
-    }
 
-    function testRegisterVehicleInvalidYearTooLow() public {
-        _ensureState(SetupState.InitialAccountsSetup);
-        vm.expectRevert(VehicleLib.InvalidYear.selector);
-        vm.prank(partner1);
-        assetRegistry.registerAsset(
-            abi.encode(
-                TEST_VIN, TEST_MAKE, TEST_MODEL, 1980, TEST_MANUFACTURER_ID, TEST_OPTION_CODES, TEST_METADATA_URI
-            ),
-            ASSET_VALUE
-        );
-    }
+        bytes memory legacyPayload = _legacyVehicleRegistrationData(TEST_VIN, TEST_METADATA_URI);
 
-    function testRegisterVehicleInvalidYearTooHigh() public {
-        _ensureState(SetupState.InitialAccountsSetup);
-        vm.expectRevert(VehicleLib.InvalidYear.selector);
+        vm.expectRevert(VehicleRegistry.UnsupportedVehicleRegistrationPayload.selector);
         vm.prank(partner1);
-        assetRegistry.registerAsset(
-            abi.encode(
-                TEST_VIN, TEST_MAKE, TEST_MODEL, 2040, TEST_MANUFACTURER_ID, TEST_OPTION_CODES, TEST_METADATA_URI
-            ),
-            ASSET_VALUE
-        );
+        assetRegistry.registerAsset(legacyPayload, ASSET_VALUE);
     }
 
     function testGetRegistryForAsset() public {
@@ -177,23 +151,12 @@ contract VehicleRegistryTest is VehicleRegistryBaseTest {
     function testGetVehicleInfo() public {
         _ensureState(SetupState.AssetRegistered);
 
-        (
-            string memory vin,
-            string memory make,
-            string memory model,
-            uint256 year,
-            uint256 manufacturerId,
-            string memory optionCodes,
-            string memory metadataUri
-        ) = assetRegistry.getVehicleInfo(scenario.assetId);
+        (bytes32 vinHash, string memory assetMetadataURI, string memory revenueTokenMetadataURI) =
+            assetRegistry.getVehicleInfo(scenario.assetId);
 
-        assertEq(vin, TEST_VIN);
-        assertEq(make, TEST_MAKE);
-        assertEq(model, TEST_MODEL);
-        assertEq(year, TEST_YEAR);
-        assertEq(manufacturerId, TEST_MANUFACTURER_ID);
-        assertEq(optionCodes, TEST_OPTION_CODES);
-        assertEq(metadataUri, TEST_METADATA_URI);
+        assertEq(vinHash, keccak256(bytes(TEST_VIN)));
+        assertEq(assetMetadataURI, TEST_METADATA_URI);
+        assertEq(revenueTokenMetadataURI, TEST_REVENUE_TOKEN_METADATA_URI);
     }
 
     // ============ Admin Function Tests ============

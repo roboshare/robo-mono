@@ -170,6 +170,7 @@ export const RegisterVehicleForm = ({ onClose, onSuccess, maxStep, onBack }: Reg
   const bufferQuote = calculatePrimaryPoolBuffers(assetValueBigInt, targetYieldBP, formData.protectionEnabled);
   const displayedBufferLabel = formData.protectionEnabled ? "Required Total Buffer" : "Required Protocol Buffer";
   const displayedBufferAmount = formData.protectionEnabled ? bufferQuote.totalBuffer : bufferQuote.protocolBuffer;
+  const requestedSupply = tokenPriceBigInt > 0n ? assetValueBigInt / tokenPriceBigInt : 0n;
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -414,21 +415,11 @@ export const RegisterVehicleForm = ({ onClose, onSuccess, maxStep, onBack }: Reg
       // Upload metadata JSON to IPFS (uploadToIpfs handles object->blob conversion)
       const metadataUri = await uploadToIpfs(metadata);
 
-      // Encode all 7 fields as expected by the contract:
-      // (string vin, string make, string model, uint256 year, uint256 manufacturerId, string optionCodes, string dynamicMetadataURI)
+      // The contract boundary now stores VIN plus explicit asset/revenue-token metadata pointers.
+      // The current partner flow only uploads one metadata document, so reuse it for both token URIs.
       const encodedVehicleData = encodeAbiParameters(
-        parseAbiParameters(
-          "string vin, string make, string model, uint256 year, uint256 manufacturerId, string optionCodes, string dynamicMetadataURI",
-        ),
-        [
-          formData.vin,
-          formData.make,
-          formData.model,
-          BigInt(formData.year),
-          BigInt(formData.manufacturerId),
-          formData.optionCodes,
-          metadataUri,
-        ],
+        parseAbiParameters("string vin, string assetMetadataURI, string revenueTokenMetadataURI"),
+        [formData.vin, metadataUri, metadataUri],
       );
 
       setProcessedData({ encodedVehicleData });
@@ -465,7 +456,7 @@ export const RegisterVehicleForm = ({ onClose, onSuccess, maxStep, onBack }: Reg
           maturityTimestamp,
           revenueShareBP,
           targetYieldBP,
-          0n,
+          requestedSupply,
           formData.immediateProceeds,
           formData.protectionEnabled,
         ],

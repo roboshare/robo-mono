@@ -8,6 +8,7 @@ import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IEarningsManager } from "./interfaces/IEarningsManager.sol";
+import { IPositionManager } from "./interfaces/IPositionManager.sol";
 import { ITreasury } from "./interfaces/ITreasury.sol";
 import { ProtocolLib, TokenLib, EarningsLib, AssetLib } from "./Libraries.sol";
 import { RoboshareTokens } from "./RoboshareTokens.sol";
@@ -36,6 +37,7 @@ contract EarningsManager is
     mapping(uint256 => EarningsLib.EarningsInfo) private _assetEarnings;
 
     error ZeroAddress();
+    error UnauthorizedPositionManager(address caller, address activeManager);
 
     constructor() {
         _disableInitializers();
@@ -306,6 +308,33 @@ contract EarningsManager is
         emit EarningsDistributed(assetId, msg.sender, totalRevenue, netEarnings, currentPeriod);
     }
 
+    function _positionManager() internal view returns (IPositionManager manager) {
+        manager = roboshareTokens.positionManager();
+        if (address(manager) == address(0)) {
+            revert RoboshareTokens.PositionManagerNotSet();
+        }
+    }
+
+    modifier onlyActivePositionManager() {
+        _onlyActivePositionManager();
+        _;
+    }
+
+    function _onlyActivePositionManager() internal view {
+        IPositionManager activeManager = _positionManager();
+        if (msg.sender != address(activeManager)) {
+            revert UnauthorizedPositionManager(msg.sender, address(activeManager));
+        }
+    }
+
+    function _getRevenuePositions(uint256 revenueTokenId, address holder)
+        internal
+        view
+        returns (TokenLib.TokenPosition[] memory positions)
+    {
+        positions = _positionManager().getUserPositions(revenueTokenId, holder);
+    }
+
     function claimEarnings(uint256 assetId) external nonReentrant {
         uint256 claimedAmount = _claimEarningsFor(msg.sender, assetId);
         if (claimedAmount == 0) {
@@ -325,38 +354,33 @@ contract EarningsManager is
             return 0;
         }
 
+        uint256 transferredCredit = earningsInfo.transferredEarningsCredit[holder];
+
         AssetLib.AssetStatus status = router.getAssetStatus(assetId);
         bool isSettled = status == AssetLib.AssetStatus.Retired || status == AssetLib.AssetStatus.Expired;
+        uint256 revenueTokenId = TokenLib.getTokenIdFromAssetId(assetId);
 
         if (isSettled) {
-            uint256 settledPreview = EarningsLib.previewSettledEarnings(earningsInfo, holder);
-            if (settledPreview > 0) {
-                return settledPreview;
+            uint256 totalPreview = EarningsLib.previewSettledEarnings(earningsInfo, holder) + transferredCredit;
+            if (
+                roboshareTokens.balanceOf(holder, assetId) == 0 && roboshareTokens.balanceOf(holder, revenueTokenId) > 0
+            ) {
+                TokenLib.TokenPosition[] memory settledPositions = _getRevenuePositions(revenueTokenId, holder);
+                totalPreview += EarningsLib.previewEarningsForHolder(earningsInfo, holder, settledPositions);
             }
-            if (roboshareTokens.balanceOf(holder, assetId) > 0) {
-                return 0;
-            }
-            uint256 settledRevenueTokenId = TokenLib.getTokenIdFromAssetId(assetId);
-            if (roboshareTokens.balanceOf(holder, settledRevenueTokenId) == 0) {
-                return 0;
-            }
-
-            TokenLib.TokenPosition[] memory settledPositions =
-                roboshareTokens.getUserPositions(settledRevenueTokenId, holder);
-            return EarningsLib.previewEarningsForHolder(earningsInfo, holder, settledPositions);
+            return totalPreview;
         }
 
         if (roboshareTokens.balanceOf(holder, assetId) > 0) {
-            return 0;
+            return transferredCredit;
         }
 
-        uint256 revenueTokenId = TokenLib.getTokenIdFromAssetId(assetId);
         if (roboshareTokens.balanceOf(holder, revenueTokenId) == 0) {
-            return 0;
+            return transferredCredit;
         }
 
-        TokenLib.TokenPosition[] memory positions = roboshareTokens.getUserPositions(revenueTokenId, holder);
-        return EarningsLib.previewEarningsForHolder(earningsInfo, holder, positions);
+        TokenLib.TokenPosition[] memory positions = _getRevenuePositions(revenueTokenId, holder);
+        return transferredCredit + EarningsLib.previewEarningsForHolder(earningsInfo, holder, positions);
     }
 
     function snapshotAndClaimEarnings(uint256 assetId, address holder, bool autoClaim)
@@ -370,13 +394,79 @@ contract EarningsManager is
         }
 
         uint256 revenueTokenId = TokenLib.getTokenIdFromAssetId(assetId);
-        TokenLib.TokenPosition[] memory positions = roboshareTokens.getUserPositions(revenueTokenId, holder);
+        TokenLib.TokenPosition[] memory positions = _getRevenuePositions(revenueTokenId, holder);
         snapshotAmount = EarningsLib.snapshotHolderEarnings(earningsInfo, holder, positions);
+
+        if (autoClaim) {
+            uint256 transferredCredit = earningsInfo.transferredEarningsCredit[holder];
+            if (transferredCredit > 0) {
+                earningsInfo.transferredEarningsCredit[holder] = 0;
+                snapshotAmount += transferredCredit;
+            }
+        }
 
         if (autoClaim && snapshotAmount > 0) {
             earningsInfo.hasClaimedSettledEarnings[holder] = true;
             treasury.creditEarningsWithdrawal(holder, snapshotAmount);
             emit EarningsClaimed(assetId, holder, snapshotAmount);
+        }
+    }
+
+    function transferPositionClaimState(
+        uint256 assetId,
+        address from,
+        address to,
+        uint256 tokenId,
+        uint256 fromPositionUid,
+        uint256 toPositionUid
+    ) external onlyActivePositionManager {
+        EarningsLib.EarningsInfo storage earningsInfo = _assetEarnings[assetId];
+        uint256 senderLastClaimed = earningsInfo.positionsLastClaimedPeriod[from][tokenId][fromPositionUid];
+        uint256 recipientLastClaimed = earningsInfo.positionsLastClaimedPeriod[to][tokenId][toPositionUid];
+
+        uint256 baseline = senderLastClaimed > recipientLastClaimed ? senderLastClaimed : recipientLastClaimed;
+        uint256 cutoffPeriod = EarningsLib.getPeriodAtTimestamp(earningsInfo, block.timestamp);
+        uint256 updatedLastClaimed = baseline > cutoffPeriod ? baseline : cutoffPeriod;
+        earningsInfo.positionsLastClaimedPeriod[to][tokenId][toPositionUid] = updatedLastClaimed;
+    }
+
+    function preserveTransferredPositionEarnings(
+        uint256 assetId,
+        address holder,
+        uint256 tokenId,
+        uint256 positionUid,
+        uint256 transferredAmount,
+        uint256 acquiredAt
+    ) external onlyActivePositionManager {
+        if (transferredAmount == 0) {
+            return;
+        }
+
+        EarningsLib.EarningsInfo storage earningsInfo = _assetEarnings[assetId];
+        if (!earningsInfo.isInitialized || earningsInfo.currentPeriod == 0) {
+            return;
+        }
+
+        if (roboshareTokens.balanceOf(holder, assetId) > 0) {
+            return;
+        }
+
+        uint256 lastClaimedPeriod = earningsInfo.positionsLastClaimedPeriod[holder][tokenId][positionUid];
+        uint256 cutoffPeriod = EarningsLib.getPeriodAtTimestamp(earningsInfo, block.timestamp);
+        if (cutoffPeriod <= lastClaimedPeriod) {
+            return;
+        }
+
+        uint256 preservedAmount;
+        for (uint256 period = lastClaimedPeriod + 1; period <= cutoffPeriod; period++) {
+            uint256 periodTimestamp = earningsInfo.periods[period].timestamp;
+            if (acquiredAt <= periodTimestamp) {
+                preservedAmount += earningsInfo.periods[period].earningsPerToken * transferredAmount;
+            }
+        }
+
+        if (preservedAmount > 0) {
+            earningsInfo.transferredEarningsCredit[holder] += preservedAmount;
         }
     }
 
@@ -390,41 +480,50 @@ contract EarningsManager is
             revert ITreasury.NoEarningsToClaim();
         }
 
+        uint256 transferredCredit = earningsInfo.transferredEarningsCredit[holder];
+
         AssetLib.AssetStatus status = router.getAssetStatus(assetId);
         bool isSettled = status == AssetLib.AssetStatus.Retired || status == AssetLib.AssetStatus.Expired;
+        uint256 revenueTokenId = TokenLib.getTokenIdFromAssetId(assetId);
 
         if (isSettled) {
             unclaimedAmount = EarningsLib.claimSettledEarnings(earningsInfo, holder);
-            if (unclaimedAmount == 0) {
-                if (roboshareTokens.balanceOf(holder, assetId) == 0) {
-                    uint256 revenueTokenId = TokenLib.getTokenIdFromAssetId(assetId);
-                    uint256 tokenBalance = roboshareTokens.balanceOf(holder, revenueTokenId);
-                    if (tokenBalance > 0) {
-                        TokenLib.TokenPosition[] memory positions =
-                            roboshareTokens.getUserPositions(revenueTokenId, holder);
-                        unclaimedAmount = EarningsLib.calculateEarningsForPositions(earningsInfo, holder, positions);
-                        if (unclaimedAmount > 0) {
-                            EarningsLib.updateClaimPeriods(earningsInfo, holder, positions);
-                        }
+            if (roboshareTokens.balanceOf(holder, assetId) == 0) {
+                uint256 tokenBalance = roboshareTokens.balanceOf(holder, revenueTokenId);
+                if (tokenBalance > 0) {
+                    TokenLib.TokenPosition[] memory positions = _getRevenuePositions(revenueTokenId, holder);
+                    uint256 positionEarnings =
+                        EarningsLib.calculateEarningsForPositions(earningsInfo, holder, positions);
+                    if (positionEarnings > 0) {
+                        EarningsLib.updateClaimPeriods(earningsInfo, holder, positions);
+                        unclaimedAmount += positionEarnings;
                     }
                 }
             }
         } else {
-            if (roboshareTokens.balanceOf(holder, assetId) > 0) {
+            if (roboshareTokens.balanceOf(holder, assetId) > 0 && transferredCredit == 0) {
                 revert ITreasury.NoEarningsToClaim();
             }
-            uint256 revenueTokenId = TokenLib.getTokenIdFromAssetId(assetId);
+
             uint256 tokenBalance = roboshareTokens.balanceOf(holder, revenueTokenId);
             if (tokenBalance == 0) {
-                revert ITreasury.InsufficientTokenBalance();
-            }
+                if (transferredCredit == 0) {
+                    revert ITreasury.InsufficientTokenBalance();
+                }
+            } else if (roboshareTokens.balanceOf(holder, assetId) == 0) {
+                TokenLib.TokenPosition[] memory positions = _getRevenuePositions(revenueTokenId, holder);
+                uint256 positionEarnings = EarningsLib.calculateEarningsForPositions(earningsInfo, holder, positions);
 
-            TokenLib.TokenPosition[] memory positions = roboshareTokens.getUserPositions(revenueTokenId, holder);
-            unclaimedAmount = EarningsLib.calculateEarningsForPositions(earningsInfo, holder, positions);
-
-            if (unclaimedAmount > 0) {
-                EarningsLib.updateClaimPeriods(earningsInfo, holder, positions);
+                if (positionEarnings > 0) {
+                    EarningsLib.updateClaimPeriods(earningsInfo, holder, positions);
+                    unclaimedAmount += positionEarnings;
+                }
             }
+        }
+
+        if (transferredCredit > 0) {
+            earningsInfo.transferredEarningsCredit[holder] = 0;
+            unclaimedAmount += transferredCredit;
         }
     }
 

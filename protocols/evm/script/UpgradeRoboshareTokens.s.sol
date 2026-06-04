@@ -34,11 +34,13 @@ contract UpgradeRoboshareTokens is ScaffoldETHDeploy {
         console.log("New implementation address:", address(newImplementation));
         console.log("RoboshareTokens upgrade completed successfully!");
         console.log("");
-        console.log("Note: Run any necessary admin functions for this upgrade manually or via script.");
+        console.log("Note: This upgrade is part of the PositionManager split rollout.");
+        console.log("PositionManager must hold MANAGER_ROLE before Router starts using the new manager-gated paths.");
+        console.log("Complete coordinated admin wiring and Router upgrade steps manually or via script.");
     }
 
     function help() external pure {
         console.log("Usage: yarn upgrade --contract RoboshareTokens --proxy-address <addr>");
-        console.log("Post-upgrade: Configure via admin functions");
+        console.log("Post-upgrade: attach PositionManager and complete MANAGER_ROLE/admin wiring before Router upgrade");
     }
 }

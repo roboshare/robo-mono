@@ -3,6 +3,7 @@ pragma solidity ^0.8.19;
 
 import { Test } from "forge-std/Test.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { PositionManager } from "../../contracts/PositionManager.sol";
 import { RoboshareTokens } from "../../contracts/RoboshareTokens.sol";
 import { PartnerManager } from "../../contracts/PartnerManager.sol";
 import { RegistryRouter } from "../../contracts/RegistryRouter.sol";
@@ -34,6 +35,7 @@ abstract contract BaseTest is Test {
     RegistryRouter public router;
     VehicleRegistry public assetRegistry;
     Marketplace public marketplace;
+    PositionManager public positionManager;
     IERC20 public usdc;
 
     DeployForTest.NetworkConfig public config;
@@ -110,8 +112,16 @@ abstract contract BaseTest is Test {
 
     function _deployContracts() internal {
         deployer = new DeployForTest();
-        (roboshareTokens, partnerManager, router, assetRegistry, treasury, earningsManager, marketplace) =
-            deployer.run(admin);
+        (
+            roboshareTokens,
+            partnerManager,
+            router,
+            assetRegistry,
+            treasury,
+            earningsManager,
+            marketplace,
+            positionManager
+        ) = deployer.run(admin);
 
         config = deployer.getActiveNetworkConfig();
         usdc = IERC20(config.usdcToken);

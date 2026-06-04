@@ -9,6 +9,7 @@ import { VehicleRegistry } from "../contracts/VehicleRegistry.sol";
 import { Treasury } from "../contracts/Treasury.sol";
 import { EarningsManager } from "../contracts/EarningsManager.sol";
 import { Marketplace } from "../contracts/Marketplace.sol";
+import { PositionManager } from "../contracts/PositionManager.sol";
 
 /**
  * @title DeployForTest
@@ -32,7 +33,8 @@ contract DeployForTest is DeployCore {
             VehicleRegistry vehicleRegistry,
             Treasury treasury,
             EarningsManager earningsManager,
-            Marketplace marketplace
+            Marketplace marketplace,
+            PositionManager positionManager
         )
     {
         // Get network configuration
@@ -62,5 +64,6 @@ contract DeployForTest is DeployCore {
         treasury = contracts.treasury;
         earningsManager = contracts.earningsManager;
         marketplace = contracts.marketplace;
+        positionManager = contracts.positionManager;
     }
 }

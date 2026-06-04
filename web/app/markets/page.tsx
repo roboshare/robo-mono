@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NextPage } from "next";
 import { formatUnits } from "viem";
 import { useChainId, useChains, useReadContract, useReadContracts, useSwitchChain } from "wagmi";
@@ -23,11 +23,19 @@ import { CreateSecondaryListingModal } from "~~/components/partner/CreateSeconda
 import { EndSecondaryListingModal } from "~~/components/partner/EndSecondaryListingModal";
 import { WithdrawProceedsModal } from "~~/components/partner/WithdrawProceedsModal";
 import { ASSET_REGISTRIES, AssetType } from "~~/config/assetTypes";
-import { useScaffoldWriteContract, useSelectedNetwork } from "~~/hooks/scaffold-eth";
+import { useScaffoldEventHistory, useScaffoldWriteContract, useSelectedNetwork } from "~~/hooks/scaffold-eth";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
+import { isSettledAssetStatus } from "~~/utils/assetStatus";
 import { getDeployedContract } from "~~/utils/contracts";
-import { fetchIpfsMetadata, ipfsToHttp } from "~~/utils/ipfsGateway";
+import { fetchIpfsMetadata, mergeVehicleMetadata } from "~~/utils/ipfsGateway";
+import {
+  POSITION_MANAGER_PRIMARY_REDEMPTION_READER_ABI,
+  ROBOSHARE_TOKENS_MANAGER_READER_ABI,
+  normalizePositionManagerAddress,
+  normalizePrimaryRedemptionPreview,
+  normalizeVehicleMetadata,
+} from "~~/utils/protocolState";
 import { getTargetNetworks, notification } from "~~/utils/scaffold-eth";
 import { getSubgraphQueryUrl } from "~~/utils/subgraph";
 
@@ -60,8 +68,6 @@ interface SubgraphPrimaryPool {
   isPaused: boolean;
   isClosed: boolean;
   createdAt: string;
-  pausedAt?: string | null;
-  closedAt?: string | null;
 }
 
 interface SubgraphVehicle {
@@ -72,9 +78,10 @@ interface SubgraphVehicle {
   model?: string;
   year?: string;
   metadataURI?: string;
+  imageUrl?: string;
 }
 
-interface SubgraphToken {
+interface MarketToken {
   id: string;
   revenueTokenId: string;
   price: string;
@@ -84,17 +91,15 @@ interface SubgraphToken {
   maturityDate: string;
 }
 
-interface SubgraphAssetEarnings {
+interface MarketAssetEarnings {
   id: string;
   assetId: string;
   totalEarnings: string;
   totalRevenue: string;
-  distributionCount: string;
-  firstDistributionAt: string;
   lastDistributionAt: string;
 }
 
-interface SubgraphPartner {
+interface MarketPartner {
   id: string;
   name: string;
   address: string;
@@ -108,6 +113,7 @@ const BENCHMARK_EARNINGS_BP = 1000n;
 const BP_PRECISION = 10000n;
 const NEW_POOL_BADGE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MARKETS_PAGE_BATCH_SIZE = 12;
+const METADATA_FETCH_MAX_ATTEMPTS = 3;
 const MARKETS_PAGE_PREFS_KEY = "roboshare:markets-page-prefs";
 
 const MarketsPage: NextPage = () => {
@@ -116,12 +122,14 @@ const MarketsPage: NextPage = () => {
   const [listings, setListings] = useState<SubgraphListing[]>([]);
   const [primaryPools, setPrimaryPools] = useState<SubgraphPrimaryPool[]>([]);
   const [vehicles, setVehicles] = useState<SubgraphVehicle[]>([]);
-  const [tokens, setTokens] = useState<SubgraphToken[]>([]);
-  const [assetEarnings, setAssetEarnings] = useState<SubgraphAssetEarnings[]>([]);
-  const [partners, setPartners] = useState<SubgraphPartner[]>([]);
   const [recentPrimaryPoolPurchases, setRecentPrimaryPoolPurchases] = useState<Set<string>>(new Set());
   const [soldOutAtByListing, setSoldOutAtByListing] = useState<Record<string, string>>({});
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
+  const [vehicleMetadataOverrides, setVehicleMetadataOverrides] = useState<Record<string, Partial<SubgraphVehicle>>>(
+    {},
+  );
+  const metadataFetchAttempts = useRef<Map<string, number>>(new Map());
+  const [metadataFetchRetryNonce, setMetadataFetchRetryNonce] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -217,6 +225,7 @@ const MarketsPage: NextPage = () => {
   const targetNetworks = getTargetNetworks();
   const subgraphUrl = getSubgraphQueryUrl(chainId);
   const roboshareTokensContract = getDeployedContract(chainId, "RoboshareTokens");
+  const partnerManagerContract = getDeployedContract(chainId, "PartnerManager");
   const marketplaceContract = getDeployedContract(chainId, "Marketplace");
   const treasuryContract = getDeployedContract(chainId, "Treasury");
   const registryRouterContract = getDeployedContract(chainId, "RegistryRouter");
@@ -225,8 +234,19 @@ const MarketsPage: NextPage = () => {
   const { symbol, decimals } = usePaymentToken();
   const { writeContractAsync: writeTreasury } = useScaffoldWriteContract({ contractName: "Treasury" });
   const { writeContractAsync: writeEarningsManager } = useScaffoldWriteContract({ contractName: "EarningsManager" });
+  const { data: positionManagerAddressData } = useReadContract({
+    address: roboshareTokensContract?.address,
+    abi: ROBOSHARE_TOKENS_MANAGER_READER_ABI,
+    functionName: "positionManager",
+    query: { enabled: !!roboshareTokensContract },
+  });
+  const positionManagerAddress = normalizePositionManagerAddress(positionManagerAddressData);
 
   const getVehicleImageKey = useCallback(
+    (vehicle: Pick<SubgraphVehicle, "id" | "metadataURI">) => `${chainId}:${vehicle.id}:${vehicle.metadataURI || ""}`,
+    [chainId],
+  );
+  const getVehicleMetadataKey = useCallback(
     (vehicle: Pick<SubgraphVehicle, "id" | "metadataURI">) => `${chainId}:${vehicle.id}:${vehicle.metadataURI || ""}`,
     [chainId],
   );
@@ -259,51 +279,85 @@ const MarketsPage: NextPage = () => {
 
     return vehicles.map((vehicle, index) => {
       const result = results?.[index];
-      if (result?.status !== "success" || result.result === undefined) {
-        return vehicle;
-      }
-
-      const info = result.result;
-      const liveYear = info[3];
+      const normalizedVehicle =
+        result?.status === "success" && result.result !== undefined
+          ? normalizeVehicleMetadata(result.result, vehicle)
+          : vehicle;
       return {
-        ...vehicle,
-        vin: (info[0] as string | undefined) || vehicle.vin,
-        make: (info[1] as string | undefined) || vehicle.make,
-        model: (info[2] as string | undefined) || vehicle.model,
-        year: liveYear !== undefined && liveYear !== null ? String(liveYear as bigint | number | string) : vehicle.year,
-        metadataURI: (info[6] as string | undefined) || vehicle.metadataURI,
+        ...normalizedVehicle,
+        ...vehicleMetadataOverrides[getVehicleMetadataKey(normalizedVehicle)],
       };
     });
-  }, [vehicleInfoData, vehicles]);
+  }, [getVehicleMetadataKey, vehicleInfoData, vehicleMetadataOverrides, vehicles]);
 
   const { data: targetYieldData } = useReadContracts({
     allowFailure: true,
     contracts: roboshareTokensContract
-      ? tokens.map(token => ({
+      ? primaryPools.map(pool => ({
           address: roboshareTokensContract.address,
           abi: roboshareTokensContract.abi,
           functionName: "getTargetYieldBP",
-          args: [BigInt(token.revenueTokenId)],
+          args: [BigInt(pool.tokenId)],
         }))
       : ([] as any),
-    query: { enabled: !!roboshareTokensContract && tokens.length > 0 },
+    query: { enabled: !!roboshareTokensContract && primaryPools.length > 0 },
   });
 
-  const marketTokens = useMemo(() => {
-    const results = targetYieldData as Array<{ result?: bigint; status: string }> | undefined;
+  const { data: maturityDateData } = useReadContracts({
+    allowFailure: true,
+    contracts: roboshareTokensContract
+      ? primaryPools.map(pool => ({
+          address: roboshareTokensContract.address,
+          abi: roboshareTokensContract.abi,
+          functionName: "getTokenMaturityDate",
+          args: [BigInt(pool.tokenId)],
+        }))
+      : ([] as any),
+    query: { enabled: !!roboshareTokensContract && primaryPools.length > 0 },
+  });
 
-    return tokens.map((token, index) => {
-      const result = results?.[index];
-      if (result?.status !== "success" || result.result === undefined) {
-        return token;
-      }
+  const partnerAddresses = useMemo(() => {
+    const uniquePartners = new Set<string>();
 
-      return {
-        ...token,
-        targetYieldBP: String(result.result),
-      };
+    vehicles.forEach(vehicle => {
+      if (vehicle.partner) uniquePartners.add(vehicle.partner);
     });
-  }, [targetYieldData, tokens]);
+
+    primaryPools.forEach(pool => {
+      if (pool.partner) uniquePartners.add(pool.partner);
+    });
+
+    return Array.from(uniquePartners);
+  }, [primaryPools, vehicles]);
+
+  const { data: partnerNameData } = useReadContracts({
+    allowFailure: true,
+    contracts: partnerManagerContract
+      ? partnerAddresses.map(partnerAddress => ({
+          address: partnerManagerContract.address,
+          abi: partnerManagerContract.abi,
+          functionName: "getPartnerName",
+          args: [partnerAddress],
+        }))
+      : ([] as any),
+    query: { enabled: !!partnerManagerContract && partnerAddresses.length > 0 },
+  });
+
+  const marketPartners = useMemo(() => {
+    const results = partnerNameData as Array<{ result?: string; status: string }> | undefined;
+
+    return partnerAddresses.map((partnerAddress, index) => {
+      const result = results?.[index];
+      return {
+        id: partnerAddress.toLowerCase(),
+        address: partnerAddress,
+        name:
+          result?.status === "success" && result.result !== undefined && result.result.length > 0
+            ? result.result
+            : partnerAddress,
+      } satisfies MarketPartner;
+    });
+  }, [partnerAddresses, partnerNameData]);
 
   // Fetch data from subgraph
   const fetchData = useCallback(
@@ -349,8 +403,6 @@ const MarketsPage: NextPage = () => {
                 isPaused
                 isClosed
                 createdAt
-                pausedAt
-                closedAt
               }
               vehicles(first: 100) {
                 id
@@ -360,29 +412,6 @@ const MarketsPage: NextPage = () => {
                 model
                 year
                 metadataURI
-              }
-              roboshareTokens(first: 100) {
-                id
-                revenueTokenId
-                price
-                supply
-                createdAt
-                targetYieldBP
-                maturityDate
-              }
-              partners(first: 100) {
-                id
-                name
-                address
-              }
-              assetEarnings(first: 100) {
-                id
-                assetId
-                totalRevenue
-                totalEarnings
-                distributionCount
-                firstDistributionAt
-                lastDistributionAt
               }
             }
           `,
@@ -421,9 +450,6 @@ const MarketsPage: NextPage = () => {
         });
         setVehicles(data?.vehicles || []);
         setPrimaryPools(data?.primaryPools || []);
-        setTokens(data?.roboshareTokens || []);
-        setAssetEarnings(data?.assetEarnings || []);
-        setPartners(data?.partners || []);
       } catch (e: any) {
         console.error("Error fetching market data:", e);
         setError(e.message || "Failed to fetch market data");
@@ -486,15 +512,15 @@ const MarketsPage: NextPage = () => {
 
   const { data: primaryPoolEligibleRedemptionData, refetch: refetchPrimaryPoolEligibleRedemptionBalances } =
     useReadContracts({
-      contracts: roboshareTokensContract
+      contracts: positionManagerAddress
         ? primaryPools.map(pool => ({
-            address: roboshareTokensContract.address,
-            abi: roboshareTokensContract.abi,
+            address: positionManagerAddress,
+            abi: POSITION_MANAGER_PRIMARY_REDEMPTION_READER_ABI,
             functionName: "getPrimaryRedemptionEligibleBalance",
             args: [address, BigInt(pool.tokenId)],
           }))
         : ([] as any),
-      query: { enabled: !!address && !!roboshareTokensContract && primaryPools.length > 0 },
+      query: { enabled: !!address && !!positionManagerAddress && primaryPools.length > 0 },
     });
 
   const { data: primaryPoolRedemptionPreviewData, refetch: refetchPrimaryPoolRedemptionPreviews } = useReadContracts({
@@ -523,6 +549,28 @@ const MarketsPage: NextPage = () => {
   const uniqueAssetIds = useMemo(() => {
     return Array.from(new Set([...listings.map(l => l.assetId), ...primaryPools.map(p => p.assetId)]));
   }, [listings, primaryPools]);
+
+  const { data: assetEarningsData } = useReadContracts({
+    allowFailure: true,
+    contracts: earningsManagerContract
+      ? uniqueAssetIds.map(assetId => ({
+          address: earningsManagerContract.address,
+          abi: earningsManagerContract.abi,
+          functionName: "assetEarnings",
+          args: [BigInt(assetId)],
+        }))
+      : ([] as any),
+    query: { enabled: !!earningsManagerContract && uniqueAssetIds.length > 0 },
+  });
+  const { data: earningsDistributedEvents } = useScaffoldEventHistory({
+    contractName: "EarningsManager",
+    eventName: "EarningsDistributed",
+    fromBlock: 0n,
+    chainId,
+    blockData: true as const,
+    watch: true,
+    enabled: !!earningsManagerContract,
+  });
 
   const { data: actionPreviewData, refetch: refetchActionPreviewData } = useReadContracts({
     allowFailure: true,
@@ -637,6 +685,66 @@ const MarketsPage: NextPage = () => {
     return byTokenId;
   }, [primaryPools, primaryPoolSupplyData]);
 
+  const marketTokens = useMemo<MarketToken[]>(() => {
+    const targetYieldResults = targetYieldData as Array<{ result?: bigint; status: string }> | undefined;
+    const maturityResults = maturityDateData as Array<{ result?: bigint; status: string }> | undefined;
+
+    return primaryPools.map((pool, index) => {
+      const targetYieldResult = targetYieldResults?.[index];
+      const maturityResult = maturityResults?.[index];
+
+      return {
+        id: pool.tokenId,
+        revenueTokenId: pool.tokenId,
+        price: pool.pricePerToken,
+        supply: primaryPoolSupplyByTokenId.get(pool.tokenId) || "0",
+        createdAt: pool.createdAt,
+        targetYieldBP:
+          targetYieldResult?.status === "success" && targetYieldResult.result !== undefined
+            ? String(targetYieldResult.result)
+            : undefined,
+        maturityDate:
+          maturityResult?.status === "success" && maturityResult.result !== undefined
+            ? String(maturityResult.result)
+            : "0",
+      };
+    });
+  }, [maturityDateData, primaryPoolSupplyByTokenId, primaryPools, targetYieldData]);
+
+  const latestDistributionTimestampByAssetId = useMemo(() => {
+    const byAssetId = new Map<string, string>();
+
+    for (const event of earningsDistributedEvents || []) {
+      if (!event?.args) continue;
+      const eventWithBlockData = event as typeof event & { blockData?: { timestamp?: bigint } | null };
+      const assetId = event.args.assetId;
+      if (assetId === undefined) continue;
+      const assetIdKey = String(assetId);
+      if (!byAssetId.has(assetIdKey)) {
+        byAssetId.set(assetIdKey, eventWithBlockData.blockData?.timestamp?.toString() || "0");
+      }
+    }
+
+    return byAssetId;
+  }, [earningsDistributedEvents]);
+
+  const assetEarnings = useMemo<MarketAssetEarnings[]>(() => {
+    const results = assetEarningsData as Array<{ result?: readonly unknown[]; status: string }> | undefined;
+
+    return uniqueAssetIds.map((assetId, index) => {
+      const result = results?.[index];
+      const tuple = result?.status === "success" && Array.isArray(result.result) ? result.result : undefined;
+
+      return {
+        id: assetId,
+        assetId,
+        totalRevenue: String((tuple?.[0] as bigint | undefined) ?? 0n),
+        totalEarnings: String((tuple?.[1] as bigint | undefined) ?? 0n),
+        lastDistributionAt: latestDistributionTimestampByAssetId.get(assetId) || "0",
+      };
+    });
+  }, [assetEarningsData, latestDistributionTimestampByAssetId, uniqueAssetIds]);
+
   const primaryPoolCreatedAtByTokenId = useMemo(() => {
     const byTokenId = new Map<string, string>();
     primaryPools.forEach(pool => {
@@ -670,17 +778,16 @@ const MarketsPage: NextPage = () => {
     >();
     primaryPools.forEach((pool, index) => {
       const result = primaryPoolRedemptionPreviewData?.[index];
-      if (result?.status !== "success" || !Array.isArray(result.result)) {
-        const eligibleResult = primaryPoolEligibleRedemptionData?.[index];
-        const eligibleBalance =
-          eligibleResult?.status === "success" && eligibleResult.result !== undefined
-            ? (eligibleResult.result as bigint)
-            : 0n;
-        byTokenId.set(pool.tokenId, { payout: 0n, liquidity: 0n, redemptionSupply: 0n, eligibleBalance });
-        return;
-      }
-      const [payout, liquidity, redemptionSupply, eligibleBalance] = result.result as [bigint, bigint, bigint, bigint];
-      byTokenId.set(pool.tokenId, { payout, liquidity, redemptionSupply, eligibleBalance });
+      const eligibleResult = primaryPoolEligibleRedemptionData?.[index];
+      const eligibleBalance =
+        eligibleResult?.status === "success" && eligibleResult.result !== undefined
+          ? (eligibleResult.result as bigint)
+          : 0n;
+      const preview =
+        result?.status === "success"
+          ? normalizePrimaryRedemptionPreview(result.result, eligibleBalance)
+          : normalizePrimaryRedemptionPreview(undefined, eligibleBalance);
+      byTokenId.set(pool.tokenId, preview);
     });
     return byTokenId;
   }, [primaryPoolEligibleRedemptionData, primaryPools, primaryPoolRedemptionPreviewData]);
@@ -736,31 +843,82 @@ const MarketsPage: NextPage = () => {
 
   // Fetch IPFS images
   useEffect(() => {
+    let retryTimeoutId: number | undefined;
+
     const fetchImages = async () => {
-      const vehiclesWithMetadata = marketVehicles.filter(v => v.metadataURI && !imageUrls[getVehicleImageKey(v)]);
-      if (vehiclesWithMetadata.length === 0) return;
+      const vehiclesNeedingMetadata = marketVehicles.filter(vehicle => {
+        if (!vehicle.metadataURI) return false;
+
+        const metadataKey = getVehicleMetadataKey(vehicle);
+        const attempts = metadataFetchAttempts.current.get(metadataKey) ?? 0;
+        if (attempts >= METADATA_FETCH_MAX_ATTEMPTS) return false;
+
+        return (
+          !imageUrls[getVehicleImageKey(vehicle)] || !vehicle.vin || !vehicle.make || !vehicle.model || !vehicle.year
+        );
+      });
+      if (vehiclesNeedingMetadata.length === 0) return;
 
       const newImageUrls: Record<string, string> = { ...imageUrls };
+      const metadataOverrides: Record<string, Partial<SubgraphVehicle>> = {};
+      const retryDelaysMs: number[] = [];
 
       await Promise.all(
-        vehiclesWithMetadata.map(async vehicle => {
+        vehiclesNeedingMetadata.map(async vehicle => {
           if (!vehicle.metadataURI) return;
+          const metadataKey = getVehicleMetadataKey(vehicle);
+
           try {
             const metadata = await fetchIpfsMetadata(vehicle.metadataURI);
-            if (metadata?.image) {
-              newImageUrls[getVehicleImageKey(vehicle)] = ipfsToHttp(metadata.image) || "";
+            if (metadata) {
+              const hydratedVehicle = mergeVehicleMetadata(vehicle, metadata);
+              metadataOverrides[metadataKey] = {
+                vin: hydratedVehicle.vin,
+                make: hydratedVehicle.make,
+                model: hydratedVehicle.model,
+                year: hydratedVehicle.year,
+              };
+              if (hydratedVehicle.imageUrl) {
+                newImageUrls[getVehicleImageKey(vehicle)] = hydratedVehicle.imageUrl;
+              }
+              metadataFetchAttempts.current.set(metadataKey, METADATA_FETCH_MAX_ATTEMPTS);
+              return;
             }
           } catch (err) {
             console.error(`Error fetching metadata for vehicle ${vehicle.id}:`, err);
           }
+
+          const nextAttempts = (metadataFetchAttempts.current.get(metadataKey) ?? 0) + 1;
+          metadataFetchAttempts.current.set(metadataKey, nextAttempts);
+          if (nextAttempts < METADATA_FETCH_MAX_ATTEMPTS) {
+            retryDelaysMs.push(2000 * nextAttempts);
+          }
         }),
       );
 
-      setImageUrls(newImageUrls);
+      const imageUrlsChanged = Object.keys(newImageUrls).some(key => newImageUrls[key] !== imageUrls[key]);
+      if (imageUrlsChanged) {
+        setImageUrls(newImageUrls);
+      }
+      if (Object.keys(metadataOverrides).length > 0) {
+        setVehicleMetadataOverrides(prev => ({ ...prev, ...metadataOverrides }));
+      }
+      if (retryDelaysMs.length > 0) {
+        const retryDelayMs = Math.min(...retryDelaysMs);
+        retryTimeoutId = window.setTimeout(() => {
+          setMetadataFetchRetryNonce(n => n + 1);
+        }, retryDelayMs);
+      }
     };
 
-    fetchImages();
-  }, [getVehicleImageKey, imageUrls, marketVehicles]);
+    void fetchImages();
+
+    return () => {
+      if (retryTimeoutId !== undefined) {
+        window.clearTimeout(retryTimeoutId);
+      }
+    };
+  }, [getVehicleImageKey, getVehicleMetadataKey, imageUrls, marketVehicles, metadataFetchRetryNonce]);
 
   const tokenSoldTotals = useMemo(() => {
     const totals = new Map<string, bigint>();
@@ -844,7 +1002,7 @@ const MarketsPage: NextPage = () => {
       const hasTokensForListing = userHoldingsIds.has(listing.id);
       const preview = assetActionPreview.get(listing.assetId);
       const assetStatus = assetStatusById.get(listing.assetId) ?? -1;
-      const isAssetSettled = assetStatus === 3 || assetStatus === 4;
+      const isAssetSettled = isSettledAssetStatus(assetStatus);
       const hasClaimableEarnings = (preview?.claimableEarnings ?? 0n) > 0n;
       const hasClaimableSettlement = (preview?.claimableSettlement ?? 0n) > 0n;
 
@@ -1022,9 +1180,10 @@ const MarketsPage: NextPage = () => {
     () =>
       holdingsAssetIds.filter(assetId => {
         const preview = assetActionPreview.get(assetId);
-        return (preview?.claimableSettlement ?? 0n) > 0n;
+        const status = assetStatusById.get(assetId) ?? -1;
+        return (preview?.claimableSettlement ?? 0n) > 0n || isSettledAssetStatus(status);
       }),
-    [assetActionPreview, holdingsAssetIds],
+    [assetActionPreview, assetStatusById, holdingsAssetIds],
   );
 
   const claimableEarningsOnlyAssetIds = useMemo(
@@ -1155,8 +1314,9 @@ const MarketsPage: NextPage = () => {
       const canList = hasHolding;
       const claimableEarnings = assetActionPreview.get(pool.assetId)?.claimableEarnings ?? 0n;
       const claimableSettlement = assetActionPreview.get(pool.assetId)?.claimableSettlement ?? 0n;
+      const assetStatus = assetStatusById.get(pool.assetId) ?? -1;
       const canClaimEarnings = hasHolding && claimableEarnings > 0n;
-      const canClaimSettlement = hasHolding && claimableSettlement > 0n;
+      const canClaimSettlement = hasHolding && (claimableSettlement > 0n || isSettledAssetStatus(assetStatus));
       const liquidationPreview = liquidationPreviewByAssetId.get(pool.assetId);
       const canForceFinalPayout =
         liquidationPreview?.eligible && (liquidationPreview.reason === 0 || liquidationPreview.reason === 1);
@@ -1249,6 +1409,7 @@ const MarketsPage: NextPage = () => {
   }, [
     activeSellerTokenIdCounts,
     assetActionPreview,
+    assetStatusById,
     liquidationPreviewByAssetId,
     primaryPoolHoldingsByTokenId,
     primaryPoolRedemptionByTokenId,
@@ -1546,7 +1707,7 @@ const MarketsPage: NextPage = () => {
               {visiblePrimaryPools.map(pool => {
                 const vehicle = marketVehicles.find(v => v.id === pool.assetId);
                 const token = marketTokens.find(t => t.revenueTokenId === pool.tokenId);
-                const partner = partners.find(p => p.address.toLowerCase() === pool.partner.toLowerCase());
+                const partner = marketPartners.find(p => p.address.toLowerCase() === pool.partner.toLowerCase());
 
                 return (
                   <PrimaryPoolCard
@@ -1681,7 +1842,7 @@ const MarketsPage: NextPage = () => {
                 : undefined;
               const earning = assetEarnings.find(e => e.assetId === listing.assetId);
               const partner = vehicle
-                ? partners.find(p => p.address.toLowerCase() === vehicle.partner.toLowerCase())
+                ? marketPartners.find(p => p.address.toLowerCase() === vehicle.partner.toLowerCase())
                 : undefined;
 
               return (
@@ -1798,7 +1959,7 @@ const MarketsPage: NextPage = () => {
           </div>
           <div className="stat">
             <div className="stat-title">Partners</div>
-            <div className="stat-value">{partners.length}</div>
+            <div className="stat-value">{marketPartners.length}</div>
           </div>
         </div>
       )}
@@ -1863,7 +2024,7 @@ const MarketsPage: NextPage = () => {
             const targetAssetId = selectedListing?.assetId || selectedPool?.assetId;
             const vehicle = targetAssetId ? marketVehicles.find(v => v.id === targetAssetId) : undefined;
             if (vehicle) {
-              const partner = partners.find(p => p.address.toLowerCase() === vehicle.partner.toLowerCase());
+              const partner = marketPartners.find(p => p.address.toLowerCase() === vehicle.partner.toLowerCase());
               return partner?.name;
             }
             return undefined;

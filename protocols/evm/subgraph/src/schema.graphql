@@ -1,81 +1,7 @@
-type MockUSDCContract @entity(immutable: true) {
-  id: ID!
-  address: Bytes!
-}
-
-type Transfer @entity(immutable: true) {
-  id: ID!
-  from: Bytes!
-  to: Bytes!
-  value: BigInt!
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
-type RoboshareTokensContract @entity(immutable: true) {
-  id: ID!
-  address: Bytes!
-}
-
-type RoboshareToken @entity(immutable: true) {
-  id: ID! # tokenId
-  revenueTokenId: BigInt!
-  price: BigInt!
-  supply: BigInt!
-  targetYieldBP: BigInt!
-  maturityDate: BigInt!
-  createdAt: BigInt!
-  setAtBlock: BigInt!
-}
-
-type TransferSingleEvent @entity(immutable: true) {
-  id: ID! # transaction hash + log index
-  operator: Bytes!
-  from: Bytes!
-  to: Bytes!
-  tokenId: BigInt!
-  value: BigInt!
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
-type PartnerManagerContract @entity(immutable: true) {
-  id: ID!
-  address: Bytes!
-}
-
-type Partner @entity(immutable: true) {
-  id: ID! # partner address
-  name: String!
-  authorizedAt: BigInt!
-  address: Bytes!
-}
-
-type RegistryRouterContract @entity(immutable: true) {
-  id: ID!
-  address: Bytes!
-}
-
-type BoundId @entity(immutable: true) {
-  id: ID! # id (assetId or tokenId)
-  idValue: BigInt!
-  registry: Bytes!
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
-type VehicleRegistryContract @entity(immutable: true) {
-  id: ID!
-  address: Bytes!
-}
-
 type Vehicle @entity(immutable: false) {
   id: ID! # vehicleId
   partner: Bytes!
-  vin: String!
+  vin: String
   make: String
   model: String
   year: BigInt
@@ -84,26 +10,6 @@ type Vehicle @entity(immutable: false) {
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!
-}
-
-type TreasuryContract @entity(immutable: true) {
-  id: ID!
-  address: Bytes!
-}
-
-type CollateralLock @entity(immutable: true) {
-  id: ID! # assetId + transaction hash
-  assetId: BigInt!
-  partner: Bytes!
-  amount: BigInt!
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
-type MarketplaceContract @entity(immutable: true) {
-  id: ID!
-  address: Bytes!
 }
 
 type Listing @entity(immutable: false) {
@@ -125,28 +31,6 @@ type Listing @entity(immutable: false) {
   transactionHash: Bytes!
 }
 
-type EarningsDistribution @entity(immutable: true) {
-  id: ID! # transaction hash + log index
-  assetId: BigInt!
-  partner: Bytes!
-  totalRevenue: BigInt!
-  netEarnings: BigInt!
-  period: BigInt!
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
-type AssetEarning @entity(immutable: false) {
-  id: ID! # assetId
-  assetId: BigInt!
-  totalEarnings: BigInt!
-  totalRevenue: BigInt!
-  distributionCount: BigInt!
-  lastDistributionAt: BigInt!
-  firstDistributionAt: BigInt!
-}
-
 type PrimaryPool @entity(immutable: false) {
   id: ID! # tokenId
   tokenId: BigInt!
@@ -159,34 +43,4 @@ type PrimaryPool @entity(immutable: false) {
   isPaused: Boolean!
   isClosed: Boolean!
   createdAt: BigInt!
-  pausedAt: BigInt
-  closedAt: BigInt
-  totalPurchased: BigInt!
-  totalRedeemed: BigInt!
-  totalPartnerProceedsReleased: BigInt!
-}
-
-type PrimaryPoolPurchase @entity(immutable: true) {
-  id: ID! # transaction hash + log index
-  tokenId: BigInt!
-  buyer: Bytes!
-  amount: BigInt!
-  totalCost: BigInt!
-  protocolFee: BigInt!
-  partnerProceeds: BigInt!
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
-type PrimaryPoolRedemption @entity(immutable: true) {
-  id: ID! # transaction hash + log index
-  tokenId: BigInt!
-  holder: Bytes!
-  amountBurned: BigInt!
-  payout: BigInt!
-  investorLiquidityAfter: BigInt!
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
 }

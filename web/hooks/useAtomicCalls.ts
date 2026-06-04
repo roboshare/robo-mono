@@ -5,6 +5,11 @@ import { useSmartWallets } from "@privy-io/react-auth/smart-wallets";
 import { type WaitForCallsStatusReturnType, waitForCallsStatus, waitForTransactionReceipt } from "@wagmi/core";
 import { Address, Hex } from "viem";
 import { useAccount, useCapabilities, useConfig, useSendCalls } from "wagmi";
+import {
+  type GetSmartWalletClientForChain,
+  type SmartWalletTransactClient,
+  resolveSmartWalletClientForChain,
+} from "~~/hooks/useSmartWalletTransaction";
 import { isPrivyEnabled } from "~~/services/web3/privyConfig";
 
 export type AtomicCall = {
@@ -28,15 +33,15 @@ type AtomicCallsState = {
   transactingAddress?: Address;
 };
 
-type SmartWalletAtomicClient = {
+type SmartWalletAtomicClient = SmartWalletTransactClient & {
   account?: { address?: Address };
-  chain?: { id: number };
   paymaster?: unknown;
-  switchChain?: (args: { id: number }) => Promise<void>;
-  sendTransaction: (params: { calls: readonly AtomicCall[] }) => Promise<Hex>;
 };
 
-const useAtomicCallsBase = (smartWalletClient?: SmartWalletAtomicClient) => {
+const useAtomicCallsBase = (
+  smartWalletClient?: SmartWalletAtomicClient,
+  getClientForChain?: GetSmartWalletClientForChain,
+) => {
   const config = useConfig();
   const { address, chainId, connector } = useAccount();
   const [isSmartWalletPending, setIsSmartWalletPending] = useState(false);
@@ -65,28 +70,24 @@ const useAtomicCallsBase = (smartWalletClient?: SmartWalletAtomicClient) => {
 
   const sendAtomicCalls = useCallback(
     async ({ calls, timeout = 120_000 }: SendAtomicCallsParameters) => {
-      if (smartWalletClient) {
+      if (smartWalletClient && getClientForChain) {
         const desiredChainId = chainId ?? smartWalletClient.chain?.id;
 
         if (!desiredChainId) {
           throw new Error("Smart wallet is not configured on the active network");
         }
 
-        if (smartWalletClient.chain?.id !== desiredChainId) {
-          await smartWalletClient.switchChain?.({ id: desiredChainId });
-        }
-
         setIsSmartWalletPending(true);
 
         try {
-          const hash = await smartWalletClient.sendTransaction({
+          const client = await resolveSmartWalletClientForChain(getClientForChain, desiredChainId);
+          const hash = await client.sendTransaction({
             calls: calls.map(call => ({
               data: call.data,
               to: call.to,
               value: call.value,
             })) as never,
           });
-
           const receipt = await waitForTransactionReceipt(config, {
             chainId: desiredChainId,
             hash,
@@ -97,7 +98,7 @@ const useAtomicCallsBase = (smartWalletClient?: SmartWalletAtomicClient) => {
             atomic: true,
             chainId: desiredChainId,
             id: hash,
-            receipts: [receipt],
+            receipts: [receipt] as WaitForCallsStatusReturnType["receipts"],
             status: receipt.status === "success" ? "success" : "failure",
             statusCode: receipt.status === "success" ? 200 : 500,
             version: "privy-smart-wallet",
@@ -129,7 +130,7 @@ const useAtomicCallsBase = (smartWalletClient?: SmartWalletAtomicClient) => {
         timeout,
       });
     },
-    [address, chainId, config, connector, sendCallsAsync, smartWalletClient, supportsAtomicBatch],
+    [address, chainId, config, connector, getClientForChain, sendCallsAsync, smartWalletClient, supportsAtomicBatch],
   );
 
   return useMemo(
@@ -156,8 +157,16 @@ const useAtomicCallsBase = (smartWalletClient?: SmartWalletAtomicClient) => {
 };
 
 const useAtomicCallsWithPrivy = () => {
-  const { client } = useSmartWallets();
-  return useAtomicCallsBase(client as SmartWalletAtomicClient | undefined);
+  const { client, getClientForChain } = useSmartWallets();
+  const getSmartWalletClientForChain: GetSmartWalletClientForChain = useCallback(
+    async (targetChainId: number) => {
+      const resolvedClient = await getClientForChain({ id: targetChainId });
+      return resolvedClient as SmartWalletAtomicClient | undefined;
+    },
+    [getClientForChain],
+  );
+
+  return useAtomicCallsBase(client as SmartWalletAtomicClient | undefined, getSmartWalletClientForChain);
 };
 
 const useAtomicCallsWithoutPrivy = () => useAtomicCallsBase();

@@ -7,6 +7,7 @@ import { ASSET_REGISTRIES, AssetType } from "~~/config/assetTypes";
 import { useScaffoldReadContract } from "~~/hooks/scaffold-eth";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
+import { isSettledAssetStatus } from "~~/utils/assetStatus";
 
 const BP_PRECISION = 10000n;
 const BENCHMARK_YIELD_BP = 1000n;
@@ -45,8 +46,6 @@ interface ListingCardProps {
   earnings?: {
     totalEarnings: string;
     totalRevenue: string;
-    distributionCount: string;
-    firstDistributionAt: string;
     lastDistributionAt: string;
   };
   partner?: {
@@ -105,11 +104,11 @@ export function ListingCard({
     args: [BigInt(listing.assetId)],
   });
   const hasAvailableTokens = BigInt(listing.amount) > 0n;
-  const hasEarnings = Boolean(earnings && (earnings.distributionCount !== "0" || earnings.totalEarnings !== "0"));
+  const hasEarnings = Boolean(earnings && earnings.totalEarnings !== "0");
   const hasHoldings = (walletTokenBalance || 0n) > 0n;
   const canClaimEarnings = (previewClaimAmount || 0n) > 0n;
   const canClaimEarningsOnThisListing = canClaimEarnings && hasHoldings;
-  const isAssetSettled = Number(assetStatus ?? -1) === 3 || Number(assetStatus ?? -1) === 4;
+  const isAssetSettled = isSettledAssetStatus(Number(assetStatus ?? -1));
   const canClaimSettlement = hasHoldings && isAssetSettled;
   const listingSoldAmount = useMemo(() => {
     if (listing.amountSold && listing.amountSold !== "0") return BigInt(listing.amountSold);
@@ -270,7 +269,7 @@ export function ListingCard({
     const durationSec = Math.max(0, Math.floor(soldOutAt - createdAt));
     return `Sold Out In ${formatDuration(durationSec)}`;
   }, [hasAvailableTokens, listing.createdAt, listing.soldOutAt]);
-  const isNewlyListed = hasAvailableTokens && !isEnded && (!earnings || earnings.distributionCount === "0");
+  const isNewlyListed = hasAvailableTokens && !isEnded && !hasEarnings;
   const isSellerOfListing = Boolean(address && listing.seller.toLowerCase() === address.toLowerCase());
   const showSecondaryListingBadge = !isInactive;
   const listableTokensAmount = walletTokenBalance || 0n;
@@ -462,7 +461,7 @@ export function ListingCard({
   if (isListMode) {
     return (
       <article
-        className={`overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-sm transition-all duration-200 ${
+        className={`relative overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-sm transition-all duration-200 ${
           hasAvailableActions ? "hover:shadow-md" : "opacity-70 saturate-50"
         } ${isCardPressable ? "cursor-pointer" : ""}`}
         onClick={handleCardClick}
@@ -640,7 +639,7 @@ export function ListingCard({
 
   return (
     <article
-      className={`rounded-2xl border border-base-300 bg-base-100 shadow-lg transition-all duration-300 overflow-hidden flex flex-col group ${
+      className={`relative rounded-2xl border border-base-300 bg-base-100 shadow-lg transition-all duration-300 overflow-hidden flex flex-col group ${
         hasAvailableActions ? "hover:shadow-xl" : "opacity-70 saturate-50"
       } ${isCardPressable ? "cursor-pointer hover:-translate-y-1 active:translate-y-0 active:scale-[0.995]" : ""}`}
       onClick={handleCardClick}

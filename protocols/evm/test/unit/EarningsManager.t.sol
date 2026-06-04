@@ -7,9 +7,31 @@ import { TreasuryFlowBaseTest } from "../base/TreasuryFlowBaseTest.t.sol";
 import { MockUSDC } from "../../contracts/mocks/MockUSDC.sol";
 import { RoboshareTokens } from "../../contracts/RoboshareTokens.sol";
 import { PartnerManager } from "../../contracts/PartnerManager.sol";
+import { PositionManager } from "../../contracts/PositionManager.sol";
 import { EarningsManager } from "../../contracts/EarningsManager.sol";
 
 contract EarningsManagerTest is TreasuryFlowBaseTest {
+    function _deployReplacementPositionManager() internal returns (PositionManager) {
+        PositionManager implementation = new PositionManager();
+        ERC1967Proxy proxy = new ERC1967Proxy(
+            address(implementation),
+            abi.encodeCall(
+                PositionManager.initialize,
+                (
+                    admin,
+                    address(router),
+                    address(roboshareTokens),
+                    address(partnerManager),
+                    address(marketplace),
+                    address(treasury),
+                    address(earningsManager),
+                    address(usdc)
+                )
+            )
+        );
+        return PositionManager(address(proxy));
+    }
+
     function setUp() public {
         _ensureState(SetupState.ContractsDeployed);
     }
@@ -54,6 +76,40 @@ contract EarningsManagerTest is TreasuryFlowBaseTest {
         vm.prank(address(treasury));
         uint256 amount = earningsManager.snapshotAndClaimEarnings(999, buyer, false);
         assertEq(amount, 0);
+    }
+
+    function testTransferPositionClaimStateAllowsPositionManager() public {
+        vm.prank(address(positionManager));
+        earningsManager.transferPositionClaimState(999, buyer, unauthorized, 2, 0, 0);
+    }
+
+    function testTransferPositionClaimStateRejectsStaleRoleHolder() public {
+        PositionManager replacement = _deployReplacementPositionManager();
+
+        vm.prank(admin);
+        roboshareTokens.setPositionManager(address(replacement));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                EarningsManager.UnauthorizedPositionManager.selector, address(positionManager), address(replacement)
+            )
+        );
+        vm.prank(address(positionManager));
+        earningsManager.transferPositionClaimState(999, buyer, unauthorized, 2, 0, 0);
+    }
+
+    function testRevenueTokenTransferWorksWhenOnlyTokenManagerIsUpdated() public {
+        _ensureState(SetupState.PrimaryPoolCreated);
+
+        PositionManager replacement = _deployReplacementPositionManager();
+
+        vm.prank(admin);
+        roboshareTokens.setPositionManager(address(replacement));
+
+        _purchasePrimaryPoolTokens(buyer, scenario.revenueTokenId, PRIMARY_PURCHASE_AMOUNT);
+
+        vm.prank(buyer);
+        roboshareTokens.safeTransferFrom(buyer, partner2, scenario.revenueTokenId, 1, "");
     }
 
     function testSnapshotAndClaimEarningsUnauthorizedCaller() public {

@@ -2,7 +2,8 @@
 pragma solidity ^0.8.19;
 
 import { MarketplaceFlowBaseTest } from "../base/MarketplaceFlowBaseTest.t.sol";
-import { ProtocolLib } from "../../contracts/Libraries.sol";
+import { ProtocolLib, TokenLib } from "../../contracts/Libraries.sol";
+import { IPositionManager } from "../../contracts/interfaces/IPositionManager.sol";
 
 contract EarningsManagerPreviewIntegrationTest is MarketplaceFlowBaseTest {
     function setUp() public {
@@ -51,6 +52,37 @@ contract EarningsManagerPreviewIntegrationTest is MarketplaceFlowBaseTest {
         assertEq(collateralReleased, 0);
     }
 
+    function testPreviewDistributeEarningsUsesTokenBalanceGateBeforeManagerPositions() public {
+        _ensureState(SetupState.BuffersFunded);
+
+        uint256 totalSupply = roboshareTokens.getRevenueTokenSupply(scenario.revenueTokenId);
+        TokenLib.TokenPosition[] memory positions = new TokenLib.TokenPosition[](1);
+        positions[0] = TokenLib.TokenPosition({
+            uid: 1,
+            tokenId: scenario.revenueTokenId,
+            amount: totalSupply,
+            acquiredAt: block.timestamp,
+            soldAt: 0,
+            redemptionEpoch: 0
+        });
+
+        address mockManager = makeAddr("mockManager");
+        vm.mockCall(address(roboshareTokens), abi.encodeWithSignature("positionManager()"), abi.encode(mockManager));
+        vm.mockCall(
+            mockManager,
+            abi.encodeWithSelector(IPositionManager.getUserPositions.selector, scenario.revenueTokenId, partner1),
+            abi.encode(positions)
+        );
+
+        (uint256 investorAmount, uint256 protocolFee, uint256 netEarnings,) =
+            earningsManager.previewDistributeEarnings(partner1, scenario.assetId, EARNINGS_AMOUNT, true);
+
+        assertGt(investorAmount, 0);
+        assertGt(netEarnings, 0);
+        assertEq(netEarnings, investorAmount - protocolFee);
+        assertEq(protocolFee, ProtocolLib.calculateProtocolFee(investorAmount));
+    }
+
     function testPreviewDistributeEarningsBelowMinimumFeeReturnsInvestorAmountOnly() public {
         _ensureState(SetupState.BuffersFunded);
 
@@ -71,12 +103,7 @@ contract EarningsManagerPreviewIntegrationTest is MarketplaceFlowBaseTest {
     function testPreviewDistributeEarningsCapsInvestorAmountToRevenueShare() public {
         string memory vin = _generateVin(777);
         vm.prank(partner1);
-        uint256 assetId = assetRegistry.registerAsset(
-            abi.encode(
-                vin, TEST_MAKE, TEST_MODEL, TEST_YEAR, TEST_MANUFACTURER_ID, TEST_OPTION_CODES, TEST_METADATA_URI
-            ),
-            ASSET_VALUE
-        );
+        uint256 assetId = assetRegistry.registerAsset(_vehicleRegistrationData(vin), ASSET_VALUE);
 
         uint256 supply = ASSET_VALUE / REVENUE_TOKEN_PRICE;
         uint256 maturityDate = block.timestamp + 365 days;

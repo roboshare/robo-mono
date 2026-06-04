@@ -12,6 +12,7 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 import { ProtocolLib, TokenLib, AssetLib, CollateralLib } from "./Libraries.sol";
 import { ITreasury } from "./interfaces/ITreasury.sol";
 import { IMarketplace } from "./interfaces/IMarketplace.sol";
+import { IPositionManager } from "./interfaces/IPositionManager.sol";
 import { RoboshareTokens } from "./RoboshareTokens.sol";
 import { PartnerManager } from "./PartnerManager.sol";
 import { RegistryRouter } from "./RegistryRouter.sol";
@@ -105,6 +106,8 @@ contract Marketplace is
     error InvalidDuration();
     error ListingOwnerCannotPurchase();
     error PrimaryRedemptionNotAllowed();
+    error PositionManagerNotSet();
+    error InvalidPositionManager(address manager);
 
     event PrimaryPoolCreated(
         uint256 indexed tokenId,
@@ -312,10 +315,11 @@ contract Marketplace is
         returns (uint256 payout, uint256 investorLiquidity, uint256 redemptionSupply, uint256 holderEligibleBalance)
     {
         _getPrimaryPool(tokenId);
-        holderEligibleBalance = roboshareTokens.getPrimaryRedemptionEligibleBalance(holder, tokenId);
+        IPositionManager manager = _positionManager();
+        holderEligibleBalance = manager.getPrimaryRedemptionEligibleBalance(holder, tokenId);
         if (amount == 0) return (0, 0, 0, holderEligibleBalance);
 
-        redemptionSupply = roboshareTokens.getCurrentPrimaryRedemptionEpochSupply(tokenId);
+        redemptionSupply = manager.getCurrentPrimaryRedemptionEpochSupply(tokenId);
         uint256 assetId = TokenLib.getAssetIdFromTokenId(tokenId);
         (, investorLiquidity,,,,,,,,,) = treasury.assetCollateral(assetId);
         if (amount > holderEligibleBalance || redemptionSupply == 0 || investorLiquidity == 0) {
@@ -364,10 +368,9 @@ contract Marketplace is
         if (amount == 0 || amount > tokenSupply) revert InvalidAmount();
 
         uint256 sellerBalance = roboshareTokens.balanceOf(seller, tokenId);
-        uint256 earlySalePenalty = 0;
-
         if (sellerBalance < amount) revert InsufficientTokenBalance();
-        earlySalePenalty = roboshareTokens.getSalesPenalty(seller, tokenId, amount);
+        IPositionManager manager = _positionManager();
+        uint256 earlySalePenalty = manager.getSalesPenalty(seller, tokenId, amount);
 
         listingId = _listingIdCounter++;
         uint256 expiresAt = block.timestamp + duration;
@@ -387,7 +390,8 @@ contract Marketplace is
         });
 
         assetListings[assetId].push(listingId);
-        roboshareTokens.lockForListing(seller, tokenId, amount);
+        manager.lockForListing(seller, tokenId, amount);
+        manager.bookSalePenalty(listingId, seller, tokenId, earlySalePenalty);
 
         emit ListingCreated(listingId, tokenId, assetId, seller, amount, pricePerToken, expiresAt, buyerPaysFee);
         return listingId;
@@ -429,7 +433,9 @@ contract Marketplace is
         listing.isActive = false;
 
         if (listing.amount > 0) {
-            roboshareTokens.unlockForListing(listing.seller, listing.tokenId, listing.amount);
+            IPositionManager manager = _positionManager();
+            manager.unlockForListing(listing.seller, listing.tokenId, listing.amount);
+            manager.clearSalePenalty(listingId);
             listing.amount = 0;
         }
 
@@ -644,7 +650,7 @@ contract Marketplace is
     {
         quote.grossProceeds = amount * listing.pricePerToken;
         quote.protocolFee = ProtocolLib.calculateProtocolFee(quote.grossProceeds);
-        quote.earlySalePenalty = roboshareTokens.getSalesPenalty(listing.seller, listing.tokenId, amount);
+        quote.earlySalePenalty = _positionManager().getSalesPenalty(listing.seller, listing.tokenId, amount);
 
         if (listing.buyerPaysFee) {
             if (quote.earlySalePenalty > quote.grossProceeds) revert FeesExceedPrice();
@@ -683,6 +689,7 @@ contract Marketplace is
         listing.soldAmount += amount;
         if (listing.amount == 0) {
             listing.isActive = false;
+            _positionManager().clearSalePenalty(listingId);
         }
 
         if (quote.sellerNet > 0) {
@@ -690,7 +697,7 @@ contract Marketplace is
         }
 
         _routeProtocolFee(quote.protocolFee + quote.earlySalePenalty);
-        roboshareTokens.transferLockedForListing(listing.seller, buyer, listing.tokenId, amount, "");
+        _positionManager().transferLockedForListing(listing.seller, buyer, listing.tokenId, amount);
 
         emit RevenueTokensTraded(listing.tokenId, listing.seller, buyer, amount, listingId, quote.grossProceeds);
     }
@@ -700,7 +707,9 @@ contract Marketplace is
 
         listing.isActive = false;
         if (listing.amount > 0) {
-            roboshareTokens.unlockForListing(listing.seller, listing.tokenId, listing.amount);
+            IPositionManager manager = _positionManager();
+            manager.unlockForListing(listing.seller, listing.tokenId, listing.amount);
+            manager.clearSalePenalty(listing.listingId);
             listing.amount = 0;
         }
         return true;
@@ -725,6 +734,13 @@ contract Marketplace is
         if (amount == 0) return;
         _transferUSDC(address(treasury), amount);
         treasury.recordPendingWithdrawalFor(treasury.treasuryFeeRecipient(), amount);
+    }
+
+    function _positionManager() internal view returns (IPositionManager) {
+        IPositionManager manager = roboshareTokens.positionManager();
+        if (address(manager) == address(0)) revert PositionManagerNotSet();
+        if (address(manager).code.length == 0) revert InvalidPositionManager(address(manager));
+        return manager;
     }
 
     function _isAssetMarketOperational(uint256 assetId) internal view returns (bool) {

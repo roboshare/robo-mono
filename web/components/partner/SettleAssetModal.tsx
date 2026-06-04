@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useEscClose } from "./useEscClose";
-import { erc20Abi, parseUnits } from "viem";
+import { erc20Abi, formatUnits, parseUnits } from "viem";
 import { useReadContract } from "wagmi";
 import { XMarkIcon } from "@heroicons/react/24/outline";
 import { useScaffoldReadContract, useScaffoldWriteContract, useSelectedNetwork } from "~~/hooks/scaffold-eth";
@@ -16,9 +16,18 @@ interface SettleAssetModalProps {
   onClose: () => void;
   assetId: string;
   assetName: string;
+  minimumTopUpAmount?: bigint;
+  earningsBufferAmount?: bigint;
 }
 
-export const SettleAssetModal = ({ isOpen, onClose, assetId, assetName }: SettleAssetModalProps) => {
+export const SettleAssetModal = ({
+  isOpen,
+  onClose,
+  assetId,
+  assetName,
+  minimumTopUpAmount = 0n,
+  earningsBufferAmount = 0n,
+}: SettleAssetModalProps) => {
   const { address: connectedAddress } = useTransactingAccount();
   const selectedNetwork = useSelectedNetwork();
   const chainId = selectedNetwork.id;
@@ -59,6 +68,8 @@ export const SettleAssetModal = ({ isOpen, onClose, assetId, assetName }: Settle
   const hasLiquidateAction = liquidationEligible;
   const showTopUpControls = hasSettleAction;
   const isSettlingPending = pendingAction === "settle" && isPending;
+  const minimumTopUpDisplay = formatUnits(minimumTopUpAmount, decimals);
+  const earningsBufferDisplay = formatUnits(earningsBufferAmount, decimals);
 
   // Check payment token allowance (settlement top-up path only)
   const { data: paymentTokenAllowance } = useReadContract({
@@ -77,8 +88,10 @@ export const SettleAssetModal = ({ isOpen, onClose, assetId, assetName }: Settle
       setTopUpAmount("");
       setIsConfirmed(false);
       setPendingAction(null);
+    } else if (minimumTopUpAmount > 0n) {
+      setTopUpAmount(formatUnits(minimumTopUpAmount, decimals));
     }
-  }, [isOpen]);
+  }, [decimals, isOpen, minimumTopUpAmount]);
 
   const handleSettle = async () => {
     if (!treasuryAddress) return;
@@ -86,6 +99,9 @@ export const SettleAssetModal = ({ isOpen, onClose, assetId, assetName }: Settle
 
     try {
       const topUpBigInt = topUpAmount ? parseUnits(topUpAmount, decimals) : 0n;
+      if (topUpBigInt < minimumTopUpAmount) {
+        return;
+      }
 
       // Approve if needed and top-up amount is provided
       if (topUpBigInt > 0n && (!paymentTokenAllowance || paymentTokenAllowance < topUpBigInt)) {
@@ -120,7 +136,18 @@ export const SettleAssetModal = ({ isOpen, onClose, assetId, assetName }: Settle
     return "Eligible";
   }, [hasLiquidateAction, liquidationReason]);
 
-  const disableSettle = !isConfirmed || isPending || pendingAction !== null || !hasSettleAction || isAlreadySettled;
+  const parsedTopUpAmount = useMemo(() => {
+    if (!topUpAmount) return 0n;
+    try {
+      return parseUnits(topUpAmount, decimals);
+    } catch {
+      return 0n;
+    }
+  }, [decimals, topUpAmount]);
+
+  const isBelowMinimumTopUp = parsedTopUpAmount < minimumTopUpAmount;
+  const disableSettle =
+    !isConfirmed || isPending || pendingAction !== null || !hasSettleAction || isAlreadySettled || isBelowMinimumTopUp;
 
   if (!isOpen) return null;
 
@@ -195,17 +222,32 @@ export const SettleAssetModal = ({ isOpen, onClose, assetId, assetName }: Settle
                 </div>
               )}
 
+              {minimumTopUpAmount > 0n && (
+                <div className="rounded-lg border border-error/30 bg-error/10 p-3 text-sm">
+                  <div className="font-medium text-error">Early final payout requires partner funding</div>
+                  <div className="mt-1 opacity-75">
+                    This asset already released buyer liquidity to the partner. Add at least {minimumTopUpDisplay}{" "}
+                    {symbol} so holders receive the remaining protected value.
+                    {earningsBufferAmount > 0n
+                      ? ` The ${earningsBufferDisplay} ${symbol} earnings buffer will be added to holder payouts.`
+                      : ""}
+                  </div>
+                </div>
+              )}
+
               {/* Top-Up Amount */}
               {showTopUpControls && (
                 <div className="form-control">
                   <label className="label py-1">
-                    <span className="label-text text-xs font-bold uppercase opacity-60">Top-Up Amount (Optional)</span>
+                    <span className="label-text text-xs font-bold uppercase opacity-60">
+                      Top-Up Amount {minimumTopUpAmount > 0n ? "(Required)" : "(Optional)"}
+                    </span>
                   </label>
                   <div className="flex w-full rounded-full border-2 border-base-300 bg-base-100 text-accent">
                     <input
                       type="number"
                       step="0.000001"
-                      min="0"
+                      min={minimumTopUpDisplay}
                       className="input input-ghost h-[2.2rem] min-h-[2.2rem] w-full border-0 px-4 font-medium text-base-content/70 placeholder:text-accent/70 focus:bg-transparent focus:outline-hidden focus-within:border-transparent focus:text-base-content/70"
                       value={topUpAmount}
                       onChange={e => setTopUpAmount(e.target.value)}
@@ -218,7 +260,9 @@ export const SettleAssetModal = ({ isOpen, onClose, assetId, assetName }: Settle
                   </div>
                   <label className="label py-1">
                     <span className="label-text-alt text-xs opacity-60">
-                      Add additional {symbol} to increase the settlement pool for token holders
+                      {minimumTopUpAmount > 0n
+                        ? `Minimum required: ${minimumTopUpDisplay} ${symbol}`
+                        : `Add additional ${symbol} to increase the settlement pool for token holders`}
                     </span>
                   </label>
                 </div>

@@ -41,9 +41,12 @@ interface IAssetRegistry {
     error AssetNotEligibleForLiquidation(uint256 assetId);
     error AssetNotSettled(uint256 assetId, AssetLib.AssetStatus currentStatus);
     error InsufficientTokenBalance(uint256 tokenId, uint256 required, uint256 available);
+    error InvalidPoolSupply();
 
     /**
      * @dev Asset registration and revenue token pool creation.
+     * @param data Registry-specific ABI payload. VehicleRegistry expects
+     *        abi.encode(string vin, string assetMetadataURI, string revenueTokenMetadataURI).
      */
     function registerAsset(bytes calldata data, uint256 assetValue) external returns (uint256 assetId);
 
@@ -75,11 +78,11 @@ interface IAssetRegistry {
      * Reverts if the asset is invalid or caller is not authorized.
      * @param assetId The asset ID
      * @param partner The partner initiating the pool creation
-     * @param tokenPrice Price per revenue token in USDC
+     * @param requestedSupply Explicit pool size to validate
      * @return tokenId The revenue token ID
-     * @return supply The computed token supply
+     * @return supply The approved token supply
      */
-    function previewCreateRevenueTokenPool(uint256 assetId, address partner, uint256 tokenPrice)
+    function previewCreateRevenueTokenPool(uint256 assetId, address partner, uint256 requestedSupply)
         external
         view
         returns (uint256 tokenId, uint256 supply);
@@ -89,10 +92,7 @@ interface IAssetRegistry {
      */
     function settleAsset(uint256 assetId, uint256 topUpAmount) external;
     function liquidateAsset(uint256 assetId) external;
-    function claimSettlement(uint256 assetId, bool autoClaimEarnings)
-        external
-        returns (uint256 claimedAmount, uint256 earningsClaimed);
-    function claimSettlementFor(address account, uint256 assetId, bool autoClaimEarnings)
+    function executeSettlementClaimFor(address account, uint256 assetId, bool autoClaimEarnings)
         external
         returns (uint256 claimedAmount, uint256 earningsClaimed);
     function burnRevenueTokens(uint256 assetId, uint256 amount) external;

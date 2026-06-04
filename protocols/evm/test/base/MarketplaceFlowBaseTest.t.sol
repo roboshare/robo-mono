@@ -13,7 +13,6 @@ abstract contract MarketplaceFlowBaseTest is TreasuryFlowBaseTest {
         uint256 marketplaceContractUsdc;
         uint256 partnerTokens;
         uint256 buyerTokens;
-        uint256 marketplaceTokens;
         uint256 timestamp;
     }
 
@@ -91,7 +90,6 @@ abstract contract MarketplaceFlowBaseTest is TreasuryFlowBaseTest {
         snapshot.marketplaceContractUsdc = usdc.balanceOf(address(marketplace));
         snapshot.partnerTokens = roboshareTokens.balanceOf(partner1, tokenId);
         snapshot.buyerTokens = roboshareTokens.balanceOf(buyer, tokenId);
-        snapshot.marketplaceTokens = roboshareTokens.balanceOf(address(marketplace), tokenId);
         snapshot.timestamp = block.timestamp;
     }
 

@@ -10,6 +10,7 @@ import { VehicleRegistry } from "../contracts/VehicleRegistry.sol";
 import { Treasury } from "../contracts/Treasury.sol";
 import { EarningsManager } from "../contracts/EarningsManager.sol";
 import { Marketplace } from "../contracts/Marketplace.sol";
+import { PositionManager } from "../contracts/PositionManager.sol";
 
 /**
  * @title DeployCore
@@ -25,6 +26,7 @@ abstract contract DeployCore is ScaffoldETHDeploy {
         Treasury treasury;
         EarningsManager earningsManager;
         Marketplace marketplace;
+        PositionManager positionManager;
     }
 
     /**
@@ -129,6 +131,25 @@ abstract contract DeployCore is ScaffoldETHDeploy {
             contracts.marketplace = Marketplace(address(marketplaceProxy));
         }
 
+        // Deploy PositionManager
+        {
+            PositionManager positionManagerImplementation = new PositionManager();
+            bytes memory positionManagerInitData = abi.encodeWithSignature(
+                "initialize(address,address,address,address,address,address,address,address)",
+                _deployer,
+                address(contracts.router),
+                address(contracts.roboshareTokens),
+                address(contracts.partnerManager),
+                address(contracts.marketplace),
+                address(contracts.treasury),
+                address(contracts.earningsManager),
+                config.usdcToken
+            );
+            ERC1967Proxy positionManagerProxy =
+                new ERC1967Proxy(address(positionManagerImplementation), positionManagerInitData);
+            contracts.positionManager = PositionManager(address(positionManagerProxy));
+        }
+
         // --- Configuration & Role Granting ---
         _configureRoles(contracts);
     }
@@ -143,6 +164,7 @@ abstract contract DeployCore is ScaffoldETHDeploy {
         contracts.router.setEarningsManager(address(contracts.earningsManager));
         contracts.router.setMarketplace(address(contracts.marketplace));
         contracts.treasury.setEarningsManager(address(contracts.earningsManager));
+        contracts.roboshareTokens.setPositionManager(address(contracts.positionManager));
 
         // 2. Grant Roles
         // Grant AUTHORIZED_REGISTRY_ROLE to VehicleRegistry
@@ -154,10 +176,6 @@ abstract contract DeployCore is ScaffoldETHDeploy {
 
         // Grant BURNER_ROLE to VehicleRegistry (for burning revenue tokens on retirement)
         contracts.roboshareTokens.grantRole(contracts.roboshareTokens.BURNER_ROLE(), address(contracts.vehicleRegistry));
-        // Grant BURNER_ROLE to Router (for primary-redemption burns routed via RegistryRouter)
-        contracts.roboshareTokens.grantRole(contracts.roboshareTokens.BURNER_ROLE(), address(contracts.router));
-        contracts.roboshareTokens
-            .grantRole(contracts.roboshareTokens.AUTHORIZED_CONTRACT_ROLE(), address(contracts.marketplace));
 
         // Grant AUTHORIZED_MARKETPLACE_ROLE to Marketplace on Treasury for purchase/redemption settlement flows
         contracts.treasury.grantRole(contracts.treasury.AUTHORIZED_MARKETPLACE_ROLE(), address(contracts.marketplace));

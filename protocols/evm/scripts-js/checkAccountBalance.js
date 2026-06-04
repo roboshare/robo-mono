@@ -4,17 +4,15 @@ import dotenv from "dotenv";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { toString } from "qrcode";
-import { readFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { parse } from "toml";
 import { ethers } from "ethers";
-
-const ALCHEMY_API_KEY =
-  process.env.ALCHEMY_API_KEY || "oKxs-03sij-U_N0iOlrSsZFr29-IqbuF";
 
 // Load environment variables
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 dotenv.config({ path: join(__dirname, "..", ".env") });
+const ALCHEMY_API_KEY = process.env.ALCHEMY_API_KEY || "";
 
 async function getBalanceForEachNetwork(address) {
   try {
@@ -26,7 +24,7 @@ async function getBalanceForEachNetwork(address) {
     const parsedToml = parse(tomlString);
 
     // Extract rpc_endpoints from parsedToml
-    const rpcEndpoints = parsedToml.rpc_endpoints;
+    const rpcEndpoints = parsedToml.rpc_endpoints || {};
 
     // Replace placeholders in the rpc_endpoints section
     function replaceENVAlchemyKey(input) {
@@ -36,7 +34,16 @@ async function getBalanceForEachNetwork(address) {
     console.log(await toString(address, { type: "terminal", small: true }));
     console.log(`\n📊 Address: ${address}`);
 
+    if (!ALCHEMY_API_KEY) {
+      console.log(
+        "⚠️  ALCHEMY_API_KEY is missing in protocols/evm/.env. Public networks may fail."
+      );
+    }
+
     for (const networkName in rpcEndpoints) {
+      if (networkName === "default_network") {
+        continue;
+      }
       const networkUrl = replaceENVAlchemyKey(rpcEndpoints[networkName]);
       console.log(`\n--${networkName}-- 📡`);
 
@@ -60,6 +67,32 @@ async function getBalanceForEachNetwork(address) {
   }
 }
 
+function getAddressFromKeystoreFile(keystoreName) {
+  const keystorePath = join(
+    process.env.HOME || "",
+    ".foundry",
+    "keystores",
+    keystoreName
+  );
+
+  if (!existsSync(keystorePath)) {
+    throw new Error(`Keystore file not found: ${keystorePath}`);
+  }
+
+  const keystoreContent = readFileSync(keystorePath, "utf-8");
+  const keystoreJson = JSON.parse(keystoreContent);
+  const rawAddress = keystoreJson?.address;
+
+  if (!rawAddress || typeof rawAddress !== "string") {
+    throw new Error(`Missing 'address' field in keystore: ${keystoreName}`);
+  }
+
+  const normalizedAddress = rawAddress.startsWith("0x")
+    ? rawAddress
+    : `0x${rawAddress}`;
+  return ethers.utils.getAddress(normalizedAddress);
+}
+
 async function checkAccountBalance() {
   try {
     // Step 1: List accounts and let user select one
@@ -75,11 +108,24 @@ async function checkAccountBalance() {
 
     // Step 2: Get the address of the selected account
     console.log(`\n🔍 Getting address for keystore: ${selectedKeystore}`);
-    const addressCommand = `cast wallet address --account ${selectedKeystore}`;
 
     let address;
     try {
-      address = execSync(addressCommand).toString().trim();
+      address = getAddressFromKeystoreFile(selectedKeystore);
+    } catch (keystoreError) {
+      const addressCommand = `cast wallet address --account ${selectedKeystore}`;
+      try {
+        address = execSync(addressCommand).toString().trim();
+      } catch (castError) {
+        throw new Error(
+          `Unable to resolve address from keystore file or cast command.\n` +
+            `Keystore error: ${keystoreError.message}\n` +
+            `Cast error: ${castError.message}`
+        );
+      }
+    }
+
+    try {
       console.log("\n💰 Checking balances across networks...");
       console.log("\n");
       await getBalanceForEachNetwork(address);

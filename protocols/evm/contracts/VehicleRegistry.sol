@@ -5,19 +5,18 @@ import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/I
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { IAssetRegistry } from "./interfaces/IAssetRegistry.sol";
+import { IPositionManager } from "./interfaces/IPositionManager.sol";
 import { TokenLib, AssetLib, VehicleLib } from "./Libraries.sol";
 import { RoboshareTokens } from "./RoboshareTokens.sol";
 import { PartnerManager } from "./PartnerManager.sol";
 import { RegistryRouter } from "./RegistryRouter.sol";
 
 /**
- * @dev Vehicle registration and management with IPFS metadata integration
+ * @dev Vehicle registration and management with token metadata pointers
  * Coordinates with RoboshareTokens for minting and PartnerManager for authorization
  * Implements IAssetsRegistry for generic asset management capabilities
  */
 contract VehicleRegistry is Initializable, AccessControlUpgradeable, UUPSUpgradeable, IAssetRegistry {
-    using VehicleLib for VehicleLib.VehicleInfo;
-
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
     bytes32 public constant ROUTER_ROLE = keccak256("ROUTER_ROLE");
 
@@ -28,18 +27,22 @@ contract VehicleRegistry is Initializable, AccessControlUpgradeable, UUPSUpgrade
 
     // Vehicle storage
     mapping(uint256 => VehicleLib.Vehicle) public vehicles;
-    mapping(string => bool) public vinExists; // VIN uniqueness tracking
+    mapping(bytes32 => bool) public vinHashExists; // VIN hash uniqueness tracking
 
     // Errors
     error ZeroAddress();
     error VehicleAlreadyExists();
     error VehicleDoesNotExist();
     error OutstandingTokensHeldByOthers();
+    error PositionManagerNotSet();
+    error InvalidPositionManager(address manager);
+    error UnsupportedVehicleRegistrationPayload();
+    error SettlementPayoutMismatch(uint256 expected, uint256 actual);
 
     // Events
-    event VehicleRegistered(uint256 indexed vehicleId, address indexed partner, string vin);
+    event VehicleRegistered(uint256 indexed vehicleId, address indexed partner, bytes32 indexed vinHash);
 
-    event VehicleMetadataUpdated(uint256 indexed vehicleId, string newMetadataURI);
+    event VehicleMetadataUpdated(uint256 indexed vehicleId, string assetMetadataURI, string revenueTokenMetadataURI);
     event RoboshareTokensUpdated(address indexed oldAddress, address indexed newAddress);
     event PartnerManagerUpdated(address indexed oldAddress, address indexed newAddress);
     event RouterUpdated(address indexed oldAddress, address indexed newAddress);
@@ -110,20 +113,12 @@ contract VehicleRegistry is Initializable, AccessControlUpgradeable, UUPSUpgrade
     // View Functions
 
     /**
-     * @dev Get vehicle information
+     * @dev Get protocol-trusted vehicle information and token metadata pointers.
      */
     function getVehicleInfo(uint256 vehicleId)
         external
         view
-        returns (
-            string memory vin,
-            string memory make,
-            string memory model,
-            uint256 year,
-            uint256 manufacturerId,
-            string memory optionCodes,
-            string memory dynamicMetadataURI
-        )
+        returns (bytes32 vinHash, string memory assetMetadataURI, string memory revenueTokenMetadataURI)
     {
         VehicleLib.Vehicle storage vehicle = vehicles[vehicleId];
         if (vehicle.vehicleId == 0) {
@@ -131,20 +126,7 @@ contract VehicleRegistry is Initializable, AccessControlUpgradeable, UUPSUpgrade
         }
 
         VehicleLib.VehicleInfo storage info = vehicle.vehicleInfo;
-        return
-            (info.vin, info.make, info.model, info.year, info.manufacturerId, info.optionCodes, info.dynamicMetadataURI);
-    }
-
-    /**
-     * @dev Get vehicle display name
-     */
-    function getVehicleDisplayName(uint256 vehicleId) external view returns (string memory) {
-        VehicleLib.Vehicle storage vehicle = vehicles[vehicleId];
-        if (vehicle.vehicleId == 0) {
-            revert VehicleDoesNotExist();
-        }
-
-        return VehicleLib.getDisplayName(vehicle.vehicleInfo);
+        return (info.vinHash, info.assetMetadataURI, info.revenueTokenMetadataURI);
     }
 
     // IAssetRegistry implementation
@@ -209,7 +191,7 @@ contract VehicleRegistry is Initializable, AccessControlUpgradeable, UUPSUpgrade
         );
     }
 
-    function previewCreateRevenueTokenPool(uint256 assetId, address partner, uint256 tokenPrice)
+    function previewCreateRevenueTokenPool(uint256 assetId, address partner, uint256 requestedSupply)
         external
         view
         override
@@ -230,23 +212,32 @@ contract VehicleRegistry is Initializable, AccessControlUpgradeable, UUPSUpgrade
         if (roboshareTokens.getRevenueTokenSupply(revenueTokenId) > 0) {
             revert RevenueTokensAlreadyMinted();
         }
+        if (requestedSupply == 0) {
+            revert InvalidPoolSupply();
+        }
 
-        uint256 assetValue = vehicles[assetId].assetInfo.assetValue;
-        supply = assetValue / tokenPrice;
+        supply = requestedSupply;
     }
 
     /**
-     * @dev Update dynamic metadata URI for a vehicle
+     * @dev Update asset NFT and revenue-token metadata pointers for a vehicle.
      */
-    function updateVehicleMetadata(uint256 vehicleId, string memory newMetadataURI) external onlyAuthorizedPartner {
+    function updateVehicleMetadata(
+        uint256 vehicleId,
+        string memory assetMetadataURI,
+        string memory revenueTokenMetadataURI
+    ) external {
         VehicleLib.Vehicle storage vehicle = vehicles[vehicleId];
         if (vehicle.vehicleId == 0) {
             revert VehicleDoesNotExist();
         }
+        _requireAuthorizedAssetOwner(msg.sender, vehicleId);
 
-        VehicleLib.updateDynamicMetadata(vehicle.vehicleInfo, newMetadataURI);
+        VehicleLib.updateMetadata(vehicle.vehicleInfo, assetMetadataURI, revenueTokenMetadataURI);
+        roboshareTokens.setTokenMetadataURI(vehicleId, assetMetadataURI);
+        roboshareTokens.setTokenMetadataURI(TokenLib.getTokenIdFromAssetId(vehicleId), revenueTokenMetadataURI);
 
-        emit VehicleMetadataUpdated(vehicleId, newMetadataURI);
+        emit VehicleMetadataUpdated(vehicleId, assetMetadataURI, revenueTokenMetadataURI);
     }
 
     /**
@@ -306,31 +297,14 @@ contract VehicleRegistry is Initializable, AccessControlUpgradeable, UUPSUpgrade
     }
 
     /**
-     * @dev Claim settlement funds.
-     * Burns all revenue tokens held by caller and transfers settlement payout from Treasury.
-     * @param assetId The ID of the settled asset
-     * @param autoClaimEarnings If true, claims any unclaimed earnings before settlement in same tx.
-     *                           If false, earnings are snapshotted and can be claimed via claimEarnings later.
-     * @return claimedAmount The settlement USDC amount received
-     * @return earningsClaimed The earnings USDC amount received (0 if autoClaimEarnings is false)
-     */
-    function claimSettlement(uint256 assetId, bool autoClaimEarnings)
-        external
-        override
-        returns (uint256 claimedAmount, uint256 earningsClaimed)
-    {
-        return _claimSettlementFor(msg.sender, assetId, autoClaimEarnings);
-    }
-
-    /**
-     * @dev Router-forwarded settlement claim preserving original caller identity.
+     * @dev Router-only settlement claim execution preserving original caller identity.
      * @param account The end-user claiming settlement
      * @param assetId The ID of the settled asset
      * @param autoClaimEarnings If true, claims any unclaimed earnings before settlement in same tx.
      * @return claimedAmount The settlement USDC amount received
      * @return earningsClaimed The earnings USDC amount received (0 if autoClaimEarnings is false)
      */
-    function claimSettlementFor(address account, uint256 assetId, bool autoClaimEarnings)
+    function executeSettlementClaimFor(address account, uint256 assetId, bool autoClaimEarnings)
         external
         override
         onlyRole(ROUTER_ROLE)
@@ -496,6 +470,13 @@ contract VehicleRegistry is Initializable, AccessControlUpgradeable, UUPSUpgrade
             revert InsufficientTokenBalance(revenueTokenId, 1, balance);
         }
 
+        IPositionManager positionManager = _positionManager();
+        IPositionManager.SettlementState memory settlementState = positionManager.getSettlementState(assetId);
+        if (!settlementState.isConfigured) {
+            revert AssetNotSettled(assetId, info.status);
+        }
+        uint256 expectedPayout = positionManager.previewSettlementClaim(assetId, balance);
+
         uint256 snapshotAmount = router.snapshotAndClaimEarnings(assetId, account, autoClaimEarnings);
         if (autoClaimEarnings) {
             earningsClaimed = snapshotAmount;
@@ -503,8 +484,17 @@ contract VehicleRegistry is Initializable, AccessControlUpgradeable, UUPSUpgrade
 
         roboshareTokens.burn(account, revenueTokenId, balance);
         claimedAmount = router.processSettlementClaimFor(account, assetId, balance);
+        if (claimedAmount != expectedPayout) {
+            revert SettlementPayoutMismatch(expectedPayout, claimedAmount);
+        }
 
         emit SettlementClaimed(assetId, account, balance, claimedAmount);
+    }
+
+    function _positionManager() internal view returns (IPositionManager manager) {
+        manager = roboshareTokens.positionManager();
+        if (address(manager) == address(0)) revert PositionManagerNotSet();
+        if (address(manager).code.length == 0) revert InvalidPositionManager(address(manager));
     }
 
     /**
@@ -537,29 +527,41 @@ contract VehicleRegistry is Initializable, AccessControlUpgradeable, UUPSUpgrade
         internal
         returns (uint256 vehicleId, uint256 revenueTokenId)
     {
-        (
-            string memory vin,
-            string memory make,
-            string memory model,
-            uint256 year,
-            uint256 manufacturerId,
-            string memory optionCodes,
-            string memory dynamicMetadataURI
-        ) = abi.decode(data, (string, string, string, uint256, uint256, string, string));
+        (string memory vin, string memory assetMetadataURI, string memory revenueTokenMetadataURI) =
+            _decodeVehicleRegistrationData(data);
 
-        if (vinExists[vin]) revert VehicleAlreadyExists();
+        bytes32 vinHash = VehicleLib.toVINHash(vin);
+        if (vinHashExists[vinHash]) revert VehicleAlreadyExists();
 
         (vehicleId, revenueTokenId) = router.reserveNextTokenIdPair();
 
         VehicleLib.Vehicle storage vehicle = vehicles[vehicleId];
-        VehicleLib.initializeVehicle(
-            vehicle, vehicleId, assetValue, vin, make, model, year, manufacturerId, optionCodes, dynamicMetadataURI
-        );
+        VehicleLib.initializeVehicle(vehicle, vehicleId, assetValue, vinHash, assetMetadataURI, revenueTokenMetadataURI);
 
-        vinExists[vin] = true;
+        vinHashExists[vinHash] = true;
+        roboshareTokens.setTokenMetadataURI(vehicleId, assetMetadataURI);
+        roboshareTokens.setTokenMetadataURI(revenueTokenId, revenueTokenMetadataURI);
 
         emit AssetRegistered(vehicleId, msg.sender, assetValue, vehicle.assetInfo.status);
-        emit VehicleRegistered(vehicleId, msg.sender, vin);
+        emit VehicleRegistered(vehicleId, msg.sender, vinHash);
+        emit VehicleMetadataUpdated(vehicleId, assetMetadataURI, revenueTokenMetadataURI);
+    }
+
+    function _decodeVehicleRegistrationData(bytes calldata data)
+        internal
+        pure
+        returns (string memory vin, string memory assetMetadataURI, string memory revenueTokenMetadataURI)
+    {
+        uint256 firstOffset;
+        assembly ("memory-safe") {
+            firstOffset := calldataload(data.offset)
+        }
+
+        if (firstOffset == 0x60) {
+            return abi.decode(data, (string, string, string));
+        }
+
+        revert UnsupportedVehicleRegistrationPayload();
     }
 
     // UUPS Upgrade authorization

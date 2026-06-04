@@ -10,6 +10,7 @@ import { VehicleRegistry } from "../contracts/VehicleRegistry.sol";
 import { Treasury } from "../contracts/Treasury.sol";
 import { EarningsManager } from "../contracts/EarningsManager.sol";
 import { Marketplace } from "../contracts/Marketplace.sol";
+import { PositionManager } from "../contracts/PositionManager.sol";
 
 /**
  * @title Deploy
@@ -26,7 +27,8 @@ contract Deploy is DeployCore {
             VehicleRegistry vehicleRegistry,
             Treasury treasury,
             EarningsManager earningsManager,
-            Marketplace marketplace
+            Marketplace marketplace,
+            PositionManager positionManager
         )
     {
         // Get network configuration
@@ -62,6 +64,7 @@ contract Deploy is DeployCore {
         treasury = contracts.treasury;
         earningsManager = contracts.earningsManager;
         marketplace = contracts.marketplace;
+        positionManager = contracts.positionManager;
 
         // Save deployments for frontend generation
         saveDeployment("RoboshareTokens", address(roboshareTokens));
@@ -71,6 +74,7 @@ contract Deploy is DeployCore {
         saveDeployment("Treasury", address(treasury));
         saveDeployment("EarningsManager", address(earningsManager));
         saveDeployment("Marketplace", address(marketplace));
+        saveDeployment("PositionManager", address(positionManager));
 
         // Save MockUSDC deployment for test networks
         if (isLocalOrTestNetwork() && config.usdcToken != address(0)) {

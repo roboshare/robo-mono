@@ -216,29 +216,21 @@ library AssetLib {
 }
 
 /**
- * @dev Vehicle-related data structures and functions
- * Hybrid storage: immutable data on-chain, dynamic data on IPFS
+ * @dev Vehicle-related data structures and functions.
+ * Keeps only protocol anchors and token-facing metadata pointers on-chain.
  */
 library VehicleLib {
     // Errors
     error InvalidVINLength();
-    error InvalidMake();
-    error InvalidModel();
-    error InvalidYear();
     error InvalidMetadataURI();
 
     /**
-     * @dev Immutable vehicle information stored on-chain
-     * Set once during registration, never changes
+     * @dev Protocol-trusted vehicle identity anchor plus token metadata pointers.
      */
     struct VehicleInfo {
-        string vin; // Vehicle Identification Number
-        string make; // e.g., "Tesla", "Ford"
-        string model; // e.g., "Model S", "F-150"
-        uint256 year; // Manufacturing year
-        uint256 manufacturerId; // Partner's manufacturer ID
-        string optionCodes; // e.g., "P90D,AP1,SUBW"
-        string dynamicMetadataURI; // IPFS URI for changing data (odometer, etc.)
+        bytes32 vinHash; // Uniqueness anchor for vehicle identity
+        string assetMetadataURI; // Asset NFT presentation metadata pointer
+        string revenueTokenMetadataURI; // Revenue-token presentation metadata pointer
     }
 
     /**
@@ -247,114 +239,79 @@ library VehicleLib {
     struct Vehicle {
         uint256 vehicleId; // Unique vehicle identifier
         AssetLib.AssetInfo assetInfo; // Standard asset management
-        VehicleInfo vehicleInfo; // Immutable data + IPFS metadata URI
+        VehicleInfo vehicleInfo; // Uniqueness anchor + metadata pointers
     }
 
     /**
-     * @dev Initialize complete vehicle with asset info and vehicle-specific data
+     * @dev Initialize complete vehicle with asset info and token metadata pointers.
      */
     function initializeVehicle(
         Vehicle storage vehicle,
         uint256 vehicleId,
         uint256 assetValue,
-        string memory vin,
-        string memory make,
-        string memory model,
-        uint256 year,
-        uint256 manufacturerId,
-        string memory optionCodes,
-        string memory dynamicMetadataURI
+        bytes32 vinHash,
+        string memory assetMetadataURI,
+        string memory revenueTokenMetadataURI
     ) internal {
-        // Set vehicle ID
         vehicle.vehicleId = vehicleId;
-
-        // Initialize asset info
         AssetLib.initializeAssetInfo(vehicle.assetInfo, assetValue);
-
-        // Initialize vehicle-specific info
-        initializeVehicleInfo(
-            vehicle.vehicleInfo, vin, make, model, year, manufacturerId, optionCodes, dynamicMetadataURI
-        );
+        initializeVehicleInfo(vehicle.vehicleInfo, vinHash, assetMetadataURI, revenueTokenMetadataURI);
     }
 
     /**
-     * @dev Initialize vehicle info with validation
+     * @dev Build VIN hash and validate VIN format.
+     */
+    function toVINHash(string memory vin) internal pure returns (bytes32) {
+        bytes memory vinBytes = bytes(vin);
+        if (vinBytes.length < 10 || vinBytes.length > 17) {
+            revert InvalidVINLength();
+        }
+
+        bytes32 vinHash;
+        assembly ("memory-safe") {
+            vinHash := keccak256(add(vinBytes, 0x20), mload(vinBytes))
+        }
+        return vinHash;
+    }
+
+    /**
+     * @dev Initialize vehicle info with validation.
      */
     function initializeVehicleInfo(
         VehicleInfo storage info,
-        string memory vin,
-        string memory make,
-        string memory model,
-        uint256 year,
-        uint256 manufacturerId,
-        string memory optionCodes,
-        string memory dynamicMetadataURI
+        bytes32 vinHash,
+        string memory assetMetadataURI,
+        string memory revenueTokenMetadataURI
     ) internal {
-        // Validation
-        if (bytes(vin).length < 10 || bytes(vin).length > 17) {
+        if (vinHash == bytes32(0)) {
             revert InvalidVINLength();
         }
-        if (bytes(make).length == 0) {
-            revert InvalidMake();
-        }
-        if (bytes(model).length == 0) {
-            revert InvalidModel();
-        }
-        if (year < 1990 || year > 2030) {
-            revert InvalidYear();
-        }
-        if (!ProtocolLib.isValidIPFSURI(dynamicMetadataURI)) {
+        _validateMetadataURI(assetMetadataURI);
+        _validateMetadataURI(revenueTokenMetadataURI);
+
+        info.vinHash = vinHash;
+        info.assetMetadataURI = assetMetadataURI;
+        info.revenueTokenMetadataURI = revenueTokenMetadataURI;
+    }
+
+    /**
+     * @dev Update token metadata pointers.
+     */
+    function updateMetadata(
+        VehicleInfo storage info,
+        string memory assetMetadataURI,
+        string memory revenueTokenMetadataURI
+    ) internal {
+        _validateMetadataURI(assetMetadataURI);
+        _validateMetadataURI(revenueTokenMetadataURI);
+        info.assetMetadataURI = assetMetadataURI;
+        info.revenueTokenMetadataURI = revenueTokenMetadataURI;
+    }
+
+    function _validateMetadataURI(string memory metadataURI) private pure {
+        if (!ProtocolLib.isValidIPFSURI(metadataURI)) {
             revert InvalidMetadataURI();
         }
-
-        // Set values
-        info.vin = vin;
-        info.make = make;
-        info.model = model;
-        info.year = year;
-        info.manufacturerId = manufacturerId;
-        info.optionCodes = optionCodes;
-        info.dynamicMetadataURI = dynamicMetadataURI;
-    }
-
-    /**
-     * @dev Update dynamic metadata URI (for IPFS data changes like odometer)
-     */
-    function updateDynamicMetadata(VehicleInfo storage info, string memory newMetadataURI) internal {
-        if (!ProtocolLib.isValidIPFSURI(newMetadataURI)) {
-            revert InvalidMetadataURI();
-        }
-        info.dynamicMetadataURI = newMetadataURI;
-    }
-
-    /**
-     * @dev Get vehicle display name for UI/events
-     */
-    function getDisplayName(VehicleInfo storage info) internal view returns (string memory) {
-        return string(abi.encodePacked(info.make, " ", info.model, " ", _uint256ToString(info.year)));
-    }
-
-    /**
-     * @dev Convert uint256 to string (internal utility)
-     */
-    function _uint256ToString(uint256 value) private pure returns (string memory) {
-        if (value == 0) {
-            return "0";
-        }
-        uint256 temp = value;
-        uint256 digits;
-        while (temp != 0) {
-            digits++;
-            temp /= 10;
-        }
-        bytes memory buffer = new bytes(digits);
-        while (value != 0) {
-            digits -= 1;
-            // forge-lint: disable-next-line(unsafe-typecast)
-            buffer[digits] = bytes1(uint8(48 + uint8(value % 10)));
-            value /= 10;
-        }
-        return string(buffer);
     }
 }
 
@@ -389,19 +346,19 @@ library TokenLib {
      */
     struct TokenInfo {
         uint256 tokenId; // ERC1155 token ID
-        uint256 tokenPrice; // Price per token in USDC (6 decimals)
+        uint256 tokenPrice; // Price per token in USDC (6 decimals), synced to PositionManager for live policy reads
         uint256 maxSupply; // Max primary-pool supply used for revenue split bounds
         uint256 tokenSupply; // Total number of tokens issued
-        uint256 minHoldingPeriod; // Minimum holding period before penalty-free transfer
+        uint256 minHoldingPeriod; // Minimum holding period before penalty-free transfer, synced to PositionManager
         uint256 maturityDate; // Date by which the revenue commitment ends
         uint256 revenueShareBP; // Max investor share of reported revenue (basis points)
         uint256 targetYieldBP; // Target yield for buffer benchmarks (basis points)
         bool immediateProceeds; // True: higher-upside profile, False: earlier-liquidity profile
         bool protectionEnabled; // True when protection buffer policy is enabled
-        uint256 currentRedemptionEpoch; // Current tranche for primary redemptions
-        uint256 currentRedemptionEpochSupply; // Outstanding claim units in current redemption tranche
-        uint256 currentRedemptionBackedPrincipal; // Remaining backed principal for current redemption tranche
-        // Track positions per user using Queue
+        uint256 currentRedemptionEpoch; // Manager-owned live state once PositionManager is wired
+        uint256 currentRedemptionEpochSupply; // Manager-owned live state once PositionManager is wired
+        uint256 currentRedemptionBackedPrincipal; // Manager-owned live state once PositionManager is wired
+        // Track positions per user using Queue; live ownership moves to PositionManager after the split.
         mapping(address => PositionQueue) positions;
     }
 
@@ -1301,6 +1258,8 @@ library EarningsLib {
         mapping(uint256 => EarningsPeriod) periods; // period => earnings data
         // Track last claimed period for each individual position
         mapping(address => mapping(uint256 => mapping(uint256 => uint256))) positionsLastClaimedPeriod; // holder => tokenId => positionId => lastClaimedPeriod
+        // Preserved earnings for transferred slices that no longer map 1:1 to live positions
+        mapping(address => uint256) transferredEarningsCredit; // holder => preserved earnings
         // Settlement earnings snapshot - allows claiming earnings after tokens are burned
         mapping(address => uint256) settledEarningsSnapshot; // holder => unclaimed earnings at settlement
         mapping(address => bool) hasClaimedSettledEarnings; // holder => whether they claimed snapshot

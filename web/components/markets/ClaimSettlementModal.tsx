@@ -103,8 +103,8 @@ export const ClaimSettlementModal = ({
       });
       setStep("claiming");
       await writeRouter({
-        functionName: "claimSettlementFor",
-        args: [address, BigInt(assetId), autoClaimEarnings],
+        functionName: "claimSettlement",
+        args: [BigInt(assetId), autoClaimEarnings],
       });
       if (autoWithdraw) {
         setStep("withdrawing");

@@ -13,6 +13,7 @@ import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
 import { isPrivyEnabled } from "~~/services/web3/privyConfig";
 import { getPrivyIdentityLabel } from "~~/services/web3/privyIdentity";
 import { getDeployedContract } from "~~/utils/contracts";
+import { normalizePrimaryRedemptionPreview } from "~~/utils/protocolState";
 
 interface RedeemLiquidityModalProps {
   isOpen: boolean;
@@ -200,12 +201,10 @@ export function RedeemLiquidityModal({
     contractName: "Marketplace",
   });
 
-  const fullPositionPreviewTuple = fullPositionRedemptionPreview as
-    | readonly [bigint, bigint, bigint, bigint]
-    | undefined;
-  const fullPositionPayout = fullPositionPreviewTuple?.[0] ?? 0n;
-  const availableLiquidityNow = fullPositionPreviewTuple?.[1] ?? 0n;
-  const withdrawableSupplyNow = fullPositionPreviewTuple?.[2] ?? 0n;
+  const fullPositionPreview = normalizePrimaryRedemptionPreview(fullPositionRedemptionPreview);
+  const fullPositionPayout = fullPositionPreview.payout;
+  const availableLiquidityNow = fullPositionPreview.liquidity;
+  const withdrawableSupplyNow = fullPositionPreview.redemptionSupply;
   const maxFunds = fullPositionPayout;
   const totalPositionValue = totalPosition * pricePerUnit;
   const enteredFunds = useMemo(() => {
@@ -227,8 +226,7 @@ export function RedeemLiquidityModal({
     args: address ? [BigInt(tokenId), address, redeemAmount] : undefined,
     query: { enabled: isOpen && !!address && !!marketplaceContract },
   });
-  const previewTuple = redemptionPreview as readonly [bigint, bigint, bigint, bigint] | undefined;
-  const payout = previewTuple?.[0] ?? 0n;
+  const payout = normalizePrimaryRedemptionPreview(redemptionPreview).payout;
   const formattedFullPositionPayout = formatUnits(fullPositionPayout, decimals);
   const formattedTotalPositionValue = formatUnits(totalPositionValue, decimals);
   const formattedAvailableLiquidityNow = formatUnits(availableLiquidityNow, decimals);

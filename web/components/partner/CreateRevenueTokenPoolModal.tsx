@@ -55,6 +55,7 @@ export const CreateRevenueTokenPoolModal = ({
   const bufferQuote = calculatePrimaryPoolBuffers(assetValueBigInt, targetYieldBP, formData.protectionEnabled);
   const displayedBufferLabel = formData.protectionEnabled ? "Required Total Buffer" : "Required Protocol Buffer";
   const displayedBufferAmount = formData.protectionEnabled ? bufferQuote.totalBuffer : bufferQuote.protocolBuffer;
+  const requestedSupply = tokenPriceBigInt > 0n ? assetValueBigInt / tokenPriceBigInt : 0n;
 
   const { writeContractAsync: writeVehicleRegistry } = useScaffoldWriteContract({ contractName: "VehicleRegistry" });
 
@@ -147,7 +148,7 @@ export const CreateRevenueTokenPoolModal = ({
           maturityTimestamp,
           revenueShareBP,
           targetYieldBP,
-          0n,
+          requestedSupply,
           formData.immediateProceeds,
           formData.protectionEnabled,
         ],
