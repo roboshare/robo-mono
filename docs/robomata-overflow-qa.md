@@ -79,9 +79,12 @@ Required environment:
 * `ROBOMATA_WORKFLOW_ENABLED=true`
 * `ROBOMATA_WORKFLOW_MUTATIONS_ENABLED=true`
 * `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES`
-* `POSTGRES_URL`
-* `WALRUS_PUBLISHER_URL`
-* `WALRUS_AGGREGATOR_URL`
+* `POSTGRES_URL`, except for single-developer local QA where
+  `ROBOMATA_SUBMISSIONS_FILE` may point at an ignored temp file
+* `WALRUS_PUBLISHER_URL`, for example the current Walrus testnet publisher
+  endpoint `https://publisher.walrus-testnet.walrus.space`
+* `WALRUS_AGGREGATOR_URL`, for example the current Walrus testnet aggregator
+  endpoint `https://aggregator.walrus-testnet.walrus.space`
 * `ROBOMATA_WALRUS_UPLOADS_ENABLED=true`
 * `ROBOMATA_REQUIRE_REAL_EVIDENCE_STORAGE=true`
 * `ROBOMATA_SUI_COMMIT_ENABLED=true`
@@ -90,8 +93,11 @@ Required environment:
 * `ROBOMATA_SUI_SIGNER_ADDRESS`
 * `ROBOMATA_SUI_FACILITY_IDS_JSON`
 * `ROBOMATA_SUI_FACILITY_OPERATORS_JSON`
-* Seal package, identity, threshold, and key-server configuration from `ROB-129`
-  and the Sui testnet deployment helper
+* `ROBOMATA_SEAL_PACKAGE_ID`, `ROBOMATA_SEAL_IDENTITY`,
+  `ROBOMATA_SEAL_KEY_SERVER_OBJECT_ID`,
+  `ROBOMATA_SEAL_KEY_SERVER_AGGREGATOR_URL`, and `ROBOMATA_SEAL_THRESHOLD`
+  from the Sui testnet deployment helper, or equivalent
+  `ROBOMATA_SEAL_KEY_SERVERS_JSON` configuration
 
 Required evidence:
 
