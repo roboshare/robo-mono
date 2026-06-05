@@ -71,9 +71,14 @@ Required evidence:
 
 Status: pending final implementation merge.
 
+Tracking issue: `ROB-134`.
+
 Required environment:
 
 * `WALRUS_PUBLISHER_URL`
+* `WALRUS_AGGREGATOR_URL`
+* `ROBOMATA_WALRUS_UPLOADS_ENABLED=true`
+* `ROBOMATA_REQUIRE_REAL_EVIDENCE_STORAGE=true`
 * `ROBOMATA_SUI_PACKAGE_ID`
 * `ROBOMATA_SUI_FACILITY_ID`
 * Seal key-server configuration or documented testnet defaults
@@ -85,6 +90,8 @@ Required evidence:
 * plaintext digest and ciphertext digest are both retained for audit
 * commitment root is computed from persisted submission evidence records
 * Sui commit status and reference metadata are persisted back to the submission
+* generated Sui deployment fixtures, local client config paths, recovery
+  phrases, and secrets are not committed
 
 ## Browser QA Scenario
 
@@ -263,6 +270,8 @@ Reason:
 * implementation PRs are still under review/merge sequencing
 * end-to-end browser QA has not yet been executed on the final `dev` commit
 * release evidence has not yet been captured against the final build
+* `ROB-134` real Sui/Walrus/Seal testnet evidence verification has not yet
+  passed
 
-Update this section only after `ROB-132` has concrete automated, browser, Sui,
-and submission-packaging results.
+Update this section only after `ROB-132` and `ROB-134` have concrete automated,
+browser, Sui/Walrus/Seal, and submission-packaging results.
