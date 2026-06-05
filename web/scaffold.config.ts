@@ -81,11 +81,18 @@ const sortNetworks = (networks: readonly chains.Chain[]) => {
 
 const targetNetworks = sortNetworks(configuredNetworks.length > 0 ? configuredNetworks : [LOCAL_TARGET_NETWORK]);
 const localRpcUrl = getLocalRpcUrl();
-const rpcOverrides: Record<number, string> | undefined = localRpcUrl
-  ? {
-      [LOCAL_TARGET_NETWORK.id]: localRpcUrl,
-    }
-  : undefined;
+const rpcOverrideNetworks = [...targetNetworks, chains.mainnet].filter(
+  (network, index, networks) => networks.findIndex(candidate => candidate.id === network.id) === index,
+);
+const publicRpcOverrideEntries = rpcOverrideNetworks.flatMap(network => {
+  const rpcUrl = process.env[`NEXT_PUBLIC_RPC_URL_${network.id}`]?.trim();
+  return rpcUrl ? [[network.id, rpcUrl] as const] : [];
+});
+const rpcOverrides = Object.fromEntries([
+  ...publicRpcOverrideEntries,
+  ...(localRpcUrl ? ([[LOCAL_TARGET_NETWORK.id, localRpcUrl]] as const) : []),
+]) as Record<number, string>;
+const configuredRpcOverrides = Object.keys(rpcOverrides).length > 0 ? rpcOverrides : undefined;
 
 const scaffoldConfig = {
   // The networks on which your DApp is live
@@ -103,7 +110,7 @@ const scaffoldConfig = {
 
   // If you want to use a different RPC for a specific network, you can add it here.
   // The key is the chain ID, and the value is the HTTP RPC URL
-  rpcOverrides,
+  rpcOverrides: configuredRpcOverrides,
 
   // This is ours WalletConnect's default project ID.
   // You can get your own at https://cloud.walletconnect.com
