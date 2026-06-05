@@ -102,23 +102,30 @@ export const SubmissionWorkspace = ({
   const updateSubmission = async (url: string, init?: RequestInit) => {
     if (!partnerAuthAddress) {
       notification.error("Connect a partner wallet before updating the submission.");
-      return;
+      return false;
     }
 
     setIsBusy(true);
-    const headers = new Headers(init?.headers);
-    const authHeaders = await getAuthHeaders();
-    Object.entries(authHeaders).forEach(([key, value]) => headers.set(key, value));
-    const response = await fetch(url, { ...init, headers });
-    const payload = (await response.json()) as { submission?: FacilitySubmission; error?: string };
-    setIsBusy(false);
+    try {
+      const headers = new Headers(init?.headers);
+      const authHeaders = await getAuthHeaders();
+      Object.entries(authHeaders).forEach(([key, value]) => headers.set(key, value));
+      const response = await fetch(url, { ...init, headers });
+      const payload = (await response.json().catch(() => ({}))) as { submission?: FacilitySubmission; error?: string };
 
-    if (!response.ok || !payload.submission) {
-      notification.error(payload.error ?? "Submission update failed.");
-      return;
+      if (!response.ok || !payload.submission) {
+        notification.error(payload.error ?? "Submission update failed.");
+        return false;
+      }
+
+      setSubmission(payload.submission);
+      return true;
+    } catch (error) {
+      notification.error(error instanceof Error ? error.message : "Submission update failed.");
+      return false;
+    } finally {
+      setIsBusy(false);
     }
-
-    setSubmission(payload.submission);
   };
 
   const importReceivables = async (file: File) => {
@@ -135,12 +142,13 @@ export const SubmissionWorkspace = ({
     event.preventDefault();
     if (!submission) return;
 
-    const formData = new FormData(event.currentTarget);
-    await updateSubmission(`/api/robomata/submissions/${submission.id}/evidence`, {
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const didUpdate = await updateSubmission(`/api/robomata/submissions/${submission.id}/evidence`, {
       method: "POST",
       body: formData,
     });
-    event.currentTarget.reset();
+    if (didUpdate) form.reset();
   };
 
   const recompute = async () => {

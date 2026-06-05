@@ -7,6 +7,8 @@ import { addAuditEvent, invalidateSubmissionArtifacts } from "~~/lib/robomata/su
 
 export const runtime = "nodejs";
 
+const evidenceStatuses = new Set(["verified", "exception", "pending"]);
+
 function requireRobomataWorkflow() {
   if (isRobomataWorkflowServerEnabled()) return null;
   return NextResponse.json({ error: "Robomata workflow is not enabled." }, { status: 404 });
@@ -15,6 +17,15 @@ function requireRobomataWorkflow() {
 function requireRobomataMutation() {
   if (isRobomataWorkflowMutationEnabled()) return null;
   return NextResponse.json({ error: "Robomata submission writes are not enabled." }, { status: 403 });
+}
+
+function normalizeEvidenceStatus(value: FormDataEntryValue | null) {
+  const status = String(value ?? "pending").trim();
+  if (!evidenceStatuses.has(status)) {
+    throw new Error("Evidence status must be verified, exception, or pending.");
+  }
+
+  return status as "verified" | "exception" | "pending";
 }
 
 export async function POST(request: NextRequest, context: { params: Promise<{ submissionId: string }> }) {
@@ -43,7 +54,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     const label = String(formData.get("label") ?? "").trim();
     const source = String(formData.get("source") ?? "").trim();
     const scope = String(formData.get("scope") ?? "").trim();
-    const status = String(formData.get("status") ?? "pending").trim() as "verified" | "exception" | "pending";
+    const status = normalizeEvidenceStatus(formData.get("status"));
     const sealPolicyId = String(formData.get("sealPolicyId") ?? "seal://policy/lender-auditor-read").trim();
     const linkedReceivableIds = String(formData.get("linkedReceivableIds") ?? "")
       .split(",")

@@ -52,6 +52,8 @@ type ReceivablePatch = Partial<{
   lockboxMatched: boolean;
 }>;
 
+const evidenceStatuses = new Set(["verified", "exception", "pending"]);
+
 function normalizeNumberPatch(
   value: unknown,
   field: string,
@@ -85,6 +87,14 @@ function normalizeStringPatch(value: unknown, field: string) {
     throw new Error(`${field} must be a non-empty string.`);
   }
   return value.trim();
+}
+
+function normalizeEvidenceStatus(value: unknown) {
+  if (typeof value !== "string" || !evidenceStatuses.has(value)) {
+    throw new Error("status must be verified, exception, or pending.");
+  }
+
+  return value as "verified" | "exception" | "pending";
 }
 
 function normalizeReceivablePatch(patch: ReceivablePatch): ReceivablePatch {
@@ -192,12 +202,13 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ s
     }
 
     if (body.action === "updateEvidenceStatus") {
+      const status = normalizeEvidenceStatus(body.status);
       submission.evidence = submission.evidence.map(evidence =>
-        evidence.id === body.evidenceId ? { ...evidence, status: body.status } : evidence,
+        evidence.id === body.evidenceId ? { ...evidence, status } : evidence,
       );
       addAuditEvent(submission, "evidence_updated", `Updated evidence status for ${body.evidenceId}.`, {
         evidenceId: body.evidenceId,
-        status: body.status,
+        status,
       });
       invalidateSubmissionArtifacts(submission);
     }

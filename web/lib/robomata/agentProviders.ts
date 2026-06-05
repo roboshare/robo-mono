@@ -82,6 +82,20 @@ function buildMockReview(result: AgentReviewInput, provider: AgentProviderName =
     ),
   ];
 
+  if (result.exceptionCount === 0) {
+    return {
+      provider,
+      headline: `${formatUsd(result.availableBorrowingBaseCents)} lender-ready availability with no open exceptions`,
+      memo: `${result.portfolio.operator} has a clean receivables pool under the configured borrowing-base policy and is ready for lender packet delivery.`,
+      exceptionReview: [],
+      nextActions: [
+        "Send the borrowing-base certificate and controlled evidence links to the credit contact.",
+        "Preserve the current evidence root for lender and auditor review.",
+        "Schedule the next receivables refresh before the next borrowing-base update.",
+      ],
+    };
+  }
+
   return {
     provider,
     headline: `${formatUsd(result.availableBorrowingBaseCents)} lender-ready availability after eligibility cuts`,
