@@ -673,12 +673,13 @@ export const SubmissionWorkspace = ({
                   ) : null}
                   {!readOnly &&
                   submission.evidenceCommit.commitMode === "configured" &&
-                  submission.evidenceCommit.status !== "committed" &&
-                  submission.evidenceCommit.status !== "committing" ? (
+                  submission.evidenceCommit.status !== "committed" ? (
                     <button className="btn btn-primary mt-4 rounded-full" onClick={commitEvidence} disabled={isBusy}>
-                      {submission.evidenceCommit.status === "failed"
-                        ? "Retry Sui evidence commit"
-                        : "Commit evidence on Sui"}
+                      {submission.evidenceCommit.status === "committing"
+                        ? "Reconcile Sui evidence commit"
+                        : submission.evidenceCommit.status === "failed"
+                          ? "Retry Sui evidence commit"
+                          : "Commit evidence on Sui"}
                     </button>
                   ) : null}
                   {!readOnly &&

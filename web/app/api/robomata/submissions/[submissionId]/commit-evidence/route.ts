@@ -17,6 +17,7 @@ import {
 const execFileAsync = promisify(execFile);
 const DEFAULT_COMMIT_STALE_MS = 10 * 60 * 1000;
 const DEFAULT_EVENT_QUERY_LIMIT = 100;
+const DEFAULT_EVENT_QUERY_MAX_PAGES = 10;
 const DEFAULT_SUI_CLI_TIMEOUT_MS = 120_000;
 
 export const runtime = "nodejs";
@@ -96,6 +97,11 @@ function eventTxDigest(event: Record<string, unknown>): string | undefined {
   return typeof digest === "string" ? digest : undefined;
 }
 
+function serializeEventCursor(cursor: unknown): string | undefined {
+  if (typeof cursor === "string" && cursor.length > 0) return cursor;
+  if (cursor && typeof cursor === "object") return JSON.stringify(cursor);
+}
+
 async function findCommittedEvidenceEvent(input: {
   facilityObjectId: string;
   label: string;
@@ -103,9 +109,12 @@ async function findCommittedEvidenceEvent(input: {
 }): Promise<string | undefined> {
   const eventType = `${process.env.ROBOMATA_SUI_PACKAGE_ID}::facility::EvidenceCommitted`;
   const limit = parsePositiveInteger(process.env.ROBOMATA_SUI_EVENT_QUERY_LIMIT, DEFAULT_EVENT_QUERY_LIMIT).toString();
-  const { stdout } = await execFileAsync(
-    "sui",
-    [
+  const maxPages = parsePositiveInteger(process.env.ROBOMATA_SUI_EVENT_QUERY_MAX_PAGES, DEFAULT_EVENT_QUERY_MAX_PAGES);
+  const expectedFacility = input.facilityObjectId.toLowerCase();
+  let cursor: string | undefined;
+
+  for (let page = 0; page < maxPages; page++) {
+    const args = [
       "client",
       "--client.config",
       process.env.ROBOMATA_SUI_CLIENT_CONFIG as string,
@@ -116,27 +125,97 @@ async function findCommittedEvidenceEvent(input: {
       limit,
       "--descending-order",
       "--json",
-    ],
-    { timeout: parsePositiveInteger(process.env.ROBOMATA_SUI_CLI_TIMEOUT_MS, DEFAULT_SUI_CLI_TIMEOUT_MS) },
+    ];
+
+    if (cursor) args.push("--cursor", cursor);
+
+    const { stdout } = await execFileAsync("sui", args, {
+      timeout: parsePositiveInteger(process.env.ROBOMATA_SUI_CLI_TIMEOUT_MS, DEFAULT_SUI_CLI_TIMEOUT_MS),
+    });
+    const payload = JSON.parse(stdout) as
+      | { data?: Record<string, unknown>[]; nextCursor?: unknown; next_cursor?: unknown; hasNextPage?: unknown }
+      | Record<string, unknown>[];
+    const events = Array.isArray(payload) ? payload : (payload.data ?? []);
+
+    const match = events.find(event => {
+      const parsedJson = (event.parsedJson ?? event.parsed_json) as
+        | { facility_id?: unknown; evidence_kind?: unknown; evidence_digest?: unknown }
+        | undefined;
+      return (
+        parsedJson &&
+        typeof parsedJson.facility_id === "string" &&
+        parsedJson.facility_id.toLowerCase() === expectedFacility &&
+        parsedJson.evidence_kind === input.label &&
+        digestMatches(parsedJson.evidence_digest, input.rootDigest)
+      );
+    });
+
+    if (match) return eventTxDigest(match);
+    if (Array.isArray(payload)) return undefined;
+
+    const nextCursor = serializeEventCursor(payload.nextCursor ?? payload.next_cursor);
+    const hasNextPage = payload.hasNextPage === true || Boolean(nextCursor);
+    if (!hasNextPage || !nextCursor) return undefined;
+    cursor = nextCursor;
+  }
+
+  return undefined;
+}
+
+function parseSuiTransactionResult(stdout: string): { txDigest?: string; errorMessage?: string; uncertain: boolean } {
+  try {
+    const payload = JSON.parse(stdout);
+    const status = payload?.effects?.status?.status;
+    const errorMessage = payload?.effects?.status?.error;
+    const parsedTxDigest = payload?.digest ?? payload?.effects?.transactionDigest ?? undefined;
+    const txDigest = typeof parsedTxDigest === "string" ? parsedTxDigest : undefined;
+
+    if (status === "success") return { txDigest, uncertain: false };
+    if (status === "failure") {
+      return {
+        txDigest,
+        errorMessage: typeof errorMessage === "string" ? errorMessage : "Sui transaction failed.",
+        uncertain: false,
+      };
+    }
+
+    return {
+      txDigest,
+      errorMessage: "Sui transaction status was missing from CLI output.",
+      uncertain: true,
+    };
+  } catch {
+    return {
+      errorMessage: "Sui transaction output was not valid JSON.",
+      uncertain: true,
+    };
+  }
+}
+
+async function keepCommitInReconciliationState(input: { submission: FacilitySubmission; error: string }) {
+  return NextResponse.json(
+    {
+      submission: input.submission,
+      error: input.error,
+    },
+    { status: 202 },
   );
-  const payload = JSON.parse(stdout) as { data?: Record<string, unknown>[] } | Record<string, unknown>[];
-  const events = Array.isArray(payload) ? payload : (payload.data ?? []);
-  const expectedFacility = input.facilityObjectId.toLowerCase();
+}
 
-  const match = events.find(event => {
-    const parsedJson = (event.parsedJson ?? event.parsed_json) as
-      | { facility_id?: unknown; evidence_kind?: unknown; evidence_digest?: unknown }
-      | undefined;
-    return (
-      parsedJson &&
-      typeof parsedJson.facility_id === "string" &&
-      parsedJson.facility_id.toLowerCase() === expectedFacility &&
-      parsedJson.evidence_kind === input.label &&
-      digestMatches(parsedJson.evidence_digest, input.rootDigest)
-    );
-  });
-
-  return match ? eventTxDigest(match) : undefined;
+async function markCommitFailed(input: {
+  store: ReturnType<typeof getSubmissionStore>;
+  submission: FacilitySubmission;
+  rootDigest: string;
+  error: string;
+}) {
+  const failed = await input.store.failEvidenceCommit(input.submission.id, input.rootDigest, input.error);
+  return NextResponse.json(
+    {
+      submission: failed ?? input.submission,
+      error: input.error,
+    },
+    { status: 500 },
+  );
 }
 
 export async function POST(request: NextRequest, context: { params: Promise<{ submissionId: string }> }) {
@@ -291,31 +370,35 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       timeout: parsePositiveInteger(process.env.ROBOMATA_SUI_CLI_TIMEOUT_MS, DEFAULT_SUI_CLI_TIMEOUT_MS),
     }));
   } catch (error) {
-    return NextResponse.json(
-      {
-        submission: committingSubmission,
-        error:
-          error instanceof Error
-            ? `Sui commit response was not confirmed and must be reconciled before retry: ${error.message}`
-            : "Sui commit response was not confirmed and must be reconciled before retry.",
-      },
-      { status: 202 },
-    );
+    return keepCommitInReconciliationState({
+      submission: committingSubmission,
+      error:
+        error instanceof Error
+          ? `Sui commit response was not confirmed and must be reconciled before retry: ${error.message}`
+          : "Sui commit response was not confirmed and must be reconciled before retry.",
+    });
   }
 
-  let txDigest: string | undefined;
-  try {
-    const payload = JSON.parse(stdout);
-    const parsedTxDigest =
-      payload?.digest ?? payload?.effects?.transactionDigest ?? payload?.effects?.status?.success ?? undefined;
-    txDigest = typeof parsedTxDigest === "string" ? parsedTxDigest : undefined;
-  } catch {
-    txDigest = undefined;
+  const result = parseSuiTransactionResult(stdout);
+  if (result.errorMessage) {
+    if (result.uncertain) {
+      return keepCommitInReconciliationState({
+        submission: committingSubmission,
+        error: `${result.errorMessage} Reconcile Sui events before retrying.`,
+      });
+    }
+
+    return markCommitFailed({
+      store,
+      submission: committingSubmission,
+      rootDigest,
+      error: result.errorMessage,
+    });
   }
 
   try {
     const saved = await store.completeEvidenceCommit(committingSubmission.id, rootDigest, {
-      txDigest,
+      txDigest: result.txDigest,
       committedAt: new Date().toISOString(),
       facilityObjectId,
       facilityOperatorAddress,

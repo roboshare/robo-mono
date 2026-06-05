@@ -9,7 +9,9 @@ import {
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
 import {
   type FacilitySubmission,
+  type SubmissionComputation,
   type SubmissionEvidence,
+  type SubmissionEvidenceCommit,
   addAuditEvent,
   invalidateSubmissionArtifacts,
 } from "~~/lib/robomata/submissions";
@@ -45,6 +47,17 @@ function isCommitInProgressError(error: unknown) {
   return error instanceof Error && error.message.includes("Evidence commit is in progress");
 }
 
+type EvidenceUploadReservation = {
+  evidenceCount: number;
+  computation: SubmissionComputation | null;
+  exceptions: FacilitySubmission["exceptions"];
+  evidenceCommit: SubmissionEvidenceCommit;
+};
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
 async function reserveEvidenceUpload({
   label,
   partnerAddress,
@@ -55,7 +68,7 @@ async function reserveEvidenceUpload({
   partnerAddress: string;
   submissionId: string;
   store: ReturnType<typeof getSubmissionStore>;
-}): Promise<void> {
+}): Promise<EvidenceUploadReservation> {
   let lastError: unknown;
 
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -73,6 +86,12 @@ async function reserveEvidenceUpload({
       throw new Error("Evidence commit is in progress for this submission. Try again after it completes.");
     }
 
+    const reservation = {
+      evidenceCount: latestSubmission.evidence.length,
+      computation: cloneJson(latestSubmission.computation),
+      exceptions: cloneJson(latestSubmission.exceptions),
+      evidenceCommit: cloneJson(latestSubmission.evidenceCommit),
+    };
     invalidateSubmissionArtifacts(latestSubmission);
     addAuditEvent(latestSubmission, "evidence_updated", `Reserved evidence upload for ${label}.`, {
       label,
@@ -80,7 +99,7 @@ async function reserveEvidenceUpload({
 
     try {
       await store.save(latestSubmission);
-      return;
+      return reservation;
     } catch (error) {
       lastError = error;
       if (!isConcurrentSubmissionChange(error)) break;
@@ -88,6 +107,31 @@ async function reserveEvidenceUpload({
   }
 
   throw lastError instanceof Error ? lastError : new Error("Failed to reserve evidence upload.");
+}
+
+async function rollbackEvidenceUploadReservation({
+  partnerAddress,
+  reservation,
+  submissionId,
+  store,
+}: {
+  partnerAddress: string;
+  reservation: EvidenceUploadReservation;
+  submissionId: string;
+  store: ReturnType<typeof getSubmissionStore>;
+}) {
+  const latestSubmission = await store.get(submissionId);
+  if (!latestSubmission || latestSubmission.evidence.length !== reservation.evidenceCount) return;
+
+  const accessError = requireSubmissionAccess(latestSubmission, partnerAddress);
+  if (accessError) return;
+  if (latestSubmission.evidenceCommit.status === "committing") return;
+
+  latestSubmission.computation = reservation.computation;
+  latestSubmission.exceptions = reservation.exceptions;
+  latestSubmission.evidenceCommit = reservation.evidenceCommit;
+  addAuditEvent(latestSubmission, "evidence_updated", "Rolled back failed evidence upload reservation.");
+  await store.save(latestSubmission);
 }
 
 async function saveEvidenceRecord({
@@ -175,17 +219,23 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       return NextResponse.json({ error: "Evidence upload is missing required fields." }, { status: 400 });
     }
 
-    await reserveEvidenceUpload({ label, partnerAddress, submissionId, store });
+    const reservation = await reserveEvidenceUpload({ label, partnerAddress, submissionId, store });
 
-    const evidence = await createEvidenceRecord({
-      file,
-      label,
-      source,
-      scope,
-      status,
-      sealPolicyId,
-      linkedReceivableIds,
-    });
+    let evidence: SubmissionEvidence;
+    try {
+      evidence = await createEvidenceRecord({
+        file,
+        label,
+        source,
+        scope,
+        status,
+        sealPolicyId,
+        linkedReceivableIds,
+      });
+    } catch (error) {
+      await rollbackEvidenceUploadReservation({ partnerAddress, reservation, submissionId, store });
+      throw error;
+    }
 
     const saved = await saveEvidenceRecord({ evidence, partnerAddress, submissionId, store });
     return NextResponse.json({ submission: saved, evidence });

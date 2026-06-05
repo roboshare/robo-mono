@@ -113,7 +113,9 @@ Use the flags as a matrix:
   against Sui `EvidenceCommitted` events before the app permits another commit
   attempt.
 * `ROBOMATA_SUI_EVENT_QUERY_LIMIT` optionally controls how many recent
-  `EvidenceCommitted` events the reconciliation path scans.
+  `EvidenceCommitted` events the reconciliation path requests per page.
+* `ROBOMATA_SUI_EVENT_QUERY_MAX_PAGES` optionally controls how many Sui event
+  pages stale-commit reconciliation scans before releasing the attempt.
 * `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES=0x...,0x...` is required when the
   server APIs are enabled. The API verifies a fresh wallet signature and then
   checks the partner identity against this server-side allowlist before
