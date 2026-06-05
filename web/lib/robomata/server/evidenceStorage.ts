@@ -1,9 +1,10 @@
-import { createCipheriv, createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import { isRobomataWalrusUploadsEnabled } from "~~/lib/featureFlags";
+import { encryptEvidenceWithSeal, isSealEncryptionConfigured } from "~~/lib/robomata/server/sealEncryption";
 import type { SubmissionEvidence, SubmissionStorageBackend } from "~~/lib/robomata/submissions";
 
 const DEFAULT_WALRUS_EPOCHS = 3;
-const SEAL_ENCRYPTION_ALGORITHM = "aes-256-gcm";
+const ENCRYPTED_EVIDENCE_CONTENT_TYPE = "application/octet-stream";
 
 type WalrusUploadResult = {
   storageBackend: SubmissionStorageBackend;
@@ -11,8 +12,6 @@ type WalrusUploadResult = {
   walrusObjectId: string;
   walrusEventId?: string;
   aggregatorUrl?: string;
-  sealEncrypted: boolean;
-  sealEncryptionAlgorithm?: string;
 };
 
 type WalrusUploadInput = {
@@ -22,57 +21,6 @@ type WalrusUploadInput = {
 
 function digestBuffer(buffer: Buffer): string {
   return `0x${createHash("sha256").update(buffer).digest("hex")}`;
-}
-
-function parseSealEncryptionKey(): Buffer {
-  const raw = process.env.ROBOMATA_SEAL_ENCRYPTION_KEY?.trim();
-  if (!raw) {
-    throw new Error("ROBOMATA_SEAL_ENCRYPTION_KEY is required before real Walrus uploads are enabled.");
-  }
-
-  const normalized = raw.startsWith("0x") ? raw.slice(2) : raw;
-  const encoding = /^[0-9a-f]+$/i.test(normalized) && normalized.length === 64 ? "hex" : "base64";
-  const key = Buffer.from(normalized, encoding);
-  if (key.length !== 32) {
-    throw new Error("ROBOMATA_SEAL_ENCRYPTION_KEY must decode to a 32-byte key.");
-  }
-
-  return key;
-}
-
-function buildSealEncryptedEnvelope(input: {
-  plaintext: Buffer;
-  sealPolicyId: string;
-  filename: string;
-  contentType: string;
-  digest: string;
-}): WalrusUploadInput {
-  const key = parseSealEncryptionKey();
-  const iv = randomBytes(12);
-  const cipher = createCipheriv(SEAL_ENCRYPTION_ALGORITHM, key, iv);
-  const ciphertext = Buffer.concat([cipher.update(input.plaintext), cipher.final()]);
-  const authTag = cipher.getAuthTag();
-
-  const envelope = {
-    version: 1,
-    encryption: {
-      algorithm: SEAL_ENCRYPTION_ALGORITHM,
-      iv: iv.toString("base64"),
-      authTag: authTag.toString("base64"),
-      sealPolicyId: input.sealPolicyId,
-    },
-    plaintext: {
-      filename: input.filename,
-      contentType: input.contentType,
-      sha256Digest: input.digest,
-    },
-    ciphertext: ciphertext.toString("base64"),
-  };
-
-  return {
-    buffer: Buffer.from(JSON.stringify(envelope), "utf8"),
-    contentType: "application/vnd.robomata.seal-envelope+json",
-  };
 }
 
 async function uploadToWalrus(input: WalrusUploadInput): Promise<WalrusUploadResult> {
@@ -117,8 +65,6 @@ async function uploadToWalrus(input: WalrusUploadInput): Promise<WalrusUploadRes
     walrusObjectId,
     walrusEventId,
     aggregatorUrl: process.env.WALRUS_AGGREGATOR_URL,
-    sealEncrypted: true,
-    sealEncryptionAlgorithm: SEAL_ENCRYPTION_ALGORITHM,
   };
 }
 
@@ -128,7 +74,6 @@ function buildMockWalrusResult(digest: string): WalrusUploadResult {
     walrusBlobId: digest.replace(/^0x/, "").slice(0, 44),
     walrusObjectId: `0x${digest.replace(/^0x/, "").slice(0, 64)}`,
     aggregatorUrl: process.env.WALRUS_AGGREGATOR_URL,
-    sealEncrypted: false,
   };
 }
 
@@ -141,18 +86,37 @@ export async function createEvidenceRecord(input: {
   sealPolicyId: string;
   linkedReceivableIds?: string[];
 }): Promise<SubmissionEvidence> {
-  const buffer = Buffer.from(await input.file.arrayBuffer());
-  const digest = digestBuffer(buffer);
-  const uploadResult = isRobomataWalrusUploadsEnabled()
-    ? await uploadToWalrus(
-        buildSealEncryptedEnvelope({
-          plaintext: buffer,
-          sealPolicyId: input.sealPolicyId,
-          filename: input.file.name || "upload",
-          contentType: input.file.type || "application/octet-stream",
-          digest,
-        }),
-      )
+  const plaintext = Buffer.from(await input.file.arrayBuffer());
+  const plaintextDigest = digestBuffer(plaintext);
+  const uploadsEnabled = isRobomataWalrusUploadsEnabled();
+
+  if (uploadsEnabled && !isSealEncryptionConfigured()) {
+    throw new Error(
+      "Seal encryption is required before real Walrus uploads are enabled. Set ROBOMATA_SUI_PACKAGE_ID and ROBOMATA_SUI_FACILITY_ID, or explicit ROBOMATA_SEAL_* values.",
+    );
+  }
+
+  const sealResult = uploadsEnabled
+    ? await encryptEvidenceWithSeal({
+        plaintext,
+        aad: Buffer.from(
+          JSON.stringify({
+            label: input.label,
+            source: input.source,
+            scope: input.scope,
+            plaintextDigest,
+          }),
+        ),
+      })
+    : null;
+
+  const uploadBody = sealResult?.encryptedBytes ?? plaintext;
+  const uploadContentType = sealResult
+    ? ENCRYPTED_EVIDENCE_CONTENT_TYPE
+    : input.file.type || "application/octet-stream";
+  const digest = sealResult?.ciphertextDigest ?? plaintextDigest;
+  const uploadResult = uploadsEnabled
+    ? await uploadToWalrus({ buffer: uploadBody, contentType: uploadContentType })
     : buildMockWalrusResult(digest);
 
   return {
@@ -172,8 +136,14 @@ export async function createEvidenceRecord(input: {
     uploadedAt: new Date().toISOString(),
     linkedReceivableIds: input.linkedReceivableIds ?? [],
     storageBackend: uploadResult.storageBackend,
+    encryptionBackend: sealResult ? "seal" : "none",
     aggregatorUrl: uploadResult.aggregatorUrl,
-    sealEncrypted: uploadResult.sealEncrypted,
-    sealEncryptionAlgorithm: uploadResult.sealEncryptionAlgorithm,
+    plaintextDigest,
+    ciphertextDigest: sealResult?.ciphertextDigest,
+    sealPackageId: sealResult?.sealPackageId,
+    sealIdentity: sealResult?.sealIdentity,
+    sealThreshold: sealResult?.sealThreshold,
+    sealKeyServerObjectIds: sealResult?.sealKeyServerObjectIds,
+    sealKeyServerAggregatorUrl: sealResult?.sealKeyServerAggregatorUrl,
   };
 }
