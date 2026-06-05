@@ -1,5 +1,5 @@
 import { sql } from "@vercel/postgres";
-import { desc, sql as drizzleSql, eq } from "drizzle-orm";
+import { and, desc, sql as drizzleSql, eq } from "drizzle-orm";
 import { jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { drizzle } from "drizzle-orm/vercel-postgres";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -147,6 +147,11 @@ function createFileStore(): SubmissionStore {
     async save(submission) {
       return withWriteLock(async () => {
         const submissions = await readFileStore(filePath);
+        const current = submissions.find(candidate => candidate.id === submission.id);
+        if (current && current.updatedAt !== submission.updatedAt) {
+          throw new Error("Submission changed while this update was in progress. Reload and try again.");
+        }
+
         const nextSubmission = touchSubmission(submission);
         const next = submissions.filter(candidate => candidate.id !== nextSubmission.id);
         next.unshift(nextSubmission);
@@ -159,7 +164,10 @@ function createFileStore(): SubmissionStore {
         const submissions = await readFileStore(filePath);
         const submission = submissions.find(candidate => candidate.id === id);
         if (!submission) return null;
-        if (submission.evidenceCommit.status !== "ready" || submission.evidenceCommit.rootDigest !== rootDigest) {
+        if (
+          !["ready", "failed"].includes(submission.evidenceCommit.status) ||
+          submission.evidenceCommit.rootDigest !== rootDigest
+        ) {
           return null;
         }
 
@@ -218,8 +226,9 @@ function createPostgresStore(): SubmissionStore {
     },
     async save(submission) {
       await ensurePostgresTable();
+      const expectedUpdatedAt = new Date(submission.updatedAt);
       const nextSubmission = touchSubmission(submission);
-      await db
+      const rows = await db
         .update(submissionsTable)
         .set({
           partnerAddress: nextSubmission.partnerAddress,
@@ -230,24 +239,39 @@ function createPostgresStore(): SubmissionStore {
           payload: nextSubmission,
           updatedAt: new Date(nextSubmission.updatedAt),
         })
-        .where(eq(submissionsTable.id, nextSubmission.id));
+        .where(and(eq(submissionsTable.id, nextSubmission.id), eq(submissionsTable.updatedAt, expectedUpdatedAt)))
+        .returning({ id: submissionsTable.id });
+
+      if (rows.length === 0) {
+        throw new Error("Submission changed while this update was in progress. Reload and try again.");
+      }
+
       return nextSubmission;
     },
     async beginEvidenceCommit(id, rootDigest) {
       await ensurePostgresTable();
-      const result = await sql<{ payload: FacilitySubmission }>`
+      const result = await sql<{ payload: FacilitySubmission; updated_at: Date }>`
         UPDATE robomata_facility_submissions
         SET
           payload = jsonb_set(payload, '{evidenceCommit,status}', '"committing"'::jsonb, false),
           updated_at = now()
         WHERE
           id = ${id}
-          AND payload->'evidenceCommit'->>'status' = 'ready'
+          AND payload->'evidenceCommit'->>'status' IN ('ready', 'failed')
           AND payload->'evidenceCommit'->>'rootDigest' = ${rootDigest}
-        RETURNING payload;
+        RETURNING payload, updated_at;
       `;
 
-      return result.rows[0]?.payload ?? null;
+      const row = result.rows[0];
+      if (!row) return null;
+      return {
+        ...row.payload,
+        evidenceCommit: {
+          ...row.payload.evidenceCommit,
+          status: "committing",
+        },
+        updatedAt: new Date(row.updated_at).toISOString(),
+      };
     },
   };
 }
