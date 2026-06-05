@@ -18,6 +18,8 @@ import {
 
 export const runtime = "nodejs";
 
+const DEFAULT_EVIDENCE_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
+const MULTIPART_UPLOAD_OVERHEAD_BYTES = 1024 * 1024;
 const evidenceStatuses = new Set(["verified", "exception", "pending"]);
 
 function requireRobomataWorkflow() {
@@ -45,6 +47,18 @@ function isConcurrentSubmissionChange(error: unknown) {
 
 function isCommitInProgressError(error: unknown) {
   return error instanceof Error && error.message.includes("Evidence commit is in progress");
+}
+
+function getEvidenceUploadMaxBytes() {
+  const parsed = Number.parseInt(process.env.ROBOMATA_EVIDENCE_UPLOAD_MAX_BYTES ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_EVIDENCE_UPLOAD_MAX_BYTES;
+}
+
+function buildUploadTooLargeResponse(maxBytes: number) {
+  return NextResponse.json(
+    { error: `Evidence upload exceeds the configured ${maxBytes} byte limit.` },
+    { status: 413 },
+  );
 }
 
 type EvidenceUploadReservation = {
@@ -228,6 +242,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     const mutabilityError = requireSubmissionMutable(submission);
     if (mutabilityError) return mutabilityError;
 
+    const maxEvidenceUploadBytes = getEvidenceUploadMaxBytes();
+    const contentLength = Number.parseInt(request.headers.get("content-length") ?? "", 10);
+    if (Number.isFinite(contentLength) && contentLength > maxEvidenceUploadBytes + MULTIPART_UPLOAD_OVERHEAD_BYTES) {
+      return buildUploadTooLargeResponse(maxEvidenceUploadBytes);
+    }
+
     const formData = await request.formData();
     const file = formData.get("file");
     const label = String(formData.get("label") ?? "").trim();
@@ -242,6 +262,9 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
 
     if (!(file instanceof File) || !label || !source || !scope) {
       return NextResponse.json({ error: "Evidence upload is missing required fields." }, { status: 400 });
+    }
+    if (file.size > maxEvidenceUploadBytes) {
+      return buildUploadTooLargeResponse(maxEvidenceUploadBytes);
     }
 
     const reservation = await reserveEvidenceUpload({ label, partnerAddress, submissionId, store });
