@@ -141,6 +141,34 @@ export function createAuditEvent(
   };
 }
 
+function parseSuiFacilityObjectIdMap(): Record<string, string> {
+  const raw = process.env.ROBOMATA_SUI_FACILITY_IDS_JSON;
+  if (!raw) return {};
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .filter(([, value]) => typeof value === "string" && value.trim())
+        .map(([key, value]) => [key, (value as string).trim()]),
+    );
+  } catch {
+    return {};
+  }
+}
+
+export function resolveSubmissionFacilityObjectId(
+  submission: Pick<FacilitySubmission, "id" | "facilityName" | "evidenceCommit">,
+): string | undefined {
+  const existing = submission.evidenceCommit.facilityObjectId?.trim();
+  if (existing) return existing;
+
+  const facilityIds = parseSuiFacilityObjectIdMap();
+  return facilityIds[submission.id] ?? facilityIds[submission.facilityName];
+}
+
 export function deriveSubmissionStatus(submission: FacilitySubmission): FacilitySubmissionStatus {
   if (submission.evidenceCommit.status === "committed") return "committed";
   if (submission.computation) {
@@ -190,12 +218,14 @@ export function touchSubmission(submission: FacilitySubmission): FacilitySubmiss
 }
 
 export function invalidateSubmissionArtifacts(submission: FacilitySubmission): FacilitySubmission {
+  const facilityObjectId = resolveSubmissionFacilityObjectId(submission);
   submission.computation = null;
   submission.exceptions = [];
   submission.evidenceCommit = {
     status: "not_started",
     modulePath: SUI_COMMIT_MODULE_PATH,
     commitMode: "prepared",
+    facilityObjectId,
   };
   return touchSubmission(submission);
 }

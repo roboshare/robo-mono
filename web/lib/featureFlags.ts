@@ -15,3 +15,11 @@ export function isRobomataWorkflowServerEnabled(): boolean {
 export function isRobomataWorkflowMutationEnabled(): boolean {
   return isEnabled(process.env.ROBOMATA_WORKFLOW_MUTATIONS_ENABLED);
 }
+
+export function isRobomataWalrusUploadsEnabled(): boolean {
+  return isEnabled(process.env.ROBOMATA_WALRUS_UPLOADS_ENABLED);
+}
+
+export function isRobomataSuiCommitEnabled(): boolean {
+  return isEnabled(process.env.ROBOMATA_SUI_COMMIT_ENABLED);
+}

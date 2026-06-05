@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isRobomataWalrusUploadsEnabled } from "~~/lib/featureFlags";
 import type { SubmissionEvidence, SubmissionStorageBackend } from "~~/lib/robomata/submissions";
 
 const DEFAULT_WALRUS_EPOCHS = 3;
@@ -73,9 +74,10 @@ export async function createEvidenceRecord(input: {
 }): Promise<SubmissionEvidence> {
   const buffer = Buffer.from(await input.file.arrayBuffer());
   const digest = digestBuffer(buffer);
-  const uploadResult = process.env.WALRUS_PUBLISHER_URL
-    ? await uploadToWalrus(input.file)
-    : buildMockWalrusResult(digest);
+  const uploadResult =
+    process.env.WALRUS_PUBLISHER_URL && isRobomataWalrusUploadsEnabled()
+      ? await uploadToWalrus(input.file)
+      : buildMockWalrusResult(digest);
 
   return {
     id: `evidence_${crypto.randomUUID()}`,

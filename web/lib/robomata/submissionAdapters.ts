@@ -1,3 +1,4 @@
+import { isRobomataSuiCommitEnabled } from "~~/lib/featureFlags";
 import { buildAgentReviewInput, reviewBorrowingBase } from "~~/lib/robomata/agentProviders";
 import {
   type BorrowingBaseResult,
@@ -13,6 +14,7 @@ import {
   SUI_COMMIT_MODULE_PATH,
   type SubmissionComputation,
   type SubmissionEvidence,
+  resolveSubmissionFacilityObjectId,
 } from "~~/lib/robomata/submissions";
 
 function calculateSubmissionBorrowingBase(portfolio: FleetPortfolio): BorrowingBaseResult {
@@ -108,6 +110,21 @@ export function buildPortfolioFromSubmission(submission: FacilitySubmission): Fl
   };
 }
 
+function isManuallyExcludedResult(receivable: ReceivableResult): boolean {
+  return receivable.ineligibleReasons.includes("Manually excluded");
+}
+
+function buildLenderFacingBorrowingBase(result: BorrowingBaseResult): BorrowingBaseResult {
+  const receivableResults = result.receivableResults.filter(receivable => !isManuallyExcludedResult(receivable));
+  const receivableExceptionCount = receivableResults.filter(receivable => !receivable.eligible).length;
+
+  return {
+    ...result,
+    receivableResults,
+    exceptionCount: receivableExceptionCount + result.evidenceExceptions.length,
+  };
+}
+
 function buildSubmissionExceptions(
   result: BorrowingBaseResult,
   evidence: SubmissionEvidence[],
@@ -150,19 +167,22 @@ function buildSubmissionExceptions(
   return [...receivableExceptions, ...evidenceExceptions];
 }
 
-async function buildEvidenceCommitPreview(evidenceRoot: string) {
+async function buildEvidenceCommitPreview(submission: FacilitySubmission, evidenceRoot: string) {
   const digestBytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(evidenceRoot));
   const rootDigest = Array.from(new Uint8Array(digestBytes), byte => byte.toString(16).padStart(2, "0")).join("");
+  const facilityObjectId = resolveSubmissionFacilityObjectId(submission);
 
   return {
     status: "ready" as const,
     evidenceRoot,
     rootDigest: `0x${rootDigest}`,
     modulePath: SUI_COMMIT_MODULE_PATH,
+    facilityObjectId,
     commitMode:
       process.env.ROBOMATA_SUI_PACKAGE_ID &&
-      process.env.ROBOMATA_SUI_FACILITY_ID &&
-      process.env.ROBOMATA_SUI_CLIENT_CONFIG
+      process.env.ROBOMATA_SUI_CLIENT_CONFIG &&
+      facilityObjectId &&
+      isRobomataSuiCommitEnabled()
         ? ("configured" as const)
         : ("prepared" as const),
   };
@@ -173,11 +193,12 @@ export async function computeSubmissionArtifacts(submission: FacilitySubmission)
   const borrowingBase = calculateSubmissionBorrowingBase(portfolio);
   const evidenceAnchor = buildEvidenceAnchor(portfolio.facilityName, portfolio.evidence);
   const evidenceRail = buildEvidenceRail(evidenceAnchor);
-  const agentReview = await reviewBorrowingBase(buildAgentReviewInput(borrowingBase));
-  const lenderPacket = buildLenderPacket(borrowingBase, agentReview, evidenceAnchor);
+  const lenderBorrowingBase = buildLenderFacingBorrowingBase(borrowingBase);
+  const agentReview = await reviewBorrowingBase(buildAgentReviewInput(lenderBorrowingBase));
+  const lenderPacket = buildLenderPacket(lenderBorrowingBase, agentReview, evidenceAnchor);
 
   submission.exceptions = buildSubmissionExceptions(borrowingBase, submission.evidence);
-  submission.evidenceCommit = await buildEvidenceCommitPreview(evidenceAnchor.evidenceRoot);
+  submission.evidenceCommit = await buildEvidenceCommitPreview(submission, evidenceAnchor.evidenceRoot);
 
   return {
     computedAt: new Date().toISOString(),

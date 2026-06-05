@@ -155,14 +155,16 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ s
     }
 
     if (body.action === "excludeReceivable") {
+      const excluded = normalizeBooleanPatch(body.excluded, "excluded");
+      if (excluded === undefined) throw new Error("excluded must be provided.");
       submission.receivables = submission.receivables.map(receivable =>
-        receivable.id === body.receivableId ? { ...receivable, excluded: body.excluded } : receivable,
+        receivable.id === body.receivableId ? { ...receivable, excluded } : receivable,
       );
       addAuditEvent(
         submission,
         "receivable_excluded",
-        `${body.excluded ? "Excluded" : "Reinstated"} receivable ${body.receivableId}.`,
-        { receivableId: body.receivableId, excluded: body.excluded },
+        `${excluded ? "Excluded" : "Reinstated"} receivable ${body.receivableId}.`,
+        { receivableId: body.receivableId, excluded },
       );
       invalidateSubmissionArtifacts(submission);
     }

@@ -1,20 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { isRobomataWorkflowMutationEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
+import {
+  isRobomataSuiCommitEnabled,
+  isRobomataWorkflowMutationEnabled,
+  isRobomataWorkflowServerEnabled,
+} from "~~/lib/featureFlags";
 import { requirePartnerAddress, requireSubmissionAccess } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
-import { SUI_COMMIT_MODULE_PATH, addAuditEvent } from "~~/lib/robomata/submissions";
+import { SUI_COMMIT_MODULE_PATH, addAuditEvent, resolveSubmissionFacilityObjectId } from "~~/lib/robomata/submissions";
 
 const execFileAsync = promisify(execFile);
 
 export const runtime = "nodejs";
 
-function isCommitConfigured() {
+function isCommitConfigured(facilityObjectId: string | undefined) {
   return Boolean(
     process.env.ROBOMATA_SUI_PACKAGE_ID &&
-      process.env.ROBOMATA_SUI_FACILITY_ID &&
-      process.env.ROBOMATA_SUI_CLIENT_CONFIG,
+      process.env.ROBOMATA_SUI_CLIENT_CONFIG &&
+      facilityObjectId &&
+      isRobomataSuiCommitEnabled(),
   );
 }
 
@@ -59,7 +64,13 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     );
   }
 
-  if (!isCommitConfigured()) {
+  const facilityObjectId = resolveSubmissionFacilityObjectId(submission);
+
+  if (!facilityObjectId) {
+    return NextResponse.json({ error: "Sui facility object is not configured for this submission." }, { status: 400 });
+  }
+
+  if (!isCommitConfigured(facilityObjectId)) {
     return NextResponse.json(
       { error: "Sui commit environment is not configured for this app runtime." },
       { status: 400 },
@@ -81,7 +92,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       "--function",
       "commit_evidence",
       "--args",
-      process.env.ROBOMATA_SUI_FACILITY_ID as string,
+      facilityObjectId,
       label,
       submission.evidenceCommit.rootDigest,
       "--gas-budget",
@@ -101,7 +112,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       committedAt: new Date().toISOString(),
       commitMode: "configured",
       modulePath: SUI_COMMIT_MODULE_PATH,
-      facilityObjectId: process.env.ROBOMATA_SUI_FACILITY_ID,
+      facilityObjectId,
       errorMessage: undefined,
     };
     addAuditEvent(submission, "sui_commit_completed", `Committed evidence root for ${submission.facilityName}.`, {

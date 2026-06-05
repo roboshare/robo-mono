@@ -86,6 +86,17 @@ Use the flags as a matrix:
   creating submissions, importing receivables, uploading evidence, computing the
   borrowing base, and committing evidence. Without this flag, writes fail closed
   with `403`.
+* `ROBOMATA_WALRUS_UPLOADS_ENABLED=true` enables real Walrus publisher uploads
+  when `WALRUS_PUBLISHER_URL` is configured. Without this flag, evidence uploads
+  keep using deterministic mock Walrus references even if a publisher URL exists.
+* `ROBOMATA_SUI_COMMIT_ENABLED=true` enables real Sui evidence commit
+  transactions when the Sui package, client config, and per-submission facility
+  mapping are configured. Without this flag, evidence roots remain prepared but
+  cannot be committed onchain.
+* `ROBOMATA_SUI_FACILITY_IDS_JSON={"sub_...":"0x...","Facility Name":"0x..."}`
+  maps each submission, by submission id or facility name, to its own Sui
+  facility object. Do not use one process-wide facility object for every
+  submission.
 * `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES=0x...,0x...` is required when the
   server APIs are enabled. The API verifies a fresh wallet signature and then
   checks that wallet against this server-side allowlist before listing,
@@ -93,11 +104,13 @@ Use the flags as a matrix:
 
 Recommended environments:
 
-* production and release-candidate branches: leave all three flags unset unless
-  the Robomata QA gate has explicitly passed for that release
-* controlled preview and local QA: set all three flags when testing the full
-  operator workflow, and include the tester wallet in
-  `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES`
+* production and release-candidate branches: leave workflow, mutation, Walrus,
+  and Sui side-effect flags unset unless the Robomata QA gate has explicitly
+  passed for that release
+* controlled preview and local QA: set the workflow and mutation flags when
+  testing the full operator workflow, include the tester wallet in
+  `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES`, and enable Walrus/Sui side-effect
+  flags only for testnet runs that should write to external infrastructure
 * public demo mode: leave the server flags unset so `/robomata` remains a
   read-only demo narrative and `/partner/submissions` stays hidden
 
