@@ -5,6 +5,10 @@ import { parse } from "toml";
 import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const RPC_PROVIDER_SUFFIX = {
+  alchemy: "",
+  infura: "Infura",
+};
 
 export function loadFoundryToml() {
   const foundryTomlPath = join(__dirname, "..", "foundry.toml");
@@ -30,6 +34,36 @@ export function isRpcUrl(value) {
   return /^https?:\/\//.test(value) || /^wss?:\/\//.test(value);
 }
 
+export function resolveRpcNetwork(
+  network,
+  rpcProvider = process.env.RPC_PROVIDER
+) {
+  const normalizedRpcProvider = rpcProvider?.toLowerCase();
+  if (
+    !normalizedRpcProvider ||
+    normalizedRpcProvider === "alchemy" ||
+    isRpcUrl(network) ||
+    network === "localhost"
+  ) {
+    return network;
+  }
+
+  const providerSuffix = RPC_PROVIDER_SUFFIX[normalizedRpcProvider];
+  if (providerSuffix === undefined) {
+    console.log(
+      `\n❌ Error: Unsupported RPC provider '${rpcProvider}'.`,
+      "\nSupported providers: alchemy, infura."
+    );
+    process.exit(1);
+  }
+
+  if (network.endsWith(providerSuffix)) {
+    return network;
+  }
+
+  return `${network}${providerSuffix}`;
+}
+
 export function resolveDeployScript({
   fileName = "Deploy.s.sol",
   contractName = null,
@@ -51,6 +85,7 @@ export function parseScriptSelectionArgs(args, defaults = {}) {
   let network = defaultNetwork;
   let fileName = defaultFileName;
   let contractName = null;
+  let rpcProvider = process.env.RPC_PROVIDER || null;
   let help = false;
   let consumedPositionalNetwork = false;
 
@@ -66,6 +101,9 @@ export function parseScriptSelectionArgs(args, defaults = {}) {
     } else if (arg === "--contract" && args[i + 1]) {
       contractName = args[i + 1];
       i++;
+    } else if (arg === "--rpc-provider" && args[i + 1]) {
+      rpcProvider = args[i + 1];
+      i++;
     } else if (extraValueFlags.includes(arg) && args[i + 1]) {
       i++;
     } else if (arg === "--help" || arg === "-h") {
@@ -76,14 +114,18 @@ export function parseScriptSelectionArgs(args, defaults = {}) {
     }
   }
 
+  const rpcNetwork = resolveRpcNetwork(network, rpcProvider);
+
   if (!allowRpcUrl) {
-    assertRpcEndpoint(network);
-  } else if (!isRpcUrl(network)) {
-    assertRpcEndpoint(network);
+    assertRpcEndpoint(rpcNetwork);
+  } else if (!isRpcUrl(rpcNetwork)) {
+    assertRpcEndpoint(rpcNetwork);
   }
 
   return {
     network,
+    rpcNetwork,
+    rpcProvider,
     fileName: resolveDeployScript({ fileName, contractName }),
     contractName,
     help,

@@ -23,8 +23,20 @@ arbitrum = "https://arb-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}"
 arbitrumSepolia = "https://arb-sepolia.g.alchemy.com/v2/${ALCHEMY_API_KEY}"
 polygon = "https://polygon-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}"
 polygonAmoy = "https://polygon-amoy.g.alchemy.com/v2/${ALCHEMY_API_KEY}"
+base = "https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}"
+baseSepolia = "https://base-sepolia.g.alchemy.com/v2/${ALCHEMY_API_KEY}"
 monad = "https://monad-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}"
 monadTestnet = "https://monad-testnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}"
+
+mainnetInfura = "https://mainnet.infura.io/v3/${INFURA_API_KEY}"
+sepoliaInfura = "https://sepolia.infura.io/v3/${INFURA_API_KEY}"
+arbitrumInfura = "https://arbitrum-mainnet.infura.io/v3/${INFURA_API_KEY}"
+arbitrumSepoliaInfura = "https://arbitrum-sepolia.infura.io/v3/${INFURA_API_KEY}"
+polygonInfura = "https://polygon-mainnet.infura.io/v3/${INFURA_API_KEY}"
+polygonAmoyInfura = "https://polygon-amoy.infura.io/v3/${INFURA_API_KEY}"
+baseInfura = "https://base-mainnet.infura.io/v3/${INFURA_API_KEY}"
+baseSepoliaInfura = "https://base-sepolia.infura.io/v3/${INFURA_API_KEY}"
+monadTestnetInfura = "https://monad-testnet.infura.io/v3/${INFURA_API_KEY}"
 
 localhost = "http://127.0.0.1:8545"
 
@@ -35,6 +47,8 @@ arbitrum = { key = "${ETHERSCAN_API_KEY}" }
 arbitrumSepolia = { key = "${ETHERSCAN_API_KEY}" }
 polygon = { key = "${ETHERSCAN_API_KEY}" }
 polygonAmoy = { key = "${ETHERSCAN_API_KEY}" }
+base = { key = "${ETHERSCAN_API_KEY}" }
+baseSepolia = { key = "${ETHERSCAN_API_KEY}" }
 monad = { key = "${ETHERSCAN_API_KEY}" }
 monadTestnet = { key = "${ETHERSCAN_API_KEY}" }
 
