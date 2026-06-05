@@ -104,7 +104,7 @@ module robomata_overflow::facility {
         });
     }
 
-    public fun seal_approve(id: vector<u8>, facility: &Facility, ctx: &TxContext) {
+    public fun seal_approve(id: vector<u8>, facility: &Facility, ctx: &mut TxContext) {
         assert_operator(facility, tx_context::sender(ctx));
         let facility_id = sui::object::uid_to_address(&facility.id);
         assert!(id == address::to_bytes(facility_id), E_INVALID_SEAL_IDENTITY);
