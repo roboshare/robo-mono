@@ -88,6 +88,13 @@ export function requireSubmissionAccess(submission: FacilitySubmission, partnerA
 }
 
 export function requireSubmissionMutable(submission: FacilitySubmission): NextResponse | null {
+  if (submission.evidenceCommit.status === "committed") {
+    return NextResponse.json(
+      { error: "Evidence is already committed for this submission. Create a new submission for further changes." },
+      { status: 409 },
+    );
+  }
+
   if (submission.evidenceCommit.status === "committing") {
     return NextResponse.json(
       { error: "Evidence commit is in progress for this submission. Try again after it completes." },

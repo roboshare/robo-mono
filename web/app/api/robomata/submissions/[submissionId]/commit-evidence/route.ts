@@ -67,7 +67,15 @@ function normalizeHex(value: string): string {
 
 function digestMatches(value: unknown, expectedDigest: string): boolean {
   const expected = normalizeHex(expectedDigest);
-  if (typeof value === "string") return normalizeHex(value) === expected;
+  if (typeof value === "string") {
+    if (normalizeHex(value) === expected) return true;
+
+    try {
+      return Buffer.from(value, "base64").toString("hex") === expected;
+    } catch {
+      return false;
+    }
+  }
   if (Array.isArray(value) && value.every(item => typeof item === "number")) {
     return Buffer.from(value).toString("hex") === expected;
   }

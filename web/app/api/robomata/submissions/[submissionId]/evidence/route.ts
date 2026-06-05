@@ -73,10 +73,7 @@ async function saveEvidenceRecord({
       throw new Error("Evidence commit is in progress for this submission. Try again after it completes.");
     }
 
-    latestSubmission.evidence = [
-      evidence,
-      ...latestSubmission.evidence.filter(record => record.id !== evidence.id && record.label !== evidence.label),
-    ];
+    latestSubmission.evidence = [evidence, ...latestSubmission.evidence.filter(record => record.id !== evidence.id)];
     invalidateSubmissionArtifacts(latestSubmission);
     addAuditEvent(latestSubmission, "evidence_uploaded", `Uploaded evidence package ${evidence.label}.`, {
       evidenceId: evidence.id,
