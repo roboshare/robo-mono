@@ -1,0 +1,60 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createEvidenceRecord } from "~~/lib/robomata/server/evidenceStorage";
+import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
+import { addAuditEvent } from "~~/lib/robomata/submissions";
+
+export const runtime = "nodejs";
+
+export async function POST(request: NextRequest, context: { params: Promise<{ submissionId: string }> }) {
+  try {
+    const { submissionId } = await context.params;
+    const store = getSubmissionStore();
+    const submission = await store.get(submissionId);
+
+    if (!submission) {
+      return NextResponse.json({ error: "Submission not found." }, { status: 404 });
+    }
+
+    const formData = await request.formData();
+    const file = formData.get("file");
+    const label = String(formData.get("label") ?? "").trim();
+    const source = String(formData.get("source") ?? "").trim();
+    const scope = String(formData.get("scope") ?? "").trim();
+    const status = String(formData.get("status") ?? "pending").trim() as "verified" | "exception" | "pending";
+    const sealPolicyId = String(formData.get("sealPolicyId") ?? "seal://policy/lender-auditor-read").trim();
+    const linkedReceivableIds = String(formData.get("linkedReceivableIds") ?? "")
+      .split(",")
+      .map(value => value.trim())
+      .filter(Boolean);
+
+    if (!(file instanceof File) || !label || !source || !scope) {
+      return NextResponse.json({ error: "Evidence upload is missing required fields." }, { status: 400 });
+    }
+
+    const evidence = await createEvidenceRecord({
+      file,
+      label,
+      source,
+      scope,
+      status,
+      sealPolicyId,
+      linkedReceivableIds,
+    });
+
+    submission.evidence = [evidence, ...submission.evidence.filter(record => record.label !== evidence.label)];
+    submission.computation = null;
+    submission.exceptions = [];
+    addAuditEvent(submission, "evidence_uploaded", `Uploaded evidence package ${evidence.label}.`, {
+      evidenceId: evidence.id,
+      storageBackend: evidence.storageBackend,
+    });
+
+    const saved = await store.save(submission);
+    return NextResponse.json({ submission: saved, evidence });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to upload evidence." },
+      { status: 500 },
+    );
+  }
+}

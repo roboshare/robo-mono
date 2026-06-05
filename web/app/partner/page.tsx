@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { NextPage } from "next";
 import { formatUnits } from "viem";
 import { useBlock, useChains, useReadContract, useReadContracts, useSwitchChain } from "wagmi";
@@ -1166,32 +1167,37 @@ const PartnerDashboard: NextPage = () => {
             <p className="opacity-70 text-lg mt-2">{dashboardSubtitle}</p>
           </div>
 
-          <div className="flex">
-            <button
-              className="btn btn-primary rounded-r-none border-r-base-100"
-              onClick={() => {
-                setIsRegisterOpen(true);
-                setMaxStep(3);
-              }}
-            >
-              Launch Offering
-            </button>
-            <div className="dropdown sm:dropdown-end">
-              <div tabIndex={0} role="button" className="btn btn-primary rounded-l-none px-2 min-h-0 h-full">
-                <ChevronDownIcon className="h-5 w-5" />
+          <div className="flex flex-col items-stretch gap-3 sm:flex-row">
+            <Link href="/partner/submissions" className="btn btn-outline rounded-full">
+              Borrowing Base Submissions
+            </Link>
+            <div className="flex">
+              <button
+                className="btn btn-primary rounded-r-none border-r-base-100"
+                onClick={() => {
+                  setIsRegisterOpen(true);
+                  setMaxStep(3);
+                }}
+              >
+                Launch Offering
+              </button>
+              <div className="dropdown sm:dropdown-end">
+                <div tabIndex={0} role="button" className="btn btn-primary rounded-l-none px-2 min-h-0 h-full">
+                  <ChevronDownIcon className="h-5 w-5" />
+                </div>
+                <ul tabIndex={0} className="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52 mt-2">
+                  <li>
+                    <a
+                      onClick={() => {
+                        setIsRegisterOpen(true);
+                        setMaxStep(1);
+                      }}
+                    >
+                      Register Only
+                    </a>
+                  </li>
+                </ul>
               </div>
-              <ul tabIndex={0} className="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52 mt-2">
-                <li>
-                  <a
-                    onClick={() => {
-                      setIsRegisterOpen(true);
-                      setMaxStep(1);
-                    }}
-                  >
-                    Register Only
-                  </a>
-                </li>
-              </ul>
             </div>
           </div>
         </div>
