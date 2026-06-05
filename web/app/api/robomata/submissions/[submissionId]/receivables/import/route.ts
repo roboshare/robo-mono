@@ -11,6 +11,9 @@ import { addAuditEvent, invalidateSubmissionArtifacts } from "~~/lib/robomata/su
 
 export const runtime = "nodejs";
 
+const DEFAULT_RECEIVABLES_IMPORT_MAX_BYTES = 2 * 1024 * 1024;
+const MULTIPART_UPLOAD_OVERHEAD_BYTES = 1024 * 1024;
+
 function requireRobomataWorkflow() {
   if (isRobomataWorkflowServerEnabled()) return null;
   return NextResponse.json({ error: "Robomata workflow is not enabled." }, { status: 404 });
@@ -19,6 +22,18 @@ function requireRobomataWorkflow() {
 function requireRobomataMutation() {
   if (isRobomataWorkflowMutationEnabled()) return null;
   return NextResponse.json({ error: "Robomata submission writes are not enabled." }, { status: 403 });
+}
+
+function getReceivablesImportMaxBytes() {
+  const parsed = Number.parseInt(process.env.ROBOMATA_RECEIVABLES_IMPORT_MAX_BYTES ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_RECEIVABLES_IMPORT_MAX_BYTES;
+}
+
+function buildImportTooLargeResponse(maxBytes: number) {
+  return NextResponse.json(
+    { error: `Receivables CSV upload exceeds the configured ${maxBytes} byte limit.` },
+    { status: 413 },
+  );
 }
 
 export async function POST(request: NextRequest, context: { params: Promise<{ submissionId: string }> }) {
@@ -44,11 +59,20 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     const mutabilityError = requireSubmissionMutable(submission);
     if (mutabilityError) return mutabilityError;
 
+    const maxReceivablesImportBytes = getReceivablesImportMaxBytes();
+    const contentLength = Number.parseInt(request.headers.get("content-length") ?? "", 10);
+    if (Number.isFinite(contentLength) && contentLength > maxReceivablesImportBytes + MULTIPART_UPLOAD_OVERHEAD_BYTES) {
+      return buildImportTooLargeResponse(maxReceivablesImportBytes);
+    }
+
     const formData = await request.formData();
     const file = formData.get("file");
 
     if (!(file instanceof File)) {
       return NextResponse.json({ error: "Missing receivables CSV upload." }, { status: 400 });
+    }
+    if (file.size > maxReceivablesImportBytes) {
+      return buildImportTooLargeResponse(maxReceivablesImportBytes);
     }
 
     const receivables = importReceivablesCsv(await file.text());
