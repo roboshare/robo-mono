@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { importReceivablesCsv } from "~~/lib/robomata/server/csv";
+import { requirePartnerAddress, requireSubmissionAccess } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
-import { addAuditEvent } from "~~/lib/robomata/submissions";
+import { addAuditEvent, invalidateSubmissionArtifacts } from "~~/lib/robomata/submissions";
 
 export const runtime = "nodejs";
 
@@ -15,6 +16,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       return NextResponse.json({ error: "Submission not found." }, { status: 404 });
     }
 
+    const partnerAddress = requirePartnerAddress(request);
+    if (partnerAddress instanceof NextResponse) return partnerAddress;
+
+    const accessError = requireSubmissionAccess(submission, partnerAddress);
+    if (accessError) return accessError;
+
     const formData = await request.formData();
     const file = formData.get("file");
 
@@ -24,8 +31,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
 
     const receivables = importReceivablesCsv(await file.text());
     submission.receivables = receivables;
-    submission.computation = null;
-    submission.exceptions = [];
+    invalidateSubmissionArtifacts(submission);
     addAuditEvent(submission, "receivables_imported", `Imported ${receivables.length} receivables from ${file.name}.`, {
       filename: file.name,
       receivableCount: receivables.length,

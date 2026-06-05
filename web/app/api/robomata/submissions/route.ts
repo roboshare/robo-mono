@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requirePartnerAddress } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
 
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
-  const partnerAddress = request.nextUrl.searchParams.get("partnerAddress") ?? undefined;
+  const partnerAddress = requirePartnerAddress(request);
+  if (partnerAddress instanceof NextResponse) return partnerAddress;
+
   const submissions = await getSubmissionStore().list(partnerAddress);
   return NextResponse.json({ submissions });
 }

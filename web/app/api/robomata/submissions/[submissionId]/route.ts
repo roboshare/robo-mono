@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requirePartnerAddress, requireSubmissionAccess } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
-import { addAuditEvent } from "~~/lib/robomata/submissions";
+import { addAuditEvent, invalidateSubmissionArtifacts } from "~~/lib/robomata/submissions";
 
 export const runtime = "nodejs";
 
@@ -38,13 +39,19 @@ type SubmissionPatchAction =
       status: "verified" | "exception" | "pending";
     };
 
-export async function GET(_: NextRequest, context: { params: Promise<{ submissionId: string }> }) {
+export async function GET(request: NextRequest, context: { params: Promise<{ submissionId: string }> }) {
+  const partnerAddress = requirePartnerAddress(request);
+  if (partnerAddress instanceof NextResponse) return partnerAddress;
+
   const { submissionId } = await context.params;
   const submission = await getSubmissionStore().get(submissionId);
 
   if (!submission) {
     return NextResponse.json({ error: "Submission not found." }, { status: 404 });
   }
+
+  const accessError = requireSubmissionAccess(submission, partnerAddress);
+  if (accessError) return accessError;
 
   return NextResponse.json({ submission });
 }
@@ -58,6 +65,12 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ s
     if (!submission) {
       return NextResponse.json({ error: "Submission not found." }, { status: 404 });
     }
+
+    const partnerAddress = requirePartnerAddress(request);
+    if (partnerAddress instanceof NextResponse) return partnerAddress;
+
+    const accessError = requireSubmissionAccess(submission, partnerAddress);
+    if (accessError) return accessError;
 
     const body = (await request.json()) as SubmissionPatchAction;
 
@@ -78,8 +91,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ s
         `${body.excluded ? "Excluded" : "Reinstated"} receivable ${body.receivableId}.`,
         { receivableId: body.receivableId, excluded: body.excluded },
       );
-      submission.computation = null;
-      submission.exceptions = [];
+      invalidateSubmissionArtifacts(submission);
     }
 
     if (body.action === "updateReceivable") {
@@ -89,8 +101,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ s
       addAuditEvent(submission, "receivable_updated", `Updated receivable ${body.receivableId}.`, {
         receivableId: body.receivableId,
       });
-      submission.computation = null;
-      submission.exceptions = [];
+      invalidateSubmissionArtifacts(submission);
     }
 
     if (body.action === "updateEvidenceStatus") {
@@ -101,8 +112,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ s
         evidenceId: body.evidenceId,
         status: body.status,
       });
-      submission.computation = null;
-      submission.exceptions = [];
+      invalidateSubmissionArtifacts(submission);
     }
 
     const saved = await store.save(submission);

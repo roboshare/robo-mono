@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requirePartnerAddress, requireSubmissionAccess } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
 import { computeSubmissionArtifacts } from "~~/lib/robomata/submissionAdapters";
 import { addAuditEvent } from "~~/lib/robomata/submissions";
 
 export const runtime = "nodejs";
 
-export async function POST(_: NextRequest, context: { params: Promise<{ submissionId: string }> }) {
+export async function POST(request: NextRequest, context: { params: Promise<{ submissionId: string }> }) {
   try {
     const { submissionId } = await context.params;
     const store = getSubmissionStore();
@@ -14,6 +15,12 @@ export async function POST(_: NextRequest, context: { params: Promise<{ submissi
     if (!submission) {
       return NextResponse.json({ error: "Submission not found." }, { status: 404 });
     }
+
+    const partnerAddress = requirePartnerAddress(request);
+    if (partnerAddress instanceof NextResponse) return partnerAddress;
+
+    const accessError = requireSubmissionAccess(submission, partnerAddress);
+    if (accessError) return accessError;
 
     if (submission.receivables.length === 0) {
       return NextResponse.json({ error: "Import receivables before computing the borrowing base." }, { status: 400 });

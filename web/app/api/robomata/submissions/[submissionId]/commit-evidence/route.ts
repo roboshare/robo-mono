@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { requirePartnerAddress, requireSubmissionAccess } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
 import { SUI_COMMIT_MODULE_PATH, addAuditEvent } from "~~/lib/robomata/submissions";
 
@@ -16,7 +17,7 @@ function isCommitConfigured() {
   );
 }
 
-export async function POST(_: NextRequest, context: { params: Promise<{ submissionId: string }> }) {
+export async function POST(request: NextRequest, context: { params: Promise<{ submissionId: string }> }) {
   const { submissionId } = await context.params;
   const store = getSubmissionStore();
   const submission = await store.get(submissionId);
@@ -24,6 +25,12 @@ export async function POST(_: NextRequest, context: { params: Promise<{ submissi
   if (!submission) {
     return NextResponse.json({ error: "Submission not found." }, { status: 404 });
   }
+
+  const partnerAddress = requirePartnerAddress(request);
+  if (partnerAddress instanceof NextResponse) return partnerAddress;
+
+  const accessError = requireSubmissionAccess(submission, partnerAddress);
+  if (accessError) return accessError;
 
   if (!submission.evidenceCommit.evidenceRoot || !submission.evidenceCommit.rootDigest) {
     return NextResponse.json({ error: "Compute the submission before committing evidence." }, { status: 400 });

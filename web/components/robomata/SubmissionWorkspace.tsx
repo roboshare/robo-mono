@@ -11,6 +11,7 @@ import {
   ExclamationTriangleIcon,
   ShieldCheckIcon,
 } from "@heroicons/react/24/outline";
+import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
 import { formatUsd } from "~~/lib/robomata/borrowingBase";
 import { buildSubmissionSummaryCards } from "~~/lib/robomata/submissionAdapters";
 import type { FacilitySubmission, SubmissionReceivable } from "~~/lib/robomata/submissions";
@@ -43,6 +44,7 @@ export const SubmissionWorkspace = ({
   const [isBusy, setIsBusy] = useState(false);
   const [editingReceivableId, setEditingReceivableId] = useState<string | null>(null);
   const [draftReceivable, setDraftReceivable] = useState<Partial<SubmissionReceivable>>({});
+  const { address: accountAddress } = useTransactingAccount();
 
   const summaryCards = useMemo(
     () => (submission?.computation ? buildSubmissionSummaryCards(submission.computation) : []),
@@ -52,8 +54,16 @@ export const SubmissionWorkspace = ({
   const loadSubmission = useCallback(async () => {
     setIsLoading(true);
     try {
+      if (!accountAddress) {
+        setSubmission(null);
+        setIsLoading(false);
+        return;
+      }
+
+      const partnerQuery = `partnerAddress=${encodeURIComponent(accountAddress)}`;
+
       if (submissionId) {
-        const response = await fetch(`/api/robomata/submissions/${submissionId}`);
+        const response = await fetch(`/api/robomata/submissions/${submissionId}?${partnerQuery}`);
         const payload = (await response.json()) as { submission?: FacilitySubmission; error?: string };
         if (!response.ok || !payload.submission) throw new Error(payload.error ?? "Failed to load submission.");
         setSubmission(payload.submission);
@@ -62,7 +72,7 @@ export const SubmissionWorkspace = ({
       }
 
       if (loadLatest) {
-        const response = await fetch("/api/robomata/submissions");
+        const response = await fetch(`/api/robomata/submissions?${partnerQuery}`);
         const payload = (await response.json()) as { submissions?: FacilitySubmission[]; error?: string };
         if (!response.ok) throw new Error(payload.error ?? "Failed to load submissions.");
         setSubmission(payload.submissions?.[0] ?? null);
@@ -72,15 +82,21 @@ export const SubmissionWorkspace = ({
     } finally {
       setIsLoading(false);
     }
-  }, [loadLatest, submissionId]);
+  }, [accountAddress, loadLatest, submissionId]);
 
   useEffect(() => {
     void loadSubmission();
   }, [loadSubmission]);
 
   const updateSubmission = async (url: string, init?: RequestInit) => {
+    if (!accountAddress) {
+      notification.error("Connect a partner wallet before updating the submission.");
+      return;
+    }
+
     setIsBusy(true);
-    const response = await fetch(url, init);
+    const separator = url.includes("?") ? "&" : "?";
+    const response = await fetch(`${url}${separator}partnerAddress=${encodeURIComponent(accountAddress)}`, init);
     const payload = (await response.json()) as { submission?: FacilitySubmission; error?: string };
     setIsBusy(false);
 

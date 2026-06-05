@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createEvidenceRecord } from "~~/lib/robomata/server/evidenceStorage";
+import { requirePartnerAddress, requireSubmissionAccess } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
-import { addAuditEvent } from "~~/lib/robomata/submissions";
+import { addAuditEvent, invalidateSubmissionArtifacts } from "~~/lib/robomata/submissions";
 
 export const runtime = "nodejs";
 
@@ -14,6 +15,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     if (!submission) {
       return NextResponse.json({ error: "Submission not found." }, { status: 404 });
     }
+
+    const partnerAddress = requirePartnerAddress(request);
+    if (partnerAddress instanceof NextResponse) return partnerAddress;
+
+    const accessError = requireSubmissionAccess(submission, partnerAddress);
+    if (accessError) return accessError;
 
     const formData = await request.formData();
     const file = formData.get("file");
@@ -42,8 +49,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     });
 
     submission.evidence = [evidence, ...submission.evidence.filter(record => record.label !== evidence.label)];
-    submission.computation = null;
-    submission.exceptions = [];
+    invalidateSubmissionArtifacts(submission);
     addAuditEvent(submission, "evidence_uploaded", `Uploaded evidence package ${evidence.label}.`, {
       evidenceId: evidence.id,
       storageBackend: evidence.storageBackend,

@@ -189,6 +189,17 @@ export function touchSubmission(submission: FacilitySubmission): FacilitySubmiss
   return submission;
 }
 
+export function invalidateSubmissionArtifacts(submission: FacilitySubmission): FacilitySubmission {
+  submission.computation = null;
+  submission.exceptions = [];
+  submission.evidenceCommit = {
+    status: "not_started",
+    modulePath: SUI_COMMIT_MODULE_PATH,
+    commitMode: "prepared",
+  };
+  return touchSubmission(submission);
+}
+
 export function addAuditEvent(
   submission: FacilitySubmission,
   type: SubmissionAuditEvent["type"],

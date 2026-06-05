@@ -47,7 +47,7 @@ function parseAmountToCents(value: string): number {
   const normalized = value.replace(/[$,\s]/g, "");
   if (!normalized) return 0;
   if (normalized.includes(".")) return Math.round(Number(normalized) * 100);
-  return Number(normalized);
+  return Number(normalized) * 100;
 }
 
 function parseCsvLine(line: string): string[] {
