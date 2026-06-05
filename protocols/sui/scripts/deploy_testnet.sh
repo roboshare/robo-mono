@@ -9,6 +9,9 @@ EXPECTED_ENV="${ROBOMATA_SUI_DEPLOY_ENV:-testnet}"
 PUBLISH_GAS_BUDGET="${ROBOMATA_SUI_PUBLISH_GAS_BUDGET:-500000000}"
 CALL_GAS_BUDGET="${ROBOMATA_SUI_GAS_BUDGET:-100000000}"
 CLIENT_CONFIG="${ROBOMATA_SUI_CLIENT_CONFIG:-$HOME/.sui/sui_config/client.yaml}"
+SEAL_KEY_SERVER_OBJECT_ID="${ROBOMATA_SEAL_KEY_SERVER_OBJECT_ID:-0xb012378c9f3799fb5b1a7083da74a4069e3c3f1c93de0b27212a5799ce1e1e98}"
+SEAL_KEY_SERVER_AGGREGATOR_URL="${ROBOMATA_SEAL_KEY_SERVER_AGGREGATOR_URL:-https://seal-aggregator-testnet.mystenlabs.com}"
+SEAL_THRESHOLD="${ROBOMATA_SEAL_THRESHOLD:-1}"
 
 GROSS_RECEIVABLES_CENTS="${ROBOMATA_SUI_INITIAL_GROSS_RECEIVABLES_CENTS:-124010000}"
 ELIGIBLE_RECEIVABLES_CENTS="${ROBOMATA_SUI_INITIAL_ELIGIBLE_RECEIVABLES_CENTS:-69530000}"
@@ -67,7 +70,7 @@ const data = JSON.parse(fs.readFileSync(0, "utf8"));
 process.stdout.write(data.digest);
 ')"
 
-node - "$OUTPUT_PATH" "$ENV_PATH" "$ACTIVE_ENV" "$ACTIVE_ADDRESS" "$CLIENT_CONFIG" "$PACKAGE_ID" "$FACILITY_ID" "$PUBLISH_DIGEST" "$CREATE_DIGEST" "$CALL_GAS_BUDGET" "$PUBLISH_JSON" "$CREATE_JSON" <<'NODE'
+node - "$OUTPUT_PATH" "$ENV_PATH" "$ACTIVE_ENV" "$ACTIVE_ADDRESS" "$CLIENT_CONFIG" "$PACKAGE_ID" "$FACILITY_ID" "$PUBLISH_DIGEST" "$CREATE_DIGEST" "$CALL_GAS_BUDGET" "$SEAL_KEY_SERVER_OBJECT_ID" "$SEAL_KEY_SERVER_AGGREGATOR_URL" "$SEAL_THRESHOLD" "$PUBLISH_JSON" "$CREATE_JSON" <<'NODE'
 const fs = require("fs");
 
 const [
@@ -83,6 +86,9 @@ const [
   publishDigest,
   createDigest,
   gasBudget,
+  sealKeyServerObjectId,
+  sealKeyServerAggregatorUrl,
+  sealThreshold,
   publishJson,
   createJson,
 ] = process.argv;
@@ -119,6 +125,12 @@ const payload = {
     ROBOMATA_SUI_FACILITY_ID: facilityId,
     ROBOMATA_SUI_CLIENT_CONFIG: clientConfig,
     ROBOMATA_SUI_GAS_BUDGET: gasBudget,
+    ROBOMATA_SUI_NETWORK: "testnet",
+    ROBOMATA_SEAL_PACKAGE_ID: packageId,
+    ROBOMATA_SEAL_IDENTITY: facilityId,
+    ROBOMATA_SEAL_KEY_SERVER_OBJECT_ID: sealKeyServerObjectId,
+    ROBOMATA_SEAL_KEY_SERVER_AGGREGATOR_URL: sealKeyServerAggregatorUrl,
+    ROBOMATA_SEAL_THRESHOLD: sealThreshold,
   },
 };
 
@@ -130,6 +142,12 @@ fs.writeFileSync(
     `export ROBOMATA_SUI_FACILITY_ID="${facilityId}"`,
     `export ROBOMATA_SUI_CLIENT_CONFIG="${clientConfig}"`,
     `export ROBOMATA_SUI_GAS_BUDGET="${gasBudget}"`,
+    `export ROBOMATA_SUI_NETWORK="testnet"`,
+    `export ROBOMATA_SEAL_PACKAGE_ID="${packageId}"`,
+    `export ROBOMATA_SEAL_IDENTITY="${facilityId}"`,
+    `export ROBOMATA_SEAL_KEY_SERVER_OBJECT_ID="${sealKeyServerObjectId}"`,
+    `export ROBOMATA_SEAL_KEY_SERVER_AGGREGATOR_URL="${sealKeyServerAggregatorUrl}"`,
+    `export ROBOMATA_SEAL_THRESHOLD="${sealThreshold}"`,
     "",
   ].join("\n"),
 );
