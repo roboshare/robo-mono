@@ -18,7 +18,13 @@ function getAuthorizedSignerAddress(partnerAddress: string): string {
 
   try {
     const signerMap = JSON.parse(rawSignerMap) as Record<string, string | undefined>;
-    return signerMap[partnerAddress] ?? signerMap[partnerAddress.toLowerCase()] ?? partnerAddress;
+    const normalizedSignerMap = Object.fromEntries(
+      Object.entries(signerMap)
+        .map(([address, signer]) => [address.trim().toLowerCase(), signer?.trim()] as const)
+        .filter(([address, signer]) => Boolean(address && signer)),
+    ) as Record<string, string | undefined>;
+
+    return normalizedSignerMap[partnerAddress.toLowerCase()] ?? partnerAddress;
   } catch {
     return partnerAddress;
   }

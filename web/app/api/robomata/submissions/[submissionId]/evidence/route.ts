@@ -52,10 +52,19 @@ type EvidenceUploadReservation = {
   computation: SubmissionComputation | null;
   exceptions: FacilitySubmission["exceptions"];
   evidenceCommit: SubmissionEvidenceCommit;
+  reservedArtifactState: {
+    computation: SubmissionComputation | null;
+    exceptions: FacilitySubmission["exceptions"];
+    evidenceCommit: SubmissionEvidenceCommit;
+  };
 };
 
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function sameJson(left: unknown, right: unknown) {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 async function reserveEvidenceUpload({
@@ -86,13 +95,22 @@ async function reserveEvidenceUpload({
       throw new Error("Evidence commit is in progress for this submission. Try again after it completes.");
     }
 
-    const reservation = {
-      evidenceCount: latestSubmission.evidence.length,
-      computation: cloneJson(latestSubmission.computation),
-      exceptions: cloneJson(latestSubmission.exceptions),
-      evidenceCommit: cloneJson(latestSubmission.evidenceCommit),
-    };
+    const evidenceCount = latestSubmission.evidence.length;
+    const previousComputation = cloneJson(latestSubmission.computation);
+    const previousExceptions = cloneJson(latestSubmission.exceptions);
+    const previousEvidenceCommit = cloneJson(latestSubmission.evidenceCommit);
     invalidateSubmissionArtifacts(latestSubmission);
+    const reservation: EvidenceUploadReservation = {
+      evidenceCount,
+      computation: previousComputation,
+      exceptions: previousExceptions,
+      evidenceCommit: previousEvidenceCommit,
+      reservedArtifactState: {
+        computation: cloneJson(latestSubmission.computation),
+        exceptions: cloneJson(latestSubmission.exceptions),
+        evidenceCommit: cloneJson(latestSubmission.evidenceCommit),
+      },
+    };
     addAuditEvent(latestSubmission, "evidence_updated", `Reserved evidence upload for ${label}.`, {
       label,
     });
@@ -126,6 +144,13 @@ async function rollbackEvidenceUploadReservation({
   const accessError = requireSubmissionAccess(latestSubmission, partnerAddress);
   if (accessError) return;
   if (latestSubmission.evidenceCommit.status === "committing") return;
+  if (
+    !sameJson(latestSubmission.computation, reservation.reservedArtifactState.computation) ||
+    !sameJson(latestSubmission.exceptions, reservation.reservedArtifactState.exceptions) ||
+    !sameJson(latestSubmission.evidenceCommit, reservation.reservedArtifactState.evidenceCommit)
+  ) {
+    return;
+  }
 
   latestSubmission.computation = reservation.computation;
   latestSubmission.exceptions = reservation.exceptions;
