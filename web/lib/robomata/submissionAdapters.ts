@@ -103,6 +103,7 @@ export function buildPortfolioFromSubmission(submission: FacilitySubmission): Fl
       id: evidence.id,
       label: evidence.label,
       source: evidence.source,
+      scope: evidence.scope,
       status: evidence.status,
       walrusObjectId: evidence.walrusObjectId,
       sealPolicyId: evidence.sealPolicyId,

@@ -291,14 +291,15 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       timeout: parsePositiveInteger(process.env.ROBOMATA_SUI_CLI_TIMEOUT_MS, DEFAULT_SUI_CLI_TIMEOUT_MS),
     }));
   } catch (error) {
-    await store.failEvidenceCommit(
-      committingSubmission.id,
-      rootDigest,
-      error instanceof Error ? error.message : "Unknown Sui commit failure.",
-    );
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to commit evidence." },
-      { status: 500 },
+      {
+        submission: committingSubmission,
+        error:
+          error instanceof Error
+            ? `Sui commit response was not confirmed and must be reconciled before retry: ${error.message}`
+            : "Sui commit response was not confirmed and must be reconciled before retry.",
+      },
+      { status: 202 },
     );
   }
 

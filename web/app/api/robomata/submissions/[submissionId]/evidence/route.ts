@@ -45,6 +45,51 @@ function isCommitInProgressError(error: unknown) {
   return error instanceof Error && error.message.includes("Evidence commit is in progress");
 }
 
+async function reserveEvidenceUpload({
+  label,
+  partnerAddress,
+  submissionId,
+  store,
+}: {
+  label: string;
+  partnerAddress: string;
+  submissionId: string;
+  store: ReturnType<typeof getSubmissionStore>;
+}): Promise<void> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const latestSubmission = await store.get(submissionId);
+    if (!latestSubmission) {
+      throw new Error("Submission not found.");
+    }
+
+    const accessError = requireSubmissionAccess(latestSubmission, partnerAddress);
+    if (accessError) {
+      throw new Error("Submission not found.");
+    }
+    const mutabilityError = requireSubmissionMutable(latestSubmission);
+    if (mutabilityError) {
+      throw new Error("Evidence commit is in progress for this submission. Try again after it completes.");
+    }
+
+    invalidateSubmissionArtifacts(latestSubmission);
+    addAuditEvent(latestSubmission, "evidence_updated", `Reserved evidence upload for ${label}.`, {
+      label,
+    });
+
+    try {
+      await store.save(latestSubmission);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!isConcurrentSubmissionChange(error)) break;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Failed to reserve evidence upload.");
+}
+
 async function saveEvidenceRecord({
   evidence,
   partnerAddress,
@@ -129,6 +174,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     if (!(file instanceof File) || !label || !source || !scope) {
       return NextResponse.json({ error: "Evidence upload is missing required fields." }, { status: 400 });
     }
+
+    await reserveEvidenceUpload({ label, partnerAddress, submissionId, store });
 
     const evidence = await createEvidenceRecord({
       file,

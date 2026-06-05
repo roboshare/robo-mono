@@ -17,6 +17,7 @@ export type EvidenceCommitment = {
   id: string;
   label: string;
   source: string;
+  scope?: string;
   status: EvidenceStatus;
   walrusObjectId: string;
   sealPolicyId: string;
