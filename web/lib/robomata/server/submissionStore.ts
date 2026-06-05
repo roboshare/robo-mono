@@ -32,9 +32,11 @@ type SubmissionStore = {
   getLatest: () => Promise<FacilitySubmission | null>;
   create: (input: CreateSubmissionInput) => Promise<FacilitySubmission>;
   save: (submission: FacilitySubmission) => Promise<FacilitySubmission>;
+  beginEvidenceCommit: (id: string, rootDigest: string) => Promise<FacilitySubmission | null>;
 };
 
 let ensuredPostgresTable = false;
+const fileStoreLocks = new Map<string, Promise<void>>();
 
 async function ensurePostgresTable() {
   if (ensuredPostgresTable) return;
@@ -68,11 +70,15 @@ function canUseEphemeralFileStore() {
   return process.env.NODE_ENV === "development";
 }
 
+function canUseFileStore() {
+  return canUseEphemeralFileStore();
+}
+
 function requireDurableStoreForEnabledWorkflow() {
   if (!isRobomataWorkflowServerEnabled() && !isRobomataWorkflowMutationEnabled()) return;
-  if (hasPostgresConfig() || hasExplicitFileStoreConfig() || canUseEphemeralFileStore()) return;
+  if (hasPostgresConfig() || canUseFileStore()) return;
 
-  throw new Error("Robomata workflow requires POSTGRES_URL or ROBOMATA_SUBMISSIONS_FILE outside local development.");
+  throw new Error("Robomata workflow requires POSTGRES_URL outside local development.");
 }
 
 async function readFileStore(filePath: string): Promise<FacilitySubmission[]> {
@@ -97,6 +103,21 @@ function createFileStore(): SubmissionStore {
     await writeFile(filePath, JSON.stringify(submissions, null, 2), "utf8");
   };
 
+  const withWriteLock = async <T>(operation: () => Promise<T>): Promise<T> => {
+    const previous = fileStoreLocks.get(filePath) ?? Promise.resolve();
+    let release: () => void = () => undefined;
+    const current = previous.then(() => new Promise<void>(resolve => (release = resolve)));
+    fileStoreLocks.set(filePath, current);
+
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (fileStoreLocks.get(filePath) === current) fileStoreLocks.delete(filePath);
+    }
+  };
+
   return {
     async list(partnerAddress) {
       const submissions = await readFileStore(filePath);
@@ -115,19 +136,44 @@ function createFileStore(): SubmissionStore {
       return submissions.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0] ?? null;
     },
     async create(input) {
-      const submission = createSubmissionShell(input);
-      const submissions = await readFileStore(filePath);
-      submissions.unshift(submission);
-      await writeAll(submissions);
-      return submission;
+      return withWriteLock(async () => {
+        const submission = createSubmissionShell(input);
+        const submissions = await readFileStore(filePath);
+        submissions.unshift(submission);
+        await writeAll(submissions);
+        return submission;
+      });
     },
     async save(submission) {
-      const submissions = await readFileStore(filePath);
-      const nextSubmission = touchSubmission(submission);
-      const next = submissions.filter(candidate => candidate.id !== nextSubmission.id);
-      next.unshift(nextSubmission);
-      await writeAll(next);
-      return nextSubmission;
+      return withWriteLock(async () => {
+        const submissions = await readFileStore(filePath);
+        const nextSubmission = touchSubmission(submission);
+        const next = submissions.filter(candidate => candidate.id !== nextSubmission.id);
+        next.unshift(nextSubmission);
+        await writeAll(next);
+        return nextSubmission;
+      });
+    },
+    async beginEvidenceCommit(id, rootDigest) {
+      return withWriteLock(async () => {
+        const submissions = await readFileStore(filePath);
+        const submission = submissions.find(candidate => candidate.id === id);
+        if (!submission) return null;
+        if (submission.evidenceCommit.status !== "ready" || submission.evidenceCommit.rootDigest !== rootDigest) {
+          return null;
+        }
+
+        submission.evidenceCommit = {
+          ...submission.evidenceCommit,
+          status: "committing",
+          errorMessage: undefined,
+        };
+        const nextSubmission = touchSubmission(submission);
+        const next = submissions.filter(candidate => candidate.id !== nextSubmission.id);
+        next.unshift(nextSubmission);
+        await writeAll(next);
+        return nextSubmission;
+      });
     },
   };
 }
@@ -187,6 +233,22 @@ function createPostgresStore(): SubmissionStore {
         .where(eq(submissionsTable.id, nextSubmission.id));
       return nextSubmission;
     },
+    async beginEvidenceCommit(id, rootDigest) {
+      await ensurePostgresTable();
+      const result = await sql<{ payload: FacilitySubmission }>`
+        UPDATE robomata_facility_submissions
+        SET
+          payload = jsonb_set(payload, '{evidenceCommit,status}', '"committing"'::jsonb, false),
+          updated_at = now()
+        WHERE
+          id = ${id}
+          AND payload->'evidenceCommit'->>'status' = 'ready'
+          AND payload->'evidenceCommit'->>'rootDigest' = ${rootDigest}
+        RETURNING payload;
+      `;
+
+      return result.rows[0]?.payload ?? null;
+    },
   };
 }
 
@@ -195,6 +257,9 @@ let storeSingleton: SubmissionStore | null = null;
 export function getSubmissionStore(): SubmissionStore {
   if (!storeSingleton) {
     requireDurableStoreForEnabledWorkflow();
+    if (!hasPostgresConfig() && hasExplicitFileStoreConfig() && !canUseFileStore()) {
+      throw new Error("ROBOMATA_SUBMISSIONS_FILE is only supported for local development.");
+    }
     storeSingleton = hasPostgresConfig() ? createPostgresStore() : createFileStore();
   }
   return storeSingleton;

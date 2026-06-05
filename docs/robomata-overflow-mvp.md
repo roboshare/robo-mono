@@ -86,12 +86,15 @@ Use the flags as a matrix:
   creating submissions, importing receivables, uploading evidence, computing the
   borrowing base, and committing evidence. Without this flag, writes fail closed
   with `403`.
-* `POSTGRES_URL` or `ROBOMATA_SUBMISSIONS_FILE=/durable/path/submissions.json`
-  is required when the server workflow is enabled outside local development.
-  The API must not accept workflow writes against a serverless temp directory.
+* `POSTGRES_URL` is required when the server workflow is enabled outside local
+  development. `ROBOMATA_SUBMISSIONS_FILE=/local/path/submissions.json` is only
+  a local-development fallback and must not be used for shared previews or
+  release candidates.
 * `ROBOMATA_WALRUS_UPLOADS_ENABLED=true` enables real Walrus publisher uploads
-  when `WALRUS_PUBLISHER_URL` is configured. Without this flag, evidence uploads
-  keep using deterministic mock Walrus references even if a publisher URL exists.
+  when `WALRUS_PUBLISHER_URL` and `ROBOMATA_SEAL_ENCRYPTION_KEY` are configured.
+  Without this flag, evidence uploads keep using deterministic mock Walrus
+  references even if a publisher URL exists. With this flag, uploads fail closed
+  unless evidence can be encrypted before publishing.
 * `ROBOMATA_SUI_COMMIT_ENABLED=true` enables real Sui evidence commit
   transactions when the Sui package, client config, per-submission facility
   mapping, per-submission operator mapping, and expected signer are configured.
@@ -116,10 +119,12 @@ Recommended environments:
 * production and release-candidate branches: leave workflow, mutation, Walrus,
   and Sui side-effect flags unset unless the Robomata QA gate has explicitly
   passed for that release
-* controlled preview and local QA: set the workflow and mutation flags when
-  testing the full operator workflow, include the tester wallet in
+* controlled preview: set the workflow and mutation flags, configure
+  `POSTGRES_URL`, include the tester wallet in
   `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES`, and enable Walrus/Sui side-effect
   flags only for testnet runs that should write to external infrastructure
+* local QA: use `ROBOMATA_SUBMISSIONS_FILE` only for single-developer local
+  runs when Postgres is not configured
 * public demo mode: leave the server flags unset so `/robomata` remains a
   read-only demo narrative and `/partner/submissions` stays hidden
 

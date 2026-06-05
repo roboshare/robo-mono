@@ -42,6 +42,8 @@ export type SubmissionEvidence = EvidenceCommitment & {
   walrusBlobId: string;
   walrusEventId?: string;
   aggregatorUrl?: string;
+  sealEncrypted?: boolean;
+  sealEncryptionAlgorithm?: string;
 };
 
 export type SubmissionException = {
@@ -74,7 +76,7 @@ export type SubmissionAuditEvent = {
 };
 
 export type SubmissionEvidenceCommit = {
-  status: "not_started" | "ready" | "committed" | "failed";
+  status: "not_started" | "ready" | "committing" | "committed" | "failed";
   evidenceRoot?: string;
   rootDigest?: string;
   txDigest?: string;

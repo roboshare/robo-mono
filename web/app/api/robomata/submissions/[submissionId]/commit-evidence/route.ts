@@ -66,6 +66,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     return NextResponse.json({ submission });
   }
 
+  if (submission.evidenceCommit.status === "committing") {
+    return NextResponse.json({ error: "Evidence commit is already in progress for this submission." }, { status: 409 });
+  }
+
   if (!submission.evidenceCommit.evidenceRoot || !submission.evidenceCommit.rootDigest) {
     return NextResponse.json({ error: "Compute the submission before committing evidence." }, { status: 400 });
   }
@@ -99,6 +103,19 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
   }
 
   try {
+    const committingSubmission = await store.beginEvidenceCommit(submission.id, submission.evidenceCommit.rootDigest);
+    if (!committingSubmission) {
+      const latest = await store.get(submission.id);
+      if (latest?.evidenceCommit.status === "committed") {
+        return NextResponse.json({ submission: latest });
+      }
+
+      return NextResponse.json(
+        { error: "Evidence commit is already in progress or the evidence root has changed." },
+        { status: 409 },
+      );
+    }
+
     const label = `submission_${submission.id}`;
     const gasBudget = process.env.ROBOMATA_SUI_GAS_BUDGET ?? "100000000";
     const args = [
@@ -126,8 +143,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     const txDigest =
       payload?.digest ?? payload?.effects?.transactionDigest ?? payload?.effects?.status?.success ?? undefined;
 
-    submission.evidenceCommit = {
-      ...submission.evidenceCommit,
+    committingSubmission.evidenceCommit = {
+      ...committingSubmission.evidenceCommit,
       status: "committed",
       txDigest: typeof txDigest === "string" ? txDigest : undefined,
       committedAt: new Date().toISOString(),
@@ -137,19 +154,26 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       facilityOperatorAddress,
       errorMessage: undefined,
     };
-    addAuditEvent(submission, "sui_commit_completed", `Committed evidence root for ${submission.facilityName}.`, {
-      txDigest: submission.evidenceCommit.txDigest ?? null,
-    });
+    addAuditEvent(
+      committingSubmission,
+      "sui_commit_completed",
+      `Committed evidence root for ${committingSubmission.facilityName}.`,
+      {
+        txDigest: committingSubmission.evidenceCommit.txDigest ?? null,
+      },
+    );
 
-    const saved = await store.save(submission);
+    const saved = await store.save(committingSubmission);
     return NextResponse.json({ submission: saved });
   } catch (error) {
-    submission.evidenceCommit = {
-      ...submission.evidenceCommit,
+    const latest = await store.get(submission.id);
+    const failedSubmission = latest ?? submission;
+    failedSubmission.evidenceCommit = {
+      ...failedSubmission.evidenceCommit,
       status: "failed",
       errorMessage: error instanceof Error ? error.message : "Unknown Sui commit failure.",
     };
-    await store.save(submission);
+    await store.save(failedSubmission);
 
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to commit evidence." },
