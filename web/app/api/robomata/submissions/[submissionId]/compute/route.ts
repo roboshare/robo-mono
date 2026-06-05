@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isRobomataWorkflowMutationEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
-import { requirePartnerAddress, requireSubmissionAccess } from "~~/lib/robomata/server/submissionAccess";
+import {
+  requirePartnerAddress,
+  requireSubmissionAccess,
+  requireSubmissionMutable,
+} from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
 import { computeSubmissionArtifacts } from "~~/lib/robomata/submissionAdapters";
 import { addAuditEvent } from "~~/lib/robomata/submissions";
@@ -37,6 +41,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
 
     const accessError = requireSubmissionAccess(submission, partnerAddress);
     if (accessError) return accessError;
+    const mutabilityError = requireSubmissionMutable(submission);
+    if (mutabilityError) return mutabilityError;
 
     if (submission.receivables.length === 0) {
       return NextResponse.json({ error: "Import receivables before computing the borrowing base." }, { status: 400 });

@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isRobomataWorkflowMutationEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
 import { importReceivablesCsv } from "~~/lib/robomata/server/csv";
-import { requirePartnerAddress, requireSubmissionAccess } from "~~/lib/robomata/server/submissionAccess";
+import {
+  requirePartnerAddress,
+  requireSubmissionAccess,
+  requireSubmissionMutable,
+} from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
 import { addAuditEvent, invalidateSubmissionArtifacts } from "~~/lib/robomata/submissions";
 
@@ -37,6 +41,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
 
     const accessError = requireSubmissionAccess(submission, partnerAddress);
     if (accessError) return accessError;
+    const mutabilityError = requireSubmissionMutable(submission);
+    if (mutabilityError) return mutabilityError;
 
     const formData = await request.formData();
     const file = formData.get("file");

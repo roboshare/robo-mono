@@ -167,7 +167,22 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     return NextResponse.json({ submission: saved });
   } catch (error) {
     const latest = await store.get(submission.id);
-    const failedSubmission = latest ?? submission;
+    if (latest?.evidenceCommit.status === "committed") {
+      return NextResponse.json({ submission: latest });
+    }
+
+    if (
+      !latest ||
+      latest.evidenceCommit.status !== "committing" ||
+      latest.evidenceCommit.rootDigest !== submission.evidenceCommit.rootDigest
+    ) {
+      return NextResponse.json(
+        { error: "Evidence commit state changed before the failed commit could be recorded." },
+        { status: 409 },
+      );
+    }
+
+    const failedSubmission = latest;
     failedSubmission.evidenceCommit = {
       ...failedSubmission.evidenceCommit,
       status: "failed",

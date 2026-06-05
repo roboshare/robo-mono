@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isRobomataWorkflowMutationEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
 import { createEvidenceRecord } from "~~/lib/robomata/server/evidenceStorage";
-import { requirePartnerAddress, requireSubmissionAccess } from "~~/lib/robomata/server/submissionAccess";
+import {
+  requirePartnerAddress,
+  requireSubmissionAccess,
+  requireSubmissionMutable,
+} from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
 import {
   type FacilitySubmission,
@@ -37,6 +41,10 @@ function isConcurrentSubmissionChange(error: unknown) {
   return error instanceof Error && error.message.includes("Submission changed while this update was in progress");
 }
 
+function isCommitInProgressError(error: unknown) {
+  return error instanceof Error && error.message.includes("Evidence commit is in progress");
+}
+
 async function saveEvidenceRecord({
   evidence,
   partnerAddress,
@@ -59,6 +67,10 @@ async function saveEvidenceRecord({
     const accessError = requireSubmissionAccess(latestSubmission, partnerAddress);
     if (accessError) {
       throw new Error("Submission not found.");
+    }
+    const mutabilityError = requireSubmissionMutable(latestSubmission);
+    if (mutabilityError) {
+      throw new Error("Evidence commit is in progress for this submission. Try again after it completes.");
     }
 
     latestSubmission.evidence = [
@@ -102,6 +114,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
 
     const accessError = requireSubmissionAccess(submission, partnerAddress);
     if (accessError) return accessError;
+    const mutabilityError = requireSubmissionMutable(submission);
+    if (mutabilityError) return mutabilityError;
 
     const formData = await request.formData();
     const file = formData.get("file");
@@ -134,7 +148,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to upload evidence." },
-      { status: 500 },
+      { status: isCommitInProgressError(error) ? 409 : 500 },
     );
   }
 }

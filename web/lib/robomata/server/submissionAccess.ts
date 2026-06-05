@@ -86,3 +86,14 @@ export function requireSubmissionAccess(submission: FacilitySubmission, partnerA
 
   return null;
 }
+
+export function requireSubmissionMutable(submission: FacilitySubmission): NextResponse | null {
+  if (submission.evidenceCommit.status === "committing") {
+    return NextResponse.json(
+      { error: "Evidence commit is in progress for this submission. Try again after it completes." },
+      { status: 409 },
+    );
+  }
+
+  return null;
+}

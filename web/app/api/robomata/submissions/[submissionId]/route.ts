@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isRobomataWorkflowMutationEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
-import { requirePartnerAddress, requireSubmissionAccess } from "~~/lib/robomata/server/submissionAccess";
+import {
+  requirePartnerAddress,
+  requireSubmissionAccess,
+  requireSubmissionMutable,
+} from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
 import { addAuditEvent, invalidateSubmissionArtifacts } from "~~/lib/robomata/submissions";
 
@@ -161,6 +165,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ s
 
     const accessError = requireSubmissionAccess(submission, partnerAddress);
     if (accessError) return accessError;
+    const mutabilityError = requireSubmissionMutable(submission);
+    if (mutabilityError) return mutabilityError;
 
     const body = (await request.json()) as SubmissionPatchAction;
 
