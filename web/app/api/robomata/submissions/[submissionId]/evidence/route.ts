@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
+import { isRobomataWorkflowMutationEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
 import { createEvidenceRecord } from "~~/lib/robomata/server/evidenceStorage";
 import { requirePartnerAddress, requireSubmissionAccess } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
@@ -12,10 +12,17 @@ function requireRobomataWorkflow() {
   return NextResponse.json({ error: "Robomata workflow is not enabled." }, { status: 404 });
 }
 
+function requireRobomataMutation() {
+  if (isRobomataWorkflowMutationEnabled()) return null;
+  return NextResponse.json({ error: "Robomata submission writes are not enabled." }, { status: 403 });
+}
+
 export async function POST(request: NextRequest, context: { params: Promise<{ submissionId: string }> }) {
   try {
     const featureError = requireRobomataWorkflow();
     if (featureError) return featureError;
+    const mutationError = requireRobomataMutation();
+    if (mutationError) return mutationError;
 
     const { submissionId } = await context.params;
     const store = getSubmissionStore();

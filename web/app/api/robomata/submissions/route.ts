@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
+import { isRobomataWorkflowMutationEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
 import { requirePartnerAddress } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
 
@@ -8,6 +8,11 @@ export const runtime = "nodejs";
 function requireRobomataWorkflow() {
   if (isRobomataWorkflowServerEnabled()) return null;
   return NextResponse.json({ error: "Robomata workflow is not enabled." }, { status: 404 });
+}
+
+function requireRobomataMutation() {
+  if (isRobomataWorkflowMutationEnabled()) return null;
+  return NextResponse.json({ error: "Robomata submission writes are not enabled." }, { status: 403 });
 }
 
 export async function GET(request: NextRequest) {
@@ -25,6 +30,8 @@ export async function POST(request: NextRequest) {
   try {
     const featureError = requireRobomataWorkflow();
     if (featureError) return featureError;
+    const mutationError = requireRobomataMutation();
+    if (mutationError) return mutationError;
 
     const body = (await request.json()) as {
       partnerAddress?: string;

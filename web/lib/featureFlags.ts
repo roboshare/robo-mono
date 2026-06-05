@@ -9,5 +9,9 @@ export function isRobomataWorkflowEnabled(): boolean {
 }
 
 export function isRobomataWorkflowServerEnabled(): boolean {
-  return isRobomataWorkflowEnabled() || isEnabled(process.env.ROBOMATA_WORKFLOW_ENABLED);
+  return isEnabled(process.env.ROBOMATA_WORKFLOW_ENABLED);
+}
+
+export function isRobomataWorkflowMutationEnabled(): boolean {
+  return isEnabled(process.env.ROBOMATA_WORKFLOW_MUTATIONS_ENABLED);
 }

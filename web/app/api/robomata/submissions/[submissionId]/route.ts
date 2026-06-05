@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
+import { isRobomataWorkflowMutationEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
 import { requirePartnerAddress, requireSubmissionAccess } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
 import { addAuditEvent, invalidateSubmissionArtifacts } from "~~/lib/robomata/submissions";
@@ -9,6 +9,11 @@ export const runtime = "nodejs";
 function requireRobomataWorkflow() {
   if (isRobomataWorkflowServerEnabled()) return null;
   return NextResponse.json({ error: "Robomata workflow is not enabled." }, { status: 404 });
+}
+
+function requireRobomataMutation() {
+  if (isRobomataWorkflowMutationEnabled()) return null;
+  return NextResponse.json({ error: "Robomata submission writes are not enabled." }, { status: 403 });
 }
 
 type SubmissionPatchAction =
@@ -69,6 +74,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ s
   try {
     const featureError = requireRobomataWorkflow();
     if (featureError) return featureError;
+    const mutationError = requireRobomataMutation();
+    if (mutationError) return mutationError;
 
     const { submissionId } = await context.params;
     const store = getSubmissionStore();
@@ -91,6 +98,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ s
       submission.facilityName = body.patch.facilityName ?? submission.facilityName;
       submission.asOfDate = body.patch.asOfDate ?? submission.asOfDate;
       addAuditEvent(submission, "submission_updated", `Updated submission details for ${submission.facilityName}.`);
+      invalidateSubmissionArtifacts(submission);
     }
 
     if (body.action === "excludeReceivable") {
