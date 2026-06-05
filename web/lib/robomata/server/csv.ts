@@ -45,9 +45,30 @@ function parseBoolean(value: string): boolean {
 
 function parseAmountToCents(value: string): number {
   const normalized = value.replace(/[$,\s]/g, "");
-  if (!normalized) return 0;
+  if (!normalized) return NaN;
   if (normalized.includes(".")) return Math.round(Number(normalized) * 100);
   return Number(normalized) * 100;
+}
+
+function parseRequiredNumber(value: string | undefined, column: CsvHeader, rowNumber: number): number {
+  const normalized = (value ?? "").replace(/[,\s]/g, "");
+  const parsed = Number(normalized);
+
+  if (!normalized || !Number.isFinite(parsed)) {
+    throw new Error(`Receivables CSV row ${rowNumber} has invalid numeric value for ${column}.`);
+  }
+
+  return parsed;
+}
+
+function parseRequiredAmountToCents(value: string | undefined, column: CsvHeader, rowNumber: number): number {
+  const cents = parseAmountToCents(value ?? "");
+
+  if (!Number.isFinite(cents)) {
+    throw new Error(`Receivables CSV row ${rowNumber} has invalid numeric value for ${column}.`);
+  }
+
+  return cents;
 }
 
 function parseCsvLine(line: string): string[] {
@@ -114,7 +135,10 @@ export function importReceivablesCsv(csvText: string): SubmissionReceivable[] {
     throw new Error("Receivables CSV must include either `outstanding` or `outstandingCents`.");
   }
 
+  const seenIds = new Set<string>();
+
   return lines.slice(1).map((line, index) => {
+    const rowNumber = index + 2;
     const values = parseCsvLine(line);
     const row = new Map<CsvHeader, string>();
 
@@ -126,23 +150,29 @@ export function importReceivablesCsv(csvText: string): SubmissionReceivable[] {
     const obligor = row.get("obligor") ?? "";
 
     if (!id || !obligor) {
-      throw new Error(`Receivables CSV row ${index + 2} is missing id or obligor.`);
+      throw new Error(`Receivables CSV row ${rowNumber} is missing id or obligor.`);
     }
+
+    if (seenIds.has(id)) {
+      throw new Error(`Receivables CSV row ${rowNumber} duplicates receivable id ${id}.`);
+    }
+
+    seenIds.add(id);
 
     return {
       id,
       obligor,
-      vehicleCount: Number(row.get("vehicleCount") ?? 0),
+      vehicleCount: parseRequiredNumber(row.get("vehicleCount"), "vehicleCount", rowNumber),
       outstandingCents: row.has("outstandingCents")
-        ? Number(row.get("outstandingCents") ?? 0)
-        : parseAmountToCents(row.get("outstanding") ?? "0"),
-      daysPastDue: Number(row.get("daysPastDue") ?? 0),
-      utilizationPct: Number(row.get("utilizationPct") ?? 0),
+        ? parseRequiredNumber(row.get("outstandingCents"), "outstandingCents", rowNumber)
+        : parseRequiredAmountToCents(row.get("outstanding"), "outstanding", rowNumber),
+      daysPastDue: parseRequiredNumber(row.get("daysPastDue"), "daysPastDue", rowNumber),
+      utilizationPct: parseRequiredNumber(row.get("utilizationPct"), "utilizationPct", rowNumber),
       insured: parseBoolean(row.get("insured") ?? ""),
       titleClear: parseBoolean(row.get("titleClear") ?? ""),
       lockboxMatched: parseBoolean(row.get("lockboxMatched") ?? ""),
       excluded: false,
-      sourceRow: index + 2,
+      sourceRow: rowNumber,
     };
   });
 }
