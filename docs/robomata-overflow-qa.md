@@ -75,19 +75,31 @@ Tracking issue: `ROB-134`.
 
 Required environment:
 
+* `NEXT_PUBLIC_ENABLE_ROBOMATA_WORKFLOW=true`
+* `ROBOMATA_WORKFLOW_ENABLED=true`
+* `ROBOMATA_WORKFLOW_MUTATIONS_ENABLED=true`
+* `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES`
+* `POSTGRES_URL`
 * `WALRUS_PUBLISHER_URL`
 * `WALRUS_AGGREGATOR_URL`
 * `ROBOMATA_WALRUS_UPLOADS_ENABLED=true`
 * `ROBOMATA_REQUIRE_REAL_EVIDENCE_STORAGE=true`
+* `ROBOMATA_SUI_COMMIT_ENABLED=true`
 * `ROBOMATA_SUI_PACKAGE_ID`
-* `ROBOMATA_SUI_FACILITY_ID`
-* Seal key-server configuration or documented testnet defaults
+* `ROBOMATA_SUI_CLIENT_CONFIG`
+* `ROBOMATA_SUI_SIGNER_ADDRESS`
+* `ROBOMATA_SUI_FACILITY_IDS_JSON`
+* `ROBOMATA_SUI_FACILITY_OPERATORS_JSON`
+* Seal package, identity, threshold, and key-server configuration from `ROB-129`
+  and the Sui testnet deployment helper
 
 Required evidence:
 
-* evidence upload stores encrypted bytes when Seal config is present
+* evidence upload stores encrypted bytes after `ROB-129` Seal/Walrus support is
+  on the verified `dev` commit
 * uploaded evidence records persist Walrus object/blob references
-* plaintext digest and ciphertext digest are both retained for audit
+* plaintext digest and ciphertext digest are both retained for audit by the
+  `ROB-129` evidence record fields
 * commitment root is computed from persisted submission evidence records
 * Sui commit status and reference metadata are persisted back to the submission
 * generated Sui deployment fixtures, local client config paths, recovery
@@ -99,6 +111,11 @@ Use the repo-standard local entrypoint:
 
 * `yarn start`
 
+Before starting the browser scenario, load the workflow/testnet environment
+listed in the evidence-storage gate above. Without those flags, the submission
+UI is intentionally hidden and the mutation APIs intentionally return
+configuration errors.
+
 If the user already has the local server running, reuse it rather than starting
 a second process.
 
@@ -108,9 +125,10 @@ Status: pending.
 
 Verify:
 
-* `/partner` renders the existing partner surface without breaking legacy
-  vehicle registration/tokenization entrypoints
-* a `Borrowing Base Submissions` area is visible
+* `/partner` renders the existing partner surface and links to the borrowing
+  base submissions area without breaking legacy vehicle
+  registration/tokenization entrypoints
+* `/partner/submissions` renders the `Borrowing Base Submissions` list
 * empty state explains what the operator should do next
 * existing partner auth/gating behavior still works
 
