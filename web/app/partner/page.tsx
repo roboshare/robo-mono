@@ -20,6 +20,7 @@ import { ASSET_REGISTRIES, AssetType } from "~~/config/assetTypes";
 import { useScaffoldWriteContract, useSelectedNetwork } from "~~/hooks/scaffold-eth";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
+import { isRobomataWorkflowEnabled } from "~~/lib/featureFlags";
 import { getDeployedContract } from "~~/utils/contracts";
 import { fetchIpfsMetadata, mergeVehicleMetadata } from "~~/utils/ipfsGateway";
 import { normalizeVehicleMetadata } from "~~/utils/protocolState";
@@ -1168,9 +1169,11 @@ const PartnerDashboard: NextPage = () => {
           </div>
 
           <div className="flex flex-col items-stretch gap-3 sm:flex-row">
-            <Link href="/partner/submissions" className="btn btn-outline rounded-full">
-              Borrowing Base Submissions
-            </Link>
+            {isRobomataWorkflowEnabled() && (
+              <Link href="/partner/submissions" className="btn btn-outline rounded-full">
+                Borrowing Base Submissions
+              </Link>
+            )}
             <div className="flex">
               <button
                 className="btn btn-primary rounded-r-none border-r-base-100"

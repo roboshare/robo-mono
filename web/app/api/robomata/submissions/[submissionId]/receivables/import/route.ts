@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
 import { importReceivablesCsv } from "~~/lib/robomata/server/csv";
 import { requirePartnerAddress, requireSubmissionAccess } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
@@ -6,8 +7,16 @@ import { addAuditEvent, invalidateSubmissionArtifacts } from "~~/lib/robomata/su
 
 export const runtime = "nodejs";
 
+function requireRobomataWorkflow() {
+  if (isRobomataWorkflowServerEnabled()) return null;
+  return NextResponse.json({ error: "Robomata workflow is not enabled." }, { status: 404 });
+}
+
 export async function POST(request: NextRequest, context: { params: Promise<{ submissionId: string }> }) {
   try {
+    const featureError = requireRobomataWorkflow();
+    if (featureError) return featureError;
+
     const { submissionId } = await context.params;
     const store = getSubmissionStore();
     const submission = await store.get(submissionId);
