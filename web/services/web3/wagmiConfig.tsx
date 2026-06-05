@@ -3,7 +3,7 @@ import { createConfig as createPrivyWagmiConfig } from "@privy-io/wagmi";
 import { Chain, createClient, fallback, http } from "viem";
 import { foundry, mainnet } from "viem/chains";
 import { Config, createConfig } from "wagmi";
-import scaffoldConfig, { DEFAULT_ALCHEMY_API_KEY, ScaffoldConfig } from "~~/scaffold.config";
+import scaffoldConfig, { ScaffoldConfig } from "~~/scaffold.config";
 import { isPrivyEnabled } from "~~/services/web3/privyConfig";
 import { getRuntimeLocalChain } from "~~/utils/localServiceUrls";
 import { getAlchemyHttpUrl } from "~~/utils/scaffold-eth";
@@ -42,9 +42,7 @@ export const getWagmiConfig = () => {
       } else {
         const alchemyHttpUrl = getAlchemyHttpUrl(chain.id);
         if (alchemyHttpUrl) {
-          const isUsingDefaultKey = scaffoldConfig.alchemyApiKey === DEFAULT_ALCHEMY_API_KEY;
-          // If using default Scaffold-ETH 2 API key, we prioritize the default RPC
-          rpcFallbacks = isUsingDefaultKey ? [http(), http(alchemyHttpUrl)] : [http(alchemyHttpUrl), http()];
+          rpcFallbacks = [http(alchemyHttpUrl), http()];
         }
       }
 

@@ -5,6 +5,7 @@ import { useEscClose } from "./useEscClose";
 import { erc20Abi, parseUnits } from "viem";
 import { useReadContract } from "wagmi";
 import { XMarkIcon } from "@heroicons/react/24/outline";
+import { BP_PRECISION } from "~~/config/units";
 import { useScaffoldReadContract, useScaffoldWriteContract, useSelectedNetwork } from "~~/hooks/scaffold-eth";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
 import { usePaymentTokenWriteContract } from "~~/hooks/usePaymentTokenWriteContract";
@@ -119,9 +120,9 @@ export const DistributeEarningsModal = ({
 
     const partnerTokens = typeof partnerBalance === "bigint" ? partnerBalance : 0n;
     const investorTokens = currentCirculatingSupply > partnerTokens ? currentCirculatingSupply - partnerTokens : 0n;
-    const investorPercentage = Number((investorTokens * 10000n) / maxSupply) / 100;
-    const partnerPercentage = Number((partnerTokens * 10000n) / maxSupply) / 100;
-    const circulatingPercentage = Number((currentCirculatingSupply * 10000n) / maxSupply) / 100;
+    const investorPercentage = Number((investorTokens * BP_PRECISION) / maxSupply) / 100;
+    const partnerPercentage = Number((partnerTokens * BP_PRECISION) / maxSupply) / 100;
+    const circulatingPercentage = Number((currentCirculatingSupply * BP_PRECISION) / maxSupply) / 100;
 
     return {
       maxSupply,

@@ -7,6 +7,7 @@ import { usePublicClient, useReadContract } from "wagmi";
 import { XMarkIcon } from "@heroicons/react/24/outline";
 import { AccountIdentityCard } from "~~/components/scaffold-eth";
 import { ModalAuthActionButton } from "~~/components/scaffold-eth/ModalAuthActionButton";
+import { calculateProtocolFee } from "~~/config/protocol";
 import { useScaffoldReadContract, useScaffoldWriteContract, useSelectedNetwork } from "~~/hooks/scaffold-eth";
 import { useAtomicCalls } from "~~/hooks/useAtomicCalls";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
@@ -54,15 +55,6 @@ interface AcquirePositionModalProps {
 }
 
 const PERCENTAGE_OPTIONS = [25, 50, 75, 100];
-const BP_PRECISION = 10000n;
-const PROTOCOL_FEE_BP = 250n;
-const MIN_PROTOCOL_FEE = 1_000_000n;
-
-const calculateProtocolFee = (amount: bigint) => {
-  if (amount === 0n) return 0n;
-  const fee = (amount * PROTOCOL_FEE_BP) / BP_PRECISION;
-  return fee < MIN_PROTOCOL_FEE ? MIN_PROTOCOL_FEE : fee;
-};
 
 const calculateTotalPayment = (principal: bigint, buyerPaysFee: boolean) => {
   if (!buyerPaysFee || principal === 0n) {

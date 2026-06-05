@@ -4,13 +4,12 @@ import { type KeyboardEvent, type MouseEvent, useEffect, useMemo, useRef, useSta
 import Image from "next/image";
 import { formatUnits } from "viem";
 import { ASSET_REGISTRIES, AssetType } from "~~/config/assetTypes";
+import { PROTOCOL_BENCHMARK_YIELD_BP } from "~~/config/protocol";
+import { BP_PRECISION, SECONDS_PER_YEAR } from "~~/config/units";
 import { useScaffoldReadContract } from "~~/hooks/scaffold-eth";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
 import { isSettledAssetStatus } from "~~/utils/assetStatus";
-
-const BP_PRECISION = 10000n;
-const BENCHMARK_YIELD_BP = 1000n;
 
 interface ListingCardProps {
   listing: {
@@ -142,7 +141,7 @@ export function ListingCard({
   // Calculate APY - use token-level realized earnings if available, otherwise target yield
   const apyDisplay = useMemo(() => {
     if (!token) {
-      return `${(Number(BENCHMARK_YIELD_BP) / 100).toFixed(2)}%`;
+      return `${(Number(PROTOCOL_BENCHMARK_YIELD_BP) / 100).toFixed(2)}%`;
     }
 
     const tokenPrice = BigInt(token.price);
@@ -156,8 +155,7 @@ export function ListingCard({
       const duration = durationStart > 0n && lastDistAt > durationStart ? lastDistAt - durationStart : 0n;
 
       if (duration > 0n && totalEarnings > 0n) {
-        const secondsPerYear = 365n * 24n * 60n * 60n;
-        const annualizedEarnings = (totalEarnings * secondsPerYear) / duration;
+        const annualizedEarnings = (totalEarnings * SECONDS_PER_YEAR) / duration;
         const aprBps = (annualizedEarnings * BP_PRECISION) / totalValue;
         const aprPercent = Number(aprBps) / 100;
         return `${aprPercent.toFixed(2)}%`;
@@ -165,7 +163,7 @@ export function ListingCard({
     }
 
     // Fallback to target yield APY (or benchmark if unavailable)
-    const targetYieldBps = token.targetYieldBP ? Number(token.targetYieldBP) : Number(BENCHMARK_YIELD_BP);
+    const targetYieldBps = token.targetYieldBP ? Number(token.targetYieldBP) : Number(PROTOCOL_BENCHMARK_YIELD_BP);
     const targetYieldPercent = targetYieldBps / 100;
     return `${targetYieldPercent.toFixed(2)}%`;
   }, [earnings, token]);
@@ -186,7 +184,7 @@ export function ListingCard({
     const totalValue = tokenPrice * listingAmountForProjection;
     if (totalValue === 0n) return "0.00";
 
-    const targetYieldBps = token.targetYieldBP ? BigInt(token.targetYieldBP) : BENCHMARK_YIELD_BP;
+    const targetYieldBps = token.targetYieldBP ? BigInt(token.targetYieldBP) : PROTOCOL_BENCHMARK_YIELD_BP;
     const earningsPerYear = (totalValue * targetYieldBps) / BP_PRECISION;
 
     return Number(formatUnits(earningsPerYear, paymentDecimals)).toLocaleString(undefined, {

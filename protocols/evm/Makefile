@@ -1,4 +1,4 @@
-.PHONY: build deploy generate-abis get-address account chain compile flatten fork format lint test verify
+.PHONY: build deploy generate-abis generate-protocol-config get-address account chain compile flatten fork format lint test verify
 
 DEPLOY_SCRIPT ?= script/Deploy.s.sol
 VERIFY_RUNNER ?= script/VerifyAll.s.sol
@@ -44,6 +44,11 @@ deploy-and-generate-abis: deploy generate-abis
 # Generate TypeScript ABIs
 generate-abis:
 	node scripts-js/generateTsAbis.js
+	node scripts-js/generateFrontendProtocolConfig.js
+
+# Generate frontend protocol constants and deployment metadata
+generate-protocol-config:
+	node scripts-js/generateFrontendProtocolConfig.js
 
 # List account
 account:
