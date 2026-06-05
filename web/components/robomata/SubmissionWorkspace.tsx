@@ -673,10 +673,21 @@ export const SubmissionWorkspace = ({
                   ) : null}
                   {!readOnly &&
                   submission.evidenceCommit.commitMode === "configured" &&
-                  submission.evidenceCommit.status !== "committed" ? (
+                  submission.evidenceCommit.status !== "committed" &&
+                  submission.evidenceCommit.status !== "committing" ? (
                     <button className="btn btn-primary mt-4 rounded-full" onClick={commitEvidence} disabled={isBusy}>
-                      Commit evidence on Sui
+                      {submission.evidenceCommit.status === "failed"
+                        ? "Retry Sui evidence commit"
+                        : "Commit evidence on Sui"}
                     </button>
+                  ) : null}
+                  {!readOnly &&
+                  submission.evidenceCommit.commitMode === "configured" &&
+                  submission.evidenceCommit.status === "committing" ? (
+                    <div className="mt-4 text-sm text-base-content/70">
+                      Sui commit is in progress. If this state becomes stale, retrying the API will reconcile Sui events
+                      before another transaction can be sent.
+                    </div>
                   ) : null}
                   {!readOnly && submission.evidenceCommit.commitMode === "prepared" ? (
                     <div className="mt-4 text-sm text-base-content/70">

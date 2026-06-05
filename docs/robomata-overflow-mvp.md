@@ -100,15 +100,20 @@ Use the flags as a matrix:
   mapping, per-submission operator mapping, and expected signer are configured.
   Without this flag, evidence roots remain prepared but cannot be committed
   onchain.
-* `ROBOMATA_SUI_FACILITY_IDS_JSON={"sub_...":"0x...","Facility Name":"0x..."}`
-  maps each submission, by submission id or facility name, to its own Sui
-  facility object. Do not use one process-wide facility object for every
-  submission.
-* `ROBOMATA_SUI_FACILITY_OPERATORS_JSON={"sub_...":"0x...","Facility Name":"0x..."}`
-  maps each submission to the Sui address that created and controls the mapped
-  facility object.
+* `ROBOMATA_SUI_FACILITY_IDS_JSON={"sub_...":"0x..."}` maps each submission id
+  to its own Sui facility object. Do not use facility names as keys; names are
+  mutable operator input and are not safe authorization boundaries.
+* `ROBOMATA_SUI_FACILITY_OPERATORS_JSON={"sub_...":"0x..."}` maps each
+  submission id to the Sui address that created and controls the mapped facility
+  object.
 * `ROBOMATA_SUI_SIGNER_ADDRESS=0x...` must match the mapped facility operator
   before the runtime exposes the Sui commit path.
+* `ROBOMATA_SUI_COMMIT_STALE_MS` optionally overrides the default ten-minute
+  stale threshold for in-progress Sui commits. Stale attempts are reconciled
+  against Sui `EvidenceCommitted` events before the app permits another commit
+  attempt.
+* `ROBOMATA_SUI_EVENT_QUERY_LIMIT` optionally controls how many recent
+  `EvidenceCommitted` events the reconciliation path scans.
 * `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES=0x...,0x...` is required when the
   server APIs are enabled. The API verifies a fresh wallet signature and then
   checks the partner identity against this server-side allowlist before

@@ -10,6 +10,7 @@ import { isRobomataWorkflowMutationEnabled, isRobomataWorkflowServerEnabled } fr
 import {
   type CreateSubmissionInput,
   type FacilitySubmission,
+  createAuditEvent,
   createSubmissionShell,
   touchSubmission,
 } from "~~/lib/robomata/submissions";
@@ -32,7 +33,20 @@ type SubmissionStore = {
   getLatest: () => Promise<FacilitySubmission | null>;
   create: (input: CreateSubmissionInput) => Promise<FacilitySubmission>;
   save: (submission: FacilitySubmission) => Promise<FacilitySubmission>;
-  beginEvidenceCommit: (id: string, rootDigest: string) => Promise<FacilitySubmission | null>;
+  beginEvidenceCommit: (id: string, rootDigest: string, commitStartedAt: string) => Promise<FacilitySubmission | null>;
+  completeEvidenceCommit: (
+    id: string,
+    rootDigest: string,
+    input: CompleteEvidenceCommitInput,
+  ) => Promise<FacilitySubmission | null>;
+  failEvidenceCommit: (id: string, rootDigest: string, errorMessage: string) => Promise<FacilitySubmission | null>;
+};
+
+type CompleteEvidenceCommitInput = {
+  txDigest?: string;
+  committedAt: string;
+  facilityObjectId: string;
+  facilityOperatorAddress: string;
 };
 
 let ensuredPostgresTable = false;
@@ -54,6 +68,73 @@ function markLoadedSubmission(submission: FacilitySubmission): FacilitySubmissio
 
 function expectedUpdatedAt(submission: FacilitySubmission): string {
   return (submission as LoadedSubmission)[expectedUpdatedAtSymbol] ?? submission.updatedAt;
+}
+
+function canBeginEvidenceCommit(submission: FacilitySubmission, rootDigest: string): boolean {
+  return (
+    ["ready", "failed"].includes(submission.evidenceCommit.status) &&
+    submission.evidenceCommit.rootDigest === rootDigest
+  );
+}
+
+function canFinishEvidenceCommit(submission: FacilitySubmission, rootDigest: string): boolean {
+  return submission.evidenceCommit.status === "committing" && submission.evidenceCommit.rootDigest === rootDigest;
+}
+
+function applyBeginEvidenceCommit(
+  submission: FacilitySubmission,
+  rootDigest: string,
+  commitStartedAt: string,
+): FacilitySubmission | null {
+  if (!canBeginEvidenceCommit(submission, rootDigest)) return null;
+
+  submission.evidenceCommit = {
+    ...submission.evidenceCommit,
+    status: "committing",
+    commitStartedAt,
+    errorMessage: undefined,
+  };
+  return touchSubmission(submission);
+}
+
+function applyCompleteEvidenceCommit(
+  submission: FacilitySubmission,
+  rootDigest: string,
+  input: CompleteEvidenceCommitInput,
+): FacilitySubmission | null {
+  if (!canFinishEvidenceCommit(submission, rootDigest)) return null;
+
+  submission.evidenceCommit = {
+    ...submission.evidenceCommit,
+    status: "committed",
+    txDigest: input.txDigest,
+    committedAt: input.committedAt,
+    commitMode: "configured",
+    facilityObjectId: input.facilityObjectId,
+    facilityOperatorAddress: input.facilityOperatorAddress,
+    errorMessage: undefined,
+  };
+  submission.auditEvents.unshift(
+    createAuditEvent("sui_commit_completed", `Committed evidence root for ${submission.facilityName}.`, {
+      txDigest: input.txDigest ?? null,
+    }),
+  );
+  return touchSubmission(submission);
+}
+
+function applyFailEvidenceCommit(
+  submission: FacilitySubmission,
+  rootDigest: string,
+  errorMessage: string,
+): FacilitySubmission | null {
+  if (!canFinishEvidenceCommit(submission, rootDigest)) return null;
+
+  submission.evidenceCommit = {
+    ...submission.evidenceCommit,
+    status: "failed",
+    errorMessage,
+  };
+  return touchSubmission(submission);
 }
 
 async function ensurePostgresTable() {
@@ -180,24 +261,39 @@ function createFileStore(): SubmissionStore {
         return markLoadedSubmission(nextSubmission);
       });
     },
-    async beginEvidenceCommit(id, rootDigest) {
+    async beginEvidenceCommit(id, rootDigest, commitStartedAt) {
       return withWriteLock(async () => {
         const submissions = await readFileStore(filePath);
         const submission = submissions.find(candidate => candidate.id === id);
         if (!submission) return null;
-        if (
-          !["ready", "failed"].includes(submission.evidenceCommit.status) ||
-          submission.evidenceCommit.rootDigest !== rootDigest
-        ) {
-          return null;
-        }
-
-        submission.evidenceCommit = {
-          ...submission.evidenceCommit,
-          status: "committing",
-          errorMessage: undefined,
-        };
-        const nextSubmission = touchSubmission(submission);
+        const nextSubmission = applyBeginEvidenceCommit(submission, rootDigest, commitStartedAt);
+        if (!nextSubmission) return null;
+        const next = submissions.filter(candidate => candidate.id !== nextSubmission.id);
+        next.unshift(nextSubmission);
+        await writeAll(next);
+        return markLoadedSubmission(nextSubmission);
+      });
+    },
+    async completeEvidenceCommit(id, rootDigest, input) {
+      return withWriteLock(async () => {
+        const submissions = await readFileStore(filePath);
+        const submission = submissions.find(candidate => candidate.id === id);
+        if (!submission) return null;
+        const nextSubmission = applyCompleteEvidenceCommit(submission, rootDigest, input);
+        if (!nextSubmission) return null;
+        const next = submissions.filter(candidate => candidate.id !== nextSubmission.id);
+        next.unshift(nextSubmission);
+        await writeAll(next);
+        return markLoadedSubmission(nextSubmission);
+      });
+    },
+    async failEvidenceCommit(id, rootDigest, errorMessage) {
+      return withWriteLock(async () => {
+        const submissions = await readFileStore(filePath);
+        const submission = submissions.find(candidate => candidate.id === id);
+        if (!submission) return null;
+        const nextSubmission = applyFailEvidenceCommit(submission, rootDigest, errorMessage);
+        if (!nextSubmission) return null;
         const next = submissions.filter(candidate => candidate.id !== nextSubmission.id);
         next.unshift(nextSubmission);
         await writeAll(next);
@@ -269,36 +365,72 @@ function createPostgresStore(): SubmissionStore {
 
       return nextSubmission;
     },
-    async beginEvidenceCommit(id, rootDigest) {
+    async beginEvidenceCommit(id, rootDigest, commitStartedAt) {
       await ensurePostgresTable();
-      const nextUpdatedAt = new Date().toISOString();
-      const result = await sql<{ payload: FacilitySubmission; updated_at: Date }>`
+      const current = await this.get(id);
+      if (!current) return null;
+      const nextSubmission = applyBeginEvidenceCommit(current, rootDigest, commitStartedAt);
+      if (!nextSubmission) return null;
+      const result = await sql<{ payload: FacilitySubmission }>`
         UPDATE robomata_facility_submissions
         SET
-          payload = jsonb_set(
-            jsonb_set(payload, '{evidenceCommit,status}', '"committing"'::jsonb, false),
-            '{updatedAt}',
-            to_jsonb(${nextUpdatedAt}::text),
-            false
-          ),
-          updated_at = ${nextUpdatedAt}::timestamptz
+          status = ${nextSubmission.status},
+          payload = ${JSON.stringify(nextSubmission)}::jsonb,
+          updated_at = ${nextSubmission.updatedAt}::timestamptz
         WHERE
           id = ${id}
           AND payload->'evidenceCommit'->>'status' IN ('ready', 'failed')
           AND payload->'evidenceCommit'->>'rootDigest' = ${rootDigest}
-        RETURNING payload, updated_at;
+        RETURNING payload;
       `;
 
       const row = result.rows[0];
       if (!row) return null;
-      return markLoadedSubmission({
-        ...row.payload,
-        evidenceCommit: {
-          ...row.payload.evidenceCommit,
-          status: "committing",
-        },
-        updatedAt: new Date(row.updated_at).toISOString(),
-      });
+      return markLoadedSubmission(row.payload);
+    },
+    async completeEvidenceCommit(id, rootDigest, input) {
+      await ensurePostgresTable();
+      const current = await this.get(id);
+      if (!current) return null;
+      const nextSubmission = applyCompleteEvidenceCommit(current, rootDigest, input);
+      if (!nextSubmission) return null;
+      const result = await sql<{ payload: FacilitySubmission }>`
+        UPDATE robomata_facility_submissions
+        SET
+          status = ${nextSubmission.status},
+          payload = ${JSON.stringify(nextSubmission)}::jsonb,
+          updated_at = ${nextSubmission.updatedAt}::timestamptz
+        WHERE
+          id = ${id}
+          AND payload->'evidenceCommit'->>'status' = 'committing'
+          AND payload->'evidenceCommit'->>'rootDigest' = ${rootDigest}
+        RETURNING payload;
+      `;
+
+      const row = result.rows[0];
+      return row ? markLoadedSubmission(row.payload) : null;
+    },
+    async failEvidenceCommit(id, rootDigest, errorMessage) {
+      await ensurePostgresTable();
+      const current = await this.get(id);
+      if (!current) return null;
+      const nextSubmission = applyFailEvidenceCommit(current, rootDigest, errorMessage);
+      if (!nextSubmission) return null;
+      const result = await sql<{ payload: FacilitySubmission }>`
+        UPDATE robomata_facility_submissions
+        SET
+          status = ${nextSubmission.status},
+          payload = ${JSON.stringify(nextSubmission)}::jsonb,
+          updated_at = ${nextSubmission.updatedAt}::timestamptz
+        WHERE
+          id = ${id}
+          AND payload->'evidenceCommit'->>'status' = 'committing'
+          AND payload->'evidenceCommit'->>'rootDigest' = ${rootDigest}
+        RETURNING payload;
+      `;
+
+      const row = result.rows[0];
+      return row ? markLoadedSubmission(row.payload) : null;
     },
   };
 }

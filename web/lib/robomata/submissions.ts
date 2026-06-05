@@ -80,6 +80,7 @@ export type SubmissionEvidenceCommit = {
   evidenceRoot?: string;
   rootDigest?: string;
   txDigest?: string;
+  commitStartedAt?: string;
   committedAt?: string;
   facilityObjectId?: string;
   facilityOperatorAddress?: string;
@@ -171,10 +172,10 @@ function parseSuiFacilityOperatorMap(): Record<string, string> {
 }
 
 export function resolveSubmissionFacilityObjectId(
-  submission: Pick<FacilitySubmission, "id" | "facilityName" | "evidenceCommit">,
+  submission: Pick<FacilitySubmission, "id" | "evidenceCommit">,
 ): string | undefined {
   const facilityIds = parseSuiFacilityObjectIdMap();
-  const configured = facilityIds[submission.id] ?? facilityIds[submission.facilityName];
+  const configured = facilityIds[submission.id];
   if (configured) return configured;
 
   const existing = submission.evidenceCommit.facilityObjectId?.trim();
@@ -182,10 +183,10 @@ export function resolveSubmissionFacilityObjectId(
 }
 
 export function resolveSubmissionFacilityOperatorAddress(
-  submission: Pick<FacilitySubmission, "id" | "facilityName" | "evidenceCommit">,
+  submission: Pick<FacilitySubmission, "id" | "evidenceCommit">,
 ): string | undefined {
   const operators = parseSuiFacilityOperatorMap();
-  const configured = operators[submission.id] ?? operators[submission.facilityName];
+  const configured = operators[submission.id];
   if (configured) return configured;
 
   const existing = submission.evidenceCommit.facilityOperatorAddress?.trim();
