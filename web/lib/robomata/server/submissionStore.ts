@@ -1,5 +1,5 @@
 import { sql } from "@vercel/postgres";
-import { desc, eq, ilike } from "drizzle-orm";
+import { desc, sql as drizzleSql, eq } from "drizzle-orm";
 import { jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { drizzle } from "drizzle-orm/vercel-postgres";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -124,7 +124,7 @@ function createPostgresStore(): SubmissionStore {
       await ensurePostgresTable();
       const query = db.select().from(submissionsTable).orderBy(desc(submissionsTable.updatedAt));
       const rows = partnerAddress
-        ? await query.where(ilike(submissionsTable.partnerAddress, partnerAddress))
+        ? await query.where(drizzleSql`lower(${submissionsTable.partnerAddress}) = ${partnerAddress.toLowerCase()}`)
         : await query;
       return rows.map(row => row.payload);
     },

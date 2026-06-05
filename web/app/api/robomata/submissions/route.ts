@@ -32,20 +32,21 @@ export async function POST(request: NextRequest) {
     if (featureError) return featureError;
     const mutationError = requireRobomataMutation();
     if (mutationError) return mutationError;
+    const partnerAddress = requirePartnerAddress(request);
+    if (partnerAddress instanceof NextResponse) return partnerAddress;
 
     const body = (await request.json()) as {
-      partnerAddress?: string;
       operatorName?: string;
       facilityName?: string;
       asOfDate?: string;
     };
 
-    if (!body.partnerAddress || !body.operatorName || !body.facilityName || !body.asOfDate) {
+    if (!body.operatorName || !body.facilityName || !body.asOfDate) {
       return NextResponse.json({ error: "Missing submission create fields." }, { status: 400 });
     }
 
     const submission = await getSubmissionStore().create({
-      partnerAddress: body.partnerAddress,
+      partnerAddress,
       operatorName: body.operatorName,
       facilityName: body.facilityName,
       asOfDate: body.asOfDate,

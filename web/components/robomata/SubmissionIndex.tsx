@@ -54,11 +54,11 @@ export const SubmissionIndex = () => {
     }
 
     setIsCreating(true);
-    const response = await fetch("/api/robomata/submissions", {
+    const partnerQuery = `partnerAddress=${encodeURIComponent(accountAddress)}`;
+    const response = await fetch(`/api/robomata/submissions?${partnerQuery}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        partnerAddress: accountAddress,
         operatorName: form.operatorName.trim(),
         facilityName: form.facilityName.trim(),
         asOfDate: form.asOfDate,

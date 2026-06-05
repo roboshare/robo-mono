@@ -154,7 +154,9 @@ async function buildEvidenceCommitPreview(evidenceRoot: string) {
     rootDigest: `0x${rootDigest}`,
     modulePath: SUI_COMMIT_MODULE_PATH,
     commitMode:
-      process.env.ROBOMATA_SUI_PACKAGE_ID && process.env.ROBOMATA_SUI_FACILITY_ID
+      process.env.ROBOMATA_SUI_PACKAGE_ID &&
+      process.env.ROBOMATA_SUI_FACILITY_ID &&
+      process.env.ROBOMATA_SUI_CLIENT_CONFIG
         ? ("configured" as const)
         : ("prepared" as const),
   };

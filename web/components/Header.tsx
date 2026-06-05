@@ -11,7 +11,6 @@ import { FaucetButton, RainbowKitCustomConnectButton } from "~~/components/scaff
 import { useOutsideClick, useTargetNetwork } from "~~/hooks/scaffold-eth";
 import { useIsAdmin } from "~~/hooks/useIsAdmin";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
-import { isRobomataWorkflowEnabled } from "~~/lib/featureFlags";
 
 type HeaderMenuLink = {
   label: string;
@@ -62,7 +61,7 @@ export const HeaderMenuLinks = () => {
   return (
     <>
       {menuLinks
-        .filter(link => (!link.adminOnly || isAdmin) && (link.href !== "/robomata" || isRobomataWorkflowEnabled()))
+        .filter(link => !link.adminOnly || isAdmin)
         .map(({ label, href, icon }) => {
           const isActive = pathname === href;
           return (
