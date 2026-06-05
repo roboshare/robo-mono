@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PlusIcon } from "@heroicons/react/24/outline";
 import { PartnerAccessGate } from "~~/components/partner/PartnerAccessGate";
+import { useRobomataApiAuth } from "~~/hooks/useRobomataApiAuth";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
 import type { FacilitySubmission } from "~~/lib/robomata/submissions";
 import { notification } from "~~/utils/scaffold-eth";
@@ -19,6 +20,7 @@ function statusClass(status: FacilitySubmission["status"]) {
 export const SubmissionIndex = () => {
   const router = useRouter();
   const { address: accountAddress } = useTransactingAccount();
+  const getAuthHeaders = useRobomataApiAuth(accountAddress);
   const [submissions, setSubmissions] = useState<FacilitySubmission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
@@ -33,7 +35,7 @@ export const SubmissionIndex = () => {
 
     const load = async () => {
       setIsLoading(true);
-      const response = await fetch(`/api/robomata/submissions?partnerAddress=${accountAddress}`);
+      const response = await fetch("/api/robomata/submissions", { headers: await getAuthHeaders() });
       const payload = (await response.json()) as { submissions?: FacilitySubmission[]; error?: string };
       if (!response.ok) {
         notification.error(payload.error ?? "Failed to load submissions.");
@@ -45,7 +47,7 @@ export const SubmissionIndex = () => {
     };
 
     void load();
-  }, [accountAddress]);
+  }, [accountAddress, getAuthHeaders]);
 
   const createSubmission = async () => {
     if (!accountAddress || !form.operatorName.trim() || !form.facilityName.trim() || !form.asOfDate) {
@@ -54,10 +56,9 @@ export const SubmissionIndex = () => {
     }
 
     setIsCreating(true);
-    const partnerQuery = `partnerAddress=${encodeURIComponent(accountAddress)}`;
-    const response = await fetch(`/api/robomata/submissions?${partnerQuery}`, {
+    const response = await fetch("/api/robomata/submissions", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...(await getAuthHeaders()) },
       body: JSON.stringify({
         operatorName: form.operatorName.trim(),
         facilityName: form.facilityName.trim(),

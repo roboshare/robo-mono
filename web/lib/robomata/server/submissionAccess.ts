@@ -1,16 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isAddress, verifyMessage } from "viem";
+import { ROBOMATA_AUTH_HEADERS, ROBOMATA_AUTH_MAX_AGE_MS, buildRobomataAuthMessage } from "~~/lib/robomata/auth";
 import type { FacilitySubmission } from "~~/lib/robomata/submissions";
 
-export function getPartnerAddress(request: NextRequest): string | null {
-  const partnerAddress = request.nextUrl.searchParams.get("partnerAddress")?.trim();
-  return partnerAddress || null;
+async function getVerifiedPartnerAddress(request: NextRequest): Promise<string | null> {
+  const partnerAddress = request.headers.get(ROBOMATA_AUTH_HEADERS.partnerAddress)?.trim();
+  const signature = request.headers.get(ROBOMATA_AUTH_HEADERS.signature)?.trim();
+  const timestamp = request.headers.get(ROBOMATA_AUTH_HEADERS.timestamp)?.trim();
+
+  if (!partnerAddress || !signature || !timestamp || !isAddress(partnerAddress)) return null;
+
+  const timestampMs = Number(timestamp);
+  if (!Number.isFinite(timestampMs) || Math.abs(Date.now() - timestampMs) > ROBOMATA_AUTH_MAX_AGE_MS) return null;
+
+  const valid = await verifyMessage({
+    address: partnerAddress,
+    message: buildRobomataAuthMessage({ partnerAddress, timestamp }),
+    signature: signature as `0x${string}`,
+  });
+
+  return valid ? partnerAddress : null;
 }
 
-export function requirePartnerAddress(request: NextRequest): string | NextResponse {
-  const partnerAddress = getPartnerAddress(request);
+export async function requirePartnerAddress(request: NextRequest): Promise<string | NextResponse> {
+  const partnerAddress = await getVerifiedPartnerAddress(request);
 
   if (!partnerAddress) {
-    return NextResponse.json({ error: "Missing partner address." }, { status: 401 });
+    return NextResponse.json({ error: "Missing or invalid partner authorization." }, { status: 401 });
   }
 
   return partnerAddress;

@@ -56,7 +56,7 @@ async function ensurePostgresTable() {
 }
 
 function hasPostgresConfig() {
-  return Boolean(process.env.POSTGRES_URL || process.env.DATABASE_URL || process.env.POSTGRES_URL_NON_POOLING);
+  return Boolean(process.env.POSTGRES_URL);
 }
 
 async function readFileStore(filePath: string): Promise<FacilitySubmission[]> {

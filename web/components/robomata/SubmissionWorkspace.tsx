@@ -11,6 +11,7 @@ import {
   ExclamationTriangleIcon,
   ShieldCheckIcon,
 } from "@heroicons/react/24/outline";
+import { useRobomataApiAuth } from "~~/hooks/useRobomataApiAuth";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
 import { formatUsd } from "~~/lib/robomata/borrowingBase";
 import { buildSubmissionSummaryCards } from "~~/lib/robomata/submissionAdapters";
@@ -45,6 +46,7 @@ export const SubmissionWorkspace = ({
   const [editingReceivableId, setEditingReceivableId] = useState<string | null>(null);
   const [draftReceivable, setDraftReceivable] = useState<Partial<SubmissionReceivable>>({});
   const { address: accountAddress } = useTransactingAccount();
+  const getAuthHeaders = useRobomataApiAuth(accountAddress);
 
   const summaryCards = useMemo(
     () => (submission?.computation ? buildSubmissionSummaryCards(submission.computation) : []),
@@ -60,10 +62,10 @@ export const SubmissionWorkspace = ({
         return;
       }
 
-      const partnerQuery = `partnerAddress=${encodeURIComponent(accountAddress)}`;
+      const authHeaders = await getAuthHeaders();
 
       if (submissionId) {
-        const response = await fetch(`/api/robomata/submissions/${submissionId}?${partnerQuery}`);
+        const response = await fetch(`/api/robomata/submissions/${submissionId}`, { headers: authHeaders });
         const payload = (await response.json()) as { submission?: FacilitySubmission; error?: string };
         if (!response.ok || !payload.submission) throw new Error(payload.error ?? "Failed to load submission.");
         setSubmission(payload.submission);
@@ -72,7 +74,7 @@ export const SubmissionWorkspace = ({
       }
 
       if (loadLatest) {
-        const response = await fetch(`/api/robomata/submissions?${partnerQuery}`);
+        const response = await fetch("/api/robomata/submissions", { headers: authHeaders });
         const payload = (await response.json()) as { submissions?: FacilitySubmission[]; error?: string };
         if (!response.ok) throw new Error(payload.error ?? "Failed to load submissions.");
         setSubmission(payload.submissions?.[0] ?? null);
@@ -82,7 +84,7 @@ export const SubmissionWorkspace = ({
     } finally {
       setIsLoading(false);
     }
-  }, [accountAddress, loadLatest, submissionId]);
+  }, [accountAddress, getAuthHeaders, loadLatest, submissionId]);
 
   useEffect(() => {
     void loadSubmission();
@@ -95,8 +97,10 @@ export const SubmissionWorkspace = ({
     }
 
     setIsBusy(true);
-    const separator = url.includes("?") ? "&" : "?";
-    const response = await fetch(`${url}${separator}partnerAddress=${encodeURIComponent(accountAddress)}`, init);
+    const headers = new Headers(init?.headers);
+    const authHeaders = await getAuthHeaders();
+    Object.entries(authHeaders).forEach(([key, value]) => headers.set(key, value));
+    const response = await fetch(url, { ...init, headers });
     const payload = (await response.json()) as { submission?: FacilitySubmission; error?: string };
     setIsBusy(false);
 

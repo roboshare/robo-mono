@@ -38,9 +38,11 @@ function normalizeHeader(value: string): CsvHeader | null {
   return headerAliases[value.replace(/[^a-z0-9]/gi, "").toLowerCase()] ?? null;
 }
 
-function parseBoolean(value: string): boolean {
+function parseBoolean(value: string): boolean | null {
   const normalized = value.trim().toLowerCase();
-  return normalized === "true" || normalized === "yes" || normalized === "y" || normalized === "1";
+  if (normalized === "true" || normalized === "yes" || normalized === "y" || normalized === "1") return true;
+  if (normalized === "false" || normalized === "no" || normalized === "n" || normalized === "0") return false;
+  return null;
 }
 
 function parseAmountToCents(value: string): number {
@@ -69,6 +71,16 @@ function parseRequiredAmountToCents(value: string | undefined, column: CsvHeader
   }
 
   return cents;
+}
+
+function parseRequiredBoolean(value: string | undefined, column: CsvHeader, rowNumber: number): boolean {
+  const parsed = parseBoolean(value ?? "");
+
+  if (parsed === null) {
+    throw new Error(`Receivables CSV row ${rowNumber} has invalid boolean value for ${column}.`);
+  }
+
+  return parsed;
 }
 
 function parseCsvLine(line: string): string[] {
@@ -168,9 +180,9 @@ export function importReceivablesCsv(csvText: string): SubmissionReceivable[] {
         : parseRequiredAmountToCents(row.get("outstanding"), "outstanding", rowNumber),
       daysPastDue: parseRequiredNumber(row.get("daysPastDue"), "daysPastDue", rowNumber),
       utilizationPct: parseRequiredNumber(row.get("utilizationPct"), "utilizationPct", rowNumber),
-      insured: parseBoolean(row.get("insured") ?? ""),
-      titleClear: parseBoolean(row.get("titleClear") ?? ""),
-      lockboxMatched: parseBoolean(row.get("lockboxMatched") ?? ""),
+      insured: parseRequiredBoolean(row.get("insured"), "insured", rowNumber),
+      titleClear: parseRequiredBoolean(row.get("titleClear"), "titleClear", rowNumber),
+      lockboxMatched: parseRequiredBoolean(row.get("lockboxMatched"), "lockboxMatched", rowNumber),
       excluded: false,
       sourceRow: rowNumber,
     };

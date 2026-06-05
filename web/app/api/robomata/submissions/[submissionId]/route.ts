@@ -33,16 +33,7 @@ type SubmissionPatchAction =
   | {
       action: "updateReceivable";
       receivableId: string;
-      patch: Partial<{
-        obligor: string;
-        vehicleCount: number;
-        outstandingCents: number;
-        daysPastDue: number;
-        utilizationPct: number;
-        insured: boolean;
-        titleClear: boolean;
-        lockboxMatched: boolean;
-      }>;
+      patch: ReceivablePatch;
     }
   | {
       action: "updateEvidenceStatus";
@@ -50,11 +41,73 @@ type SubmissionPatchAction =
       status: "verified" | "exception" | "pending";
     };
 
+type ReceivablePatch = Partial<{
+  obligor: string;
+  vehicleCount: number;
+  outstandingCents: number;
+  daysPastDue: number;
+  utilizationPct: number;
+  insured: boolean;
+  titleClear: boolean;
+  lockboxMatched: boolean;
+}>;
+
+function normalizeNumberPatch(
+  value: unknown,
+  field: string,
+  options: { integer?: boolean; min?: number; max?: number } = {},
+) {
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`${field} must be a finite number.`);
+  }
+  if (options.integer && !Number.isInteger(value)) {
+    throw new Error(`${field} must be an integer.`);
+  }
+  if (options.min !== undefined && value < options.min) {
+    throw new Error(`${field} must be at least ${options.min}.`);
+  }
+  if (options.max !== undefined && value > options.max) {
+    throw new Error(`${field} must be at most ${options.max}.`);
+  }
+  return value;
+}
+
+function normalizeBooleanPatch(value: unknown, field: string) {
+  if (value === undefined) return undefined;
+  if (typeof value !== "boolean") throw new Error(`${field} must be a boolean.`);
+  return value;
+}
+
+function normalizeReceivablePatch(patch: ReceivablePatch): ReceivablePatch {
+  const next: ReceivablePatch = {};
+
+  if (patch.obligor !== undefined) {
+    if (typeof patch.obligor !== "string" || !patch.obligor.trim()) {
+      throw new Error("obligor must be a non-empty string.");
+    }
+    next.obligor = patch.obligor.trim();
+  }
+
+  next.vehicleCount = normalizeNumberPatch(patch.vehicleCount, "vehicleCount", { integer: true, min: 0 });
+  next.outstandingCents = normalizeNumberPatch(patch.outstandingCents, "outstandingCents", {
+    integer: true,
+    min: 0,
+  });
+  next.daysPastDue = normalizeNumberPatch(patch.daysPastDue, "daysPastDue", { integer: true, min: 0 });
+  next.utilizationPct = normalizeNumberPatch(patch.utilizationPct, "utilizationPct", { min: 0, max: 100 });
+  next.insured = normalizeBooleanPatch(patch.insured, "insured");
+  next.titleClear = normalizeBooleanPatch(patch.titleClear, "titleClear");
+  next.lockboxMatched = normalizeBooleanPatch(patch.lockboxMatched, "lockboxMatched");
+
+  return Object.fromEntries(Object.entries(next).filter(([, value]) => value !== undefined));
+}
+
 export async function GET(request: NextRequest, context: { params: Promise<{ submissionId: string }> }) {
   const featureError = requireRobomataWorkflow();
   if (featureError) return featureError;
 
-  const partnerAddress = requirePartnerAddress(request);
+  const partnerAddress = await requirePartnerAddress(request);
   if (partnerAddress instanceof NextResponse) return partnerAddress;
 
   const { submissionId } = await context.params;
@@ -85,7 +138,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ s
       return NextResponse.json({ error: "Submission not found." }, { status: 404 });
     }
 
-    const partnerAddress = requirePartnerAddress(request);
+    const partnerAddress = await requirePartnerAddress(request);
     if (partnerAddress instanceof NextResponse) return partnerAddress;
 
     const accessError = requireSubmissionAccess(submission, partnerAddress);
@@ -115,8 +168,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ s
     }
 
     if (body.action === "updateReceivable") {
+      const patch = normalizeReceivablePatch(body.patch);
       submission.receivables = submission.receivables.map(receivable =>
-        receivable.id === body.receivableId ? { ...receivable, ...body.patch } : receivable,
+        receivable.id === body.receivableId ? { ...receivable, ...patch } : receivable,
       );
       addAuditEvent(submission, "receivable_updated", `Updated receivable ${body.receivableId}.`, {
         receivableId: body.receivableId,

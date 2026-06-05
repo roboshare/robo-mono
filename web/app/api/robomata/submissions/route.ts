@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
   const featureError = requireRobomataWorkflow();
   if (featureError) return featureError;
 
-  const partnerAddress = requirePartnerAddress(request);
+  const partnerAddress = await requirePartnerAddress(request);
   if (partnerAddress instanceof NextResponse) return partnerAddress;
 
   const submissions = await getSubmissionStore().list(partnerAddress);
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     if (featureError) return featureError;
     const mutationError = requireRobomataMutation();
     if (mutationError) return mutationError;
-    const partnerAddress = requirePartnerAddress(request);
+    const partnerAddress = await requirePartnerAddress(request);
     if (partnerAddress instanceof NextResponse) return partnerAddress;
 
     const body = (await request.json()) as {

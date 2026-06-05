@@ -42,7 +42,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     return NextResponse.json({ error: "Submission not found." }, { status: 404 });
   }
 
-  const partnerAddress = requirePartnerAddress(request);
+  const partnerAddress = await requirePartnerAddress(request);
   if (partnerAddress instanceof NextResponse) return partnerAddress;
 
   const accessError = requireSubmissionAccess(submission, partnerAddress);
