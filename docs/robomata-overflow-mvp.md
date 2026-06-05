@@ -1,16 +1,20 @@
-# Robomata Overflow MVP Product Spec
+# Robomata Working Submission Flow Product Spec
 
 ## Summary
 
 Robomata turns a mid-market fleet operator's receivables book into a lender-ready
-borrowing base. The Overflow MVP demonstrates one concrete workflow: ingest a
-sample fleet receivables portfolio, calculate eligibility and availability,
-route exceptions to an agent review, and anchor evidence commitments through a
-Sui/Walrus/Seal/Nautilus-oriented evidence rail.
+borrowing base through a real partner-owned submission workflow. This document
+defines the target working-submission tranche, not a claim that every route and
+protocol hook already exists on `dev`.
 
-The MVP starts with financeability software for operators and uses Sui
-infrastructure where it improves auditability, controlled evidence access,
-verifiable offchain processing, and programmable monitoring.
+The planned working submission flow lives inside `/partner`, where an operator
+creates a persisted `FacilitySubmission`, uploads receivables and evidence,
+computes eligibility and availability, resolves exceptions, generates a lender
+packet, and optionally commits the evidence root through the Sui path.
+
+`/robomata` remains in the product as a secondary projection surface. In the
+working tranche it must become read-only and submission-backed; until the web
+implementation PR lands, the current `dev` route remains demo-backed.
 
 ## First Customer
 
@@ -30,82 +34,232 @@ lender to underwrite.
 
 The current workflow is manual and brittle:
 
-* export receivables aging from accounting systems
-* gather title, lien, insurance, utilization, servicing, and bank evidence
-* normalize exceptions into lender templates
-* answer diligence questions by email and spreadsheet
-* repeat the same evidence collection for each facility or renewal
+- export receivables aging from accounting systems
+- gather title, lien, insurance, utilization, servicing, and bank evidence
+- normalize exceptions into lender templates
+- answer diligence questions by email and spreadsheet
+- repeat the same evidence collection for each facility or renewal
 
 Robomata's first promise is:
 
 > Turn your fleet receivables book into a lender-ready borrowing base.
 
-## MVP Scenario
+## Working Submission Scenario
 
-The demo operator, MetroFleet Logistics, submits a $1.24M receivables book backed
-by 92 revenue-generating vehicles. Robomata applies a lender-style eligibility
-policy, produces a borrowing-base certificate, flags exceptions, and creates a
-controlled evidence bundle.
+The first working tranche starts with MetroFleet Logistics, a mid-market fleet
+operator that submits a $1.24M receivables book backed by 92 revenue-generating
+vehicles. Robomata accepts a real receivables CSV and evidence files, applies a
+lender-style eligibility policy, produces a borrowing-base certificate, flags
+exceptions, and creates a controlled evidence bundle tied to the submission.
 
 The lender-facing output includes:
 
-* gross receivables
-* eligible receivables
-* ineligible receivables with reasons
-* advance rate
-* concentration reserve
-* borrowing-base availability
-* agent diligence memo
-* evidence commitment references
+- gross receivables
+- eligible receivables
+- ineligible receivables with reasons
+- advance rate
+- concentration reserve
+- borrowing-base availability
+- agent diligence memo
+- evidence commitment references
 
 ## Product Flow
 
-1. Operator enters or uploads fleet receivables and operating evidence.
-2. Borrowing-base engine applies eligibility rules and reserves.
-3. Agent reviews exceptions and writes a diligence memo.
-4. Evidence bundle references are prepared for UCC/title/lien, insurance,
-   receivables aging, telematics, servicing, and lockbox extracts.
-5. Sui records the facility state and evidence commitment references.
-6. Walrus stores encrypted evidence objects in the demo model.
-7. Seal represents controlled-access policy for lender and auditor review.
+1. Operator creates a `FacilitySubmission` with operator, facility, and as-of date.
+2. Operator uploads a receivables CSV and supporting evidence files with source
+   metadata.
+3. Robomata persists the submission server-side and normalizes the imported rows.
+4. In real testnet mode, evidence bytes are encrypted with Seal before the
+   encrypted object is published to Walrus. Local development may use a mock
+   storage fallback unless fail-closed real-evidence mode is enabled.
+5. Borrowing-base logic computes eligibility, concentration reserve, and
+   availability from the persisted submission.
+6. Rules-based exceptions are generated for receivables and evidence records.
+7. The review layer explains exceptions and next actions, but does not override
+   credit logic.
+8. Robomata generates a lender packet and evidence-root preview from the current
+   submission state.
+9. If runtime configuration is present, Robomata commits the evidence root
+   through the Sui facility path and persists the commit result on the
+   submission.
+
+## Product Surfaces
+
+### `/partner` Submission Area
+
+The existing `/partner` surface is the operator entrypoint. The implementation
+target for this tranche adds a borrowing-base submissions area under that
+surface, with `/partner/submissions` and `/partner/submissions/[id]` introduced
+by the web implementation PR.
+
+This operator workspace owns:
+
+- submission list
+- new submission creation
+- receivables import
+- evidence upload
+- exception handling
+- recomputation
+- lender packet generation
+- evidence commit initiation
+
+### `/robomata`
+
+This is the projection surface for an existing submission. The target behavior
+for the working tranche is:
+
+- render real submission state, not demo-only placeholders
+- explain lender readiness in plain operational terms
+- hide raw technical metadata behind `Advanced details`
+- link the user back to the corresponding `/partner` submission workspace for
+  edits
+
+Until the implementation PR that rewires `/robomata` lands, the existing route
+still renders the fixed demo portfolio and must not be used as proof that real
+submissions are projected.
+
+## Core Product Object
+
+The authoritative product object is `FacilitySubmission`.
+
+Each submission contains:
+
+- operator and facility identity
+- receivables imported from CSV
+- evidence records uploaded through the evidence adapter, including operator
+  metadata, plaintext audit digest, ciphertext digest, Walrus object reference,
+  and Seal policy metadata when real testnet infrastructure is configured
+- computed borrowing-base output
+- open and resolved exceptions
+- lender-facing packet artifacts
+- evidence commit state
+- audit history
+
+The workflow is intentionally centered on the submission, not on an individual
+vehicle registration or tokenization object.
 
 ## Sui, Walrus, Seal, And Nautilus Role
 
-Sui is not the reason the operator buys the first product. The operator buys
-financeability. Sui becomes useful because the borrowing base is a monitored,
-stateful financial object with evidence commitments and repeatable update logic.
+Sui is not the initial buying reason. The operator buys financeability. Sui is
+useful because the borrowing base is a monitored, stateful financial object with
+repeatable evidence commitments and a commit history that matters to lenders and
+capital providers.
 
-Walrus and Seal are scoped as demo infrastructure for evidence packaging and
-controlled access. Nautilus can be used to run authorized offchain data pulls,
-normalization, and eligibility checks inside a verifiable execution environment.
-That improves proof of processing, but it does not remove the need for
-commercial providers, customer authorization, and legal/compliance review for
-UCC, title, lien, insurance, telematics, or bank data.
+Walrus and Seal are infrastructure layers for evidence storage and controlled
+access. In this tranche:
+
+- Walrus is the storage adapter for encrypted evidence objects. When
+  `WALRUS_PUBLISHER_URL` is configured, uploaded evidence is published through
+  the Walrus publisher path and the Walrus blob/object references are persisted
+  on the submission.
+- Seal is the encryption and access-control layer for uploaded evidence. The app
+  encrypts evidence bytes before Walrus upload when `ROBOMATA_SEAL_*` or
+  generated Sui testnet values are configured.
+- The Sui evidence-rails implementation PR adds
+  `robomata_overflow::facility::seal_approve`, using the facility object ID as
+  the Seal identity and approving access only for the facility operator. On
+  current `dev` before that PR merges, `commit_evidence` is the implemented Sui
+  evidence entry point.
+- The committed evidence digest is the ciphertext digest. The plaintext digest
+  remains an internal audit field on the evidence record.
+- If `ROBOMATA_REQUIRE_REAL_EVIDENCE_STORAGE=true`, upload fails closed unless
+  both Seal encryption and Walrus publishing are configured.
+- Nautilus remains a future execution path for authorized offchain pulls and
+  verifiable processing, not a prerequisite for the submission workflow.
+
+This tranche does not claim live public-record, telematics, insurance, bank, or
+carrier integrations.
+
+Decryption UX is intentionally not part of this spec tranche. A future lender or
+operator decrypt flow should be built only after the Sui evidence-rails PR lands;
+that later flow must create a Seal session key, build transaction bytes that call
+the implemented approval hook, and request keys from the configured Seal key
+servers.
+
+## Persistence Model
+
+Submission state is persisted server-side through Next route handlers and a
+Postgres-backed store when runtime database configuration is available. Local
+development may fall back to a server-side file-backed store, but browser-only
+draft state is not the source of truth.
+
+## Branch And Release Alignment
+
+This work follows the current repo policy:
+
+- `dev` is the only long-lived day-to-day integration branch.
+- Robomata work ships through short-lived `feat/*`, `fix/*`, or `docs/*`
+  branches cut from `dev`.
+- Each Linear child issue should map to a scoped branch and PR targeting `dev`.
+  A child PR may be stacked on another child branch when it depends on the
+  earlier branch's code, then merged back down into `dev` in dependency order.
+- `release/robomata-overflow-v0.1.0` should be cut only after the QA and
+  submission-readiness pass is green on `dev`.
+- Validated release fixes must be merged back into `dev` before the release is
+  merged to `main`.
 
 ## Non-Goals
 
-* Do not lead the MVP with a marketplace or tokenization story.
-* Do not sell directly to Apollo, KKR, or other mega-managers as the first path.
-* Do not claim legal perfection of liens, collateral control, or custody.
-* Do not replace Alfa, Solifi, Vero, or lender system-of-record tools in v1.
-* Do not require the operator to understand tokenization to benefit.
+- Do not lead with a marketplace or tokenization story.
+- Do not auto-create tokenized vehicle registrations from uploaded evidence in
+  this tranche.
+- Do not sell directly to Apollo, KKR, or other mega-managers as the first path.
+- Do not claim legal perfection of liens, collateral control, or custody.
+- Do not replace Alfa, Solifi, Vero, or lender system-of-record tools in v1.
+- Do not make LLM output the source of credit truth.
+- Do not expose raw Walrus, Seal, or Sui identifiers as the primary operator
+  workflow. Technical identifiers belong behind `Advanced details`.
+- Do not treat Seal decryption UX, lender allowlists, or multi-party access
+  delegation as complete in this tranche.
+- Do not require the operator to understand tokenization or onchain internals to
+  benefit.
 
 ## Success Criteria
 
-The MVP is successful when a user can understand the wedge in one pass:
+The working submission flow is successful when:
 
-* The first customer is clear.
-* The borrowing-base output is credible enough for a lender conversation.
-* The agent activity appears in a concrete credit-ops workflow.
-* Sui/Walrus/Seal/Nautilus are tied to evidence and monitoring, not decorative crypto.
-* Existing EVM marketplace infrastructure remains secondary to the Robomata
-  financeability workflow.
+- An authorized partner can create and reopen a submission in `/partner`.
+- A receivables CSV can be imported into persisted submission state.
+- Evidence files can be uploaded and tracked with operator-facing status.
+- In real testnet mode, evidence upload produces Seal-encrypted ciphertext,
+  stores that ciphertext in Walrus, and records both plaintext and ciphertext
+  digests.
+- Borrowing-base output is computed from submission data, not page-local demo
+  fixtures.
+- Exceptions are actionable and tied to receivables or evidence records.
+- The lender packet is generated from persisted submission state.
+- Evidence-root commit state is visible and can be persisted after a Sui call
+  when configured.
+- `/robomata` reads from a real submission after the web implementation PR lands
+  and does not act as a narrative-only mock surface in the final tranche.
 
-## Overflow Narrative
+## Current Verification Snapshot
 
-Robomata is building agent-assisted credit infrastructure for real-world
-productive assets. The first wedge is fleet receivables: make operators more
-financeable, accumulate monitoring and servicing infrastructure, become useful
-to capital providers, and eventually become programmable market infrastructure.
+As of June 5, 2026, the dependent Sui evidence-rails branch has verified this
+path on Sui and Walrus testnet:
 
-The Overflow demo shows the first two steps with a credible path to the next two.
+- Sui package with `seal_approve`:
+  `0xe55d4263d3966a58bfa7a1ebea2cd21b6eccea9104b7deebe3dfbcbe1abd2a16`
+- Facility object used as Seal identity:
+  `0xb5907dc938474c19cc3b797baeec2ae1f15e59f9159e0df6001086c3a3fd62c1`
+- Walrus blob created from Seal ciphertext:
+  `R5HoBirREdeobsUgCfMwJviJpm4SpzZh0qcm8Ldl3ig`
+- Evidence commit transaction:
+  `4o9kaiW3tknMKTDcTTLFJRaegLofW6paQdJYh3jqTW6Q`
+
+The fetched Walrus blob hash matched the recorded ciphertext digest, and the
+plaintext fixture was not present in the fetched blob bytes.
+
+## Wedge Narrative
+
+Robomata starts as financeability software for operators. The wedge is still
+fleet receivables, but the product now moves beyond demo framing into a working
+submission loop:
+
+1. make operators more financeable
+2. accumulate structured servicing and evidence data
+3. become underwriting and monitoring infrastructure for capital providers
+4. eventually become programmable market infrastructure
+
+This tranche is aimed at making step one real in product terms while preserving
+the path to steps two through four.
