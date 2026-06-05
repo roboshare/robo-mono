@@ -69,6 +69,33 @@ The lender-facing output includes:
 6. Walrus stores encrypted evidence objects in the demo model.
 7. Seal represents controlled-access policy for lender and auditor review.
 
+## Release Flags
+
+The working submission workflow is feature-flagged because `dev` is the branch
+used to cut release candidates. Default release behavior must keep the workflow
+dark unless a controlled preview is explicitly configured.
+
+Use the flags as a matrix:
+
+* `NEXT_PUBLIC_ENABLE_ROBOMATA_WORKFLOW=true` exposes the `/partner` borrowing
+  base entry point and lets `/robomata` attempt the real read-only submission
+  projection.
+* `ROBOMATA_WORKFLOW_ENABLED=true` enables the server-side submission APIs.
+  Without this flag, the APIs fail closed with `404`.
+* `ROBOMATA_WORKFLOW_MUTATIONS_ENABLED=true` enables write actions such as
+  creating submissions, importing receivables, uploading evidence, computing the
+  borrowing base, and committing evidence. Without this flag, writes fail closed
+  with `403`.
+
+Recommended environments:
+
+* production and release-candidate branches: leave all three flags unset unless
+  the Robomata QA gate has explicitly passed for that release
+* controlled preview and local QA: set all three flags when testing the full
+  operator workflow
+* public demo mode: leave the server flags unset so `/robomata` remains a
+  read-only demo narrative and `/partner/submissions` stays hidden
+
 ## Sui, Walrus, Seal, And Nautilus Role
 
 Sui is not the reason the operator buys the first product. The operator buys

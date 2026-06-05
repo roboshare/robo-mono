@@ -8,7 +8,7 @@ import {
   TruckIcon,
 } from "@heroicons/react/24/outline";
 import { RobomataSubmissionRoute } from "~~/components/robomata/RobomataSubmissionRoute";
-import { isRobomataWorkflowEnabled } from "~~/lib/featureFlags";
+import { isRobomataWorkflowEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
 import { buildAgentReviewInput, reviewBorrowingBase } from "~~/lib/robomata/agentProviders";
 import { calculateBorrowingBase, demoPortfolio, formatUsd } from "~~/lib/robomata/borrowingBase";
 import { buildEvidenceAnchor } from "~~/lib/robomata/evidence";
@@ -225,6 +225,7 @@ const RobomataDemoPage = async () => {
   );
 };
 
-const RobomataPage = () => (isRobomataWorkflowEnabled() ? <RobomataSubmissionRoute /> : <RobomataDemoPage />);
+const RobomataPage = () =>
+  isRobomataWorkflowEnabled() && isRobomataWorkflowServerEnabled() ? <RobomataSubmissionRoute /> : <RobomataDemoPage />;
 
 export default RobomataPage;
