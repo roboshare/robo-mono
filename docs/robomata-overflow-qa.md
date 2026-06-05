@@ -1,136 +1,268 @@
-# Robomata Overflow Demo Flow QA And Submission Gate
+# Robomata Overflow Working Submission QA Gate
 
 ## Scope
 
-This document records the end-to-end QA pass for the demo-flow tranche on
-`integration/robomata-overflow-demo-flow` and the child branch
-`feat/robomata-overflow/rob-121-demo-qa-submission`.
+This document is the release-readiness runbook for the working-submission
+tranche of the Robomata Overflow MVP.
 
-Release path for this tranche:
+The old demo-only `/robomata` QA record has been superseded. The authoritative
+flow is now a partner-owned `FacilitySubmission` workflow:
 
-* child branches target `integration/robomata-overflow-demo-flow`
-* `integration/robomata-overflow-demo-flow` targets `dev`
-* release branch remains `release/robomata-overflow-v0.1.0`
+1. create a borrowing-base submission in `/partner`
+2. import receivables from CSV
+3. upload evidence files and metadata
+4. compute borrowing-base eligibility and availability
+5. review and act on exceptions
+6. generate a lender packet
+7. commit the evidence root through the Sui path
+8. verify `/robomata` renders the resulting submission read-only
+
+This runbook should be executed after the implementation PR stack lands on a
+green `dev` commit and before cutting `release/robomata-overflow-v0.1.0`.
+
+## Branch And Release Gate
+
+Current release path for this tranche:
+
+* short-lived child branches are cut from `dev`
+* stacked PRs are used only when a slice depends on another open child PR
+* child PRs merge back into `dev` in dependency order
+* release branch is cut as `release/robomata-overflow-v0.1.0`
 * validated release merges into `main`
 
-## Verification Results
+Do not recommend a release cut until all required gates below have a concrete
+pass/fail result.
 
-Recorded on `2026-05-23` and refreshed on `2026-05-24`.
+## Required Automated Verification
 
-### Repo State
-
-* `git status --short --branch`
-  * current branch: `feat/robomata-overflow/rob-121-demo-qa-submission`
-  * unrelated pre-existing local changes remain outside this issue:
-    * `protocols/evm/scripts-js/checkAccountBalance.js`
-    * `.antigravitycli/`
-    * `docs/canva-pitch-deck-handoff.md`
+Run from the repo root unless otherwise noted.
 
 ### Web
 
-* `yarn web:lint`: pass
-* `yarn web:check-types`: pass
-* `yarn web:build`: pass
-  * `/robomata` builds as a dynamic route (`ƒ /robomata`)
+Status: pending final implementation merge.
+
+Commands:
+
+* `yarn web:check-types`
+* `yarn web:lint`
+* `yarn web:build`
+
+Required evidence:
+
+* command output or CI checks are green on the relevant `dev` commit
+* no build-time route errors for `/partner` or `/robomata`
 
 ### Sui
 
-* `sui move build --path protocols/sui --warnings-are-errors`: pass
-* `sui move build --path protocols/sui --lint --warnings-are-errors`: pass
-* `sui move test --path protocols/sui --warnings-are-errors`: pass
-  * `authorized_operator_passes`
-  * `unauthorized_operator_fails`
+Status: pending final implementation merge.
 
-## Browser QA
+Commands:
 
-### `/robomata`
+* `sui move build --path protocols/sui --warnings-are-errors`
+* `sui move build --path protocols/sui --lint --warnings-are-errors`
+* `sui move test --path protocols/sui --warnings-are-errors`
 
-Verified in a real browser pass at both a narrow viewport (`599x779`) and a
-desktop viewport (`1440x1024`).
+Required evidence:
 
-Confirmed on-page:
+* Move build, lint, and tests are green
+* test output includes the facility authorization and Seal identity checks
 
-* hero renders with the lender-facing thesis:
-  * `Turn fleet receivables into a lender-ready borrowing base.`
-* first-customer operator is `MetroFleet Logistics`
-* facility card renders:
-  * `MetroFleet 2026 Fleet Receivables Facility`
-  * `82.0%` advance rate
-  * `35%` concentration limit
-  * `5` open exceptions
-* deterministic portfolio table renders the sample receivables set
-* lender-ready certificate renders with availability and certificate statement
-* exception workflow renders as a lender follow-up packet and exception memo
-* evidence anchor trail renders:
-  * commitment root
-  * Sui commit path
-  * Walrus object references
-  * Seal policy references
-* evidence library renders grouped controlled evidence references
-* demo-only disclosures remain explicit and do not imply production public API
-  access
+### Evidence Storage And Commit Configuration
 
-No browser console errors were captured during the `/robomata` pass.
+Status: pending final implementation merge.
 
-### Legacy Surfaces
+Required environment:
 
-Rechecked on `2026-05-24` against the already running local app at
-`http://localhost:3001`, using the repo's standard `yarn start` flow outcome.
+* `WALRUS_PUBLISHER_URL`
+* `ROBOMATA_SUI_PACKAGE_ID`
+* `ROBOMATA_SUI_FACILITY_ID`
+* Seal key-server configuration or documented testnet defaults
 
-Observed:
+Required evidence:
 
-* `/markets` renders normally with the expected local warning:
-  * `No subgraph endpoint configured for chain 11155111.`
-* `/partner` renders the gated unauthorized state rather than a blank page:
-  * `Partner Access Required`
-* both routes report the expected `Roboshare` document title in-browser
+* evidence upload stores encrypted bytes when Seal config is present
+* uploaded evidence records persist Walrus object/blob references
+* plaintext digest and ciphertext digest are both retained for audit
+* commitment root is computed from persisted submission evidence records
+* Sui commit status and reference metadata are persisted back to the submission
 
-Conclusion:
+## Browser QA Scenario
 
-* the earlier blank-page finding did not reproduce on the live local server
-* treat that earlier observation as an environment-specific false alarm, not an
-  integration blocker for this tranche
+Use the repo-standard local entrypoint:
 
-## Overflow Demo Script
+* `yarn start`
 
-Use the `/robomata` route as the primary demo surface.
+If the user already has the local server running, reuse it rather than starting
+a second process.
 
-1. Start at the hero and frame Robomata as borrowing-base and diligence
-   infrastructure for a fleet operator, not a generic tokenization surface.
-2. Show the MetroFleet operator card and the current workflow pain.
-3. Walk the receivables table and highlight eligibility, concentration, and
-   borrowing-base availability.
-4. Show the lender-ready certificate statement and explain what a credit team
-   can forward internally.
-5. Show the exception memo and lender follow-up packet as the operational output
-   of the agent/diligence layer.
-6. End on the evidence anchor trail and grouped evidence library to explain the
-   Sui/Walrus/Seal path for controlled commitments and auditability.
+### 1. Partner Submission List
 
-For the Overflow demo, keep `/robomata` as the primary route. `/markets` can be
-used only if you want to show the broader app shell, but the local missing
-subgraph warning is expected unless matching `.env` endpoints are configured.
+Status: pending.
 
-## Known Limitations
+Verify:
 
-* operator inputs are still a deterministic sample scenario, not a live upload
-  flow
-* agent review is rendered through deterministic product outputs and provider
-  plumbing, not live underwriting automation
-* evidence references are demo commitments, not production integrations
-* the Sui package remains a minimal facility/evidence scaffold, not a
-  production credit agreement or regulated instrument
-* legal enforceability, lien perfection, custody, transfer agency, and
-  regulated distribution remain out of scope for the Overflow MVP
+* `/partner` renders the existing partner surface without breaking legacy
+  vehicle registration/tokenization entrypoints
+* a `Borrowing Base Submissions` area is visible
+* empty state explains what the operator should do next
+* existing partner auth/gating behavior still works
 
-## Recommendation
+### 2. Create Submission
 
-Current recommendation: clear to merge the demo-flow integration branch into
-`dev`.
+Status: pending.
 
-Follow-up notes:
+Verify:
 
-* the local `/markets` warning about missing subgraph endpoints is expected when
-  the relevant `.env` values are not configured
-* release-candidate QA should still be run again after cutting
-  `release/robomata-overflow-v0.1.0`
+* operator can create a submission with operator name, facility name, and as-of
+  date
+* created submission appears in the submission list
+* reopening the submission preserves server-persisted state
+* audit event records creation metadata
+
+### 3. Import Receivables CSV
+
+Status: pending.
+
+Verify:
+
+* receivables CSV import accepts the documented sample format
+* validation errors are operator-readable
+* imported receivables persist against the submission
+* allowed editable fields can be updated without silently changing immutable
+  imported facts
+
+### 4. Upload Evidence
+
+Status: pending.
+
+Verify:
+
+* operator can upload evidence files with document name, source, scope, status,
+  and linked receivable ids
+* evidence cards show operator-facing fields first:
+  * document name
+  * source
+  * scope
+  * upload date
+  * status
+  * linked exception
+* Walrus refs, Seal metadata, digests, and Sui commit details are hidden behind
+  `Advanced details`
+
+### 5. Compute Borrowing Base
+
+Status: pending.
+
+Verify:
+
+* borrowing-base calculation uses persisted receivables and evidence records,
+  not `demoPortfolio`
+* output includes gross receivables, eligible receivables, advance rate,
+  reserves, and availability
+* exception records are persisted and tied back to receivables or evidence
+* recompute updates results after allowed edits, receivable exclusion, or
+  evidence replacement
+
+### 6. Review Exceptions
+
+Status: pending.
+
+Verify:
+
+* exceptions have concrete operator actions:
+  * exclude receivable
+  * replace or add evidence
+  * edit allowed imported row fields
+  * recompute submission
+* deterministic review output explains next steps
+* LLM/agent output is optional and subordinate to rules-based credit logic
+
+### 7. Generate Lender Packet
+
+Status: pending.
+
+Verify:
+
+* lender packet is generated from persisted submission state
+* packet summarizes eligibility, availability, evidence status, and unresolved
+  exceptions
+* packet copy does not claim final lender approval, legal lien perfection, or
+  production public-record/carrier/bank/telematics API coverage
+
+### 8. Commit Evidence Root
+
+Status: pending.
+
+Verify:
+
+* canonical evidence set is built from persisted evidence records
+* commitment root is deterministic for the same evidence set
+* Sui commit action succeeds in the configured testnet path or fails with an
+  operator-readable configuration error
+* commit status and reference metadata persist on the submission
+
+### 9. Read-Only `/robomata` Projection
+
+Status: pending.
+
+Verify:
+
+* `/robomata` loads a real submission projection
+* no editable submission actions are exposed on `/robomata`
+* CTA sends the operator back to `/partner` for actions
+* page no longer presents demo-only controls such as `Keep Markets Live`,
+  `Keep Partner Flows Live`, or `First Customer`
+* technical evidence and commit details remain secondary to lender/operator
+  summary information
+
+### 10. Legacy Surface Regression Check
+
+Status: pending.
+
+Verify:
+
+* `/markets` still renders
+* `/partner` legacy vehicle registration/tokenization path still renders
+* missing local subgraph endpoint warnings remain non-blocking unless a route is
+  actually broken
+
+## Overflow Submission Materials
+
+Status: pending.
+
+The final submission package should include:
+
+* one-sentence product wedge
+* first-customer workflow summary
+* demo script for the operator submission path
+* Sui/Walrus/Seal explanation tied to evidence, encryption/access, and
+  commitment roots
+* testnet package/facility/transaction references
+* known limitations and out-of-scope claims
+* release branch and commit used for the submitted build
+
+## Known Limitations To Reconfirm
+
+These limitations should remain explicit unless the implementation actually
+changes them:
+
+* no production public UCC, title, lien, insurance, telematics, or bank API
+  integrations are claimed
+* no automatic tokenized vehicle registration is created from uploaded evidence
+* legal enforceability, lien perfection, custody, transfer agency, and regulated
+  distribution remain out of scope
+* lender approval remains subject to lender diligence and exception cure
+
+## Release Recommendation
+
+Current recommendation: not yet clear to cut
+`release/robomata-overflow-v0.1.0`.
+
+Reason:
+
+* implementation PRs are still under review/merge sequencing
+* end-to-end browser QA has not yet been executed on the final `dev` commit
+* release evidence has not yet been captured against the final build
+
+Update this section only after `ROB-132` has concrete automated, browser, Sui,
+and submission-packaging results.
