@@ -15,6 +15,7 @@ import {
   type SubmissionComputation,
   type SubmissionEvidence,
   resolveSubmissionFacilityObjectId,
+  resolveSubmissionFacilityOperatorAddress,
 } from "~~/lib/robomata/submissions";
 
 function calculateSubmissionBorrowingBase(portfolio: FleetPortfolio): BorrowingBaseResult {
@@ -171,6 +172,8 @@ async function buildEvidenceCommitPreview(submission: FacilitySubmission, eviden
   const digestBytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(evidenceRoot));
   const rootDigest = Array.from(new Uint8Array(digestBytes), byte => byte.toString(16).padStart(2, "0")).join("");
   const facilityObjectId = resolveSubmissionFacilityObjectId(submission);
+  const facilityOperatorAddress = resolveSubmissionFacilityOperatorAddress(submission);
+  const signerAddress = process.env.ROBOMATA_SUI_SIGNER_ADDRESS?.trim().toLowerCase();
 
   return {
     status: "ready" as const,
@@ -178,10 +181,13 @@ async function buildEvidenceCommitPreview(submission: FacilitySubmission, eviden
     rootDigest: `0x${rootDigest}`,
     modulePath: SUI_COMMIT_MODULE_PATH,
     facilityObjectId,
+    facilityOperatorAddress,
     commitMode:
       process.env.ROBOMATA_SUI_PACKAGE_ID &&
       process.env.ROBOMATA_SUI_CLIENT_CONFIG &&
       facilityObjectId &&
+      facilityOperatorAddress &&
+      signerAddress === facilityOperatorAddress.toLowerCase() &&
       isRobomataSuiCommitEnabled()
         ? ("configured" as const)
         : ("prepared" as const),

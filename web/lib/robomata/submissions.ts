@@ -40,6 +40,7 @@ export type SubmissionEvidence = EvidenceCommitment & {
   linkedReceivableIds: string[];
   storageBackend: SubmissionStorageBackend;
   walrusBlobId: string;
+  walrusEventId?: string;
   aggregatorUrl?: string;
 };
 
@@ -79,6 +80,7 @@ export type SubmissionEvidenceCommit = {
   txDigest?: string;
   committedAt?: string;
   facilityObjectId?: string;
+  facilityOperatorAddress?: string;
   modulePath: string;
   commitMode: "prepared" | "configured";
   errorMessage?: string;
@@ -141,8 +143,7 @@ export function createAuditEvent(
   };
 }
 
-function parseSuiFacilityObjectIdMap(): Record<string, string> {
-  const raw = process.env.ROBOMATA_SUI_FACILITY_IDS_JSON;
+function parseStringMap(raw: string | undefined): Record<string, string> {
   if (!raw) return {};
 
   try {
@@ -159,14 +160,34 @@ function parseSuiFacilityObjectIdMap(): Record<string, string> {
   }
 }
 
+function parseSuiFacilityObjectIdMap(): Record<string, string> {
+  return parseStringMap(process.env.ROBOMATA_SUI_FACILITY_IDS_JSON);
+}
+
+function parseSuiFacilityOperatorMap(): Record<string, string> {
+  return parseStringMap(process.env.ROBOMATA_SUI_FACILITY_OPERATORS_JSON);
+}
+
 export function resolveSubmissionFacilityObjectId(
   submission: Pick<FacilitySubmission, "id" | "facilityName" | "evidenceCommit">,
 ): string | undefined {
+  const facilityIds = parseSuiFacilityObjectIdMap();
+  const configured = facilityIds[submission.id] ?? facilityIds[submission.facilityName];
+  if (configured) return configured;
+
   const existing = submission.evidenceCommit.facilityObjectId?.trim();
   if (existing) return existing;
+}
 
-  const facilityIds = parseSuiFacilityObjectIdMap();
-  return facilityIds[submission.id] ?? facilityIds[submission.facilityName];
+export function resolveSubmissionFacilityOperatorAddress(
+  submission: Pick<FacilitySubmission, "id" | "facilityName" | "evidenceCommit">,
+): string | undefined {
+  const operators = parseSuiFacilityOperatorMap();
+  const configured = operators[submission.id] ?? operators[submission.facilityName];
+  if (configured) return configured;
+
+  const existing = submission.evidenceCommit.facilityOperatorAddress?.trim();
+  if (existing) return existing;
 }
 
 export function deriveSubmissionStatus(submission: FacilitySubmission): FacilitySubmissionStatus {
@@ -219,6 +240,7 @@ export function touchSubmission(submission: FacilitySubmission): FacilitySubmiss
 
 export function invalidateSubmissionArtifacts(submission: FacilitySubmission): FacilitySubmission {
   const facilityObjectId = resolveSubmissionFacilityObjectId(submission);
+  const facilityOperatorAddress = resolveSubmissionFacilityOperatorAddress(submission);
   submission.computation = null;
   submission.exceptions = [];
   submission.evidenceCommit = {
@@ -226,6 +248,7 @@ export function invalidateSubmissionArtifacts(submission: FacilitySubmission): F
     modulePath: SUI_COMMIT_MODULE_PATH,
     commitMode: "prepared",
     facilityObjectId,
+    facilityOperatorAddress,
   };
   return touchSubmission(submission);
 }

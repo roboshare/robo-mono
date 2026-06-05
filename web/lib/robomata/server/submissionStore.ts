@@ -6,6 +6,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import "server-only";
+import { isRobomataWorkflowMutationEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
 import {
   type CreateSubmissionInput,
   type FacilitySubmission,
@@ -57,6 +58,21 @@ async function ensurePostgresTable() {
 
 function hasPostgresConfig() {
   return Boolean(process.env.POSTGRES_URL);
+}
+
+function hasExplicitFileStoreConfig() {
+  return Boolean(process.env.ROBOMATA_SUBMISSIONS_FILE);
+}
+
+function canUseEphemeralFileStore() {
+  return process.env.NODE_ENV === "development";
+}
+
+function requireDurableStoreForEnabledWorkflow() {
+  if (!isRobomataWorkflowServerEnabled() && !isRobomataWorkflowMutationEnabled()) return;
+  if (hasPostgresConfig() || hasExplicitFileStoreConfig() || canUseEphemeralFileStore()) return;
+
+  throw new Error("Robomata workflow requires POSTGRES_URL or ROBOMATA_SUBMISSIONS_FILE outside local development.");
 }
 
 async function readFileStore(filePath: string): Promise<FacilitySubmission[]> {
@@ -178,6 +194,7 @@ let storeSingleton: SubmissionStore | null = null;
 
 export function getSubmissionStore(): SubmissionStore {
   if (!storeSingleton) {
+    requireDurableStoreForEnabledWorkflow();
     storeSingleton = hasPostgresConfig() ? createPostgresStore() : createFileStore();
   }
   return storeSingleton;

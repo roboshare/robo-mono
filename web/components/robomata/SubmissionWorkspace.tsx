@@ -600,9 +600,19 @@ export const SubmissionWorkspace = ({
                           <div className="mt-1 break-all">{evidence.digest}</div>
                         </div>
                         <div>
-                          <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">Walrus object</div>
+                          <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">
+                            Walrus object/ref
+                          </div>
                           <div className="mt-1 break-all">{evidence.walrusObjectId}</div>
                         </div>
+                        {evidence.walrusEventId ? (
+                          <div>
+                            <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">
+                              Walrus certification event
+                            </div>
+                            <div className="mt-1 break-all">{evidence.walrusEventId}</div>
+                          </div>
+                        ) : null}
                         <div>
                           <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">Seal policy</div>
                           <div className="mt-1 break-all">{evidence.sealPolicyId}</div>

@@ -8,6 +8,7 @@ type WalrusUploadResult = {
   storageBackend: SubmissionStorageBackend;
   walrusBlobId: string;
   walrusObjectId: string;
+  walrusEventId?: string;
   aggregatorUrl?: string;
 };
 
@@ -40,7 +41,12 @@ async function uploadToWalrus(file: File): Promise<WalrusUploadResult> {
   const newlyCreated = payload?.newlyCreated?.blobObject;
   const alreadyCertified = payload?.alreadyCertified;
   const walrusBlobId = newlyCreated?.blobId ?? alreadyCertified?.blobId;
-  const walrusObjectId = newlyCreated?.id ?? alreadyCertified?.event?.txDigest;
+  const walrusObjectId =
+    newlyCreated?.id ??
+    alreadyCertified?.blobObject?.id ??
+    alreadyCertified?.objectId ??
+    (walrusBlobId ? `walrus://blob/${walrusBlobId}` : undefined);
+  const walrusEventId = alreadyCertified?.event?.txDigest;
 
   if (!walrusBlobId || !walrusObjectId) {
     throw new Error("Walrus upload response did not include blob identifiers.");
@@ -50,6 +56,7 @@ async function uploadToWalrus(file: File): Promise<WalrusUploadResult> {
     storageBackend: "walrus",
     walrusBlobId,
     walrusObjectId,
+    walrusEventId,
     aggregatorUrl: process.env.WALRUS_AGGREGATOR_URL,
   };
 }
@@ -87,6 +94,7 @@ export async function createEvidenceRecord(input: {
     status: input.status,
     walrusObjectId: uploadResult.walrusObjectId,
     walrusBlobId: uploadResult.walrusBlobId,
+    walrusEventId: uploadResult.walrusEventId,
     sealPolicyId: input.sealPolicyId,
     digest,
     filename: input.file.name || "upload",

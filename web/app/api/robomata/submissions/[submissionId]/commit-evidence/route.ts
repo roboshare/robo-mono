@@ -8,17 +8,26 @@ import {
 } from "~~/lib/featureFlags";
 import { requirePartnerAddress, requireSubmissionAccess } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
-import { SUI_COMMIT_MODULE_PATH, addAuditEvent, resolveSubmissionFacilityObjectId } from "~~/lib/robomata/submissions";
+import {
+  SUI_COMMIT_MODULE_PATH,
+  addAuditEvent,
+  resolveSubmissionFacilityObjectId,
+  resolveSubmissionFacilityOperatorAddress,
+} from "~~/lib/robomata/submissions";
 
 const execFileAsync = promisify(execFile);
 
 export const runtime = "nodejs";
 
-function isCommitConfigured(facilityObjectId: string | undefined) {
+function isCommitConfigured(facilityObjectId: string | undefined, facilityOperatorAddress: string | undefined) {
+  const signerAddress = process.env.ROBOMATA_SUI_SIGNER_ADDRESS?.trim().toLowerCase();
+
   return Boolean(
     process.env.ROBOMATA_SUI_PACKAGE_ID &&
       process.env.ROBOMATA_SUI_CLIENT_CONFIG &&
       facilityObjectId &&
+      facilityOperatorAddress &&
+      signerAddress === facilityOperatorAddress.toLowerCase() &&
       isRobomataSuiCommitEnabled(),
   );
 }
@@ -69,12 +78,20 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
   }
 
   const facilityObjectId = resolveSubmissionFacilityObjectId(submission);
+  const facilityOperatorAddress = resolveSubmissionFacilityOperatorAddress(submission);
 
   if (!facilityObjectId) {
     return NextResponse.json({ error: "Sui facility object is not configured for this submission." }, { status: 400 });
   }
 
-  if (!isCommitConfigured(facilityObjectId)) {
+  if (!facilityOperatorAddress) {
+    return NextResponse.json(
+      { error: "Sui facility operator is not configured for this submission." },
+      { status: 400 },
+    );
+  }
+
+  if (!isCommitConfigured(facilityObjectId, facilityOperatorAddress)) {
     return NextResponse.json(
       { error: "Sui commit environment is not configured for this app runtime." },
       { status: 400 },
@@ -117,6 +134,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       commitMode: "configured",
       modulePath: SUI_COMMIT_MODULE_PATH,
       facilityObjectId,
+      facilityOperatorAddress,
       errorMessage: undefined,
     };
     addAuditEvent(submission, "sui_commit_completed", `Committed evidence root for ${submission.facilityName}.`, {

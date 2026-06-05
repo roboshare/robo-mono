@@ -86,17 +86,26 @@ Use the flags as a matrix:
   creating submissions, importing receivables, uploading evidence, computing the
   borrowing base, and committing evidence. Without this flag, writes fail closed
   with `403`.
+* `POSTGRES_URL` or `ROBOMATA_SUBMISSIONS_FILE=/durable/path/submissions.json`
+  is required when the server workflow is enabled outside local development.
+  The API must not accept workflow writes against a serverless temp directory.
 * `ROBOMATA_WALRUS_UPLOADS_ENABLED=true` enables real Walrus publisher uploads
   when `WALRUS_PUBLISHER_URL` is configured. Without this flag, evidence uploads
   keep using deterministic mock Walrus references even if a publisher URL exists.
 * `ROBOMATA_SUI_COMMIT_ENABLED=true` enables real Sui evidence commit
-  transactions when the Sui package, client config, and per-submission facility
-  mapping are configured. Without this flag, evidence roots remain prepared but
-  cannot be committed onchain.
+  transactions when the Sui package, client config, per-submission facility
+  mapping, per-submission operator mapping, and expected signer are configured.
+  Without this flag, evidence roots remain prepared but cannot be committed
+  onchain.
 * `ROBOMATA_SUI_FACILITY_IDS_JSON={"sub_...":"0x...","Facility Name":"0x..."}`
   maps each submission, by submission id or facility name, to its own Sui
   facility object. Do not use one process-wide facility object for every
   submission.
+* `ROBOMATA_SUI_FACILITY_OPERATORS_JSON={"sub_...":"0x...","Facility Name":"0x..."}`
+  maps each submission to the Sui address that created and controls the mapped
+  facility object.
+* `ROBOMATA_SUI_SIGNER_ADDRESS=0x...` must match the mapped facility operator
+  before the runtime exposes the Sui commit path.
 * `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES=0x...,0x...` is required when the
   server APIs are enabled. The API verifies a fresh wallet signature and then
   checks that wallet against this server-side allowlist before listing,
