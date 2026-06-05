@@ -111,8 +111,12 @@ Use the flags as a matrix:
   before the runtime exposes the Sui commit path.
 * `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES=0x...,0x...` is required when the
   server APIs are enabled. The API verifies a fresh wallet signature and then
-  checks that wallet against this server-side allowlist before listing,
-  creating, or mutating submissions.
+  checks the partner identity against this server-side allowlist before
+  listing, creating, or mutating submissions.
+* `ROBOMATA_AUTHORIZED_PARTNER_SIGNERS_JSON={"0xPartner":"0xSigner"}` is
+  optional for smart-wallet sessions where the authorized partner identity and
+  the wallet that signs API auth messages differ. If omitted, the partner wallet
+  must sign for itself.
 
 Recommended environments:
 
@@ -121,8 +125,10 @@ Recommended environments:
   passed for that release
 * controlled preview: set the workflow and mutation flags, configure
   `POSTGRES_URL`, include the tester wallet in
-  `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES`, and enable Walrus/Sui side-effect
-  flags only for testnet runs that should write to external infrastructure
+  `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES`, configure
+  `ROBOMATA_AUTHORIZED_PARTNER_SIGNERS_JSON` when a smart wallet is authorized
+  but an EOA signs API messages, and enable Walrus/Sui side-effect flags only
+  for testnet runs that should write to external infrastructure
 * local QA: use `ROBOMATA_SUBMISSIONS_FILE` only for single-developer local
   runs when Postgres is not configured
 * public demo mode: leave the server flags unset so `/robomata` remains a

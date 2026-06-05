@@ -12,21 +12,41 @@ function getAuthorizedPartnerAddresses(): Set<string> {
   );
 }
 
+function getAuthorizedSignerAddress(partnerAddress: string): string {
+  const rawSignerMap = process.env.ROBOMATA_AUTHORIZED_PARTNER_SIGNERS_JSON;
+  if (!rawSignerMap) return partnerAddress;
+
+  try {
+    const signerMap = JSON.parse(rawSignerMap) as Record<string, string | undefined>;
+    return signerMap[partnerAddress] ?? signerMap[partnerAddress.toLowerCase()] ?? partnerAddress;
+  } catch {
+    return partnerAddress;
+  }
+}
+
 async function getVerifiedPartnerAddress(request: NextRequest): Promise<string | null> {
   const partnerAddress = request.headers.get(ROBOMATA_AUTH_HEADERS.partnerAddress)?.trim();
+  const signerAddress = request.headers.get(ROBOMATA_AUTH_HEADERS.signerAddress)?.trim() ?? partnerAddress;
   const signature = request.headers.get(ROBOMATA_AUTH_HEADERS.signature)?.trim();
   const timestamp = request.headers.get(ROBOMATA_AUTH_HEADERS.timestamp)?.trim();
 
-  if (!partnerAddress || !signature || !timestamp || !isAddress(partnerAddress)) return null;
+  if (!partnerAddress || !signerAddress || !signature || !timestamp || !isAddress(partnerAddress)) return null;
+  if (!isAddress(signerAddress)) return null;
+  if (getAuthorizedSignerAddress(partnerAddress).toLowerCase() !== signerAddress.toLowerCase()) return null;
 
   const timestampMs = Number(timestamp);
   if (!Number.isFinite(timestampMs) || Math.abs(Date.now() - timestampMs) > ROBOMATA_AUTH_MAX_AGE_MS) return null;
 
-  const valid = await verifyMessage({
-    address: partnerAddress,
-    message: buildRobomataAuthMessage({ partnerAddress, timestamp }),
-    signature: signature as `0x${string}`,
-  });
+  let valid = false;
+  try {
+    valid = await verifyMessage({
+      address: signerAddress,
+      message: buildRobomataAuthMessage({ partnerAddress, signerAddress, timestamp }),
+      signature: signature as `0x${string}`,
+    });
+  } catch {
+    return null;
+  }
 
   return valid ? partnerAddress : null;
 }

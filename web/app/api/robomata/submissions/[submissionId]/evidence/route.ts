@@ -3,7 +3,12 @@ import { isRobomataWorkflowMutationEnabled, isRobomataWorkflowServerEnabled } fr
 import { createEvidenceRecord } from "~~/lib/robomata/server/evidenceStorage";
 import { requirePartnerAddress, requireSubmissionAccess } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
-import { addAuditEvent, invalidateSubmissionArtifacts } from "~~/lib/robomata/submissions";
+import {
+  type FacilitySubmission,
+  type SubmissionEvidence,
+  addAuditEvent,
+  invalidateSubmissionArtifacts,
+} from "~~/lib/robomata/submissions";
 
 export const runtime = "nodejs";
 
@@ -26,6 +31,55 @@ function normalizeEvidenceStatus(value: FormDataEntryValue | null) {
   }
 
   return status as "verified" | "exception" | "pending";
+}
+
+function isConcurrentSubmissionChange(error: unknown) {
+  return error instanceof Error && error.message.includes("Submission changed while this update was in progress");
+}
+
+async function saveEvidenceRecord({
+  evidence,
+  partnerAddress,
+  submissionId,
+  store,
+}: {
+  evidence: SubmissionEvidence;
+  partnerAddress: string;
+  submissionId: string;
+  store: ReturnType<typeof getSubmissionStore>;
+}): Promise<FacilitySubmission> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const latestSubmission = await store.get(submissionId);
+    if (!latestSubmission) {
+      throw new Error("Submission not found.");
+    }
+
+    const accessError = requireSubmissionAccess(latestSubmission, partnerAddress);
+    if (accessError) {
+      throw new Error("Submission not found.");
+    }
+
+    latestSubmission.evidence = [
+      evidence,
+      ...latestSubmission.evidence.filter(record => record.id !== evidence.id && record.label !== evidence.label),
+    ];
+    invalidateSubmissionArtifacts(latestSubmission);
+    addAuditEvent(latestSubmission, "evidence_uploaded", `Uploaded evidence package ${evidence.label}.`, {
+      evidenceId: evidence.id,
+      storageBackend: evidence.storageBackend,
+    });
+
+    try {
+      return await store.save(latestSubmission);
+    } catch (error) {
+      lastError = error;
+      if (!isConcurrentSubmissionChange(error)) break;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Failed to persist evidence.");
 }
 
 export async function POST(request: NextRequest, context: { params: Promise<{ submissionId: string }> }) {
@@ -75,14 +129,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       linkedReceivableIds,
     });
 
-    submission.evidence = [evidence, ...submission.evidence.filter(record => record.label !== evidence.label)];
-    invalidateSubmissionArtifacts(submission);
-    addAuditEvent(submission, "evidence_uploaded", `Uploaded evidence package ${evidence.label}.`, {
-      evidenceId: evidence.id,
-      storageBackend: evidence.storageBackend,
-    });
-
-    const saved = await store.save(submission);
+    const saved = await saveEvidenceRecord({ evidence, partnerAddress, submissionId, store });
     return NextResponse.json({ submission: saved, evidence });
   } catch (error) {
     return NextResponse.json(

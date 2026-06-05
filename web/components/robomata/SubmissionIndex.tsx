@@ -20,7 +20,8 @@ function statusClass(status: FacilitySubmission["status"]) {
 export const SubmissionIndex = () => {
   const router = useRouter();
   const { address: accountAddress, connectedAddress } = useTransactingAccount();
-  const partnerAuthAddress = connectedAddress ?? accountAddress;
+  const partnerAuthAddress = accountAddress;
+  const signerAddress = connectedAddress ?? accountAddress;
   const getAuthHeaders = useRobomataApiAuth(partnerAuthAddress);
   const [submissions, setSubmissions] = useState<FacilitySubmission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -36,7 +37,7 @@ export const SubmissionIndex = () => {
 
     const load = async () => {
       setIsLoading(true);
-      const response = await fetch("/api/robomata/submissions", { headers: await getAuthHeaders() });
+      const response = await fetch("/api/robomata/submissions", { headers: await getAuthHeaders(signerAddress) });
       const payload = (await response.json()) as { submissions?: FacilitySubmission[]; error?: string };
       if (!response.ok) {
         notification.error(payload.error ?? "Failed to load submissions.");
@@ -48,7 +49,7 @@ export const SubmissionIndex = () => {
     };
 
     void load();
-  }, [getAuthHeaders, partnerAuthAddress]);
+  }, [getAuthHeaders, partnerAuthAddress, signerAddress]);
 
   const createSubmission = async () => {
     if (!partnerAuthAddress || !form.operatorName.trim() || !form.facilityName.trim() || !form.asOfDate) {
@@ -60,7 +61,7 @@ export const SubmissionIndex = () => {
     try {
       const response = await fetch("/api/robomata/submissions", {
         method: "POST",
-        headers: { "content-type": "application/json", ...(await getAuthHeaders()) },
+        headers: { "content-type": "application/json", ...(await getAuthHeaders(signerAddress)) },
         body: JSON.stringify({
           operatorName: form.operatorName.trim(),
           facilityName: form.facilityName.trim(),

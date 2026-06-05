@@ -54,7 +54,8 @@ export const SubmissionWorkspace = ({
   const [editingReceivableId, setEditingReceivableId] = useState<string | null>(null);
   const [draftReceivable, setDraftReceivable] = useState<Partial<SubmissionReceivable>>({});
   const { address: accountAddress, connectedAddress } = useTransactingAccount();
-  const partnerAuthAddress = connectedAddress ?? accountAddress;
+  const partnerAuthAddress = accountAddress;
+  const signerAddress = connectedAddress ?? accountAddress;
   const getAuthHeaders = useRobomataApiAuth(partnerAuthAddress);
 
   const summaryCards = useMemo(
@@ -71,7 +72,7 @@ export const SubmissionWorkspace = ({
         return;
       }
 
-      const authHeaders = await getAuthHeaders();
+      const authHeaders = await getAuthHeaders(signerAddress);
 
       if (submissionId) {
         const response = await fetch(`/api/robomata/submissions/${submissionId}`, { headers: authHeaders });
@@ -93,7 +94,7 @@ export const SubmissionWorkspace = ({
     } finally {
       setIsLoading(false);
     }
-  }, [getAuthHeaders, loadLatest, partnerAuthAddress, submissionId]);
+  }, [getAuthHeaders, loadLatest, partnerAuthAddress, signerAddress, submissionId]);
 
   useEffect(() => {
     void loadSubmission();
@@ -108,7 +109,7 @@ export const SubmissionWorkspace = ({
     setIsBusy(true);
     try {
       const headers = new Headers(init?.headers);
-      const authHeaders = await getAuthHeaders();
+      const authHeaders = await getAuthHeaders(signerAddress);
       Object.entries(authHeaders).forEach(([key, value]) => headers.set(key, value));
       const response = await fetch(url, { ...init, headers });
       const payload = (await response.json().catch(() => ({}))) as { submission?: FacilitySubmission; error?: string };
