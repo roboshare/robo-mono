@@ -52,6 +52,13 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     return NextResponse.json({ error: "Compute the submission before committing evidence." }, { status: 400 });
   }
 
+  if (!submission.computation || submission.computation.borrowingBase.exceptionCount > 0) {
+    return NextResponse.json(
+      { error: "Resolve open borrowing-base and evidence exceptions before committing evidence." },
+      { status: 400 },
+    );
+  }
+
   if (!isCommitConfigured()) {
     return NextResponse.json(
       { error: "Sui commit environment is not configured for this app runtime." },

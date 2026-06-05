@@ -35,6 +35,14 @@ function sectionTitle(readOnly: boolean) {
   return readOnly ? "Lender-ready review surface" : "Operator submission workspace";
 }
 
+function centsToDollarInput(cents: number | undefined): string {
+  return ((cents ?? 0) / 100).toFixed(2);
+}
+
+function dollarsToCents(value: string): number {
+  return Math.round(Number(value) * 100);
+}
+
 export const SubmissionWorkspace = ({
   submissionId,
   readOnly = false,
@@ -403,17 +411,22 @@ export const SubmissionWorkspace = ({
                                       setDraftReceivable(current => ({ ...current, obligor: event.target.value }))
                                     }
                                   />
-                                  <input
-                                    className="input input-bordered"
-                                    type="number"
-                                    value={draftReceivable.outstandingCents ?? 0}
-                                    onChange={event =>
-                                      setDraftReceivable(current => ({
-                                        ...current,
-                                        outstandingCents: Number(event.target.value),
-                                      }))
-                                    }
-                                  />
+                                  <label className="form-control">
+                                    <span className="label-text">Outstanding dollars</span>
+                                    <input
+                                      className="input input-bordered"
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={centsToDollarInput(draftReceivable.outstandingCents)}
+                                      onChange={event =>
+                                        setDraftReceivable(current => ({
+                                          ...current,
+                                          outstandingCents: dollarsToCents(event.target.value),
+                                        }))
+                                      }
+                                    />
+                                  </label>
                                   <input
                                     className="input input-bordered"
                                     type="number"

@@ -20,13 +20,17 @@ function calculateSubmissionBorrowingBase(portfolio: FleetPortfolio): BorrowingB
 
   const receivableResults = portfolio.receivables.map(receivable => {
     const ineligibleReasons: string[] = [];
+    const manuallyExcluded = Boolean((receivable as { manuallyExcluded?: boolean }).manuallyExcluded);
 
-    if ((receivable as { manuallyExcluded?: boolean }).manuallyExcluded) ineligibleReasons.push("Manually excluded");
-    if (receivable.daysPastDue > 45) ineligibleReasons.push("Over 45 days past due");
-    if (!receivable.insured) ineligibleReasons.push("Insurance evidence exception");
-    if (!receivable.titleClear) ineligibleReasons.push("Title or lien evidence exception");
-    if (!receivable.lockboxMatched) ineligibleReasons.push("Lockbox cash mapping exception");
-    if (receivable.utilizationPct < 70) ineligibleReasons.push("Utilization below policy floor");
+    if (manuallyExcluded) {
+      ineligibleReasons.push("Manually excluded");
+    } else {
+      if (receivable.daysPastDue > 45) ineligibleReasons.push("Over 45 days past due");
+      if (!receivable.insured) ineligibleReasons.push("Insurance evidence exception");
+      if (!receivable.titleClear) ineligibleReasons.push("Title or lien evidence exception");
+      if (!receivable.lockboxMatched) ineligibleReasons.push("Lockbox cash mapping exception");
+      if (receivable.utilizationPct < 70) ineligibleReasons.push("Utilization below policy floor");
+    }
 
     return {
       ...receivable,
@@ -56,7 +60,9 @@ function calculateSubmissionBorrowingBase(portfolio: FleetPortfolio): BorrowingB
   const advanceRateCents = Math.floor((eligibleReceivablesCents * portfolio.advanceRateBps) / 10_000);
   const availableBorrowingBaseCents = Math.max(0, advanceRateCents - concentrationReserveCents);
   const evidenceExceptions = portfolio.evidence.filter(evidence => evidence.status !== "verified");
-  const receivableExceptionCount = receivableResults.filter(receivable => !receivable.eligible).length;
+  const receivableExceptionCount = receivableResults.filter(
+    receivable => !receivable.eligible && !receivable.ineligibleReasons.includes("Manually excluded"),
+  ).length;
 
   return {
     portfolio,
@@ -107,7 +113,7 @@ function buildSubmissionExceptions(
   evidence: SubmissionEvidence[],
 ): FacilitySubmission["exceptions"] {
   const receivableExceptions: FacilitySubmission["exceptions"] = result.receivableResults
-    .filter(receivable => !receivable.eligible)
+    .filter(receivable => !receivable.eligible && !receivable.ineligibleReasons.includes("Manually excluded"))
     .map(receivable => ({
       id: `exception_${receivable.id}`,
       kind: "receivable" as const,

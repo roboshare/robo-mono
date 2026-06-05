@@ -56,24 +56,29 @@ export const SubmissionIndex = () => {
     }
 
     setIsCreating(true);
-    const response = await fetch("/api/robomata/submissions", {
-      method: "POST",
-      headers: { "content-type": "application/json", ...(await getAuthHeaders()) },
-      body: JSON.stringify({
-        operatorName: form.operatorName.trim(),
-        facilityName: form.facilityName.trim(),
-        asOfDate: form.asOfDate,
-      }),
-    });
-    const payload = (await response.json()) as { submission?: FacilitySubmission; error?: string };
-    setIsCreating(false);
+    try {
+      const response = await fetch("/api/robomata/submissions", {
+        method: "POST",
+        headers: { "content-type": "application/json", ...(await getAuthHeaders()) },
+        body: JSON.stringify({
+          operatorName: form.operatorName.trim(),
+          facilityName: form.facilityName.trim(),
+          asOfDate: form.asOfDate,
+        }),
+      });
+      const payload = (await response.json()) as { submission?: FacilitySubmission; error?: string };
 
-    if (!response.ok || !payload.submission) {
-      notification.error(payload.error ?? "Failed to create submission.");
-      return;
+      if (!response.ok || !payload.submission) {
+        notification.error(payload.error ?? "Failed to create submission.");
+        return;
+      }
+
+      router.push(`/partner/submissions/${payload.submission.id}`);
+    } catch (error) {
+      notification.error(error instanceof Error ? error.message : "Failed to create submission.");
+    } finally {
+      setIsCreating(false);
     }
-
-    router.push(`/partner/submissions/${payload.submission.id}`);
   };
 
   return (

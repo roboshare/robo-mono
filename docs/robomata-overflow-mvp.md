@@ -86,13 +86,18 @@ Use the flags as a matrix:
   creating submissions, importing receivables, uploading evidence, computing the
   borrowing base, and committing evidence. Without this flag, writes fail closed
   with `403`.
+* `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES=0x...,0x...` is required when the
+  server APIs are enabled. The API verifies a fresh wallet signature and then
+  checks that wallet against this server-side allowlist before listing,
+  creating, or mutating submissions.
 
 Recommended environments:
 
 * production and release-candidate branches: leave all three flags unset unless
   the Robomata QA gate has explicitly passed for that release
 * controlled preview and local QA: set all three flags when testing the full
-  operator workflow
+  operator workflow, and include the tester wallet in
+  `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES`
 * public demo mode: leave the server flags unset so `/robomata` remains a
   read-only demo narrative and `/partner/submissions` stays hidden
 

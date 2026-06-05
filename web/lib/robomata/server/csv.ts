@@ -63,6 +63,25 @@ function parseRequiredNumber(value: string | undefined, column: CsvHeader, rowNu
   return parsed;
 }
 
+function validateNumberRange(
+  value: number,
+  column: CsvHeader,
+  rowNumber: number,
+  options: { integer?: boolean; min?: number; max?: number },
+): number {
+  if (options.integer && !Number.isInteger(value)) {
+    throw new Error(`Receivables CSV row ${rowNumber} has non-integer value for ${column}.`);
+  }
+  if (options.min !== undefined && value < options.min) {
+    throw new Error(`Receivables CSV row ${rowNumber} has ${column} below ${options.min}.`);
+  }
+  if (options.max !== undefined && value > options.max) {
+    throw new Error(`Receivables CSV row ${rowNumber} has ${column} above ${options.max}.`);
+  }
+
+  return value;
+}
+
 function parseRequiredAmountToCents(value: string | undefined, column: CsvHeader, rowNumber: number): number {
   const cents = parseAmountToCents(value ?? "");
 
@@ -70,7 +89,7 @@ function parseRequiredAmountToCents(value: string | undefined, column: CsvHeader
     throw new Error(`Receivables CSV row ${rowNumber} has invalid numeric value for ${column}.`);
   }
 
-  return cents;
+  return validateNumberRange(cents, column, rowNumber, { integer: true, min: 0 });
 }
 
 function parseRequiredBoolean(value: string | undefined, column: CsvHeader, rowNumber: number): boolean {
@@ -174,12 +193,44 @@ export function importReceivablesCsv(csvText: string): SubmissionReceivable[] {
     return {
       id,
       obligor,
-      vehicleCount: parseRequiredNumber(row.get("vehicleCount"), "vehicleCount", rowNumber),
+      vehicleCount: validateNumberRange(
+        parseRequiredNumber(row.get("vehicleCount"), "vehicleCount", rowNumber),
+        "vehicleCount",
+        rowNumber,
+        {
+          integer: true,
+          min: 0,
+        },
+      ),
       outstandingCents: row.has("outstandingCents")
-        ? parseRequiredNumber(row.get("outstandingCents"), "outstandingCents", rowNumber)
+        ? validateNumberRange(
+            parseRequiredNumber(row.get("outstandingCents"), "outstandingCents", rowNumber),
+            "outstandingCents",
+            rowNumber,
+            {
+              integer: true,
+              min: 0,
+            },
+          )
         : parseRequiredAmountToCents(row.get("outstanding"), "outstanding", rowNumber),
-      daysPastDue: parseRequiredNumber(row.get("daysPastDue"), "daysPastDue", rowNumber),
-      utilizationPct: parseRequiredNumber(row.get("utilizationPct"), "utilizationPct", rowNumber),
+      daysPastDue: validateNumberRange(
+        parseRequiredNumber(row.get("daysPastDue"), "daysPastDue", rowNumber),
+        "daysPastDue",
+        rowNumber,
+        {
+          integer: true,
+          min: 0,
+        },
+      ),
+      utilizationPct: validateNumberRange(
+        parseRequiredNumber(row.get("utilizationPct"), "utilizationPct", rowNumber),
+        "utilizationPct",
+        rowNumber,
+        {
+          min: 0,
+          max: 100,
+        },
+      ),
       insured: parseRequiredBoolean(row.get("insured"), "insured", rowNumber),
       titleClear: parseRequiredBoolean(row.get("titleClear"), "titleClear", rowNumber),
       lockboxMatched: parseRequiredBoolean(row.get("lockboxMatched"), "lockboxMatched", rowNumber),
