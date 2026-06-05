@@ -4,11 +4,9 @@ import { type KeyboardEvent, type MouseEvent, useEffect, useMemo, useRef, useSta
 import Image from "next/image";
 import { formatUnits } from "viem";
 import { ASSET_REGISTRIES, AssetType } from "~~/config/assetTypes";
+import { PROTOCOL_BENCHMARK_YIELD_BP } from "~~/config/protocol";
+import { BP_PRECISION, SECONDS_PER_YEAR } from "~~/config/units";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
-
-const BENCHMARK_YIELD_BP = 1000n;
-const BP_PRECISION = 10000n;
-const SECONDS_PER_YEAR = 365n * 24n * 60n * 60n;
 
 interface PrimaryPoolCardProps {
   pool: {
@@ -86,7 +84,7 @@ export function PrimaryPoolCard({
   });
   const apyDisplay = useMemo(() => {
     if (!token) {
-      return `${(Number(BENCHMARK_YIELD_BP) / 100).toFixed(2)}%`;
+      return `${(Number(PROTOCOL_BENCHMARK_YIELD_BP) / 100).toFixed(2)}%`;
     }
 
     const currentIssuedSupply = token.supply ? BigInt(token.supply) : 0n;
@@ -102,7 +100,7 @@ export function PrimaryPoolCard({
       return `${(Number(aprBps) / 100).toFixed(2)}%`;
     }
 
-    const targetYieldBps = token.targetYieldBP ? Number(token.targetYieldBP) : Number(BENCHMARK_YIELD_BP);
+    const targetYieldBps = token.targetYieldBP ? Number(token.targetYieldBP) : Number(PROTOCOL_BENCHMARK_YIELD_BP);
     return `${(targetYieldBps / 100).toFixed(2)}%`;
   }, [earnings?.lastDistributionAt, earnings?.totalEarnings, pool.createdAt, pool.pricePerToken, token]);
   const statusLabel = pool.isClosed ? "Closed" : pool.isPaused ? "Paused" : "Open";

@@ -44,3 +44,91 @@ A committed sample fixture from a real localnet execution lives at:
 ```text
 protocols/sui/fixtures/localnet-demo-run.json
 ```
+
+## Testnet Deployment Path
+
+The working submission flow can commit evidence roots to a real Sui testnet
+facility when the app runtime has package, facility, and client config values.
+The helper script publishes this package, creates the first shared facility
+object, and writes generated environment exports for local app verification.
+It also emits the Seal policy package and identity values used to encrypt
+evidence before the encrypted object is stored in Walrus.
+
+Prerequisites:
+
+* Sui CLI installed.
+* Active Sui client environment set to `testnet`.
+* Active testnet address funded with gas.
+
+Check the active environment and address:
+
+```sh
+sui client envs
+sui client active-address
+sui client gas
+```
+
+If the active address needs testnet gas, use the faucet URL returned by:
+
+```sh
+sui client faucet --json
+```
+
+Deploy the package and create the initial facility:
+
+```sh
+./protocols/sui/scripts/deploy_testnet.sh
+```
+
+The script writes generated, uncommitted outputs:
+
+```text
+protocols/sui/fixtures/testnet-deploy.generated.json
+protocols/sui/fixtures/testnet-env.generated.sh
+```
+
+For local app verification, load the generated values before starting the web
+server:
+
+```sh
+source protocols/sui/fixtures/testnet-env.generated.sh
+yarn start
+```
+
+Those values configure:
+
+```text
+ROBOMATA_SUI_PACKAGE_ID
+ROBOMATA_SUI_FACILITY_ID
+ROBOMATA_SUI_CLIENT_CONFIG
+ROBOMATA_SUI_GAS_BUDGET
+ROBOMATA_SUI_NETWORK
+ROBOMATA_SEAL_PACKAGE_ID
+ROBOMATA_SEAL_IDENTITY
+ROBOMATA_SEAL_KEY_SERVER_OBJECT_ID
+ROBOMATA_SEAL_KEY_SERVER_AGGREGATOR_URL
+ROBOMATA_SEAL_THRESHOLD
+```
+
+For real evidence upload, also configure a Walrus publisher endpoint in the app
+runtime:
+
+```sh
+export WALRUS_PUBLISHER_URL="https://..."
+export WALRUS_AGGREGATOR_URL="https://aggregator.walrus-testnet.walrus.space"
+export ROBOMATA_REQUIRE_REAL_EVIDENCE_STORAGE="true"
+```
+
+With `ROBOMATA_REQUIRE_REAL_EVIDENCE_STORAGE=true`, evidence upload fails closed
+unless both Seal encryption and Walrus publishing are configured. Without that
+flag, local development can still fall back to mock storage.
+
+The current Seal policy binds decryption access to
+`robomata_overflow::facility::seal_approve`. The Seal identity is the facility
+object ID, and the Move policy approves only the facility operator. The default
+testnet key-server configuration uses the verified decentralized testnet
+committee object and aggregator.
+
+Do not commit generated testnet deployment fixtures or client config files. The
+deployment fixture contains public object IDs and transaction digests, but the
+client config path points at local signing state.

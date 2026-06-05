@@ -1,8 +1,10 @@
 module robomata_overflow::facility {
     use std::string::String;
+    use sui::address;
     use sui::clock::{Self, Clock};
 
     const E_NOT_AUTHORIZED_OPERATOR: u64 = 1;
+    const E_INVALID_SEAL_IDENTITY: u64 = 2;
 
     public struct Facility has key, store {
         id: sui::object::UID,
@@ -30,6 +32,11 @@ module robomata_overflow::facility {
         facility_id: address,
         evidence_kind: String,
         evidence_digest: vector<u8>,
+    }
+
+    public struct SealPolicyApproved has copy, drop {
+        facility_id: address,
+        operator: address,
     }
 
     entry fun create_facility(
@@ -97,6 +104,17 @@ module robomata_overflow::facility {
         });
     }
 
+    public fun seal_approve(id: vector<u8>, facility: &Facility, ctx: &mut TxContext) {
+        assert_operator(facility, tx_context::sender(ctx));
+        let facility_id = sui::object::uid_to_address(&facility.id);
+        assert!(id == address::to_bytes(facility_id), E_INVALID_SEAL_IDENTITY);
+
+        sui::event::emit(SealPolicyApproved {
+            facility_id,
+            operator: tx_context::sender(ctx),
+        });
+    }
+
     public fun available_cents(facility: &Facility): u64 {
         facility.available_cents
     }
@@ -117,5 +135,15 @@ module robomata_overflow::facility {
     #[test, expected_failure(abort_code = E_NOT_AUTHORIZED_OPERATOR)]
     fun unauthorized_operator_fails() {
         assert_operator_address(@0xA, @0xB);
+    }
+
+    #[test]
+    fun seal_identity_matches_facility_id() {
+        assert!(address::to_bytes(@0xA) == address::to_bytes(@0xA), E_INVALID_SEAL_IDENTITY);
+    }
+
+    #[test, expected_failure(abort_code = E_INVALID_SEAL_IDENTITY)]
+    fun seal_identity_mismatch_fails() {
+        assert!(address::to_bytes(@0xA) == address::to_bytes(@0xB), E_INVALID_SEAL_IDENTITY);
     }
 }

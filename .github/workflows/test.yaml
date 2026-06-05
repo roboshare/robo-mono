@@ -138,6 +138,8 @@ jobs:
 
       - name: Install suiup
         if: steps.package.outputs.exists == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           curl -sSfL https://raw.githubusercontent.com/MystenLabs/suiup/main/install.sh | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
