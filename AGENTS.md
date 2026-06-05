@@ -48,6 +48,26 @@ Historical note:
   - `Summary`
   - `Verification`
 
+## GitHub Review Findings
+
+- Treat PR review feedback as follow-up implementation work on the same branch unless the reviewer explicitly asks for a separate issue.
+- Pull or rebase against the latest target branch before making review fixes.
+- Inspect the actual review thread, changed files, and current project stage before changing code.
+- Classify each finding as one of:
+  - in-scope defect or regression to fix in the current branch
+  - valid concern that belongs to a later migration, hardening, or follow-up issue
+  - expected behavior for the current stage of the app
+  - stale, already-addressed, or caused by CI/bootstrap noise
+- Keep fixes scoped to the review thread; do not add opportunistic refactors.
+- If the review is valid, give the review comment a thumbs-up reaction.
+- If the review is addressed in code, push the fix, give the review comment a thumbs-up reaction, and resolve the conversation. Do not add a redundant reply.
+- If the review is not addressed in code because it is expected behavior, intentionally designed that way, current-stage appropriate, or outside issue scope, reply with a concise comment that starts with `@codex` and explains the technical reason.
+- Do not resolve a review thread until either the code fix is pushed or the no-change rationale has been posted.
+- Run the relevant verification again after review fixes and report exact commands and results.
+- Do not use `git commit --no-verify` as a substitute for a working local environment.
+- When review feedback is fully handled, make sure the PR has a clear record of what changed, verification, and any intentionally deferred items. Prefer updating the PR body or final summary over adding another comment when inline threads already capture the details.
+- If the user says review found no new findings or the PR is approved, proceed to the normal merge and post-merge cleanup path.
+
 ## GitHub And Linear Guidance
 
 - Prefer local `git` for branch creation, staging, commit, and push.
