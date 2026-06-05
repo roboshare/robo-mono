@@ -3,14 +3,18 @@
 ## Summary
 
 Robomata turns a mid-market fleet operator's receivables book into a lender-ready
-borrowing base through a real partner-owned submission workflow. The working
-submission flow lives inside `/partner`, where an operator creates a persisted
-`FacilitySubmission`, uploads receivables and evidence, computes eligibility and
-availability, resolves exceptions, generates a lender packet, and optionally
-commits the evidence root through the Sui path.
+borrowing base through a real partner-owned submission workflow. This document
+defines the target working-submission tranche, not a claim that every route and
+protocol hook already exists on `dev`.
 
-`/robomata` remains in the product as a secondary, read-only projection of a
-real submission. It is no longer the editable operating surface.
+The planned working submission flow lives inside `/partner`, where an operator
+creates a persisted `FacilitySubmission`, uploads receivables and evidence,
+computes eligibility and availability, resolves exceptions, generates a lender
+packet, and optionally commits the evidence root through the Sui path.
+
+`/robomata` remains in the product as a secondary projection surface. In the
+working tranche it must become read-only and submission-backed; until the web
+implementation PR lands, the current `dev` route remains demo-backed.
 
 ## First Customer
 
@@ -81,9 +85,14 @@ The lender-facing output includes:
 
 ## Product Surfaces
 
-### `/partner/submissions`
+### `/partner` Submission Area
 
-This is the operator workspace. It owns:
+The existing `/partner` surface is the operator entrypoint. The implementation
+target for this tranche adds a borrowing-base submissions area under that
+surface, with `/partner/submissions` and `/partner/submissions/[id]` introduced
+by the web implementation PR.
+
+This operator workspace owns:
 
 - submission list
 - new submission creation
@@ -96,12 +105,18 @@ This is the operator workspace. It owns:
 
 ### `/robomata`
 
-This is the read-only presentation surface for an existing submission. It should:
+This is the projection surface for an existing submission. The target behavior
+for the working tranche is:
 
 - render real submission state, not demo-only placeholders
 - explain lender readiness in plain operational terms
 - hide raw technical metadata behind `Advanced details`
-- link the user back to `/partner/submissions/[id]` for edits
+- link the user back to the corresponding `/partner` submission workspace for
+  edits
+
+Until the implementation PR that rewires `/robomata` lands, the existing route
+still renders the fixed demo portfolio and must not be used as proof that real
+submissions are projected.
 
 ## Core Product Object
 
@@ -140,9 +155,11 @@ access. In this tranche:
 - Seal is the encryption and access-control layer for uploaded evidence. The app
   encrypts evidence bytes before Walrus upload when `ROBOMATA_SEAL_*` or
   generated Sui testnet values are configured.
-- The current Sui package exposes
+- The Sui evidence-rails implementation PR adds
   `robomata_overflow::facility::seal_approve`, using the facility object ID as
-  the Seal identity and approving access only for the facility operator.
+  the Seal identity and approving access only for the facility operator. On
+  current `dev` before that PR merges, `commit_evidence` is the implemented Sui
+  evidence entry point.
 - The committed evidence digest is the ciphertext digest. The plaintext digest
   remains an internal audit field on the evidence record.
 - If `ROBOMATA_REQUIRE_REAL_EVIDENCE_STORAGE=true`, upload fails closed unless
@@ -154,8 +171,10 @@ This tranche does not claim live public-record, telematics, insurance, bank, or
 carrier integrations.
 
 Decryption UX is intentionally not part of this spec tranche. A future lender or
-operator decrypt flow must create a Seal session key, build transaction bytes
-that call `seal_approve`, and request keys from the configured Seal key servers.
+operator decrypt flow should be built only after the Sui evidence-rails PR lands;
+that later flow must create a Seal session key, build transaction bytes that call
+the implemented approval hook, and request keys from the configured Seal key
+servers.
 
 ## Persistence Model
 
@@ -172,6 +191,8 @@ This work follows the current repo policy:
 - Robomata work ships through short-lived `feat/*`, `fix/*`, or `docs/*`
   branches cut from `dev`.
 - Each Linear child issue should map to a scoped branch and PR targeting `dev`.
+  A child PR may be stacked on another child branch when it depends on the
+  earlier branch's code, then merged back down into `dev` in dependency order.
 - `release/robomata-overflow-v0.1.0` should be cut only after the QA and
   submission-readiness pass is green on `dev`.
 - Validated release fixes must be merged back into `dev` before the release is
@@ -209,13 +230,13 @@ The working submission flow is successful when:
 - The lender packet is generated from persisted submission state.
 - Evidence-root commit state is visible and can be persisted after a Sui call
   when configured.
-- `/robomata` reads from a real submission and does not act as a narrative-only
-  mock surface.
+- `/robomata` reads from a real submission after the web implementation PR lands
+  and does not act as a narrative-only mock surface in the final tranche.
 
 ## Current Verification Snapshot
 
-As of June 5, 2026, the working branch has verified this path on Sui and Walrus
-testnet:
+As of June 5, 2026, the dependent Sui evidence-rails branch has verified this
+path on Sui and Walrus testnet:
 
 - Sui package with `seal_approve`:
   `0xe55d4263d3966a58bfa7a1ebea2cd21b6eccea9104b7deebe3dfbcbe1abd2a16`
