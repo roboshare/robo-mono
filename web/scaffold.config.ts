@@ -6,6 +6,7 @@ export type ScaffoldConfig = {
   targetNetworks: readonly chains.Chain[];
   pollingInterval: number;
   alchemyApiKey: string;
+  isUsingDefaultAlchemyApiKey: boolean;
   rpcOverrides?: Record<number, string>;
   walletConnectProjectId: string;
   onlyLocalBurnerWallet: boolean;
@@ -81,6 +82,7 @@ const sortNetworks = (networks: readonly chains.Chain[]) => {
 
 const targetNetworks = sortNetworks(configuredNetworks.length > 0 ? configuredNetworks : [LOCAL_TARGET_NETWORK]);
 const localRpcUrl = getLocalRpcUrl();
+const configuredAlchemyApiKey = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY?.trim();
 const rpcOverrideNetworks = [...targetNetworks, chains.mainnet].filter(
   (network, index, networks) => networks.findIndex(candidate => candidate.id === network.id) === index,
 );
@@ -106,7 +108,8 @@ const scaffoldConfig = {
   // You can get your own at https://dashboard.alchemyapi.io
   // It's recommended to store it in an env variable:
   // .env.local for local testing, and in the Vercel/system env config for live apps.
-  alchemyApiKey: process.env.NEXT_PUBLIC_ALCHEMY_API_KEY || DEFAULT_ALCHEMY_API_KEY,
+  alchemyApiKey: configuredAlchemyApiKey || DEFAULT_ALCHEMY_API_KEY,
+  isUsingDefaultAlchemyApiKey: !configuredAlchemyApiKey,
 
   // If you want to use a different RPC for a specific network, you can add it here.
   // The key is the chain ID, and the value is the HTTP RPC URL
