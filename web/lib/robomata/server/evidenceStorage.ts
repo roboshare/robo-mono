@@ -143,18 +143,17 @@ export async function createEvidenceRecord(input: {
 }): Promise<SubmissionEvidence> {
   const buffer = Buffer.from(await input.file.arrayBuffer());
   const digest = digestBuffer(buffer);
-  const uploadResult =
-    process.env.WALRUS_PUBLISHER_URL && isRobomataWalrusUploadsEnabled()
-      ? await uploadToWalrus(
-          buildSealEncryptedEnvelope({
-            plaintext: buffer,
-            sealPolicyId: input.sealPolicyId,
-            filename: input.file.name || "upload",
-            contentType: input.file.type || "application/octet-stream",
-            digest,
-          }),
-        )
-      : buildMockWalrusResult(digest);
+  const uploadResult = isRobomataWalrusUploadsEnabled()
+    ? await uploadToWalrus(
+        buildSealEncryptedEnvelope({
+          plaintext: buffer,
+          sealPolicyId: input.sealPolicyId,
+          filename: input.file.name || "upload",
+          contentType: input.file.type || "application/octet-stream",
+          digest,
+        }),
+      )
+    : buildMockWalrusResult(digest);
 
   return {
     id: `evidence_${crypto.randomUUID()}`,

@@ -271,11 +271,17 @@ function createPostgresStore(): SubmissionStore {
     },
     async beginEvidenceCommit(id, rootDigest) {
       await ensurePostgresTable();
+      const nextUpdatedAt = new Date().toISOString();
       const result = await sql<{ payload: FacilitySubmission; updated_at: Date }>`
         UPDATE robomata_facility_submissions
         SET
-          payload = jsonb_set(payload, '{evidenceCommit,status}', '"committing"'::jsonb, false),
-          updated_at = now()
+          payload = jsonb_set(
+            jsonb_set(payload, '{evidenceCommit,status}', '"committing"'::jsonb, false),
+            '{updatedAt}',
+            to_jsonb(${nextUpdatedAt}::text),
+            false
+          ),
+          updated_at = ${nextUpdatedAt}::timestamptz
         WHERE
           id = ${id}
           AND payload->'evidenceCommit'->>'status' IN ('ready', 'failed')
