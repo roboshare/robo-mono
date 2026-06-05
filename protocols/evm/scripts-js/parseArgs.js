@@ -6,6 +6,7 @@ import { parse } from "toml";
 import { fileURLToPath } from "url";
 import readline from "readline";
 import { selectOrCreateKeystore } from "./selectOrCreateKeystore.js";
+import { assertRpcEndpoint, resolveRpcNetwork } from "./cliUtils.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 config();
@@ -51,6 +52,7 @@ const command =
 
 let fileName = "Deploy.s.sol";
 let network = "localhost";
+let rpcProvider = process.env.RPC_PROVIDER || null;
 let keystoreArg = null;
 let contractName = null;
 let proxyAddress = null;
@@ -65,6 +67,7 @@ Options:
   --contract <name>       Specify the contract to upgrade (required)
   --proxy-address <addr>  Specify the proxy contract address (required)
   --network <network>     Specify the network (default: localhost)
+  --rpc-provider <name>   Specify the RPC provider alias to use: alchemy or infura
   --keystore <name>       Specify the keystore account to use (bypasses selection prompt)
   --help, -h             Show this help message
 Examples:
@@ -78,6 +81,7 @@ Options:
   --file <filename>     Specify the deployment script file (default: Deploy.s.sol)
   --contract <name>     Deploy a specific contract (uses Deploy<ContractName>.s.sol)
   --network <network>   Specify the network (default: localhost)
+  --rpc-provider <name> Specify the RPC provider alias to use: alchemy or infura
   --args <addresses>    Comma-separated dependency addresses (no spaces)
   --keystore <name>     Specify the keystore account to use (bypasses selection prompt)
   --help, -h           Show this help message
@@ -93,6 +97,7 @@ Contracts and their dependencies:
 
 Examples:
   yarn deploy --contract PartnerManager --network sepolia
+  yarn deploy --contract PartnerManager --network sepolia --rpc-provider infura
   yarn deploy --contract RegistryRouter --network sepolia --args 0xTokens,0xPartner
   yarn deploy --contract Treasury --network sepolia --args 0xTokens,0xPartner,0xRouter
   yarn deploy --contract Marketplace --network sepolia --args 0xTokens,0xPartner,0xRouter,0xTreasury
@@ -106,6 +111,9 @@ Examples:
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--network" && args[i + 1]) {
     network = args[i + 1];
+    i++; // Skip next arg since we used it
+  } else if (args[i] === "--rpc-provider" && args[i + 1]) {
+    rpcProvider = args[i + 1];
     i++; // Skip next arg since we used it
   } else if (args[i] === "--file" && args[i + 1]) {
     fileName = args[i + 1];
@@ -125,6 +133,9 @@ for (let i = 0; i < args.length; i++) {
     i++; // Skip next arg since we used it
   }
 }
+
+const rpcNetwork = resolveRpcNetwork(network, rpcProvider);
+assertRpcEndpoint(rpcNetwork);
 
 // Handle upgrade-specific logic
 if (command === "upgrade") {
@@ -335,7 +346,7 @@ if (command === "deploy" && contractName) {
 if (command === "upgrade") {
   process.env.DEPLOY_SCRIPT = `script/${fileName}`;
   process.env.PROXY_ADDRESS = proxyAddress;
-  process.env.RPC_URL = network;
+  process.env.RPC_URL = rpcNetwork;
   process.env.ETH_KEYSTORE_ACCOUNT = selectedKeystore;
   process.env.SCRIPT_SIG_ARGS = "";
 
@@ -348,7 +359,7 @@ if (command === "upgrade") {
 } else {
   // Deploy command
   process.env.DEPLOY_SCRIPT = `script/${fileName}`;
-  process.env.RPC_URL = network;
+  process.env.RPC_URL = rpcNetwork;
   process.env.ETH_KEYSTORE_ACCOUNT = selectedKeystore;
   process.env.SCRIPT_SIG_ARGS = sigArg;
 

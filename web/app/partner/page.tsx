@@ -16,6 +16,8 @@ import { RegisterAssetModal } from "~~/components/partner/RegisterAssetModal";
 import { SettleAssetModal } from "~~/components/partner/SettleAssetModal";
 import { WithdrawProceedsModal } from "~~/components/partner/WithdrawProceedsModal";
 import { ASSET_REGISTRIES, AssetType } from "~~/config/assetTypes";
+import { PROTOCOL_DEPRECIATION_RATE_BP } from "~~/config/protocol";
+import { BP_PRECISION, SECONDS_PER_YEAR } from "~~/config/units";
 import { useScaffoldWriteContract, useSelectedNetwork } from "~~/hooks/scaffold-eth";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
@@ -132,9 +134,6 @@ type AssetAction = {
 };
 
 const SUBGRAPH_REFRESH_DELAYS_MS = [1500, 5000, 12000, 25000];
-const YEARLY_INTERVAL_SECONDS = 365n * 24n * 60n * 60n;
-const BP_PRECISION = 10000n;
-const DEPRECIATION_RATE_BP = 1200n;
 
 const payoutGhostActionClass =
   "btn btn-primary border-0 bg-primary/15 text-primary hover:bg-primary/25 dark:bg-primary/25 dark:text-primary-content dark:hover:bg-primary/35";
@@ -160,7 +159,7 @@ const calculateResidualSettlementTopUp = ({
   const currentTimestamp = BigInt(chainNowSec);
   const elapsedSinceLock = lockedAt === 0n || currentTimestamp <= lockedAt ? 0n : currentTimestamp - lockedAt;
   const depreciation =
-    (unredeemedBasePrincipal * DEPRECIATION_RATE_BP * elapsedSinceLock) / (BP_PRECISION * YEARLY_INTERVAL_SECONDS);
+    (unredeemedBasePrincipal * PROTOCOL_DEPRECIATION_RATE_BP * elapsedSinceLock) / (BP_PRECISION * SECONDS_PER_YEAR);
   const residualBase = depreciation >= unredeemedBasePrincipal ? 0n : unredeemedBasePrincipal - depreciation;
 
   return residualBase > baseCollateral ? residualBase - baseCollateral : 0n;

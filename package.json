@@ -37,6 +37,7 @@
     "evm:fork": "yarn workspace evm fork",
     "evm:format": "yarn workspace evm format",
     "evm:generate": "yarn workspace evm account:generate",
+    "evm:generate:protocol-config": "yarn workspace evm generate:protocol-config",
     "evm:lint": "yarn workspace evm lint",
     "evm:storage-layout:check": "yarn workspace evm storage:layout:check",
     "evm:storage-layout:snapshot": "yarn workspace evm storage:layout:snapshot",

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useEscClose } from "./useEscClose";
 import { formatUnits, parseUnits } from "viem";
 import { XMarkIcon } from "@heroicons/react/24/outline";
+import { BP_PRECISION } from "~~/config/units";
 import { useScaffoldReadContract, useScaffoldWriteContract, useSelectedNetwork } from "~~/hooks/scaffold-eth";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
@@ -109,8 +110,8 @@ export const CreateSecondaryListingModal = ({
 
   const setPriceFromDelta = (deltaBp: number) => {
     if (!baseTokenPrice) return;
-    const multiplier = 10000n + BigInt(deltaBp);
-    const nextPrice = (baseTokenPrice * multiplier) / 10000n;
+    const multiplier = BP_PRECISION + BigInt(deltaBp);
+    const nextPrice = (baseTokenPrice * multiplier) / BP_PRECISION;
     const formatted = formatUnits(nextPrice, 6);
     const trimmed = formatted.replace(/\.0+$/, "").replace(/(\.\d*[1-9])0+$/, "$1");
     setFormData(prev => ({ ...prev, pricePerToken: trimmed }));

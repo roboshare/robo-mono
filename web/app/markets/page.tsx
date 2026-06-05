@@ -23,6 +23,9 @@ import { CreateSecondaryListingModal } from "~~/components/partner/CreateSeconda
 import { EndSecondaryListingModal } from "~~/components/partner/EndSecondaryListingModal";
 import { WithdrawProceedsModal } from "~~/components/partner/WithdrawProceedsModal";
 import { ASSET_REGISTRIES, AssetType } from "~~/config/assetTypes";
+import { PROTOCOL_BENCHMARK_YIELD_BP } from "~~/config/protocol";
+import { getProtocolContractStartBlock } from "~~/config/protocolDeployments";
+import { BP_PRECISION, SECONDS_PER_YEAR } from "~~/config/units";
 import { useScaffoldEventHistory, useScaffoldWriteContract, useSelectedNetwork } from "~~/hooks/scaffold-eth";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
@@ -108,9 +111,6 @@ interface MarketPartner {
 type SortOption = "apr_desc" | "apr_asc" | "earnings_desc" | "earnings_asc" | "newest" | "price_asc" | "price_desc";
 type MarketTab = "pools" | "secondary";
 
-// Protocol constants for APY calculation/sorting
-const BENCHMARK_EARNINGS_BP = 1000n;
-const BP_PRECISION = 10000n;
 const NEW_POOL_BADGE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MARKETS_PAGE_BATCH_SIZE = 12;
 const METADATA_FETCH_MAX_ATTEMPTS = 3;
@@ -231,6 +231,7 @@ const MarketsPage: NextPage = () => {
   const registryRouterContract = getDeployedContract(chainId, "RegistryRouter");
   const vehicleRegistryContract = getDeployedContract(chainId, "VehicleRegistry");
   const earningsManagerContract = getDeployedContract(chainId, "EarningsManager");
+  const earningsManagerEventStartBlock = getProtocolContractStartBlock(chainId, "EarningsManager") ?? 0n;
   const { symbol, decimals } = usePaymentToken();
   const { writeContractAsync: writeTreasury } = useScaffoldWriteContract({ contractName: "Treasury" });
   const { writeContractAsync: writeEarningsManager } = useScaffoldWriteContract({ contractName: "EarningsManager" });
@@ -565,10 +566,10 @@ const MarketsPage: NextPage = () => {
   const { data: earningsDistributedEvents } = useScaffoldEventHistory({
     contractName: "EarningsManager",
     eventName: "EarningsDistributed",
-    fromBlock: 0n,
+    fromBlock: earningsManagerEventStartBlock,
     chainId,
     blockData: true as const,
-    watch: true,
+    watch: false,
     enabled: !!earningsManagerContract,
   });
 
@@ -936,7 +937,7 @@ const MarketsPage: NextPage = () => {
       const token = marketTokens.find(t => t.revenueTokenId === listing.tokenId);
       const earning = assetEarnings.find(e => e.assetId === listing.assetId);
 
-      if (!token) return Number(BENCHMARK_EARNINGS_BP) / 100;
+      if (!token) return Number(PROTOCOL_BENCHMARK_YIELD_BP) / 100;
 
       const tokenSupply = BigInt(primaryPoolSupplyByTokenId.get(listing.tokenId) || token.supply);
       const tokenPrice = BigInt(token.price);
@@ -949,14 +950,13 @@ const MarketsPage: NextPage = () => {
         const duration = durationStart > 0n && lastDistAt > durationStart ? lastDistAt - durationStart : 0n;
 
         if (duration > 0n && totalEarnings > 0n) {
-          const secondsPerYear = 365n * 24n * 60n * 60n;
-          const annualizedEarnings = (totalEarnings * secondsPerYear) / duration;
+          const annualizedEarnings = (totalEarnings * SECONDS_PER_YEAR) / duration;
           const aprBps = (annualizedEarnings * BP_PRECISION) / totalValue;
           return Number(aprBps) / 100;
         }
       }
 
-      const targetYieldBp = token.targetYieldBP ? Number(token.targetYieldBP) : Number(BENCHMARK_EARNINGS_BP);
+      const targetYieldBp = token.targetYieldBP ? Number(token.targetYieldBP) : Number(PROTOCOL_BENCHMARK_YIELD_BP);
       return targetYieldBp / 100;
     },
     [assetEarnings, marketTokens, primaryPoolCreatedAtByTokenId, primaryPoolSupplyByTokenId],
@@ -967,7 +967,7 @@ const MarketsPage: NextPage = () => {
       const token = marketTokens.find(t => t.revenueTokenId === pool.tokenId);
       const earning = assetEarnings.find(e => e.assetId === pool.assetId);
 
-      if (!token) return Number(BENCHMARK_EARNINGS_BP) / 100;
+      if (!token) return Number(PROTOCOL_BENCHMARK_YIELD_BP) / 100;
 
       const issuedSupply = BigInt(primaryPoolSupplyByTokenId.get(pool.tokenId) || token.supply);
       const totalValue = BigInt(pool.pricePerToken) * issuedSupply;
@@ -977,13 +977,12 @@ const MarketsPage: NextPage = () => {
 
       if (totalEarnings > 0n && totalValue > 0n && durationStart > 0n && lastDistAt > durationStart) {
         const duration = lastDistAt - durationStart;
-        const secondsPerYear = 365n * 24n * 60n * 60n;
-        const annualizedEarnings = (totalEarnings * secondsPerYear) / duration;
+        const annualizedEarnings = (totalEarnings * SECONDS_PER_YEAR) / duration;
         const aprBps = (annualizedEarnings * BP_PRECISION) / totalValue;
         return Number(aprBps) / 100;
       }
 
-      const targetYieldBp = token.targetYieldBP ? Number(token.targetYieldBP) : Number(BENCHMARK_EARNINGS_BP);
+      const targetYieldBp = token.targetYieldBP ? Number(token.targetYieldBP) : Number(PROTOCOL_BENCHMARK_YIELD_BP);
       return targetYieldBp / 100;
     },
     [assetEarnings, marketTokens, primaryPoolSupplyByTokenId],

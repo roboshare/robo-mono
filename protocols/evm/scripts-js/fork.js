@@ -7,7 +7,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: join(__dirname, "..", ".env") });
 
 const args = process.argv.slice(2);
-const { network, help } = parseScriptSelectionArgs(args, {
+const { rpcNetwork, help } = parseScriptSelectionArgs(args, {
   defaultNetwork: "mainnet",
   allowRpcUrl: true,
 });
@@ -17,16 +17,18 @@ if (help) {
 Usage: yarn fork [network-or-rpc-url] [options]
 Options:
   --network <network>   Specify the RPC alias or full RPC URL (default: mainnet)
+  --rpc-provider <name> Specify the RPC provider alias to use: alchemy or infura
   --help, -h            Show this help message
 
 Examples:
   yarn fork
   yarn fork sepolia
+  yarn fork sepolia --rpc-provider infura
   yarn fork --network https://eth-mainnet.g.alchemy.com/v2/<key>
   `);
   process.exit(0);
 }
 
 runMakeTarget("fork", {
-  FORK_URL: network,
+  FORK_URL: rpcNetwork,
 });

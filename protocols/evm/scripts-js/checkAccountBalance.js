@@ -13,6 +13,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 dotenv.config({ path: join(__dirname, "..", ".env") });
 const ALCHEMY_API_KEY = process.env.ALCHEMY_API_KEY || "";
+const INFURA_API_KEY = process.env.INFURA_API_KEY || "";
 
 async function getBalanceForEachNetwork(address) {
   try {
@@ -26,9 +27,11 @@ async function getBalanceForEachNetwork(address) {
     // Extract rpc_endpoints from parsedToml
     const rpcEndpoints = parsedToml.rpc_endpoints || {};
 
-    // Replace placeholders in the rpc_endpoints section
-    function replaceENVAlchemyKey(input) {
-      return input.replace("${ALCHEMY_API_KEY}", ALCHEMY_API_KEY);
+    // Replace ${ENV_VAR} placeholders in the rpc_endpoints section.
+    function replaceEnvPlaceholders(input) {
+      return input.replace(/\$\{([A-Z0-9_]+)\}/g, (_match, envName) => {
+        return process.env[envName] || "";
+      });
     }
 
     console.log(await toString(address, { type: "terminal", small: true }));
@@ -39,12 +42,17 @@ async function getBalanceForEachNetwork(address) {
         "⚠️  ALCHEMY_API_KEY is missing in protocols/evm/.env. Public networks may fail."
       );
     }
+    if (!INFURA_API_KEY) {
+      console.log(
+        "⚠️  INFURA_API_KEY is missing in protocols/evm/.env. Infura network aliases may fail."
+      );
+    }
 
     for (const networkName in rpcEndpoints) {
       if (networkName === "default_network") {
         continue;
       }
-      const networkUrl = replaceENVAlchemyKey(rpcEndpoints[networkName]);
+      const networkUrl = replaceEnvPlaceholders(rpcEndpoints[networkName]);
       console.log(`\n--${networkName}-- 📡`);
 
       try {
