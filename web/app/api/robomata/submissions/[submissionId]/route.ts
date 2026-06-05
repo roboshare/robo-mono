@@ -79,6 +79,14 @@ function normalizeBooleanPatch(value: unknown, field: string) {
   return value;
 }
 
+function normalizeStringPatch(value: unknown, field: string) {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`${field} must be a non-empty string.`);
+  }
+  return value.trim();
+}
+
 function normalizeReceivablePatch(patch: ReceivablePatch): ReceivablePatch {
   const next: ReceivablePatch = {};
 
@@ -147,9 +155,12 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ s
     const body = (await request.json()) as SubmissionPatchAction;
 
     if (body.action === "updateSubmission") {
-      submission.operatorName = body.patch.operatorName ?? submission.operatorName;
-      submission.facilityName = body.patch.facilityName ?? submission.facilityName;
-      submission.asOfDate = body.patch.asOfDate ?? submission.asOfDate;
+      const operatorName = normalizeStringPatch(body.patch.operatorName, "operatorName");
+      const facilityName = normalizeStringPatch(body.patch.facilityName, "facilityName");
+      const asOfDate = normalizeStringPatch(body.patch.asOfDate, "asOfDate");
+      submission.operatorName = operatorName ?? submission.operatorName;
+      submission.facilityName = facilityName ?? submission.facilityName;
+      submission.asOfDate = asOfDate ?? submission.asOfDate;
       addAuditEvent(submission, "submission_updated", `Updated submission details for ${submission.facilityName}.`);
       invalidateSubmissionArtifacts(submission);
     }

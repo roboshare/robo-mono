@@ -53,8 +53,9 @@ export const SubmissionWorkspace = ({
   const [isBusy, setIsBusy] = useState(false);
   const [editingReceivableId, setEditingReceivableId] = useState<string | null>(null);
   const [draftReceivable, setDraftReceivable] = useState<Partial<SubmissionReceivable>>({});
-  const { address: accountAddress } = useTransactingAccount();
-  const getAuthHeaders = useRobomataApiAuth(accountAddress);
+  const { address: accountAddress, connectedAddress } = useTransactingAccount();
+  const partnerAuthAddress = connectedAddress ?? accountAddress;
+  const getAuthHeaders = useRobomataApiAuth(partnerAuthAddress);
 
   const summaryCards = useMemo(
     () => (submission?.computation ? buildSubmissionSummaryCards(submission.computation) : []),
@@ -64,7 +65,7 @@ export const SubmissionWorkspace = ({
   const loadSubmission = useCallback(async () => {
     setIsLoading(true);
     try {
-      if (!accountAddress) {
+      if (!partnerAuthAddress) {
         setSubmission(null);
         setIsLoading(false);
         return;
@@ -92,14 +93,14 @@ export const SubmissionWorkspace = ({
     } finally {
       setIsLoading(false);
     }
-  }, [accountAddress, getAuthHeaders, loadLatest, submissionId]);
+  }, [getAuthHeaders, loadLatest, partnerAuthAddress, submissionId]);
 
   useEffect(() => {
     void loadSubmission();
   }, [loadSubmission]);
 
   const updateSubmission = async (url: string, init?: RequestInit) => {
-    if (!accountAddress) {
+    if (!partnerAuthAddress) {
       notification.error("Connect a partner wallet before updating the submission.");
       return;
     }
@@ -647,7 +648,9 @@ export const SubmissionWorkspace = ({
                   {submission.evidenceCommit.errorMessage ? (
                     <div className="mt-3 text-sm text-error">{submission.evidenceCommit.errorMessage}</div>
                   ) : null}
-                  {!readOnly && submission.evidenceCommit.commitMode === "configured" ? (
+                  {!readOnly &&
+                  submission.evidenceCommit.commitMode === "configured" &&
+                  submission.evidenceCommit.status !== "committed" ? (
                     <button className="btn btn-primary mt-4 rounded-full" onClick={commitEvidence} disabled={isBusy}>
                       Commit evidence on Sui
                     </button>

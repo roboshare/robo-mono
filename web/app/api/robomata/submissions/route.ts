@@ -15,6 +15,14 @@ function requireRobomataMutation() {
   return NextResponse.json({ error: "Robomata submission writes are not enabled." }, { status: 403 });
 }
 
+function normalizeRequiredString(value: unknown, field: string): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`${field} must be a non-empty string.`);
+  }
+
+  return value.trim();
+}
+
 export async function GET(request: NextRequest) {
   const featureError = requireRobomataWorkflow();
   if (featureError) return featureError;
@@ -36,20 +44,30 @@ export async function POST(request: NextRequest) {
     if (partnerAddress instanceof NextResponse) return partnerAddress;
 
     const body = (await request.json()) as {
-      operatorName?: string;
-      facilityName?: string;
-      asOfDate?: string;
+      operatorName?: unknown;
+      facilityName?: unknown;
+      asOfDate?: unknown;
     };
 
-    if (!body.operatorName || !body.facilityName || !body.asOfDate) {
-      return NextResponse.json({ error: "Missing submission create fields." }, { status: 400 });
+    let operatorName: string;
+    let facilityName: string;
+    let asOfDate: string;
+    try {
+      operatorName = normalizeRequiredString(body.operatorName, "operatorName");
+      facilityName = normalizeRequiredString(body.facilityName, "facilityName");
+      asOfDate = normalizeRequiredString(body.asOfDate, "asOfDate");
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Invalid submission create fields." },
+        { status: 400 },
+      );
     }
 
     const submission = await getSubmissionStore().create({
       partnerAddress,
-      operatorName: body.operatorName,
-      facilityName: body.facilityName,
-      asOfDate: body.asOfDate,
+      operatorName,
+      facilityName,
+      asOfDate,
     });
 
     return NextResponse.json({ submission }, { status: 201 });

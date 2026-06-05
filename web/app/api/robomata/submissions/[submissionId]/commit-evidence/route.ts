@@ -53,6 +53,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
   const accessError = requireSubmissionAccess(submission, partnerAddress);
   if (accessError) return accessError;
 
+  if (submission.evidenceCommit.status === "committed") {
+    return NextResponse.json({ submission });
+  }
+
   if (!submission.evidenceCommit.evidenceRoot || !submission.evidenceCommit.rootDigest) {
     return NextResponse.json({ error: "Compute the submission before committing evidence." }, { status: 400 });
   }

@@ -19,8 +19,9 @@ function statusClass(status: FacilitySubmission["status"]) {
 
 export const SubmissionIndex = () => {
   const router = useRouter();
-  const { address: accountAddress } = useTransactingAccount();
-  const getAuthHeaders = useRobomataApiAuth(accountAddress);
+  const { address: accountAddress, connectedAddress } = useTransactingAccount();
+  const partnerAuthAddress = connectedAddress ?? accountAddress;
+  const getAuthHeaders = useRobomataApiAuth(partnerAuthAddress);
   const [submissions, setSubmissions] = useState<FacilitySubmission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
@@ -31,7 +32,7 @@ export const SubmissionIndex = () => {
   });
 
   useEffect(() => {
-    if (!accountAddress) return;
+    if (!partnerAuthAddress) return;
 
     const load = async () => {
       setIsLoading(true);
@@ -47,10 +48,10 @@ export const SubmissionIndex = () => {
     };
 
     void load();
-  }, [accountAddress, getAuthHeaders]);
+  }, [getAuthHeaders, partnerAuthAddress]);
 
   const createSubmission = async () => {
-    if (!accountAddress || !form.operatorName.trim() || !form.facilityName.trim() || !form.asOfDate) {
+    if (!partnerAuthAddress || !form.operatorName.trim() || !form.facilityName.trim() || !form.asOfDate) {
       notification.error("Complete the submission details first.");
       return;
     }
