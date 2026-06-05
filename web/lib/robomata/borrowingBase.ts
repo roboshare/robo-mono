@@ -10,12 +10,14 @@ export type Receivable = {
   insured: boolean;
   titleClear: boolean;
   lockboxMatched: boolean;
+  manuallyExcluded?: boolean;
 };
 
 export type EvidenceCommitment = {
   id: string;
   label: string;
   source: string;
+  scope?: string;
   status: EvidenceStatus;
   walrusObjectId: string;
   sealPolicyId: string;
@@ -167,6 +169,7 @@ export function calculateBorrowingBase(portfolio: FleetPortfolio = demoPortfolio
   const receivableResults = portfolio.receivables.map(receivable => {
     const ineligibleReasons: string[] = [];
 
+    if (receivable.manuallyExcluded) ineligibleReasons.push("Manually excluded");
     if (receivable.daysPastDue > 45) ineligibleReasons.push("Over 45 days past due");
     if (!receivable.insured) ineligibleReasons.push("Insurance evidence exception");
     if (!receivable.titleClear) ineligibleReasons.push("Title or lien evidence exception");
