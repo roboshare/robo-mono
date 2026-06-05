@@ -12,6 +12,7 @@ export type FacilitySubmissionStatus =
   | "committed";
 
 export type SubmissionStorageBackend = "walrus" | "walrus-mock";
+export type SubmissionEncryptionBackend = "none" | "seal";
 
 export type SubmissionExceptionKind = "receivable" | "evidence" | "submission";
 export type SubmissionExceptionSeverity = "high" | "medium" | "low";
@@ -39,11 +40,18 @@ export type SubmissionEvidence = EvidenceCommitment & {
   scope: string;
   linkedReceivableIds: string[];
   storageBackend: SubmissionStorageBackend;
+  encryptionBackend: SubmissionEncryptionBackend;
+  sealEncrypted?: boolean;
   walrusBlobId: string;
   walrusEventId?: string;
   aggregatorUrl?: string;
-  sealEncrypted?: boolean;
-  sealEncryptionAlgorithm?: string;
+  plaintextDigest: string;
+  ciphertextDigest?: string;
+  sealPackageId?: string;
+  sealIdentity?: string;
+  sealThreshold?: number;
+  sealKeyServerObjectIds?: string[];
+  sealKeyServerAggregatorUrl?: string;
 };
 
 export type SubmissionException = {

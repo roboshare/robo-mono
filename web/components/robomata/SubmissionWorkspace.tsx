@@ -322,7 +322,7 @@ export const SubmissionWorkspace = ({
                     <input
                       name="sealPolicyId"
                       className="input input-bordered w-full"
-                      defaultValue="seal://policy/lender-auditor-read"
+                      defaultValue="robomata_overflow::facility::seal_approve"
                     />
                     <input
                       name="linkedReceivableIds"
@@ -583,6 +583,16 @@ export const SubmissionWorkspace = ({
                     <div className="mt-3 text-sm text-base-content/70">
                       Uploaded {new Date(evidence.uploadedAt).toLocaleString()} · {evidence.filename}
                     </div>
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.14em]">
+                      <span className="rounded-full bg-base-100 px-3 py-1 text-base-content/60">
+                        {evidence.storageBackend === "walrus" ? "Walrus stored" : "Mock storage"}
+                      </span>
+                      <span className="rounded-full bg-base-100 px-3 py-1 text-base-content/60">
+                        {evidence.encryptionBackend === "seal" || evidence.sealEncrypted
+                          ? "Seal encrypted"
+                          : "Not encrypted"}
+                      </span>
+                    </div>
                     {!readOnly ? (
                       <div className="mt-3 flex flex-wrap gap-2">
                         {(["verified", "pending", "exception"] as const).map(status => (
@@ -609,13 +619,27 @@ export const SubmissionWorkspace = ({
                       </summary>
                       <div className="mt-3 grid gap-3 text-sm text-base-content/70">
                         <div>
-                          <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">Digest</div>
+                          <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">
+                            Committed object digest
+                          </div>
                           <div className="mt-1 break-all">{evidence.digest}</div>
                         </div>
                         <div>
                           <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">
-                            Walrus object/ref
+                            Plaintext audit digest
                           </div>
+                          <div className="mt-1 break-all">{evidence.plaintextDigest}</div>
+                        </div>
+                        {evidence.ciphertextDigest ? (
+                          <div>
+                            <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">
+                              Seal ciphertext digest
+                            </div>
+                            <div className="mt-1 break-all">{evidence.ciphertextDigest}</div>
+                          </div>
+                        ) : null}
+                        <div>
+                          <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">Walrus object</div>
                           <div className="mt-1 break-all">{evidence.walrusObjectId}</div>
                         </div>
                         {evidence.walrusEventId ? (
@@ -630,6 +654,36 @@ export const SubmissionWorkspace = ({
                           <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">Seal policy</div>
                           <div className="mt-1 break-all">{evidence.sealPolicyId}</div>
                         </div>
+                        {evidence.sealIdentity ? (
+                          <div>
+                            <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">
+                              Seal identity
+                            </div>
+                            <div className="mt-1 break-all">{evidence.sealIdentity}</div>
+                          </div>
+                        ) : null}
+                        {evidence.sealPackageId ? (
+                          <div>
+                            <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">Seal package</div>
+                            <div className="mt-1 break-all">{evidence.sealPackageId}</div>
+                          </div>
+                        ) : null}
+                        {evidence.sealKeyServerObjectIds?.length ? (
+                          <div>
+                            <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">
+                              Seal key servers
+                            </div>
+                            <div className="mt-1 break-all">{evidence.sealKeyServerObjectIds.join(", ")}</div>
+                          </div>
+                        ) : null}
+                        {evidence.sealKeyServerAggregatorUrl ? (
+                          <div>
+                            <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">
+                              Seal aggregator
+                            </div>
+                            <div className="mt-1 break-all">{evidence.sealKeyServerAggregatorUrl}</div>
+                          </div>
+                        ) : null}
                       </div>
                     </details>
                   </div>
