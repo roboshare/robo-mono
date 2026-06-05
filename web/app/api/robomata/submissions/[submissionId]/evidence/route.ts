@@ -14,6 +14,7 @@ import {
   type SubmissionEvidenceCommit,
   addAuditEvent,
   invalidateSubmissionArtifacts,
+  resolveSubmissionFacilityObjectId,
 } from "~~/lib/robomata/submissions";
 
 export const runtime = "nodejs";
@@ -278,6 +279,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
         scope,
         status,
         sealPolicyId,
+        sealIdentity: resolveSubmissionFacilityObjectId(submission),
         linkedReceivableIds,
       });
     } catch (error) {

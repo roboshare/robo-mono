@@ -43,8 +43,14 @@ function getSealPackageId(): string {
   return normalizeObjectId(packageId);
 }
 
-function getSealIdentity(): string {
-  const identity = process.env.ROBOMATA_SEAL_IDENTITY ?? process.env.ROBOMATA_SUI_FACILITY_ID;
+type SealNetwork = "mainnet" | "testnet" | "devnet" | "localnet";
+
+function getSealNetwork(): SealNetwork {
+  return (process.env.ROBOMATA_SUI_NETWORK ?? "testnet") as SealNetwork;
+}
+
+function getSealIdentity(identityOverride?: string): string {
+  const identity = identityOverride ?? process.env.ROBOMATA_SEAL_IDENTITY ?? process.env.ROBOMATA_SUI_FACILITY_ID;
   if (!identity) {
     throw new Error("ROBOMATA_SEAL_IDENTITY or ROBOMATA_SUI_FACILITY_ID is required for Seal encryption.");
   }
@@ -52,7 +58,7 @@ function getSealIdentity(): string {
   return normalizeObjectId(identity);
 }
 
-function getSealKeyServerConfigs(): KeyServerConfig[] {
+function getSealKeyServerConfigs(network: SealNetwork): KeyServerConfig[] {
   const rawJson = process.env.ROBOMATA_SEAL_KEY_SERVERS_JSON;
   if (rawJson) {
     const parsed = JSON.parse(rawJson) as KeyServerConfig[];
@@ -62,31 +68,41 @@ function getSealKeyServerConfigs(): KeyServerConfig[] {
     return parsed;
   }
 
+  const configuredObjectId = process.env.ROBOMATA_SEAL_KEY_SERVER_OBJECT_ID;
+  if (network !== "testnet" && !configuredObjectId) {
+    throw new Error(
+      "ROBOMATA_SEAL_KEY_SERVER_OBJECT_ID or ROBOMATA_SEAL_KEY_SERVERS_JSON is required for non-testnet Seal encryption.",
+    );
+  }
+
   return [
     {
-      objectId: process.env.ROBOMATA_SEAL_KEY_SERVER_OBJECT_ID ?? TESTNET_COMMITTEE_KEY_SERVER_OBJECT_ID,
-      aggregatorUrl: process.env.ROBOMATA_SEAL_KEY_SERVER_AGGREGATOR_URL ?? TESTNET_COMMITTEE_AGGREGATOR_URL,
+      objectId: configuredObjectId ?? TESTNET_COMMITTEE_KEY_SERVER_OBJECT_ID,
+      aggregatorUrl:
+        process.env.ROBOMATA_SEAL_KEY_SERVER_AGGREGATOR_URL ??
+        (network === "testnet" ? TESTNET_COMMITTEE_AGGREGATOR_URL : undefined),
       weight: parsePositiveInteger(process.env.ROBOMATA_SEAL_KEY_SERVER_WEIGHT, 1),
     },
   ];
 }
 
-export function isSealEncryptionConfigured(): boolean {
+export function isSealEncryptionConfigured(identityOverride?: string): boolean {
   return Boolean(
     (process.env.ROBOMATA_SEAL_PACKAGE_ID || process.env.ROBOMATA_SUI_PACKAGE_ID) &&
-      (process.env.ROBOMATA_SEAL_IDENTITY || process.env.ROBOMATA_SUI_FACILITY_ID),
+      (identityOverride || process.env.ROBOMATA_SEAL_IDENTITY || process.env.ROBOMATA_SUI_FACILITY_ID),
   );
 }
 
 export async function encryptEvidenceWithSeal(input: {
   plaintext: Buffer;
+  sealIdentity?: string;
   aad?: Buffer;
 }): Promise<SealEvidenceEncryptionResult> {
   const sealPackageId = getSealPackageId();
-  const sealIdentity = getSealIdentity();
-  const serverConfigs = getSealKeyServerConfigs();
+  const sealIdentity = getSealIdentity(input.sealIdentity);
+  const network = getSealNetwork();
+  const serverConfigs = getSealKeyServerConfigs(network);
   const threshold = parsePositiveInteger(process.env.ROBOMATA_SEAL_THRESHOLD, 1);
-  const network = (process.env.ROBOMATA_SUI_NETWORK ?? "testnet") as "mainnet" | "testnet" | "devnet" | "localnet";
   const rpcUrl = process.env.ROBOMATA_SUI_FULLNODE_URL ?? getJsonRpcFullnodeUrl(network);
   const client = new SealClient({
     suiClient: new SuiJsonRpcClient({ network, url: rpcUrl }),

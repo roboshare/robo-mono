@@ -41,6 +41,7 @@ export type SubmissionEvidence = EvidenceCommitment & {
   linkedReceivableIds: string[];
   storageBackend: SubmissionStorageBackend;
   encryptionBackend: SubmissionEncryptionBackend;
+  sealEncrypted?: boolean;
   walrusBlobId: string;
   walrusEventId?: string;
   aggregatorUrl?: string;

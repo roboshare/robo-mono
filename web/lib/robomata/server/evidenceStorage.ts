@@ -84,21 +84,23 @@ export async function createEvidenceRecord(input: {
   scope: string;
   status: SubmissionEvidence["status"];
   sealPolicyId: string;
+  sealIdentity?: string;
   linkedReceivableIds?: string[];
 }): Promise<SubmissionEvidence> {
   const plaintext = Buffer.from(await input.file.arrayBuffer());
   const plaintextDigest = digestBuffer(plaintext);
   const uploadsEnabled = isRobomataWalrusUploadsEnabled();
 
-  if (uploadsEnabled && !isSealEncryptionConfigured()) {
+  if (uploadsEnabled && !isSealEncryptionConfigured(input.sealIdentity)) {
     throw new Error(
-      "Seal encryption is required before real Walrus uploads are enabled. Set ROBOMATA_SUI_PACKAGE_ID and ROBOMATA_SUI_FACILITY_ID, or explicit ROBOMATA_SEAL_* values.",
+      "Seal encryption is required before real Walrus uploads are enabled. Set ROBOMATA_SUI_PACKAGE_ID and a submission facility identity, or explicit ROBOMATA_SEAL_* values.",
     );
   }
 
   const sealResult = uploadsEnabled
     ? await encryptEvidenceWithSeal({
         plaintext,
+        sealIdentity: input.sealIdentity,
         aad: Buffer.from(
           JSON.stringify({
             label: input.label,

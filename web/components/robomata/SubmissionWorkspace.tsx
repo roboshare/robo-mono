@@ -588,7 +588,9 @@ export const SubmissionWorkspace = ({
                         {evidence.storageBackend === "walrus" ? "Walrus stored" : "Mock storage"}
                       </span>
                       <span className="rounded-full bg-base-100 px-3 py-1 text-base-content/60">
-                        {evidence.encryptionBackend === "seal" ? "Seal encrypted" : "Not encrypted"}
+                        {evidence.encryptionBackend === "seal" || evidence.sealEncrypted
+                          ? "Seal encrypted"
+                          : "Not encrypted"}
                       </span>
                     </div>
                     {!readOnly ? (
