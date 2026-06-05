@@ -201,7 +201,7 @@ function createFileStore(): SubmissionStore {
         const next = submissions.filter(candidate => candidate.id !== nextSubmission.id);
         next.unshift(nextSubmission);
         await writeAll(next);
-        return nextSubmission;
+        return markLoadedSubmission(nextSubmission);
       });
     },
   };
