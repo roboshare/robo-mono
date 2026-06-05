@@ -36,8 +36,11 @@ export const SubmissionIndex = () => {
     if (!partnerAuthAddress) return;
 
     const load = async () => {
+      const path = "/api/robomata/submissions";
       setIsLoading(true);
-      const response = await fetch("/api/robomata/submissions", { headers: await getAuthHeaders(signerAddress) });
+      const response = await fetch(path, {
+        headers: await getAuthHeaders({ method: "GET", path, signerAddress }),
+      });
       const payload = (await response.json()) as { submissions?: FacilitySubmission[]; error?: string };
       if (!response.ok) {
         notification.error(payload.error ?? "Failed to load submissions.");
@@ -59,9 +62,13 @@ export const SubmissionIndex = () => {
 
     setIsCreating(true);
     try {
-      const response = await fetch("/api/robomata/submissions", {
+      const path = "/api/robomata/submissions";
+      const response = await fetch(path, {
         method: "POST",
-        headers: { "content-type": "application/json", ...(await getAuthHeaders(signerAddress)) },
+        headers: {
+          "content-type": "application/json",
+          ...(await getAuthHeaders({ method: "POST", path, signerAddress })),
+        },
         body: JSON.stringify({
           operatorName: form.operatorName.trim(),
           facilityName: form.facilityName.trim(),

@@ -37,6 +37,24 @@ type SubmissionStore = {
 
 let ensuredPostgresTable = false;
 const fileStoreLocks = new Map<string, Promise<void>>();
+const expectedUpdatedAtSymbol = Symbol("robomataExpectedUpdatedAt");
+
+type LoadedSubmission = FacilitySubmission & {
+  [expectedUpdatedAtSymbol]?: string;
+};
+
+function markLoadedSubmission(submission: FacilitySubmission): FacilitySubmission {
+  Object.defineProperty(submission, expectedUpdatedAtSymbol, {
+    configurable: true,
+    enumerable: false,
+    value: submission.updatedAt,
+  });
+  return submission;
+}
+
+function expectedUpdatedAt(submission: FacilitySubmission): string {
+  return (submission as LoadedSubmission)[expectedUpdatedAtSymbol] ?? submission.updatedAt;
+}
 
 async function ensurePostgresTable() {
   if (ensuredPostgresTable) return;
@@ -125,15 +143,18 @@ function createFileStore(): SubmissionStore {
         .filter(
           submission => !partnerAddress || submission.partnerAddress.toLowerCase() === partnerAddress.toLowerCase(),
         )
+        .map(markLoadedSubmission)
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
     },
     async get(id) {
       const submissions = await readFileStore(filePath);
-      return submissions.find(submission => submission.id === id) ?? null;
+      const submission = submissions.find(candidate => candidate.id === id);
+      return submission ? markLoadedSubmission(submission) : null;
     },
     async getLatest() {
       const submissions = await readFileStore(filePath);
-      return submissions.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0] ?? null;
+      const submission = submissions.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
+      return submission ? markLoadedSubmission(submission) : null;
     },
     async create(input) {
       return withWriteLock(async () => {
@@ -148,7 +169,7 @@ function createFileStore(): SubmissionStore {
       return withWriteLock(async () => {
         const submissions = await readFileStore(filePath);
         const current = submissions.find(candidate => candidate.id === submission.id);
-        if (current && current.updatedAt !== submission.updatedAt) {
+        if (current && current.updatedAt !== expectedUpdatedAt(submission)) {
           throw new Error("Submission changed while this update was in progress. Reload and try again.");
         }
 
@@ -156,7 +177,7 @@ function createFileStore(): SubmissionStore {
         const next = submissions.filter(candidate => candidate.id !== nextSubmission.id);
         next.unshift(nextSubmission);
         await writeAll(next);
-        return nextSubmission;
+        return markLoadedSubmission(nextSubmission);
       });
     },
     async beginEvidenceCommit(id, rootDigest) {
@@ -196,17 +217,17 @@ function createPostgresStore(): SubmissionStore {
       const rows = partnerAddress
         ? await query.where(drizzleSql`lower(${submissionsTable.partnerAddress}) = ${partnerAddress.toLowerCase()}`)
         : await query;
-      return rows.map(row => row.payload);
+      return rows.map(row => markLoadedSubmission(row.payload));
     },
     async get(id) {
       await ensurePostgresTable();
       const [row] = await db.select().from(submissionsTable).where(eq(submissionsTable.id, id));
-      return row?.payload ?? null;
+      return row ? markLoadedSubmission(row.payload) : null;
     },
     async getLatest() {
       await ensurePostgresTable();
       const [row] = await db.select().from(submissionsTable).orderBy(desc(submissionsTable.updatedAt)).limit(1);
-      return row?.payload ?? null;
+      return row ? markLoadedSubmission(row.payload) : null;
     },
     async create(input) {
       await ensurePostgresTable();
@@ -226,7 +247,7 @@ function createPostgresStore(): SubmissionStore {
     },
     async save(submission) {
       await ensurePostgresTable();
-      const expectedUpdatedAt = new Date(submission.updatedAt);
+      const previousUpdatedAt = new Date(expectedUpdatedAt(submission));
       const nextSubmission = touchSubmission(submission);
       const rows = await db
         .update(submissionsTable)
@@ -239,7 +260,7 @@ function createPostgresStore(): SubmissionStore {
           payload: nextSubmission,
           updatedAt: new Date(nextSubmission.updatedAt),
         })
-        .where(and(eq(submissionsTable.id, nextSubmission.id), eq(submissionsTable.updatedAt, expectedUpdatedAt)))
+        .where(and(eq(submissionsTable.id, nextSubmission.id), eq(submissionsTable.updatedAt, previousUpdatedAt)))
         .returning({ id: submissionsTable.id });
 
       if (rows.length === 0) {
@@ -264,14 +285,14 @@ function createPostgresStore(): SubmissionStore {
 
       const row = result.rows[0];
       if (!row) return null;
-      return {
+      return markLoadedSubmission({
         ...row.payload,
         evidenceCommit: {
           ...row.payload.evidenceCommit,
           status: "committing",
         },
         updatedAt: new Date(row.updated_at).toISOString(),
-      };
+      });
     },
   };
 }

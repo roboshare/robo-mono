@@ -25,12 +25,18 @@ function getAuthorizedSignerAddress(partnerAddress: string): string {
 }
 
 async function getVerifiedPartnerAddress(request: NextRequest): Promise<string | null> {
+  const method = request.headers.get(ROBOMATA_AUTH_HEADERS.method)?.trim().toUpperCase();
+  const path = request.headers.get(ROBOMATA_AUTH_HEADERS.path)?.trim();
   const partnerAddress = request.headers.get(ROBOMATA_AUTH_HEADERS.partnerAddress)?.trim();
   const signerAddress = request.headers.get(ROBOMATA_AUTH_HEADERS.signerAddress)?.trim() ?? partnerAddress;
   const signature = request.headers.get(ROBOMATA_AUTH_HEADERS.signature)?.trim();
   const timestamp = request.headers.get(ROBOMATA_AUTH_HEADERS.timestamp)?.trim();
 
-  if (!partnerAddress || !signerAddress || !signature || !timestamp || !isAddress(partnerAddress)) return null;
+  if (!method || !path || !partnerAddress || !signerAddress || !signature || !timestamp || !isAddress(partnerAddress)) {
+    return null;
+  }
+  if (method !== request.method.toUpperCase()) return null;
+  if (path !== request.nextUrl.pathname) return null;
   if (!isAddress(signerAddress)) return null;
   if (getAuthorizedSignerAddress(partnerAddress).toLowerCase() !== signerAddress.toLowerCase()) return null;
 
@@ -41,7 +47,7 @@ async function getVerifiedPartnerAddress(request: NextRequest): Promise<string |
   try {
     valid = await verifyMessage({
       address: signerAddress,
-      message: buildRobomataAuthMessage({ partnerAddress, signerAddress, timestamp }),
+      message: buildRobomataAuthMessage({ method, partnerAddress, path, signerAddress, timestamp }),
       signature: signature as `0x${string}`,
     });
   } catch {

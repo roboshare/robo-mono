@@ -72,10 +72,11 @@ export const SubmissionWorkspace = ({
         return;
       }
 
-      const authHeaders = await getAuthHeaders(signerAddress);
-
       if (submissionId) {
-        const response = await fetch(`/api/robomata/submissions/${submissionId}`, { headers: authHeaders });
+        const path = `/api/robomata/submissions/${submissionId}`;
+        const response = await fetch(path, {
+          headers: await getAuthHeaders({ method: "GET", path, signerAddress }),
+        });
         const payload = (await response.json()) as { submission?: FacilitySubmission; error?: string };
         if (!response.ok || !payload.submission) throw new Error(payload.error ?? "Failed to load submission.");
         setSubmission(payload.submission);
@@ -84,7 +85,10 @@ export const SubmissionWorkspace = ({
       }
 
       if (loadLatest) {
-        const response = await fetch("/api/robomata/submissions", { headers: authHeaders });
+        const path = "/api/robomata/submissions";
+        const response = await fetch(path, {
+          headers: await getAuthHeaders({ method: "GET", path, signerAddress }),
+        });
         const payload = (await response.json()) as { submissions?: FacilitySubmission[]; error?: string };
         if (!response.ok) throw new Error(payload.error ?? "Failed to load submissions.");
         setSubmission(payload.submissions?.[0] ?? null);
@@ -109,7 +113,7 @@ export const SubmissionWorkspace = ({
     setIsBusy(true);
     try {
       const headers = new Headers(init?.headers);
-      const authHeaders = await getAuthHeaders(signerAddress);
+      const authHeaders = await getAuthHeaders({ method: init?.method ?? "GET", path: url, signerAddress });
       Object.entries(authHeaders).forEach(([key, value]) => headers.set(key, value));
       const response = await fetch(url, { ...init, headers });
       const payload = (await response.json().catch(() => ({}))) as { submission?: FacilitySubmission; error?: string };
