@@ -183,6 +183,7 @@ function requireDurableStoreForEnabledWorkflow() {
 async function readFileStore(filePath: string): Promise<FacilitySubmission[]> {
   try {
     const raw = await readFile(filePath, "utf8");
+    if (!raw.trim()) return [];
     return JSON.parse(raw) as FacilitySubmission[];
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
