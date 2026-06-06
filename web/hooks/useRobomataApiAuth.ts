@@ -5,6 +5,7 @@ import { useSignMessage } from "wagmi";
 import { ROBOMATA_AUTH_HEADERS, ROBOMATA_AUTH_MAX_AGE_MS, buildRobomataAuthMessage } from "~~/lib/robomata/auth";
 
 type CachedAuthHeaders = {
+  chainId?: number;
   expiresAt: number;
   headers: Record<string, string>;
   method: string;
@@ -14,6 +15,7 @@ type CachedAuthHeaders = {
 };
 
 type RobomataAuthRequest = {
+  chainId?: number;
   method?: string;
   path?: string;
   signerAddress?: string;
@@ -30,6 +32,7 @@ export function useRobomataApiAuth(partnerAddress?: string) {
       if (!partnerAddress) throw new Error("Connect a partner wallet before accessing Robomata submissions.");
       const signerAddress = input.signerAddress ?? partnerAddress;
       if (!signerAddress) throw new Error("Connect a signing wallet before accessing Robomata submissions.");
+      const chainId = input.chainId;
       const method = (input.method ?? "GET").toUpperCase();
       const path = input.path ?? "/api/robomata/submissions";
 
@@ -41,6 +44,7 @@ export function useRobomataApiAuth(partnerAddress?: string) {
         cached &&
         cached.partnerAddress.toLowerCase() === normalizedPartnerAddress &&
         cached.signerAddress.toLowerCase() === normalizedSignerAddress &&
+        cached.chainId === chainId &&
         cached.method === method &&
         cached.path === path &&
         cached.expiresAt > Date.now()
@@ -50,9 +54,10 @@ export function useRobomataApiAuth(partnerAddress?: string) {
 
       const timestamp = Date.now().toString();
       const signature = await signMessageAsync({
-        message: buildRobomataAuthMessage({ method, partnerAddress, path, signerAddress, timestamp }),
+        message: buildRobomataAuthMessage({ chainId, method, partnerAddress, path, signerAddress, timestamp }),
       });
       const headers = {
+        ...(chainId ? { [ROBOMATA_AUTH_HEADERS.chainId]: chainId.toString() } : {}),
         [ROBOMATA_AUTH_HEADERS.method]: method,
         [ROBOMATA_AUTH_HEADERS.path]: path,
         [ROBOMATA_AUTH_HEADERS.partnerAddress]: partnerAddress,
@@ -62,6 +67,7 @@ export function useRobomataApiAuth(partnerAddress?: string) {
       };
 
       cacheRef.current = {
+        chainId,
         expiresAt: Date.now() + CLIENT_AUTH_CACHE_MS,
         headers,
         method,
