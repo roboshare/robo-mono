@@ -1,39 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import {
-  isRobomataSuiCommitEnabled,
-  isRobomataWorkflowMutationEnabled,
-  isRobomataWorkflowServerEnabled,
-} from "~~/lib/featureFlags";
+import { Transaction } from "@mysten/sui/transactions";
+import { isRobomataWorkflowMutationEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
 import { requirePartnerAddress, requireSubmissionAccess } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
+import {
+  getRobomataSuiClient,
+  getRobomataSuiGasBudget,
+  getRobomataSuiServerSigner,
+  getRobomataSuiTimeoutMs,
+  isRobomataSuiCommitRuntimeConfigured,
+  parsePositiveInteger,
+} from "~~/lib/robomata/server/suiCommitConfig";
 import {
   type FacilitySubmission,
   resolveSubmissionFacilityObjectId,
   resolveSubmissionFacilityOperatorAddress,
 } from "~~/lib/robomata/submissions";
 
-const execFileAsync = promisify(execFile);
 const DEFAULT_COMMIT_STALE_MS = 10 * 60 * 1000;
 const DEFAULT_EVENT_QUERY_LIMIT = 100;
 const DEFAULT_EVENT_QUERY_MAX_PAGES = 10;
-const DEFAULT_SUI_CLI_TIMEOUT_MS = 120_000;
 
 export const runtime = "nodejs";
-
-function isCommitConfigured(facilityObjectId: string | undefined, facilityOperatorAddress: string | undefined) {
-  const signerAddress = process.env.ROBOMATA_SUI_SIGNER_ADDRESS?.trim().toLowerCase();
-
-  return Boolean(
-    process.env.ROBOMATA_SUI_PACKAGE_ID &&
-      process.env.ROBOMATA_SUI_CLIENT_CONFIG &&
-      facilityObjectId &&
-      facilityOperatorAddress &&
-      signerAddress === facilityOperatorAddress.toLowerCase() &&
-      isRobomataSuiCommitEnabled(),
-  );
-}
 
 function requireRobomataWorkflow() {
   if (isRobomataWorkflowServerEnabled()) return null;
@@ -43,12 +31,6 @@ function requireRobomataWorkflow() {
 function requireRobomataMutation() {
   if (isRobomataWorkflowMutationEnabled()) return null;
   return NextResponse.json({ error: "Robomata submission writes are not enabled." }, { status: 403 });
-}
-
-function parsePositiveInteger(value: string | undefined, fallback: number): number {
-  if (!value) return fallback;
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function commitStaleBeforeMs(): number {
@@ -97,45 +79,30 @@ function eventTxDigest(event: Record<string, unknown>): string | undefined {
   return typeof digest === "string" ? digest : undefined;
 }
 
-function serializeEventCursor(cursor: unknown): string | undefined {
-  if (typeof cursor === "string" && cursor.length > 0) return cursor;
-  if (cursor && typeof cursor === "object") return JSON.stringify(cursor);
-}
-
 async function findCommittedEvidenceEvent(input: {
   facilityObjectId: string;
   label: string;
   rootDigest: string;
 }): Promise<string | undefined> {
   const eventType = `${process.env.ROBOMATA_SUI_PACKAGE_ID}::facility::EvidenceCommitted`;
-  const limit = parsePositiveInteger(process.env.ROBOMATA_SUI_EVENT_QUERY_LIMIT, DEFAULT_EVENT_QUERY_LIMIT).toString();
+  const limit = parsePositiveInteger(process.env.ROBOMATA_SUI_EVENT_QUERY_LIMIT, DEFAULT_EVENT_QUERY_LIMIT);
   const maxPages = parsePositiveInteger(process.env.ROBOMATA_SUI_EVENT_QUERY_MAX_PAGES, DEFAULT_EVENT_QUERY_MAX_PAGES);
   const expectedFacility = input.facilityObjectId.toLowerCase();
-  let cursor: string | undefined;
+  let cursor: { eventSeq: string; txDigest: string } | null | undefined;
+  const client = getRobomataSuiClient();
 
   for (let page = 0; page < maxPages; page++) {
-    const args = [
-      "client",
-      "--client.config",
-      process.env.ROBOMATA_SUI_CLIENT_CONFIG as string,
-      "query-events",
-      "--query",
-      JSON.stringify({ MoveEventType: eventType }),
-      "--limit",
-      limit,
-      "--descending-order",
-      "--json",
-    ];
-
-    if (cursor) args.push("--cursor", cursor);
-
-    const { stdout } = await execFileAsync("sui", args, {
-      timeout: parsePositiveInteger(process.env.ROBOMATA_SUI_CLI_TIMEOUT_MS, DEFAULT_SUI_CLI_TIMEOUT_MS),
-    });
-    const payload = JSON.parse(stdout) as
-      | { data?: Record<string, unknown>[]; nextCursor?: unknown; next_cursor?: unknown; hasNextPage?: unknown }
-      | Record<string, unknown>[];
-    const events = Array.isArray(payload) ? payload : (payload.data ?? []);
+    const payload = await withTimeout(
+      () =>
+        client.queryEvents({
+          query: { MoveEventType: eventType },
+          cursor,
+          limit,
+          order: "descending",
+        }),
+      getRobomataSuiTimeoutMs(),
+    );
+    const events = payload.data as unknown as Record<string, unknown>[];
 
     const match = events.find(event => {
       const parsedJson = (event.parsedJson ?? event.parsed_json) as
@@ -151,42 +118,100 @@ async function findCommittedEvidenceEvent(input: {
     });
 
     if (match) return eventTxDigest(match);
-    if (Array.isArray(payload)) return undefined;
-
-    const nextCursor = serializeEventCursor(payload.nextCursor ?? payload.next_cursor);
-    const hasNextPage = payload.hasNextPage === true || Boolean(nextCursor);
-    if (!hasNextPage || !nextCursor) return undefined;
-    cursor = nextCursor;
+    if (!payload.hasNextPage || !payload.nextCursor) return undefined;
+    cursor = payload.nextCursor;
   }
 
   return undefined;
 }
 
-function parseSuiTransactionResult(stdout: string): { txDigest?: string; errorMessage?: string; uncertain: boolean } {
-  try {
-    const payload = JSON.parse(stdout);
-    const status = payload?.effects?.status?.status;
-    const errorMessage = payload?.effects?.status?.error;
-    const parsedTxDigest = payload?.digest ?? payload?.effects?.transactionDigest ?? undefined;
-    const txDigest = typeof parsedTxDigest === "string" ? parsedTxDigest : undefined;
+type SuiCommitResult = {
+  errorMessage?: string;
+  txDigest?: string;
+  uncertain: boolean;
+};
 
-    if (status === "success") return { txDigest, uncertain: false };
-    if (status === "failure") {
+function hexToBytes(value: string): number[] {
+  const hex = normalizeHex(value);
+  if (hex.length % 2 !== 0) throw new Error("Expected an even-length hex digest.");
+  return Array.from(Buffer.from(hex, "hex"));
+}
+
+async function withTimeout<T>(operation: (signal: AbortSignal) => Promise<T>, timeoutMs: number): Promise<T> {
+  const controller = new AbortController();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      controller.abort();
+      reject(new Error(`Sui commit timed out after ${timeoutMs}ms.`));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([operation(controller.signal), timeoutPromise]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+async function executeSuiCommit(input: {
+  facilityObjectId: string;
+  label: string;
+  rootDigest: string;
+}): Promise<SuiCommitResult> {
+  const signer = getRobomataSuiServerSigner();
+  if (!signer) {
+    return {
+      errorMessage: "ROBOMATA_SUI_PRIVATE_KEY is missing or invalid for this app runtime.",
+      uncertain: false,
+    };
+  }
+
+  const tx = new Transaction();
+  tx.setGasBudget(getRobomataSuiGasBudget());
+  tx.moveCall({
+    target: `${process.env.ROBOMATA_SUI_PACKAGE_ID}::facility::commit_evidence`,
+    arguments: [
+      tx.object(input.facilityObjectId),
+      tx.pure.string(input.label),
+      tx.pure.vector("u8", hexToBytes(input.rootDigest)),
+    ],
+  });
+
+  try {
+    const client = getRobomataSuiClient();
+    const result = await withTimeout(
+      signal =>
+        client.core.signAndExecuteTransaction({
+          signer: signer.keypair,
+          transaction: tx,
+          include: { effects: true },
+          signal,
+        }),
+      getRobomataSuiTimeoutMs(),
+    );
+
+    if (result.Transaction) return { txDigest: result.Transaction.digest, uncertain: false };
+    if (result.FailedTransaction) {
       return {
-        txDigest,
-        errorMessage: typeof errorMessage === "string" ? errorMessage : "Sui transaction failed.",
+        txDigest: result.FailedTransaction.digest,
+        errorMessage:
+          result.FailedTransaction.status.error?.message ??
+          String(result.FailedTransaction.status.error ?? "Sui transaction failed."),
         uncertain: false,
       };
     }
 
     return {
-      txDigest,
-      errorMessage: "Sui transaction status was missing from CLI output.",
+      errorMessage: "Sui transaction status was missing from SDK output.",
       uncertain: true,
     };
-  } catch {
+  } catch (error) {
     return {
-      errorMessage: "Sui transaction output was not valid JSON.",
+      errorMessage:
+        error instanceof Error
+          ? `Sui commit response was not confirmed and must be reconciled before retry: ${error.message}`
+          : "Sui commit response was not confirmed and must be reconciled before retry.",
       uncertain: true,
     };
   }
@@ -267,7 +292,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     );
   }
 
-  if (!isCommitConfigured(facilityObjectId, facilityOperatorAddress)) {
+  if (!isRobomataSuiCommitRuntimeConfigured({ facilityObjectId, facilityOperatorAddress })) {
     return NextResponse.json(
       { error: "Sui commit environment is not configured for this app runtime." },
       { status: 400 },
@@ -343,43 +368,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     );
   }
 
-  const gasBudget = process.env.ROBOMATA_SUI_GAS_BUDGET ?? "100000000";
-  const args = [
-    "client",
-    "--client.config",
-    process.env.ROBOMATA_SUI_CLIENT_CONFIG as string,
-    "call",
-    "--package",
-    process.env.ROBOMATA_SUI_PACKAGE_ID as string,
-    "--module",
-    "facility",
-    "--function",
-    "commit_evidence",
-    "--args",
-    facilityObjectId,
-    label,
-    rootDigest,
-    "--gas-budget",
-    gasBudget,
-    "--json",
-  ];
-
-  let stdout: string;
-  try {
-    ({ stdout } = await execFileAsync("sui", args, {
-      timeout: parsePositiveInteger(process.env.ROBOMATA_SUI_CLI_TIMEOUT_MS, DEFAULT_SUI_CLI_TIMEOUT_MS),
-    }));
-  } catch (error) {
-    return keepCommitInReconciliationState({
-      submission: committingSubmission,
-      error:
-        error instanceof Error
-          ? `Sui commit response was not confirmed and must be reconciled before retry: ${error.message}`
-          : "Sui commit response was not confirmed and must be reconciled before retry.",
-    });
-  }
-
-  const result = parseSuiTransactionResult(stdout);
+  const result = await executeSuiCommit({ facilityObjectId, label, rootDigest });
   if (result.errorMessage) {
     if (result.uncertain) {
       return keepCommitInReconciliationState({

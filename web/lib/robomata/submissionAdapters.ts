@@ -1,14 +1,8 @@
-import { isRobomataSuiCommitEnabled } from "~~/lib/featureFlags";
 import { buildAgentReviewInput, reviewBorrowingBase } from "~~/lib/robomata/agentProviders";
-import {
-  type BorrowingBaseResult,
-  type FleetPortfolio,
-  type ReceivableResult,
-  formatPercentFromBps,
-  formatUsd,
-} from "~~/lib/robomata/borrowingBase";
+import { type BorrowingBaseResult, type FleetPortfolio, type ReceivableResult } from "~~/lib/robomata/borrowingBase";
 import { buildEvidenceAnchor, buildEvidenceRail } from "~~/lib/robomata/evidence";
 import { buildLenderPacket } from "~~/lib/robomata/lenderPacket";
+import { isRobomataSuiCommitRuntimeConfigured } from "~~/lib/robomata/server/suiCommitConfig";
 import {
   type FacilitySubmission,
   SUI_COMMIT_MODULE_PATH,
@@ -174,7 +168,6 @@ async function buildEvidenceCommitPreview(submission: FacilitySubmission, eviden
   const rootDigest = Array.from(new Uint8Array(digestBytes), byte => byte.toString(16).padStart(2, "0")).join("");
   const facilityObjectId = resolveSubmissionFacilityObjectId(submission);
   const facilityOperatorAddress = resolveSubmissionFacilityOperatorAddress(submission);
-  const signerAddress = process.env.ROBOMATA_SUI_SIGNER_ADDRESS?.trim().toLowerCase();
 
   return {
     status: "ready" as const,
@@ -183,15 +176,9 @@ async function buildEvidenceCommitPreview(submission: FacilitySubmission, eviden
     modulePath: SUI_COMMIT_MODULE_PATH,
     facilityObjectId,
     facilityOperatorAddress,
-    commitMode:
-      process.env.ROBOMATA_SUI_PACKAGE_ID &&
-      process.env.ROBOMATA_SUI_CLIENT_CONFIG &&
-      facilityObjectId &&
-      facilityOperatorAddress &&
-      signerAddress === facilityOperatorAddress.toLowerCase() &&
-      isRobomataSuiCommitEnabled()
-        ? ("configured" as const)
-        : ("prepared" as const),
+    commitMode: isRobomataSuiCommitRuntimeConfigured({ facilityObjectId, facilityOperatorAddress })
+      ? ("configured" as const)
+      : ("prepared" as const),
   };
 }
 
@@ -215,15 +202,4 @@ export async function computeSubmissionArtifacts(submission: FacilitySubmission)
     evidenceAnchor,
     evidenceRail,
   };
-}
-
-export function buildSubmissionSummaryCards(computation: SubmissionComputation) {
-  const { borrowingBase } = computation;
-  return [
-    { label: "Gross Receivables", value: formatUsd(borrowingBase.grossReceivablesCents) },
-    { label: "Eligible Receivables", value: formatUsd(borrowingBase.eligibleReceivablesCents) },
-    { label: "Available Borrowing Base", value: formatUsd(borrowingBase.availableBorrowingBaseCents) },
-    { label: "Open Exceptions", value: borrowingBase.exceptionCount.toString() },
-    { label: "Advance Rate", value: formatPercentFromBps(borrowingBase.portfolio.advanceRateBps) },
-  ];
 }
