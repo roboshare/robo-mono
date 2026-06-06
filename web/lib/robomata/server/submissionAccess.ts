@@ -119,7 +119,7 @@ async function verifyPrivyWalletOwnership({
   request: NextRequest;
   signerAddress: string;
 }): Promise<boolean> {
-  if (canUseLocalPartnerAllowlist() && partnerAddress.toLowerCase() === signerAddress.toLowerCase()) return true;
+  if (isPartnerAuthorizedByLocalAllowlist(partnerAddress)) return true;
 
   const client = getPrivyClient();
   const accessToken = getPrivyAccessToken(request);
