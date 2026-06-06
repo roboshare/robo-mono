@@ -11,6 +11,7 @@ import {
   ExclamationTriangleIcon,
   ShieldCheckIcon,
 } from "@heroicons/react/24/outline";
+import { useSelectedNetwork } from "~~/hooks/scaffold-eth";
 import { useRobomataApiAuth } from "~~/hooks/useRobomataApiAuth";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
 import { formatUsd } from "~~/lib/robomata/borrowingBase";
@@ -56,6 +57,7 @@ export const SubmissionWorkspace = ({
   const [receivablesCsvText, setReceivablesCsvText] = useState("");
   const [evidenceText, setEvidenceText] = useState("");
   const { address: accountAddress, chainId: accountChainId, connectedAddress } = useTransactingAccount();
+  const selectedNetwork = useSelectedNetwork(accountChainId);
   const partnerAuthAddress = accountAddress;
   const signerAddress = connectedAddress ?? accountAddress;
   const getAuthHeaders = useRobomataApiAuth(partnerAuthAddress);
@@ -79,7 +81,7 @@ export const SubmissionWorkspace = ({
       if (submissionId) {
         const path = `/api/robomata/submissions/${submissionId}`;
         const response = await fetch(path, {
-          headers: await getAuthHeaders({ chainId: accountChainId, method: "GET", path, signerAddress }),
+          headers: await getAuthHeaders({ chainId: selectedNetwork.id, method: "GET", path, signerAddress }),
         });
         const payload = (await response.json()) as { submission?: FacilitySubmission; error?: string };
         if (!response.ok || !payload.submission) throw new Error(payload.error ?? "Failed to load submission.");
@@ -91,7 +93,7 @@ export const SubmissionWorkspace = ({
       if (loadLatest) {
         const path = "/api/robomata/submissions";
         const response = await fetch(path, {
-          headers: await getAuthHeaders({ chainId: accountChainId, method: "GET", path, signerAddress }),
+          headers: await getAuthHeaders({ chainId: selectedNetwork.id, method: "GET", path, signerAddress }),
         });
         const payload = (await response.json()) as { submissions?: FacilitySubmission[]; error?: string };
         if (!response.ok) throw new Error(payload.error ?? "Failed to load submissions.");
@@ -102,7 +104,7 @@ export const SubmissionWorkspace = ({
     } finally {
       setIsLoading(false);
     }
-  }, [accountChainId, getAuthHeaders, loadLatest, partnerAuthAddress, signerAddress, submissionId]);
+  }, [getAuthHeaders, loadLatest, partnerAuthAddress, selectedNetwork.id, signerAddress, submissionId]);
 
   useEffect(() => {
     void loadSubmission();
@@ -118,7 +120,7 @@ export const SubmissionWorkspace = ({
     try {
       const headers = new Headers(init?.headers);
       const authHeaders = await getAuthHeaders({
-        chainId: accountChainId,
+        chainId: selectedNetwork.id,
         method: init?.method ?? "GET",
         path: url,
         signerAddress,

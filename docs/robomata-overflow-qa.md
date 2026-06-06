@@ -97,9 +97,10 @@ Required environment:
 * `NEXT_PUBLIC_ENABLE_ROBOMATA_WORKFLOW=true`
 * `ROBOMATA_WORKFLOW_ENABLED=true`
 * `ROBOMATA_WORKFLOW_MUTATIONS_ENABLED=true`
-* deployed `PartnerManager` authorization for the partner wallet used in QA
-* `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES`, only for isolated local smoke tests
-  where `PartnerManager` cannot be read
+* `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES`, set by the smoke script to the
+  temporary randomly generated local partner signer because this command runs
+  `next dev` and intentionally exercises the development-only API allowlist
+  fallback instead of deployed `PartnerManager` authorization
 * `POSTGRES_URL`, except for single-developer local QA where
   `ROBOMATA_SUBMISSIONS_FILE` may point at an ignored temp file
 * `WALRUS_PUBLISHER_URL`, for example the current Walrus testnet publisher
@@ -119,6 +120,10 @@ Required environment:
   `ROBOMATA_SEAL_KEY_SERVER_AGGREGATOR_URL`, and `ROBOMATA_SEAL_THRESHOLD`
   from the Sui testnet deployment helper, or equivalent
   `ROBOMATA_SEAL_KEY_SERVERS_JSON` configuration
+
+Deployed Preview or Production QA is separate from this local smoke command and
+must use a wallet authorized in the deployed EVM `PartnerManager`; deployed
+environments should not rely on `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES`.
 
 Result:
 
