@@ -142,6 +142,8 @@ jobs:
 
       - name: Install Sui CLI
         if: steps.package.outputs.exists == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           "$HOME/.local/bin/suiup" install -y sui@testnet
           "$HOME/.local/bin/suiup" default set sui@testnet

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef } from "react";
+import { getAccessToken } from "@privy-io/react-auth";
 import { useSignMessage } from "wagmi";
 import { ROBOMATA_AUTH_HEADERS, ROBOMATA_AUTH_MAX_AGE_MS, buildRobomataAuthMessage } from "~~/lib/robomata/auth";
 
@@ -22,6 +23,11 @@ type RobomataAuthRequest = {
 };
 
 const CLIENT_AUTH_CACHE_MS = ROBOMATA_AUTH_MAX_AGE_MS - 30_000;
+
+async function getPrivyAuthorizationHeader(): Promise<Record<string, string>> {
+  const privyAccessToken = await getAccessToken();
+  return privyAccessToken ? { authorization: `Bearer ${privyAccessToken}` } : {};
+}
 
 export function useRobomataApiAuth(partnerAddress?: string) {
   const { signMessageAsync } = useSignMessage();
@@ -49,7 +55,7 @@ export function useRobomataApiAuth(partnerAddress?: string) {
         cached.path === path &&
         cached.expiresAt > Date.now()
       ) {
-        return cached.headers;
+        return { ...cached.headers, ...(await getPrivyAuthorizationHeader()) };
       }
 
       const timestamp = Date.now().toString();
@@ -76,7 +82,7 @@ export function useRobomataApiAuth(partnerAddress?: string) {
         signerAddress,
       };
 
-      return headers;
+      return { ...headers, ...(await getPrivyAuthorizationHeader()) };
     },
     [partnerAddress, signMessageAsync],
   );

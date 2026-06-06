@@ -14,9 +14,8 @@ import {
 import { useSelectedNetwork } from "~~/hooks/scaffold-eth";
 import { useRobomataApiAuth } from "~~/hooks/useRobomataApiAuth";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
-import { formatUsd } from "~~/lib/robomata/borrowingBase";
-import { buildSubmissionSummaryCards } from "~~/lib/robomata/submissionAdapters";
-import type { FacilitySubmission, SubmissionReceivable } from "~~/lib/robomata/submissions";
+import { formatPercentFromBps, formatUsd } from "~~/lib/robomata/borrowingBase";
+import type { FacilitySubmission, SubmissionComputation, SubmissionReceivable } from "~~/lib/robomata/submissions";
 import { notification } from "~~/utils/scaffold-eth";
 
 type SubmissionWorkspaceProps = {
@@ -42,6 +41,17 @@ function centsToDollarInput(cents: number | undefined): string {
 
 function dollarsToCents(value: string): number {
   return Math.round(Number(value) * 100);
+}
+
+function buildSubmissionSummaryCards(computation: SubmissionComputation) {
+  const { borrowingBase } = computation;
+  return [
+    { label: "Gross Receivables", value: formatUsd(borrowingBase.grossReceivablesCents) },
+    { label: "Eligible Receivables", value: formatUsd(borrowingBase.eligibleReceivablesCents) },
+    { label: "Available Borrowing Base", value: formatUsd(borrowingBase.availableBorrowingBaseCents) },
+    { label: "Open Exceptions", value: borrowingBase.exceptionCount.toString() },
+    { label: "Advance Rate", value: formatPercentFromBps(borrowingBase.portfolio.advanceRateBps) },
+  ];
 }
 
 export const SubmissionWorkspace = ({

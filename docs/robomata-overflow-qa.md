@@ -111,7 +111,7 @@ Required environment:
 * `ROBOMATA_REQUIRE_REAL_EVIDENCE_STORAGE=true`
 * `ROBOMATA_SUI_COMMIT_ENABLED=true`
 * `ROBOMATA_SUI_PACKAGE_ID`
-* `ROBOMATA_SUI_CLIENT_CONFIG`
+* `ROBOMATA_SUI_PRIVATE_KEY`
 * `ROBOMATA_SUI_SIGNER_ADDRESS`
 * `ROBOMATA_SUI_FACILITY_IDS_JSON`
 * `ROBOMATA_SUI_FACILITY_OPERATORS_JSON`
@@ -124,6 +124,10 @@ Required environment:
 Deployed Preview or Production QA is separate from this local smoke command and
 must use a wallet authorized in the deployed EVM `PartnerManager`; deployed
 environments should not rely on `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES`.
+Deployed Robomata API requests must also include a Privy access token from the
+current user session, and the server environment must set
+`NEXT_PUBLIC_PRIVY_APP_ID` plus `PRIVY_APP_SECRET` so the API can verify that
+the partner smart wallet and signing wallet belong to the same Privy user.
 
 Result:
 

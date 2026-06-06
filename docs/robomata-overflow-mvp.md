@@ -166,18 +166,23 @@ Use the flags as a matrix:
   exists. With this flag, uploads fail closed unless evidence can be encrypted
   before publishing.
 * `ROBOMATA_SUI_COMMIT_ENABLED=true` enables real Sui evidence commit
-  transactions when the Sui package, client config, per-submission facility
-  mapping, per-submission operator mapping, and expected signer are configured.
-  Without this flag, evidence roots remain prepared but cannot be committed
-  onchain.
+  transactions when the Sui package, server signer private key,
+  per-submission facility mapping, per-submission operator mapping, and
+  expected signer are configured. Without this flag, evidence roots remain
+  prepared but cannot be committed onchain.
 * `ROBOMATA_SUI_FACILITY_IDS_JSON={"sub_...":"0x..."}` maps each submission id
   to its own Sui facility object. Do not use facility names as keys; names are
   mutable operator input and are not safe authorization boundaries.
 * `ROBOMATA_SUI_FACILITY_OPERATORS_JSON={"sub_...":"0x..."}` maps each
   submission id to the Sui address that created and controls the mapped facility
   object.
-* `ROBOMATA_SUI_SIGNER_ADDRESS=0x...` must match the mapped facility operator
-  before the runtime exposes the Sui commit path.
+* `ROBOMATA_SUI_PRIVATE_KEY=suiprivkey...` is the sensitive server-side Sui
+  testnet signer used by Vercel to submit evidence commit transactions. It must
+  belong to the mapped facility operator and must never be exposed to the
+  browser.
+* `ROBOMATA_SUI_SIGNER_ADDRESS=0x...` must match both the server signer's
+  derived Sui address and the mapped facility operator before the runtime
+  exposes the Sui commit path.
 * `ROBOMATA_SUI_COMMIT_STALE_MS` optionally overrides the default ten-minute
   stale threshold for in-progress Sui commits. Stale attempts are reconciled
   against Sui `EvidenceCommitted` events before the app permits another commit
@@ -186,16 +191,19 @@ Use the flags as a matrix:
   `EvidenceCommitted` events the reconciliation path requests per page.
 * `ROBOMATA_SUI_EVENT_QUERY_MAX_PAGES` optionally controls how many Sui event
   pages stale-commit reconciliation scans before releasing the attempt.
+* `ROBOMATA_SUI_TIMEOUT_MS` optionally controls Sui SDK request timeout for
+  commit transactions. The legacy `ROBOMATA_SUI_CLI_TIMEOUT_MS` name remains a
+  fallback for local smoke environments.
 * Robomata server APIs verify a fresh wallet signature and then read
   `PartnerManager.isAuthorizedPartner(partnerAddress)` on the signed request's
   configured EVM chain before listing, creating, or mutating submissions.
+* Deployed Robomata server APIs also require Privy server authentication:
+  `NEXT_PUBLIC_PRIVY_APP_ID` and `PRIVY_APP_SECRET` must be configured so the
+  server can verify the current user's access token and confirm that the partner
+  smart wallet plus signing wallet are linked to the same Privy user.
 * `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES=0x...,0x...` is a local-development
   fallback for isolated smoke tests when `PartnerManager` cannot be read. It is
   not the deployed authorization source of truth.
-* `ROBOMATA_AUTHORIZED_PARTNER_SIGNERS_JSON={"0xPartner":"0xSigner"}` is
-  optional for smart-wallet sessions where the authorized partner identity and
-  the wallet that signs API auth messages differ. If omitted, the partner wallet
-  must sign for itself.
 
 Recommended environments:
 
@@ -204,10 +212,9 @@ Recommended environments:
   passed for that release
 * controlled preview: set the workflow and mutation flags, configure
   `POSTGRES_URL`, ensure the tester wallet is authorized in the deployed EVM
-  `PartnerManager`, configure `ROBOMATA_AUTHORIZED_PARTNER_SIGNERS_JSON` when a
-  smart wallet is authorized but an EOA signs API messages, and enable
-  Walrus/Sui side-effect flags only for testnet runs that should write to
-  external infrastructure
+  `PartnerManager`, configure Privy server auth with `NEXT_PUBLIC_PRIVY_APP_ID`
+  and `PRIVY_APP_SECRET`, and enable Walrus/Sui side-effect flags only for
+  testnet runs that should write to external infrastructure
 * local QA: use `ROBOMATA_SUBMISSIONS_FILE` only for single-developer local
   runs when Postgres is not configured
 * public demo mode: leave the server flags unset so `/robomata` remains a
