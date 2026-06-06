@@ -284,6 +284,30 @@ changes them:
   distribution remain out of scope
 * lender approval remains subject to lender diligence and exception cure
 
+## ROB-134 Testnet Evidence Verification
+
+Status: passed API-level smoke on 2026-06-05 against the local app runtime with
+real Sui testnet, Seal encryption, and Walrus testnet upload enabled.
+
+Non-secret result:
+
+```json
+{
+  "submissionId": "sub_00ce663e-272c-439f-84ce-1f84acb6f127",
+  "storageBackend": "walrus",
+  "encryptionBackend": "seal",
+  "hasWalrusBlobId": true,
+  "hasCiphertextDigest": true,
+  "sealIdentity": "0xb5907dc938474c19cc3b797baeec2ae1f15e59f9159e0df6001086c3a3fd62c1",
+  "commitStatus": "committed",
+  "txDigest": "7kkY3j6SnGWVg1gVcCdqUcieh2MBnuJonu6MYZpQKhZb"
+}
+```
+
+The smoke used a temporary local submission file and temporary EVM signing key
+for Robomata API authentication. No generated Sui fixtures, client config,
+recovery phrase, private key, or local store artifact was committed.
+
 ## Release Recommendation
 
 Current recommendation: not yet clear to cut
@@ -294,8 +318,6 @@ Reason:
 * implementation PRs are still under review/merge sequencing
 * end-to-end browser QA has not yet been executed on the final `dev` commit
 * release evidence has not yet been captured against the final build
-* `ROB-134` real Sui/Walrus/Seal testnet evidence verification has not yet
-  passed
 
-Update this section only after `ROB-132` and `ROB-134` have concrete automated,
-browser, Sui/Walrus/Seal, and submission-packaging results.
+Update this section only after `ROB-132` has concrete browser, release-build,
+and submission-packaging results on the final `dev` commit.
