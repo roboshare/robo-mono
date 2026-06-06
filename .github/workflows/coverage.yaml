@@ -3,9 +3,7 @@ name: Contracts Coverage
 on:
   pull_request:
     branches:
-      - main
-      - dev
-      - "release/**"
+      - "**"
     paths:
       - ".github/workflows/coverage.yaml"
       - "protocols/evm/**"
