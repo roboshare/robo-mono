@@ -18,6 +18,17 @@ NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID=your-walletconnect-project-id
 
 `NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID` is still used because Privy can expose external wallet connection flows that rely on WalletConnect.
 
+Robomata server APIs also require the Privy app secret in deployed environments
+where the workflow is enabled:
+
+```sh
+PRIVY_APP_SECRET=your-privy-app-secret
+```
+
+Keep `PRIVY_APP_SECRET` server-only. It is used to verify the current user's
+Privy access token and confirm that the partner smart wallet and signing wallet
+belong to the same Privy user before Robomata accepts API requests.
+
 No additional bundler or paymaster environment variables are required in this repo. Those values are configured in the Privy dashboard.
 
 ## Recommended Production Topology

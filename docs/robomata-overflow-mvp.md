@@ -189,13 +189,13 @@ Use the flags as a matrix:
 * Robomata server APIs verify a fresh wallet signature and then read
   `PartnerManager.isAuthorizedPartner(partnerAddress)` on the signed request's
   configured EVM chain before listing, creating, or mutating submissions.
+* Deployed Robomata server APIs also require Privy server authentication:
+  `NEXT_PUBLIC_PRIVY_APP_ID` and `PRIVY_APP_SECRET` must be configured so the
+  server can verify the current user's access token and confirm that the partner
+  smart wallet plus signing wallet are linked to the same Privy user.
 * `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES=0x...,0x...` is a local-development
   fallback for isolated smoke tests when `PartnerManager` cannot be read. It is
   not the deployed authorization source of truth.
-* `ROBOMATA_AUTHORIZED_PARTNER_SIGNERS_JSON={"0xPartner":"0xSigner"}` is
-  optional for smart-wallet sessions where the authorized partner identity and
-  the wallet that signs API auth messages differ. If omitted, the partner wallet
-  must sign for itself.
 
 Recommended environments:
 
@@ -204,10 +204,9 @@ Recommended environments:
   passed for that release
 * controlled preview: set the workflow and mutation flags, configure
   `POSTGRES_URL`, ensure the tester wallet is authorized in the deployed EVM
-  `PartnerManager`, configure `ROBOMATA_AUTHORIZED_PARTNER_SIGNERS_JSON` when a
-  smart wallet is authorized but an EOA signs API messages, and enable
-  Walrus/Sui side-effect flags only for testnet runs that should write to
-  external infrastructure
+  `PartnerManager`, configure Privy server auth with `NEXT_PUBLIC_PRIVY_APP_ID`
+  and `PRIVY_APP_SECRET`, and enable Walrus/Sui side-effect flags only for
+  testnet runs that should write to external infrastructure
 * local QA: use `ROBOMATA_SUBMISSIONS_FILE` only for single-developer local
   runs when Postgres is not configured
 * public demo mode: leave the server flags unset so `/robomata` remains a
