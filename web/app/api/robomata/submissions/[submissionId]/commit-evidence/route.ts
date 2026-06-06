@@ -133,6 +133,23 @@ function hexToBytes(value: string): number[] {
   return Array.from(Buffer.from(hex, "hex"));
 }
 
+async function withTimeout<T>(operation: (signal: AbortSignal) => Promise<T>, timeoutMs: number): Promise<T> {
+  const controller = new AbortController();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      controller.abort();
+      reject(new Error(`Sui commit timed out after ${timeoutMs}ms.`));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([operation(controller.signal), timeoutPromise]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
 async function executeSuiCommit(input: {
   facilityObjectId: string;
   label: string;
@@ -158,12 +175,17 @@ async function executeSuiCommit(input: {
   });
 
   try {
-    const result = await getRobomataSuiClient().core.signAndExecuteTransaction({
-      signer: signer.keypair,
-      transaction: tx,
-      include: { effects: true },
-      signal: AbortSignal.timeout(getRobomataSuiTimeoutMs()),
-    });
+    const client = getRobomataSuiClient();
+    const result = await withTimeout(
+      signal =>
+        client.core.signAndExecuteTransaction({
+          signer: signer.keypair,
+          transaction: tx,
+          include: { effects: true },
+          signal,
+        }),
+      getRobomataSuiTimeoutMs(),
+    );
 
     if (result.Transaction) return { txDigest: result.Transaction.digest, uncertain: false };
     if (result.FailedTransaction) {

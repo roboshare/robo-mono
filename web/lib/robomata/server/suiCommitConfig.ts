@@ -9,6 +9,7 @@ export const DEFAULT_ROBOMATA_SUI_GAS_BUDGET = 100_000_000;
 export const DEFAULT_ROBOMATA_SUI_TIMEOUT_MS = 120_000;
 
 type SuiNetwork = "mainnet" | "testnet" | "devnet" | "localnet";
+const SUI_NETWORKS = new Set<SuiNetwork>(["mainnet", "testnet", "devnet", "localnet"]);
 
 function trimmedEnv(name: string): string | undefined {
   const value = process.env[name]?.trim();
@@ -22,7 +23,9 @@ export function parsePositiveInteger(value: string | undefined, fallback: number
 }
 
 export function getRobomataSuiNetwork(): SuiNetwork {
-  return (trimmedEnv("ROBOMATA_SUI_NETWORK") ?? "testnet") as SuiNetwork;
+  const network = trimmedEnv("ROBOMATA_SUI_NETWORK") ?? "testnet";
+  if (SUI_NETWORKS.has(network as SuiNetwork)) return network as SuiNetwork;
+  throw new Error(`Unsupported ROBOMATA_SUI_NETWORK: ${network}`);
 }
 
 export function getRobomataSuiClient() {
@@ -82,11 +85,19 @@ export function isRobomataSuiCommitRuntimeConfigured(input: {
   const signer = getRobomataSuiServerSigner();
   const expectedSignerAddress = trimmedEnv("ROBOMATA_SUI_SIGNER_ADDRESS")?.toLowerCase();
   const facilityOperatorAddress = input.facilityOperatorAddress?.toLowerCase();
+  let networkConfigured = false;
+  try {
+    getRobomataSuiNetwork();
+    networkConfigured = true;
+  } catch {
+    networkConfigured = false;
+  }
 
   return Boolean(
     packageId &&
       input.facilityObjectId &&
       facilityOperatorAddress &&
+      networkConfigured &&
       signer &&
       expectedSignerAddress &&
       signer.address === expectedSignerAddress &&

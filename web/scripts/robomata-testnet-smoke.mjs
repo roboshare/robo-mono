@@ -7,7 +7,10 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { decodeSuiPrivateKey } from "@mysten/sui/cryptography";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
+import { Secp256k1Keypair } from "@mysten/sui/keypairs/secp256k1";
+import { Secp256r1Keypair } from "@mysten/sui/keypairs/secp256r1";
 import { privateKeyToAccount } from "viem/accounts";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -63,7 +66,18 @@ function requiredEnv(env, key) {
 
 function suiSignerAddress(env) {
   const privateKey = requiredEnv(env, "ROBOMATA_SUI_PRIVATE_KEY");
-  return Ed25519Keypair.fromSecretKey(privateKey).getPublicKey().toSuiAddress();
+  const decoded = decodeSuiPrivateKey(privateKey);
+
+  switch (decoded.scheme) {
+    case "ED25519":
+      return Ed25519Keypair.fromSecretKey(decoded.secretKey).getPublicKey().toSuiAddress();
+    case "Secp256k1":
+      return Secp256k1Keypair.fromSecretKey(decoded.secretKey).getPublicKey().toSuiAddress();
+    case "Secp256r1":
+      return Secp256r1Keypair.fromSecretKey(decoded.secretKey).getPublicKey().toSuiAddress();
+    default:
+      throw new Error(`Unsupported Sui private key scheme: ${decoded.scheme}`);
+  }
 }
 
 async function assertSmokePortAvailable() {
