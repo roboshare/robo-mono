@@ -53,6 +53,8 @@ export const SubmissionWorkspace = ({
   const [isBusy, setIsBusy] = useState(false);
   const [editingReceivableId, setEditingReceivableId] = useState<string | null>(null);
   const [draftReceivable, setDraftReceivable] = useState<Partial<SubmissionReceivable>>({});
+  const [receivablesCsvText, setReceivablesCsvText] = useState("");
+  const [evidenceText, setEvidenceText] = useState("");
   const { address: accountAddress, chainId: accountChainId, connectedAddress } = useTransactingAccount();
   const partnerAuthAddress = accountAddress;
   const signerAddress = connectedAddress ?? accountAddress;
@@ -142,10 +144,21 @@ export const SubmissionWorkspace = ({
     if (!submission) return;
     const formData = new FormData();
     formData.set("file", file);
-    await updateSubmission(`/api/robomata/submissions/${submission.id}/receivables/import`, {
+    const didUpdate = await updateSubmission(`/api/robomata/submissions/${submission.id}/receivables/import`, {
       method: "POST",
       body: formData,
     });
+    if (didUpdate) setReceivablesCsvText("");
+  };
+
+  const importReceivablesFromText = async () => {
+    const csvText = receivablesCsvText.trim();
+    if (!csvText) {
+      notification.error("Paste receivables CSV before importing.");
+      return;
+    }
+
+    await importReceivables(new File([csvText], "receivables.csv", { type: "text/csv" }));
   };
 
   const uploadEvidence = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -154,11 +167,29 @@ export const SubmissionWorkspace = ({
 
     const form = event.currentTarget;
     const formData = new FormData(form);
+    const uploadedFile = formData.get("file");
+    if (!(uploadedFile instanceof File) || uploadedFile.size === 0) {
+      const text = evidenceText.trim();
+      if (!text) {
+        notification.error("Attach an evidence file or paste evidence text.");
+        return;
+      }
+
+      const label = String(formData.get("label") ?? "evidence").trim() || "evidence";
+      formData.set(
+        "file",
+        new File([text], `${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.txt`, { type: "text/plain" }),
+      );
+    }
+
     const didUpdate = await updateSubmission(`/api/robomata/submissions/${submission.id}/evidence`, {
       method: "POST",
       body: formData,
     });
-    if (didUpdate) form.reset();
+    if (didUpdate) {
+      form.reset();
+      setEvidenceText("");
+    }
   };
 
   const recompute = async () => {
@@ -297,6 +328,22 @@ export const SubmissionWorkspace = ({
                     />
                     Click to upload receivables CSV
                   </label>
+                  <div className="mt-4">
+                    <textarea
+                      className="textarea textarea-bordered min-h-36 w-full text-sm"
+                      placeholder={`Or paste CSV:\nreceivable,obligor,vehicles,outstanding,dpd,utilization,insured,title,lockbox\nAR-1007,Northstar Delivery Co.,28,386400,12,91,yes,yes,yes`}
+                      value={receivablesCsvText}
+                      onChange={event => setReceivablesCsvText(event.target.value)}
+                    />
+                    <button
+                      className="btn btn-outline mt-3 rounded-full"
+                      type="button"
+                      onClick={importReceivablesFromText}
+                      disabled={isBusy}
+                    >
+                      Import pasted CSV
+                    </button>
+                  </div>
                 </div>
 
                 <form className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-5" onSubmit={uploadEvidence}>
@@ -305,7 +352,7 @@ export const SubmissionWorkspace = ({
                     Evidence upload
                   </div>
                   <div className="mt-4 grid gap-3">
-                    <input name="file" type="file" className="file-input file-input-bordered w-full" required />
+                    <input name="file" type="file" className="file-input file-input-bordered w-full" />
                     <input
                       name="label"
                       className="input input-bordered w-full"
@@ -333,6 +380,12 @@ export const SubmissionWorkspace = ({
                       name="linkedReceivableIds"
                       className="input input-bordered w-full"
                       placeholder="Linked receivable ids (comma separated)"
+                    />
+                    <textarea
+                      className="textarea textarea-bordered min-h-28 w-full text-sm"
+                      placeholder="Or paste authorized evidence text when you do not have a local file handy."
+                      value={evidenceText}
+                      onChange={event => setEvidenceText(event.target.value)}
                     />
                     <button className="btn btn-primary rounded-full" type="submit" disabled={isBusy}>
                       Upload evidence
