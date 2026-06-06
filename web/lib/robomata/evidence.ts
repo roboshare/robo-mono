@@ -4,6 +4,7 @@ export type EvidenceCommitment = {
   id: string;
   label: string;
   source: string;
+  scope?: string;
   status: EvidenceStatus;
   walrusObjectId: string;
   sealPolicyId: string;
@@ -110,7 +111,9 @@ export function getEvidenceExceptions(commitments: EvidenceCommitment[]): Eviden
 }
 
 function getEvidenceGroupMetadata(commitment: EvidenceCommitment): Omit<EvidenceGroup, "commitments"> {
-  if (commitment.id.includes("AGING")) {
+  const scope = commitment.scope?.trim().toLowerCase();
+
+  if (scope?.includes("receivable") || commitment.id.includes("AGING")) {
     return {
       id: "receivables",
       title: "Receivables",
@@ -118,7 +121,7 @@ function getEvidenceGroupMetadata(commitment: EvidenceCommitment): Omit<Evidence
     };
   }
 
-  if (commitment.id.includes("INS")) {
+  if (scope?.includes("insurance") || commitment.id.includes("INS")) {
     return {
       id: "insurance",
       title: "Insurance",
@@ -126,7 +129,7 @@ function getEvidenceGroupMetadata(commitment: EvidenceCommitment): Omit<Evidence
     };
   }
 
-  if (commitment.id.includes("LOCKBOX")) {
+  if (scope?.includes("lockbox") || commitment.id.includes("LOCKBOX")) {
     return {
       id: "lockbox",
       title: "Lockbox",
@@ -134,7 +137,7 @@ function getEvidenceGroupMetadata(commitment: EvidenceCommitment): Omit<Evidence
     };
   }
 
-  if (commitment.id.includes("TEL")) {
+  if (scope?.includes("servicing") || scope?.includes("utilization") || commitment.id.includes("TEL")) {
     return {
       id: "servicing",
       title: "Servicing & Utilization",

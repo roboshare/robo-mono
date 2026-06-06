@@ -5,6 +5,31 @@ __metadata:
   version: 6
   cacheKey: 8
 
+"@0no-co/graphql.web@npm:^1.0.5":
+  version: 1.2.0
+  resolution: "@0no-co/graphql.web@npm:1.2.0"
+  peerDependencies:
+    graphql: ^14.0.0 || ^15.0.0 || ^16.0.0
+  peerDependenciesMeta:
+    graphql:
+      optional: true
+  checksum: 4d5a54b93e6024b7d476e94b991e4e4ebc4ecb97e4ce886f76889741f5e419b587bedc6a00488753069534d8ae3e4de2e901ad58506ba2f74eeb8642edccc4ca
+  languageName: node
+  linkType: hard
+
+"@0no-co/graphqlsp@npm:^1.12.13":
+  version: 1.15.4
+  resolution: "@0no-co/graphqlsp@npm:1.15.4"
+  dependencies:
+    "@gql.tada/internal": ^1.0.0
+    graphql: ^15.5.0 || ^16.0.0 || ^17.0.0
+  peerDependencies:
+    graphql: ^15.5.0 || ^16.0.0 || ^17.0.0
+    typescript: ^5.0.0 || ^6.0.0
+  checksum: 26ea4a71c88b9b65ec52ba82db63d8dc0c3769b75fd57f4f6775f54737b69d27199309e0e05d86a0b94342b2e8a5688f737100e51bac05844da03377077e7a10
+  languageName: node
+  linkType: hard
+
 "@adraffy/ens-normalize@npm:^1.10.1, @adraffy/ens-normalize@npm:^1.11.0":
   version: 1.11.0
   resolution: "@adraffy/ens-normalize@npm:1.11.0"
@@ -2378,6 +2403,40 @@ __metadata:
   peerDependencies:
     viem: ">=2.0.0"
   checksum: a74a60548a7e35ae6b3c1a0a4a1289baa7b646be5846508e432cc87735691994de806c7dca4961b5d77ee04652fa0cc18e3a67376da886aeebb5d4a5409c96be
+  languageName: node
+  linkType: hard
+
+"@gql.tada/cli-utils@npm:1.7.3":
+  version: 1.7.3
+  resolution: "@gql.tada/cli-utils@npm:1.7.3"
+  dependencies:
+    "@0no-co/graphqlsp": ^1.12.13
+    "@gql.tada/internal": 1.0.9
+    graphql: ^15.5.0 || ^16.0.0 || ^17.0.0
+  peerDependencies:
+    "@0no-co/graphqlsp": ^1.12.13
+    "@gql.tada/svelte-support": 1.0.2
+    "@gql.tada/vue-support": 1.0.2
+    graphql: ^15.5.0 || ^16.0.0 || ^17.0.0
+    typescript: ^5.0.0 || ^6.0.0
+  peerDependenciesMeta:
+    "@gql.tada/svelte-support":
+      optional: true
+    "@gql.tada/vue-support":
+      optional: true
+  checksum: 09ba1b304f3018deb810c58ed7e5f124f599f017afbf66f0c1ca9769816c87411189530b902ae906e48929f146477b2231671349c5422da4e8d0561feb80c804
+  languageName: node
+  linkType: hard
+
+"@gql.tada/internal@npm:1.0.9, @gql.tada/internal@npm:^1.0.0":
+  version: 1.0.9
+  resolution: "@gql.tada/internal@npm:1.0.9"
+  dependencies:
+    "@0no-co/graphql.web": ^1.0.5
+  peerDependencies:
+    graphql: ^15.5.0 || ^16.0.0 || ^17.0.0
+    typescript: ^5.0.0 || ^6.0.0
+  checksum: fcfde6e1b840bb6523b12265dfef6253b2016b2b1e310c3ea4871553f5434ce818db0b92f6bc476995475c8d5ef9cceeea81cf33eb29dde332b0f562a928d18c
   languageName: node
   linkType: hard
 
@@ -4959,6 +5018,61 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@mysten/bcs@npm:^2.0.5":
+  version: 2.0.5
+  resolution: "@mysten/bcs@npm:2.0.5"
+  dependencies:
+    "@mysten/utils": ^0.3.3
+    "@scure/base": ^2.0.0
+  checksum: c956d556bf732742800cba42e6be6813b2b88deaf1cedb721ede081db3def99ed9e8aba834b6e7b1e6bc974001ed22468341ee6e9cd598d2d56479ef2e5be03f
+  languageName: node
+  linkType: hard
+
+"@mysten/seal@npm:1.1.3":
+  version: 1.1.3
+  resolution: "@mysten/seal@npm:1.1.3"
+  dependencies:
+    "@mysten/bcs": ^2.0.5
+    "@noble/curves": ^2.0.1
+    "@noble/hashes": ^2.0.1
+  peerDependencies:
+    "@mysten/sui": ^2.16.2
+  checksum: 005f4bf324a9bfaeb6a6e6ead7171f5cbed7b12ae68792288107a992f8694fd1e6127fcaa0c773cc9786b961665609c97896e949d6761dcde7ed938ac64ade6a
+  languageName: node
+  linkType: hard
+
+"@mysten/sui@npm:2.17.0":
+  version: 2.17.0
+  resolution: "@mysten/sui@npm:2.17.0"
+  dependencies:
+    "@graphql-typed-document-node/core": ^3.2.0
+    "@mysten/bcs": ^2.0.5
+    "@mysten/utils": ^0.3.3
+    "@noble/curves": ^2.0.1
+    "@noble/hashes": ^2.0.1
+    "@protobuf-ts/grpcweb-transport": ^2.11.1
+    "@protobuf-ts/runtime": ^2.11.1
+    "@protobuf-ts/runtime-rpc": ^2.11.1
+    "@scure/base": ^2.0.0
+    "@scure/bip32": ^2.0.1
+    "@scure/bip39": ^2.0.1
+    gql.tada: ^1.9.0
+    graphql: ^16.12.0
+    poseidon-lite: 0.2.1
+    valibot: ^1.2.0
+  checksum: 5f931163a2189231ad58e28ecbbd06514e8071a2820fdff5a9c25384b106029befb5562f08b5e99be2022d1a621805fcfd027afc7dd48551f55a969a5b49c7e7
+  languageName: node
+  linkType: hard
+
+"@mysten/utils@npm:^0.3.3":
+  version: 0.3.3
+  resolution: "@mysten/utils@npm:0.3.3"
+  dependencies:
+    "@scure/base": ^2.0.0
+  checksum: 044c573ef16cfa4139e26b110f60955e09306cbfb970b64fc086dcf992ca68843d1432167025da2c9a0b2d2b01a8a7c544138f94e1c5f4ad1a2bc10b99b76d51
+  languageName: node
+  linkType: hard
+
 "@napi-rs/wasm-runtime@npm:^0.2.11":
   version: 0.2.12
   resolution: "@napi-rs/wasm-runtime@npm:0.2.12"
@@ -4978,6 +5092,15 @@ __metadata:
     "@emnapi/runtime": ^1.7.1
     "@tybys/wasm-util": ^0.10.1
   checksum: 22db9ad68e1d34351e1c0165489200584ab1cb0db866d360eca1c4213cd63169b153d179fe5ea4cbda849a252d20c4b01e56106285e7da8e4a56a4df92318ee7
+  languageName: node
+  linkType: hard
+
+"@neondatabase/serverless@npm:^0.9.3":
+  version: 0.9.5
+  resolution: "@neondatabase/serverless@npm:0.9.5"
+  dependencies:
+    "@types/pg": 8.11.6
+  checksum: b53c4b21c6eaf995a12bd84adf2c839022b7eb8b216cb07319a784a6f60965cf9ae497560a2aa767f5f8a407f1a45783f13b9f9e8f5c2078118a6a5ae174fdb2
   languageName: node
   linkType: hard
 
@@ -5130,6 +5253,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@noble/curves@npm:2.2.0, @noble/curves@npm:^2.0.1":
+  version: 2.2.0
+  resolution: "@noble/curves@npm:2.2.0"
+  dependencies:
+    "@noble/hashes": 2.2.0
+  checksum: 2b6f02c18918578f528791644886f54333c67323f5ccefe10bf250f08760f63786b807390d8d5f8562c661e70dd3559ce8e51e1fe360118c8fd47071c2bd6991
+  languageName: node
+  linkType: hard
+
 "@noble/curves@npm:~1.8.1":
   version: 1.8.2
   resolution: "@noble/curves@npm:1.8.2"
@@ -5171,6 +5303,13 @@ __metadata:
   version: 1.8.0
   resolution: "@noble/hashes@npm:1.8.0"
   checksum: c94e98b941963676feaba62475b1ccfa8341e3f572adbb3b684ee38b658df44100187fa0ef4220da580b13f8d27e87d5492623c8a02ecc61f23fb9960c7918f5
+  languageName: node
+  linkType: hard
+
+"@noble/hashes@npm:2.2.0, @noble/hashes@npm:^2.0.1":
+  version: 2.2.0
+  resolution: "@noble/hashes@npm:2.2.0"
+  checksum: a8745fb5da57a73ddd3dd6d5ad45d156ea664be51ead5344ca1528f8e56ad0ba0720ec8adff3bda37c50c72a86a33a57332ec02c3fb8d2a2612f9c3e5e7079ab
   languageName: node
   linkType: hard
 
@@ -5979,6 +6118,32 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@protobuf-ts/grpcweb-transport@npm:^2.11.1":
+  version: 2.11.1
+  resolution: "@protobuf-ts/grpcweb-transport@npm:2.11.1"
+  dependencies:
+    "@protobuf-ts/runtime": ^2.11.1
+    "@protobuf-ts/runtime-rpc": ^2.11.1
+  checksum: 9c6bbb26e9127e55dd139012d6469c0b8e1d6fde1e52a34a475696d196f83dca3c6939ac5fd287df5f51c17606a9de9c0cd18960395253a2ac4d92cfc3c12613
+  languageName: node
+  linkType: hard
+
+"@protobuf-ts/runtime-rpc@npm:^2.11.1":
+  version: 2.11.1
+  resolution: "@protobuf-ts/runtime-rpc@npm:2.11.1"
+  dependencies:
+    "@protobuf-ts/runtime": ^2.11.1
+  checksum: 18eb78adcf13371ebff274e560bbfabea71771bf2f4a7bd02298472e401b18a918f181f6b8ecffa51e3976f1964abe5bd637fde05c504af4d2f44c7f35a1b911
+  languageName: node
+  linkType: hard
+
+"@protobuf-ts/runtime@npm:^2.11.1":
+  version: 2.11.1
+  resolution: "@protobuf-ts/runtime@npm:2.11.1"
+  checksum: f06be086ee261c7840783f4054167b215d9f8a2e22ced2fe2198574c54293ce099d635b59b90c156c3efcd66d9401880f1e3ecd56c779eb4a89dc27a12d1b6b3
+  languageName: node
+  linkType: hard
+
 "@protobufjs/aspromise@npm:^1.1.1, @protobufjs/aspromise@npm:^1.1.2":
   version: 1.1.2
   resolution: "@protobufjs/aspromise@npm:1.1.2"
@@ -6603,6 +6768,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@scure/base@npm:2.2.0, @scure/base@npm:^2.0.0":
+  version: 2.2.0
+  resolution: "@scure/base@npm:2.2.0"
+  checksum: 2dd91f310765366e2dcb5e37709eb35ccd57d3f2f112d36232ca03fb8819c8764708f333ac40935fa719ff2e943bd50e1912ab43d212e44e807100d21f835f13
+  languageName: node
+  linkType: hard
+
 "@scure/base@npm:~1.1.6":
   version: 1.1.9
   resolution: "@scure/base@npm:1.1.9"
@@ -6643,6 +6815,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@scure/bip32@npm:^2.0.1":
+  version: 2.2.0
+  resolution: "@scure/bip32@npm:2.2.0"
+  dependencies:
+    "@noble/curves": 2.2.0
+    "@noble/hashes": 2.2.0
+    "@scure/base": 2.2.0
+  checksum: 6cd0ddf603b739d3c24a13618fc246d409bbf0dffec22bc2c3c8e3e64271bb58c7078bea0b6ab9601fcfe881a969ee31e3074d478affe13a439d7527a0b68ecf
+  languageName: node
+  linkType: hard
+
 "@scure/bip39@npm:1.3.0":
   version: 1.3.0
   resolution: "@scure/bip39@npm:1.3.0"
@@ -6670,6 +6853,16 @@ __metadata:
     "@noble/hashes": ~1.8.0
     "@scure/base": ~1.2.5
   checksum: 96d46420780473d6c6c9700254a0eceec60302f61d7f9d7f29024e90c7acff3e8e40a5ee52dfaf104db539a10462e531996aaf9e69f082b8540b0a25870545fc
+  languageName: node
+  linkType: hard
+
+"@scure/bip39@npm:^2.0.1":
+  version: 2.2.0
+  resolution: "@scure/bip39@npm:2.2.0"
+  dependencies:
+    "@noble/hashes": 2.2.0
+    "@scure/base": 2.2.0
+  checksum: 664e2f44a9b916afdb584c95ba16e4e8c74217b4d97cc37d5db86b978d3090a5b82509783cdee8c94710e03f6ff0844f10fcd90785e703c0a31adda0e000f88e
   languageName: node
   linkType: hard
 
@@ -7994,6 +8187,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/pg@npm:8.11.6":
+  version: 8.11.6
+  resolution: "@types/pg@npm:8.11.6"
+  dependencies:
+    "@types/node": "*"
+    pg-protocol: "*"
+    pg-types: ^4.0.1
+  checksum: 231f7e5bfe8b4d14cca398d24cd55f4f14f582f815b62059e6f3ee74108cf92089fbd946568ebc35fa402f238ed9c8a8c1e10e7084e83e4ca3aff75957243014
+  languageName: node
+  linkType: hard
+
 "@types/react@npm:~19.0.7":
   version: 19.0.14
   resolution: "@types/react@npm:19.0.14"
@@ -8714,6 +8918,17 @@ __metadata:
     typescript: "npm:typescript@5.9.3"
     undici: 5.28.4
   checksum: 043d3274b83f3a2a044019e3c3f9c351a54bdc2bd5aaae85c64ca19edec0004797e1d949a92b5591a3765a46439522f5a803432222af1dff34248d743a3b367e
+  languageName: node
+  linkType: hard
+
+"@vercel/postgres@npm:^0.10.0":
+  version: 0.10.0
+  resolution: "@vercel/postgres@npm:0.10.0"
+  dependencies:
+    "@neondatabase/serverless": ^0.9.3
+    bufferutil: ^4.0.8
+    ws: ^8.17.1
+  checksum: 45c29baa73bed4b07a5c06ae283647d43c89d843ebd3cb4864b59ec4217ef5d24832e569cd08d61f8b7875522fc207bb364547ea7e9423dd37521fba24ccec20
   languageName: node
   linkType: hard
 
@@ -12117,6 +12332,101 @@ __metadata:
   languageName: node
   linkType: hard
 
+"drizzle-orm@npm:^0.45.2":
+  version: 0.45.2
+  resolution: "drizzle-orm@npm:0.45.2"
+  peerDependencies:
+    "@aws-sdk/client-rds-data": ">=3"
+    "@cloudflare/workers-types": ">=4"
+    "@electric-sql/pglite": ">=0.2.0"
+    "@libsql/client": ">=0.10.0"
+    "@libsql/client-wasm": ">=0.10.0"
+    "@neondatabase/serverless": ">=0.10.0"
+    "@op-engineering/op-sqlite": ">=2"
+    "@opentelemetry/api": ^1.4.1
+    "@planetscale/database": ">=1.13"
+    "@prisma/client": "*"
+    "@tidbcloud/serverless": "*"
+    "@types/better-sqlite3": "*"
+    "@types/pg": "*"
+    "@types/sql.js": "*"
+    "@upstash/redis": ">=1.34.7"
+    "@vercel/postgres": ">=0.8.0"
+    "@xata.io/client": "*"
+    better-sqlite3: ">=7"
+    bun-types: "*"
+    expo-sqlite: ">=14.0.0"
+    gel: ">=2"
+    knex: "*"
+    kysely: "*"
+    mysql2: ">=2"
+    pg: ">=8"
+    postgres: ">=3"
+    sql.js: ">=1"
+    sqlite3: ">=5"
+  peerDependenciesMeta:
+    "@aws-sdk/client-rds-data":
+      optional: true
+    "@cloudflare/workers-types":
+      optional: true
+    "@electric-sql/pglite":
+      optional: true
+    "@libsql/client":
+      optional: true
+    "@libsql/client-wasm":
+      optional: true
+    "@neondatabase/serverless":
+      optional: true
+    "@op-engineering/op-sqlite":
+      optional: true
+    "@opentelemetry/api":
+      optional: true
+    "@planetscale/database":
+      optional: true
+    "@prisma/client":
+      optional: true
+    "@tidbcloud/serverless":
+      optional: true
+    "@types/better-sqlite3":
+      optional: true
+    "@types/pg":
+      optional: true
+    "@types/sql.js":
+      optional: true
+    "@upstash/redis":
+      optional: true
+    "@vercel/postgres":
+      optional: true
+    "@xata.io/client":
+      optional: true
+    better-sqlite3:
+      optional: true
+    bun-types:
+      optional: true
+    expo-sqlite:
+      optional: true
+    gel:
+      optional: true
+    knex:
+      optional: true
+    kysely:
+      optional: true
+    mysql2:
+      optional: true
+    pg:
+      optional: true
+    postgres:
+      optional: true
+    prisma:
+      optional: true
+    sql.js:
+      optional: true
+    sqlite3:
+      optional: true
+  checksum: 96f908b92391c28b87f67ac1b75e8c4155b8214dc19bc7d0af303d91a1b1a1493b54048a1438c507e55b184fba03d4042973dd353866b1df35fc53edb0af91ed
+  languageName: node
+  linkType: hard
+
 "dset@npm:^3.1.2, dset@npm:^3.1.4":
   version: 3.1.4
   resolution: "dset@npm:3.1.4"
@@ -14303,6 +14613,23 @@ __metadata:
   languageName: node
   linkType: hard
 
+"gql.tada@npm:^1.9.0":
+  version: 1.9.2
+  resolution: "gql.tada@npm:1.9.2"
+  dependencies:
+    "@0no-co/graphql.web": ^1.0.5
+    "@0no-co/graphqlsp": ^1.12.13
+    "@gql.tada/cli-utils": 1.7.3
+    "@gql.tada/internal": 1.0.9
+  peerDependencies:
+    typescript: ^5.0.0 || ^6.0.0
+  bin:
+    gql-tada: bin/cli.js
+    gql.tada: bin/cli.js
+  checksum: 8674cf2b23b9829624b7dec37becf17def5563044c90e9b9c82e5acad3a1600a3e4c7c921dac8e71cdfafdbbc456cd05aad4dd4c77f554c449dcef7a84e3700b
+  languageName: node
+  linkType: hard
+
 "graceful-fs@npm:4.2.10":
   version: 4.2.10
   resolution: "graceful-fs@npm:4.2.10"
@@ -14418,6 +14745,13 @@ __metadata:
   version: 16.10.0
   resolution: "graphql@npm:16.10.0"
   checksum: 969c2d1061d69ad6fe08a7fe642428212b0b8485a2f9b5d8650203eb6c3221479e81ec6a757708f849d84b85afcb3ebc5a8ff2f71778bb66c5e4850f051c170e
+  languageName: node
+  linkType: hard
+
+"graphql@npm:^15.5.0 || ^16.0.0 || ^17.0.0, graphql@npm:^16.12.0":
+  version: 16.14.1
+  resolution: "graphql@npm:16.14.1"
+  checksum: f594982a7996ee94608402b8ad3f66ee5f3c795f310a2fc887a23cced0bd74de554459a38649e2a68880ec8d4be8fb5b35048a2f3e9d291120b62fbbefc89185
   languageName: node
   linkType: hard
 
@@ -18173,6 +18507,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"obuf@npm:~1.1.2":
+  version: 1.1.2
+  resolution: "obuf@npm:1.1.2"
+  checksum: 41a2ba310e7b6f6c3b905af82c275bf8854896e2e4c5752966d64cbcd2f599cfffd5932006bcf3b8b419dfdacebb3a3912d5d94e10f1d0acab59876c8757f27f
+  languageName: node
+  linkType: hard
+
 "ofetch@npm:^1.3.4":
   version: 1.5.1
   resolution: "ofetch@npm:1.5.1"
@@ -19041,6 +19382,42 @@ __metadata:
   languageName: node
   linkType: hard
 
+"pg-int8@npm:1.0.1":
+  version: 1.0.1
+  resolution: "pg-int8@npm:1.0.1"
+  checksum: a1e3a05a69005ddb73e5f324b6b4e689868a447c5fa280b44cd4d04e6916a344ac289e0b8d2695d66e8e89a7fba023affb9e0e94778770ada5df43f003d664c9
+  languageName: node
+  linkType: hard
+
+"pg-numeric@npm:1.0.2":
+  version: 1.0.2
+  resolution: "pg-numeric@npm:1.0.2"
+  checksum: 8899f8200caa1744439a8778a9eb3ceefb599d893e40a09eef84ee0d4c151319fd416634a6c0fc7b7db4ac268710042da5be700b80ef0de716fe089b8652c84f
+  languageName: node
+  linkType: hard
+
+"pg-protocol@npm:*":
+  version: 1.14.0
+  resolution: "pg-protocol@npm:1.14.0"
+  checksum: 35a3189e8a3538433a1d709b94f229e6b7bb1a6bd9aef83364e157b7c639ac7c285e0cb809ae2fcab82c544b729cae474353b7b58dd9b3ea3727e30595fc7c47
+  languageName: node
+  linkType: hard
+
+"pg-types@npm:^4.0.1":
+  version: 4.1.0
+  resolution: "pg-types@npm:4.1.0"
+  dependencies:
+    pg-int8: 1.0.1
+    pg-numeric: 1.0.2
+    postgres-array: ~3.0.1
+    postgres-bytea: ~3.0.0
+    postgres-date: ~2.1.0
+    postgres-interval: ^3.0.0
+    postgres-range: ^1.1.1
+  checksum: 441afecab1824defd268d9ee5885abaf87274d0c85f9d4ca5d9eb11c241fd1bd724e25b4be4fa81715688c4c98a1772f068b38b092a87cf9bd5358ed3704aa4e
+  languageName: node
+  linkType: hard
+
 "picocolors@npm:1.0.0":
   version: 1.0.0
   resolution: "picocolors@npm:1.0.0"
@@ -19266,6 +19643,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"poseidon-lite@npm:0.2.1":
+  version: 0.2.1
+  resolution: "poseidon-lite@npm:0.2.1"
+  checksum: ecd420d48ffafc99408f9ef6d124d21a0d12d089f1cfc20bcd97a0b0364e7526f8d4747a2b72da2157f18d569c9a4b19beb5958fd8509d87f8a65edf6979c168
+  languageName: node
+  linkType: hard
+
 "possible-typed-array-names@npm:^1.0.0":
   version: 1.1.0
   resolution: "possible-typed-array-names@npm:1.1.0"
@@ -19320,6 +19704,43 @@ __metadata:
     picocolors: ^1.1.1
     source-map-js: ^1.2.1
   checksum: 20f3b5d673ffeec2b28d65436756d31ee33f65b0a8bedb3d32f556fbd5973be38c3a7fb5b959a5236c60a5db7b91b0a6b14ffaac0d717dce1b903b964ee1c1bb
+  languageName: node
+  linkType: hard
+
+"postgres-array@npm:~3.0.1":
+  version: 3.0.4
+  resolution: "postgres-array@npm:3.0.4"
+  checksum: 9d0fed9f8a4674cbc31a4e568dc5d068f6e32b4b5c62deae2c4908c75303be0c5aef023fc04dfb8feaf6d63af1a17257e528ef606e8128bffe1f9d6844ad8ffa
+  languageName: node
+  linkType: hard
+
+"postgres-bytea@npm:~3.0.0":
+  version: 3.0.0
+  resolution: "postgres-bytea@npm:3.0.0"
+  dependencies:
+    obuf: ~1.1.2
+  checksum: 5f917a003fcaa0df7f285e1c37108ad474ce91193466b9bd4bcaecef2cdea98ca069c00aa6a8dbe6d2e7192336cadc3c9b36ae48d1555a299521918e00e2936b
+  languageName: node
+  linkType: hard
+
+"postgres-date@npm:~2.1.0":
+  version: 2.1.0
+  resolution: "postgres-date@npm:2.1.0"
+  checksum: 5c573b0602e17c6134fd8bc8ac7689ac0302e1b199f15dd3578fc45186f206dbd0609f97bf0e4bd1db62234d7a37f29c04f4df525f7efebb9304363b2efca272
+  languageName: node
+  linkType: hard
+
+"postgres-interval@npm:^3.0.0":
+  version: 3.0.0
+  resolution: "postgres-interval@npm:3.0.0"
+  checksum: c7a1cf006de97de663b6b8c4d2b167aa9909a238c4866a94b15d303762f5ac884ff4796cd6e2111b7f0a91302b83c570453aa8506fd005b5a5d5dfa87441bebc
+  languageName: node
+  linkType: hard
+
+"postgres-range@npm:^1.1.1":
+  version: 1.1.4
+  resolution: "postgres-range@npm:1.1.4"
+  checksum: 460af8c882a50e2c3d08ede5d5ee9e5e5a99dcf471e3ed55b4c17cad62dc85177b51bb8105b626a9c73de9edcba934e86665923b0d86e1c8e1f55d3e0f3530c6
   languageName: node
   linkType: hard
 
@@ -22511,6 +22932,18 @@ __metadata:
   languageName: node
   linkType: hard
 
+"valibot@npm:^1.2.0":
+  version: 1.4.1
+  resolution: "valibot@npm:1.4.1"
+  peerDependencies:
+    typescript: ">=5"
+  peerDependenciesMeta:
+    typescript:
+      optional: true
+  checksum: 11e8ade8a447c287c353488906d448e2e358c0c945216f5e611f4012a989a3e36ca632c0747dc5a24c41d37616a4649c2db30a5cbed640b8dea4d1acecf88fd5
+  languageName: node
+  linkType: hard
+
 "validate-npm-package-license@npm:^3.0.4":
   version: 3.0.4
   resolution: "validate-npm-package-license@npm:3.0.4"
@@ -22907,6 +23340,8 @@ __metadata:
   dependencies:
     "@graphprotocol/client-cli": 3.0.7
     "@heroicons/react": ~2.1.5
+    "@mysten/seal": 1.1.3
+    "@mysten/sui": 2.17.0
     "@privy-io/react-auth": ^3.18.0
     "@privy-io/wagmi": ^4.0.3
     "@rainbow-me/rainbowkit": 2.2.7
@@ -22918,12 +23353,14 @@ __metadata:
     "@uniswap/sdk-core": ~5.8.2
     "@uniswap/v2-sdk": ~4.6.1
     "@vercel/analytics": ^2.0.1
+    "@vercel/postgres": ^0.10.0
     abitype: 1.0.6
     autoprefixer: ~10.4.20
     bgipfs: ~0.0.12
     blo: ~1.2.0
     burner-connector: 0.0.16
     daisyui: 5.0.9
+    drizzle-orm: ^0.45.2
     eslint: ~9.23.0
     eslint-config-next: ~15.2.3
     eslint-config-prettier: ~10.1.1

@@ -138,6 +138,78 @@ Each submission contains:
 The workflow is intentionally centered on the submission, not on an individual
 vehicle registration or tokenization object.
 
+## Release Flags
+
+The working submission workflow is feature-flagged because `dev` is the branch
+used to cut release candidates. Default release behavior must keep the workflow
+dark unless a controlled preview is explicitly configured.
+
+Use the flags as a matrix:
+
+* `NEXT_PUBLIC_ENABLE_ROBOMATA_WORKFLOW=true` exposes the `/partner` borrowing
+  base entry point and lets `/robomata` attempt the real read-only submission
+  projection.
+* `ROBOMATA_WORKFLOW_ENABLED=true` enables the server-side submission APIs.
+  Without this flag, the APIs fail closed with `404`.
+* `ROBOMATA_WORKFLOW_MUTATIONS_ENABLED=true` enables write actions such as
+  creating submissions, importing receivables, uploading evidence, computing the
+  borrowing base, and committing evidence. Without this flag, writes fail closed
+  with `403`.
+* `POSTGRES_URL` is required when the server workflow is enabled outside local
+  development. `ROBOMATA_SUBMISSIONS_FILE=/local/path/submissions.json` is only
+  a local-development fallback and must not be used for shared previews or
+  release candidates.
+* `ROBOMATA_WALRUS_UPLOADS_ENABLED=true` enables real Walrus publisher uploads
+  when `WALRUS_PUBLISHER_URL` and `ROBOMATA_SEAL_ENCRYPTION_KEY` are configured.
+  Without this flag, evidence uploads keep using deterministic mock Walrus
+  references even if a publisher URL exists. With this flag, uploads fail closed
+  unless evidence can be encrypted before publishing.
+* `ROBOMATA_SUI_COMMIT_ENABLED=true` enables real Sui evidence commit
+  transactions when the Sui package, client config, per-submission facility
+  mapping, per-submission operator mapping, and expected signer are configured.
+  Without this flag, evidence roots remain prepared but cannot be committed
+  onchain.
+* `ROBOMATA_SUI_FACILITY_IDS_JSON={"sub_...":"0x..."}` maps each submission id
+  to its own Sui facility object. Do not use facility names as keys; names are
+  mutable operator input and are not safe authorization boundaries.
+* `ROBOMATA_SUI_FACILITY_OPERATORS_JSON={"sub_...":"0x..."}` maps each
+  submission id to the Sui address that created and controls the mapped facility
+  object.
+* `ROBOMATA_SUI_SIGNER_ADDRESS=0x...` must match the mapped facility operator
+  before the runtime exposes the Sui commit path.
+* `ROBOMATA_SUI_COMMIT_STALE_MS` optionally overrides the default ten-minute
+  stale threshold for in-progress Sui commits. Stale attempts are reconciled
+  against Sui `EvidenceCommitted` events before the app permits another commit
+  attempt.
+* `ROBOMATA_SUI_EVENT_QUERY_LIMIT` optionally controls how many recent
+  `EvidenceCommitted` events the reconciliation path requests per page.
+* `ROBOMATA_SUI_EVENT_QUERY_MAX_PAGES` optionally controls how many Sui event
+  pages stale-commit reconciliation scans before releasing the attempt.
+* `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES=0x...,0x...` is required when the
+  server APIs are enabled. The API verifies a fresh wallet signature and then
+  checks the partner identity against this server-side allowlist before
+  listing, creating, or mutating submissions.
+* `ROBOMATA_AUTHORIZED_PARTNER_SIGNERS_JSON={"0xPartner":"0xSigner"}` is
+  optional for smart-wallet sessions where the authorized partner identity and
+  the wallet that signs API auth messages differ. If omitted, the partner wallet
+  must sign for itself.
+
+Recommended environments:
+
+* production and release-candidate branches: leave workflow, mutation, Walrus,
+  and Sui side-effect flags unset unless the Robomata QA gate has explicitly
+  passed for that release
+* controlled preview: set the workflow and mutation flags, configure
+  `POSTGRES_URL`, include the tester wallet in
+  `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES`, configure
+  `ROBOMATA_AUTHORIZED_PARTNER_SIGNERS_JSON` when a smart wallet is authorized
+  but an EOA signs API messages, and enable Walrus/Sui side-effect flags only
+  for testnet runs that should write to external infrastructure
+* local QA: use `ROBOMATA_SUBMISSIONS_FILE` only for single-developer local
+  runs when Postgres is not configured
+* public demo mode: leave the server flags unset so `/robomata` remains a
+  read-only demo narrative and `/partner/submissions` stays hidden
+
 ## Sui, Walrus, Seal, And Nautilus Role
 
 Sui is not the initial buying reason. The operator buys financeability. Sui is

@@ -1,0 +1,241 @@
+import type { SubmissionReceivable } from "~~/lib/robomata/submissions";
+
+type CsvHeader =
+  | "id"
+  | "obligor"
+  | "vehicleCount"
+  | "outstanding"
+  | "outstandingCents"
+  | "daysPastDue"
+  | "utilizationPct"
+  | "insured"
+  | "titleClear"
+  | "lockboxMatched";
+
+const headerAliases: Record<string, CsvHeader> = {
+  receivable: "id",
+  receivableid: "id",
+  id: "id",
+  obligor: "obligor",
+  customer: "obligor",
+  vehicles: "vehicleCount",
+  vehiclecount: "vehicleCount",
+  outstanding: "outstanding",
+  outstandingusd: "outstanding",
+  outstandingcents: "outstandingCents",
+  dpd: "daysPastDue",
+  dayspastdue: "daysPastDue",
+  utilization: "utilizationPct",
+  utilizationpct: "utilizationPct",
+  insured: "insured",
+  titleclear: "titleClear",
+  title: "titleClear",
+  lockboxmatched: "lockboxMatched",
+  lockbox: "lockboxMatched",
+};
+
+function normalizeHeader(value: string): CsvHeader | null {
+  return headerAliases[value.replace(/[^a-z0-9]/gi, "").toLowerCase()] ?? null;
+}
+
+function parseBoolean(value: string): boolean | null {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "true" || normalized === "yes" || normalized === "y" || normalized === "1") return true;
+  if (normalized === "false" || normalized === "no" || normalized === "n" || normalized === "0") return false;
+  return null;
+}
+
+function parseAmountToCents(value: string): number {
+  const normalized = value.replace(/[$,\s]/g, "");
+  if (!normalized) return NaN;
+  if (normalized.includes(".")) return Math.round(Number(normalized) * 100);
+  return Number(normalized) * 100;
+}
+
+function parseRequiredNumber(value: string | undefined, column: CsvHeader, rowNumber: number): number {
+  const normalized = (value ?? "").replace(/[,\s]/g, "");
+  const parsed = Number(normalized);
+
+  if (!normalized || !Number.isFinite(parsed)) {
+    throw new Error(`Receivables CSV row ${rowNumber} has invalid numeric value for ${column}.`);
+  }
+
+  return parsed;
+}
+
+function validateNumberRange(
+  value: number,
+  column: CsvHeader,
+  rowNumber: number,
+  options: { integer?: boolean; min?: number; max?: number },
+): number {
+  if (options.integer && !Number.isInteger(value)) {
+    throw new Error(`Receivables CSV row ${rowNumber} has non-integer value for ${column}.`);
+  }
+  if (options.min !== undefined && value < options.min) {
+    throw new Error(`Receivables CSV row ${rowNumber} has ${column} below ${options.min}.`);
+  }
+  if (options.max !== undefined && value > options.max) {
+    throw new Error(`Receivables CSV row ${rowNumber} has ${column} above ${options.max}.`);
+  }
+
+  return value;
+}
+
+function parseRequiredAmountToCents(value: string | undefined, column: CsvHeader, rowNumber: number): number {
+  const cents = parseAmountToCents(value ?? "");
+
+  if (!Number.isFinite(cents)) {
+    throw new Error(`Receivables CSV row ${rowNumber} has invalid numeric value for ${column}.`);
+  }
+
+  return validateNumberRange(cents, column, rowNumber, { integer: true, min: 0 });
+}
+
+function parseRequiredBoolean(value: string | undefined, column: CsvHeader, rowNumber: number): boolean {
+  const parsed = parseBoolean(value ?? "");
+
+  if (parsed === null) {
+    throw new Error(`Receivables CSV row ${rowNumber} has invalid boolean value for ${column}.`);
+  }
+
+  return parsed;
+}
+
+function parseCsvLine(line: string): string[] {
+  const cells: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const next = line[index + 1];
+
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        current += '"';
+        index += 1;
+        continue;
+      }
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if (char === "," && !inQuotes) {
+      cells.push(current);
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  cells.push(current);
+  return cells.map(cell => cell.trim());
+}
+
+export function importReceivablesCsv(csvText: string): SubmissionReceivable[] {
+  const lines = csvText
+    .split(/\r?\n/g)
+    .map(line => line.trim())
+    .filter(Boolean);
+
+  if (lines.length < 2) throw new Error("Receivables CSV must include a header row and at least one data row.");
+
+  const rawHeaders = parseCsvLine(lines[0]);
+  const headers = rawHeaders.map(header => normalizeHeader(header));
+
+  const requiredHeaders: CsvHeader[] = [
+    "id",
+    "obligor",
+    "vehicleCount",
+    "daysPastDue",
+    "utilizationPct",
+    "insured",
+    "titleClear",
+    "lockboxMatched",
+  ];
+
+  for (const requiredHeader of requiredHeaders) {
+    if (!headers.includes(requiredHeader)) {
+      throw new Error(`Missing required receivables CSV column: ${requiredHeader}`);
+    }
+  }
+
+  if (!headers.includes("outstanding") && !headers.includes("outstandingCents")) {
+    throw new Error("Receivables CSV must include either `outstanding` or `outstandingCents`.");
+  }
+
+  const seenIds = new Set<string>();
+
+  return lines.slice(1).map((line, index) => {
+    const rowNumber = index + 2;
+    const values = parseCsvLine(line);
+    const row = new Map<CsvHeader, string>();
+
+    headers.forEach((header, headerIndex) => {
+      if (header) row.set(header, values[headerIndex] ?? "");
+    });
+
+    const id = row.get("id") ?? "";
+    const obligor = row.get("obligor") ?? "";
+
+    if (!id || !obligor) {
+      throw new Error(`Receivables CSV row ${rowNumber} is missing id or obligor.`);
+    }
+
+    if (seenIds.has(id)) {
+      throw new Error(`Receivables CSV row ${rowNumber} duplicates receivable id ${id}.`);
+    }
+
+    seenIds.add(id);
+
+    return {
+      id,
+      obligor,
+      vehicleCount: validateNumberRange(
+        parseRequiredNumber(row.get("vehicleCount"), "vehicleCount", rowNumber),
+        "vehicleCount",
+        rowNumber,
+        {
+          integer: true,
+          min: 0,
+        },
+      ),
+      outstandingCents: row.has("outstandingCents")
+        ? validateNumberRange(
+            parseRequiredNumber(row.get("outstandingCents"), "outstandingCents", rowNumber),
+            "outstandingCents",
+            rowNumber,
+            {
+              integer: true,
+              min: 0,
+            },
+          )
+        : parseRequiredAmountToCents(row.get("outstanding"), "outstanding", rowNumber),
+      daysPastDue: validateNumberRange(
+        parseRequiredNumber(row.get("daysPastDue"), "daysPastDue", rowNumber),
+        "daysPastDue",
+        rowNumber,
+        {
+          integer: true,
+          min: 0,
+        },
+      ),
+      utilizationPct: validateNumberRange(
+        parseRequiredNumber(row.get("utilizationPct"), "utilizationPct", rowNumber),
+        "utilizationPct",
+        rowNumber,
+        {
+          min: 0,
+          max: 100,
+        },
+      ),
+      insured: parseRequiredBoolean(row.get("insured"), "insured", rowNumber),
+      titleClear: parseRequiredBoolean(row.get("titleClear"), "titleClear", rowNumber),
+      lockboxMatched: parseRequiredBoolean(row.get("lockboxMatched"), "lockboxMatched", rowNumber),
+      excluded: false,
+      sourceRow: rowNumber,
+    };
+  });
+}
