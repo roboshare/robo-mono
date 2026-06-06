@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from "@mysten/sui/jsonRpc";
-import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { Transaction } from "@mysten/sui/transactions";
-import {
-  isRobomataSuiCommitEnabled,
-  isRobomataWorkflowMutationEnabled,
-  isRobomataWorkflowServerEnabled,
-} from "~~/lib/featureFlags";
+import { isRobomataWorkflowMutationEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
 import { requirePartnerAddress, requireSubmissionAccess } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
+import {
+  getRobomataSuiClient,
+  getRobomataSuiGasBudget,
+  getRobomataSuiServerSigner,
+  getRobomataSuiTimeoutMs,
+  isRobomataSuiCommitRuntimeConfigured,
+  parsePositiveInteger,
+} from "~~/lib/robomata/server/suiCommitConfig";
 import {
   type FacilitySubmission,
   resolveSubmissionFacilityObjectId,
@@ -18,54 +20,8 @@ import {
 const DEFAULT_COMMIT_STALE_MS = 10 * 60 * 1000;
 const DEFAULT_EVENT_QUERY_LIMIT = 100;
 const DEFAULT_EVENT_QUERY_MAX_PAGES = 10;
-const DEFAULT_SUI_TIMEOUT_MS = 120_000;
 
 export const runtime = "nodejs";
-
-function isCommitConfigured(facilityObjectId: string | undefined, facilityOperatorAddress: string | undefined) {
-  const signer = getSuiServerSigner();
-  const expectedSignerAddress = process.env.ROBOMATA_SUI_SIGNER_ADDRESS?.trim().toLowerCase();
-
-  return Boolean(
-    process.env.ROBOMATA_SUI_PACKAGE_ID &&
-      facilityObjectId &&
-      facilityOperatorAddress &&
-      signer &&
-      expectedSignerAddress &&
-      signer.address === expectedSignerAddress &&
-      signer.address === facilityOperatorAddress.toLowerCase() &&
-      isRobomataSuiCommitEnabled(),
-  );
-}
-
-type SuiNetwork = "mainnet" | "testnet" | "devnet" | "localnet";
-
-function getSuiNetwork(): SuiNetwork {
-  return (process.env.ROBOMATA_SUI_NETWORK ?? "testnet") as SuiNetwork;
-}
-
-function getSuiClient() {
-  const network = getSuiNetwork();
-  return new SuiJsonRpcClient({
-    network,
-    url: process.env.ROBOMATA_SUI_FULLNODE_URL ?? getJsonRpcFullnodeUrl(network),
-  });
-}
-
-function getSuiServerSigner(): { keypair: Ed25519Keypair; address: string } | null {
-  const privateKey = process.env.ROBOMATA_SUI_PRIVATE_KEY?.trim();
-  if (!privateKey) return null;
-
-  try {
-    const keypair = Ed25519Keypair.fromSecretKey(privateKey);
-    return {
-      keypair,
-      address: keypair.getPublicKey().toSuiAddress().toLowerCase(),
-    };
-  } catch {
-    return null;
-  }
-}
 
 function requireRobomataWorkflow() {
   if (isRobomataWorkflowServerEnabled()) return null;
@@ -75,19 +31,6 @@ function requireRobomataWorkflow() {
 function requireRobomataMutation() {
   if (isRobomataWorkflowMutationEnabled()) return null;
   return NextResponse.json({ error: "Robomata submission writes are not enabled." }, { status: 403 });
-}
-
-function parsePositiveInteger(value: string | undefined, fallback: number): number {
-  if (!value) return fallback;
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function suiTimeoutMs(): number {
-  return parsePositiveInteger(
-    process.env.ROBOMATA_SUI_TIMEOUT_MS ?? process.env.ROBOMATA_SUI_CLI_TIMEOUT_MS,
-    DEFAULT_SUI_TIMEOUT_MS,
-  );
 }
 
 function commitStaleBeforeMs(): number {
@@ -146,7 +89,7 @@ async function findCommittedEvidenceEvent(input: {
   const maxPages = parsePositiveInteger(process.env.ROBOMATA_SUI_EVENT_QUERY_MAX_PAGES, DEFAULT_EVENT_QUERY_MAX_PAGES);
   const expectedFacility = input.facilityObjectId.toLowerCase();
   let cursor: { eventSeq: string; txDigest: string } | null | undefined;
-  const client = getSuiClient();
+  const client = getRobomataSuiClient();
 
   for (let page = 0; page < maxPages; page++) {
     const payload = await client.queryEvents({
@@ -195,7 +138,7 @@ async function executeSuiCommit(input: {
   label: string;
   rootDigest: string;
 }): Promise<SuiCommitResult> {
-  const signer = getSuiServerSigner();
+  const signer = getRobomataSuiServerSigner();
   if (!signer) {
     return {
       errorMessage: "ROBOMATA_SUI_PRIVATE_KEY is missing or invalid for this app runtime.",
@@ -204,7 +147,7 @@ async function executeSuiCommit(input: {
   }
 
   const tx = new Transaction();
-  tx.setGasBudget(BigInt(process.env.ROBOMATA_SUI_GAS_BUDGET ?? "100000000"));
+  tx.setGasBudget(getRobomataSuiGasBudget());
   tx.moveCall({
     target: `${process.env.ROBOMATA_SUI_PACKAGE_ID}::facility::commit_evidence`,
     arguments: [
@@ -215,11 +158,11 @@ async function executeSuiCommit(input: {
   });
 
   try {
-    const result = await getSuiClient().core.signAndExecuteTransaction({
+    const result = await getRobomataSuiClient().core.signAndExecuteTransaction({
       signer: signer.keypair,
       transaction: tx,
       include: { effects: true },
-      signal: AbortSignal.timeout(suiTimeoutMs()),
+      signal: AbortSignal.timeout(getRobomataSuiTimeoutMs()),
     });
 
     if (result.Transaction) return { txDigest: result.Transaction.digest, uncertain: false };
@@ -323,7 +266,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     );
   }
 
-  if (!isCommitConfigured(facilityObjectId, facilityOperatorAddress)) {
+  if (!isRobomataSuiCommitRuntimeConfigured({ facilityObjectId, facilityOperatorAddress })) {
     return NextResponse.json(
       { error: "Sui commit environment is not configured for this app runtime." },
       { status: 400 },
