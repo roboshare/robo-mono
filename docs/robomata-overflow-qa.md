@@ -39,7 +39,7 @@ Run from the repo root unless otherwise noted.
 
 ### Web
 
-Status: pending final implementation merge.
+Status: passed on `dev` commit `4399bc9` before this documentation update.
 
 Commands:
 
@@ -47,14 +47,17 @@ Commands:
 * `yarn web:lint`
 * `yarn web:build`
 
-Required evidence:
+Result:
 
-* command output or CI checks are green on the relevant `dev` commit
-* no build-time route errors for `/partner` or `/robomata`
+* `yarn web:check-types` passed.
+* `yarn web:lint` passed with no ESLint warnings or errors.
+* `yarn web:build` passed and built `/markets`, `/partner`,
+  `/partner/submissions`, `/partner/submissions/[submissionId]`, Robomata API
+  routes, and `/robomata`.
 
 ### Sui
 
-Status: pending final implementation merge.
+Status: passed on `dev` commit `4399bc9` before this documentation update.
 
 Commands:
 
@@ -62,14 +65,20 @@ Commands:
 * `sui move build --path protocols/sui --lint --warnings-are-errors`
 * `sui move test --path protocols/sui --warnings-are-errors`
 
-Required evidence:
+Result:
 
-* Move build, lint, and tests are green
-* test output includes the facility authorization and Seal identity checks
+* `sui move build --path protocols/sui --warnings-are-errors` passed.
+* `sui move build --path protocols/sui --lint --warnings-are-errors` passed.
+* `sui move test --path protocols/sui --warnings-are-errors` passed.
+* Test output included:
+  * `robomata_overflow::facility::authorized_operator_passes`
+  * `robomata_overflow::facility::unauthorized_operator_fails`
+  * `robomata_overflow::facility::seal_identity_matches_facility_id`
+  * `robomata_overflow::facility::seal_identity_mismatch_fails`
 
 ### Evidence Storage And Commit Configuration
 
-Status: pending final implementation merge.
+Status: passed on `dev` commit `4399bc9` before this documentation update.
 
 Tracking issue: `ROB-134`.
 
@@ -109,17 +118,36 @@ Required environment:
   from the Sui testnet deployment helper, or equivalent
   `ROBOMATA_SEAL_KEY_SERVERS_JSON` configuration
 
-Required evidence:
+Result:
 
-* evidence upload stores encrypted bytes after `ROB-129` Seal/Walrus support is
-  on the verified `dev` commit
-* uploaded evidence records persist Walrus object/blob references
-* plaintext digest and ciphertext digest are both retained for audit by the
-  `ROB-129` evidence record fields
-* commitment root is computed from persisted submission evidence records
-* Sui commit status and reference metadata are persisted back to the submission
-* generated Sui deployment fixtures, local client config paths, recovery
-  phrases, and secrets are not committed
+* `yarn robomata:testnet-smoke` passed against Sui/Walrus/Seal testnet.
+* Evidence upload stored Seal ciphertext in Walrus and persisted blob metadata.
+* The smoke fetched the Walrus blob back from the aggregator.
+* The fetched blob SHA-256 matched the persisted ciphertext digest.
+* The fetched blob did not expose the plaintext fixture.
+* Plaintext and ciphertext digests were both retained in the evidence record.
+* Commitment root was computed from persisted evidence records.
+* Sui commit status and reference metadata were persisted back to the submission.
+* Generated Sui deployment fixtures, local client config paths, recovery
+  phrases, and secrets were not committed.
+
+Non-secret smoke result from current `dev`:
+
+```json
+{
+  "submissionId": "sub_b761060a-8523-474b-94d8-abce8e2eeb52",
+  "storageBackend": "walrus",
+  "encryptionBackend": "seal",
+  "walrusBlobId": "XGHoBZWLpJb81Bs0KohKGZkJODiyBUa2NCTGogdrjXI",
+  "ciphertextDigest": "0xd679f835c9f57fd7f30caca92a19a0ed85e4e5c571e46fc597d685e7e394f6f3",
+  "fetchedCiphertextBytes": 483,
+  "fetchedCiphertextDigest": "0xd679f835c9f57fd7f30caca92a19a0ed85e4e5c571e46fc597d685e7e394f6f3",
+  "plaintextDigest": "0x50733354648c914b5b42d402196da072885231d002b8bc717f689b0b0ca131bd",
+  "sealIdentity": "0xb5907dc938474c19cc3b797baeec2ae1f15e59f9159e0df6001086c3a3fd62c1",
+  "commitStatus": "committed",
+  "txDigest": "2SzHfdayYsjFstd33poMyczmyzm694WZjitGtbY7qhMU"
+}
+```
 
 ## Browser QA Scenario
 
@@ -137,7 +165,7 @@ a second process.
 
 ### 1. Partner Submission List
 
-Status: pending.
+Status: passed.
 
 Verify:
 
@@ -150,7 +178,7 @@ Verify:
 
 ### 2. Create Submission
 
-Status: pending.
+Status: passed in the final browser QA dataset.
 
 Verify:
 
@@ -162,7 +190,7 @@ Verify:
 
 ### 3. Import Receivables CSV
 
-Status: pending.
+Status: passed.
 
 Verify:
 
@@ -174,7 +202,7 @@ Verify:
 
 ### 4. Upload Evidence
 
-Status: pending.
+Status: passed.
 
 Verify:
 
@@ -192,7 +220,7 @@ Verify:
 
 ### 5. Compute Borrowing Base
 
-Status: pending.
+Status: passed.
 
 Verify:
 
@@ -206,7 +234,7 @@ Verify:
 
 ### 6. Review Exceptions
 
-Status: pending.
+Status: passed.
 
 Verify:
 
@@ -220,7 +248,7 @@ Verify:
 
 ### 7. Generate Lender Packet
 
-Status: pending.
+Status: passed.
 
 Verify:
 
@@ -232,7 +260,7 @@ Verify:
 
 ### 8. Commit Evidence Root
 
-Status: pending.
+Status: passed.
 
 Verify:
 
@@ -244,7 +272,7 @@ Verify:
 
 ### 9. Read-Only `/robomata` Projection
 
-Status: pending.
+Status: passed.
 
 Verify:
 
@@ -258,7 +286,7 @@ Verify:
 
 ### 10. Legacy Surface Regression Check
 
-Status: pending.
+Status: passed.
 
 Verify:
 
@@ -269,7 +297,7 @@ Verify:
 
 ## Overflow Submission Materials
 
-Status: pending.
+Status: ready to assemble from this runbook and the current product/spec docs.
 
 The final submission package should include:
 
@@ -294,10 +322,76 @@ changes them:
   distribution remain out of scope
 * lender approval remains subject to lender diligence and exception cure
 
+## ROB-132 Final Browser QA Evidence
+
+Status: passed on 2026-06-06 against local `dev` runtime with Vercel
+Development env, Robomata workflow flags, real Sui testnet, Seal encryption,
+and Walrus testnet upload enabled.
+
+Primary UI-created submission:
+
+```json
+{
+  "submissionId": "sub_9ead6912-257e-4858-b632-efa4e0d84658",
+  "status": "committed",
+  "grossReceivables": "$217,500.00",
+  "eligibleReceivables": "$217,500.00",
+  "availableBorrowingBase": "$113,100.00",
+  "openExceptions": 0,
+  "storageBackend": "walrus",
+  "encryptionBackend": "seal",
+  "walrusBlobId": "TGD6Urb6tgXnuhzRYDow4WVNDSjfXwIviWjLC9zeFYg",
+  "ciphertextDigest": "0x82222b9f84d3f5e5374b0e6e8dc1b24509c11e1922f8c88e43c3a2387aef319e",
+  "sealIdentity": "0xb5907dc938474c19cc3b797baeec2ae1f15e59f9159e0df6001086c3a3fd62c1",
+  "rootDigest": "0x127e0b1cb6f42a6950bfdd0d90d3ef83320c19179eef37ed4334ea67bf4d90b3",
+  "txDigest": "5yfDhMswWBoZATPqSbkxn4cqA2MAJ2fZb4BGWrEDVjqh"
+}
+```
+
+Browser QA result:
+
+* `/partner` rendered the existing Partner Dashboard, vehicle/offering entry
+  points, and `Borrowing Base Submissions` link after Privy auth hydration.
+* `/partner/submissions` rendered the creation form and persisted submission
+  list.
+* Pasted CSV import through the UI created two persisted receivables:
+  `QA-2001` and `QA-2002`.
+* Pasted evidence upload through the UI created a verified evidence card with
+  operator-facing fields first and `Walrus stored` / `Seal encrypted` badges.
+* Borrowing-base compute produced zero exceptions and lender-packet output.
+* UI commit submitted the evidence root to Sui testnet and persisted committed
+  status plus tx metadata.
+* After commit, mutation controls were hidden in the operator workspace.
+* `/robomata?submission=sub_9ead6912-257e-4858-b632-efa4e0d84658` rendered the
+  real committed submission as a read-only lender-ready projection.
+* The read-only projection did not expose demo-only controls such as
+  `Keep Markets Live`, `Keep Partner Flows Live`, or `First Customer`.
+
+Additional committed browser QA submission:
+
+```json
+{
+  "submissionId": "sub_943240d7-9360-4721-8ac4-3fa2d3f0b860",
+  "status": "committed",
+  "availableBorrowingBase": "$361,556.00",
+  "openExceptions": 0,
+  "txDigest": "GbkBuUQDLNGmr1K5qcpnkRQp9zTEL5ahQBayZyUfpZCq"
+}
+```
+
+Known browser QA observation:
+
+* On cold route loads, Privy wallet/auth hydration can briefly show a no-wallet
+  or unauthorized fallback before the authorized smart-wallet state loads. The
+  route recovers to the authorized state without user action after hydration.
+* `/robomata` is still an authenticated partner-owned read-only projection in
+  this MVP. It is not yet a public lender-share link.
+
 ## ROB-134 Testnet Evidence Verification
 
-Status: passed API-level smoke on 2026-06-05 against the local app runtime with
-real Sui testnet, Seal encryption, and Walrus testnet upload enabled.
+Status: passed API-level smoke on 2026-06-05 and again on 2026-06-06 against
+the local app runtime with real Sui testnet, Seal encryption, and Walrus
+testnet upload enabled.
 
 Non-secret result:
 
@@ -320,14 +414,15 @@ recovery phrase, private key, or local store artifact was committed.
 
 ## Release Recommendation
 
-Current recommendation: not yet clear to cut
-`release/robomata-overflow-v0.1.0`.
+Current recommendation: clear to cut `release/robomata-overflow-v0.1.0` after
+this QA evidence update is merged to a green `dev`.
 
 Reason:
 
-* implementation PRs are still under review/merge sequencing
-* end-to-end browser QA has not yet been executed on the final `dev` commit
-* release evidence has not yet been captured against the final build
-
-Update this section only after `ROB-132` has concrete browser, release-build,
-and submission-packaging results on the final `dev` commit.
+* implementation PRs are merged to `dev`
+* automated web checks, production web build, Sui build/lint/test, and
+  Robomata testnet smoke passed on the final implementation commit
+* browser QA covered partner submission list, CSV import, evidence upload,
+  compute, exception-free lender packet, Sui commit, read-only `/robomata`
+  projection, `/markets`, and existing `/partner` vehicle/offering entrypoints
+* known limitations remain explicit and do not block the Overflow MVP release
