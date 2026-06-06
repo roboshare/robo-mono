@@ -3,6 +3,7 @@
 import { randomBytes } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -70,6 +71,51 @@ async function activeSuiAddress(env) {
   return stdout.trim();
 }
 
+async function activeSuiEnv(env) {
+  const { stdout } = await execFileAsync("sui", [
+    "client",
+    "--client.config",
+    requiredEnv(env, "ROBOMATA_SUI_CLIENT_CONFIG"),
+    "active-env",
+  ]);
+  return stdout.trim();
+}
+
+async function assertSuiNetwork(env) {
+  const expectedNetwork = requiredEnv(env, "ROBOMATA_SUI_NETWORK");
+  const activeNetwork = await activeSuiEnv(env);
+  if (activeNetwork !== expectedNetwork) {
+    throw new Error(
+      `ROBOMATA_SUI_CLIENT_CONFIG active env is ${activeNetwork}, expected ${expectedNetwork}.`,
+    );
+  }
+}
+
+async function assertSmokePortAvailable() {
+  if (!/^\d+$/.test(port)) {
+    throw new Error(`ROBOMATA_SMOKE_PORT must be an integer port, got ${port}.`);
+  }
+
+  const numericPort = Number.parseInt(port, 10);
+  if (numericPort <= 0 || numericPort > 65535) {
+    throw new Error(`ROBOMATA_SMOKE_PORT must be an integer port, got ${port}.`);
+  }
+
+  await new Promise((resolve, reject) => {
+    const probe = createServer();
+    probe.once("error", error => {
+      if (error?.code === "EADDRINUSE") {
+        reject(new Error(`ROBOMATA_SMOKE_PORT ${port} is already in use.`));
+        return;
+      }
+      reject(error);
+    });
+    probe.listen(numericPort, "127.0.0.1", () => {
+      probe.close(resolve);
+    });
+  });
+}
+
 async function waitForServer() {
   const deadline = Date.now() + serverTimeoutMs;
   while (Date.now() < deadline) {
@@ -91,6 +137,7 @@ async function waitForServer() {
 }
 
 async function startServer(env) {
+  await assertSmokePortAvailable();
   serverProcess = spawn("yarn", ["start"], {
     cwd: repoRoot,
     detached: true,
@@ -285,6 +332,7 @@ async function main() {
   const privateKey = `0x${randomBytes(32).toString("hex")}`;
   const account = privateKeyToAccount(privateKey);
   const partnerAddress = account.address;
+  await assertSuiNetwork(mergedEnv);
   const suiSignerAddress = await activeSuiAddress(mergedEnv);
   tempDir = await mkdtemp(path.join(tmpdir(), "robomata-smoke-"));
   const storeFile = path.join(tempDir, "submissions.json");
@@ -292,6 +340,9 @@ async function main() {
 
   const baseEnv = {
     ...mergedEnv,
+    POSTGRES_URL: "",
+    POSTGRES_URL_NON_POOLING: "",
+    DATABASE_URL: "",
     PORT: port,
     NEXT_PUBLIC_ENABLE_ROBOMATA_WORKFLOW: "true",
     ROBOMATA_WORKFLOW_ENABLED: "true",
