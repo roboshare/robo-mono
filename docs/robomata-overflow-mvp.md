@@ -186,10 +186,12 @@ Use the flags as a matrix:
   `EvidenceCommitted` events the reconciliation path requests per page.
 * `ROBOMATA_SUI_EVENT_QUERY_MAX_PAGES` optionally controls how many Sui event
   pages stale-commit reconciliation scans before releasing the attempt.
-* `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES=0x...,0x...` is required when the
-  server APIs are enabled. The API verifies a fresh wallet signature and then
-  checks the partner identity against this server-side allowlist before
-  listing, creating, or mutating submissions.
+* Robomata server APIs verify a fresh wallet signature and then read
+  `PartnerManager.isAuthorizedPartner(partnerAddress)` on the signed request's
+  configured EVM chain before listing, creating, or mutating submissions.
+* `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES=0x...,0x...` is a local-development
+  fallback for isolated smoke tests when `PartnerManager` cannot be read. It is
+  not the deployed authorization source of truth.
 * `ROBOMATA_AUTHORIZED_PARTNER_SIGNERS_JSON={"0xPartner":"0xSigner"}` is
   optional for smart-wallet sessions where the authorized partner identity and
   the wallet that signs API auth messages differ. If omitted, the partner wallet
@@ -201,11 +203,11 @@ Recommended environments:
   and Sui side-effect flags unset unless the Robomata QA gate has explicitly
   passed for that release
 * controlled preview: set the workflow and mutation flags, configure
-  `POSTGRES_URL`, include the tester wallet in
-  `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES`, configure
-  `ROBOMATA_AUTHORIZED_PARTNER_SIGNERS_JSON` when a smart wallet is authorized
-  but an EOA signs API messages, and enable Walrus/Sui side-effect flags only
-  for testnet runs that should write to external infrastructure
+  `POSTGRES_URL`, ensure the tester wallet is authorized in the deployed EVM
+  `PartnerManager`, configure `ROBOMATA_AUTHORIZED_PARTNER_SIGNERS_JSON` when a
+  smart wallet is authorized but an EOA signs API messages, and enable
+  Walrus/Sui side-effect flags only for testnet runs that should write to
+  external infrastructure
 * local QA: use `ROBOMATA_SUBMISSIONS_FILE` only for single-developer local
   runs when Postgres is not configured
 * public demo mode: leave the server flags unset so `/robomata` remains a
