@@ -92,12 +92,16 @@ async function findCommittedEvidenceEvent(input: {
   const client = getRobomataSuiClient();
 
   for (let page = 0; page < maxPages; page++) {
-    const payload = await client.queryEvents({
-      query: { MoveEventType: eventType },
-      cursor,
-      limit,
-      order: "descending",
-    });
+    const payload = await withTimeout(
+      () =>
+        client.queryEvents({
+          query: { MoveEventType: eventType },
+          cursor,
+          limit,
+          order: "descending",
+        }),
+      getRobomataSuiTimeoutMs(),
+    );
     const events = payload.data as unknown as Record<string, unknown>[];
 
     const match = events.find(event => {
