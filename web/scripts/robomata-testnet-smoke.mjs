@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
@@ -19,6 +19,7 @@ const port = process.env.ROBOMATA_SMOKE_PORT ?? "3217";
 const baseUrl = `http://127.0.0.1:${port}`;
 const serverTimeoutMs = Number.parseInt(process.env.ROBOMATA_SMOKE_SERVER_TIMEOUT_MS ?? "90000", 10);
 const requestTimeoutMs = Number.parseInt(process.env.ROBOMATA_SMOKE_REQUEST_TIMEOUT_MS ?? "180000", 10);
+const smokeEvidencePlaintext = "smoke evidence\n";
 
 let serverProcess;
 let tempDir;
@@ -212,6 +213,52 @@ async function fetchJson(url, options) {
   }
 }
 
+function sha256Hex(bytes) {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+async function fetchBytes(url) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) {
+      const details = await response.text();
+      throw new Error(`${url} failed ${response.status}: ${details}`);
+    }
+    return Buffer.from(await response.arrayBuffer());
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function verifyWalrusCiphertext({ evidence, plaintext }) {
+  const aggregatorUrl = evidence.aggregatorUrl?.trim();
+  if (!aggregatorUrl) {
+    throw new Error("Expected Walrus aggregator URL on uploaded evidence.");
+  }
+
+  const ciphertextBytes = await fetchBytes(
+    `${aggregatorUrl.replace(/\/$/, "")}/v1/blobs/${evidence.walrusBlobId}`,
+  );
+  const fetchedDigest = `0x${sha256Hex(ciphertextBytes)}`;
+
+  if (fetchedDigest !== evidence.ciphertextDigest) {
+    throw new Error(
+      `Fetched Walrus blob hash ${fetchedDigest} did not match ciphertext digest ${evidence.ciphertextDigest}.`,
+    );
+  }
+
+  if (ciphertextBytes.includes(Buffer.from(plaintext))) {
+    throw new Error("Fetched Walrus blob contains the plaintext evidence fixture.");
+  }
+
+  return {
+    fetchedCiphertextBytes: ciphertextBytes.length,
+    fetchedCiphertextDigest: fetchedDigest,
+  };
+}
+
 async function createSubmission({ authHeaders }) {
   const requestPath = "/api/robomata/submissions";
   const payload = await fetchJson(`${baseUrl}${requestPath}`, {
@@ -278,7 +325,7 @@ async function runSubmissionFlow({ authHeaders, submissionId }) {
   form.set("scope", "Receivables");
   form.set("status", "verified");
   form.set("sealPolicyId", "seal://policy/lender-auditor-read");
-  form.set("file", new File(["smoke evidence\n"], "smoke-evidence.txt", { type: "text/plain" }));
+  form.set("file", new File([smokeEvidencePlaintext], "smoke-evidence.txt", { type: "text/plain" }));
   const evidencePayload = await postForm({
     authHeaders,
     requestPath: `/api/robomata/submissions/${submissionId}/evidence`,
@@ -314,12 +361,20 @@ async function runSubmissionFlow({ authHeaders, submissionId }) {
     throw new Error(`Expected committed Sui evidence state, got ${commit.status}.`);
   }
 
+  const walrusProof = await verifyWalrusCiphertext({
+    evidence,
+    plaintext: smokeEvidencePlaintext,
+  });
+
   return {
     submissionId,
     storageBackend: evidence.storageBackend,
     encryptionBackend: evidence.encryptionBackend,
-    hasWalrusBlobId: Boolean(evidence.walrusBlobId),
-    hasCiphertextDigest: Boolean(evidence.ciphertextDigest),
+    walrusBlobId: evidence.walrusBlobId,
+    ciphertextDigest: evidence.ciphertextDigest,
+    fetchedCiphertextBytes: walrusProof.fetchedCiphertextBytes,
+    fetchedCiphertextDigest: walrusProof.fetchedCiphertextDigest,
+    plaintextDigest: evidence.plaintextDigest,
     sealIdentity: evidence.sealIdentity,
     commitStatus: commit.status,
     txDigest: commit.txDigest,

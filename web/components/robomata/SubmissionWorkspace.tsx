@@ -53,7 +53,9 @@ export const SubmissionWorkspace = ({
   const [isBusy, setIsBusy] = useState(false);
   const [editingReceivableId, setEditingReceivableId] = useState<string | null>(null);
   const [draftReceivable, setDraftReceivable] = useState<Partial<SubmissionReceivable>>({});
-  const { address: accountAddress, connectedAddress } = useTransactingAccount();
+  const [receivablesCsvText, setReceivablesCsvText] = useState("");
+  const [evidenceText, setEvidenceText] = useState("");
+  const { address: accountAddress, chainId: accountChainId, connectedAddress } = useTransactingAccount();
   const partnerAuthAddress = accountAddress;
   const signerAddress = connectedAddress ?? accountAddress;
   const getAuthHeaders = useRobomataApiAuth(partnerAuthAddress);
@@ -62,6 +64,8 @@ export const SubmissionWorkspace = ({
     () => (submission?.computation ? buildSubmissionSummaryCards(submission.computation) : []),
     [submission],
   );
+  const isCommitted = submission?.status === "committed" || submission?.evidenceCommit.status === "committed";
+  const canMutate = !readOnly && !isCommitted;
 
   const loadSubmission = useCallback(async () => {
     setIsLoading(true);
@@ -75,7 +79,7 @@ export const SubmissionWorkspace = ({
       if (submissionId) {
         const path = `/api/robomata/submissions/${submissionId}`;
         const response = await fetch(path, {
-          headers: await getAuthHeaders({ method: "GET", path, signerAddress }),
+          headers: await getAuthHeaders({ chainId: accountChainId, method: "GET", path, signerAddress }),
         });
         const payload = (await response.json()) as { submission?: FacilitySubmission; error?: string };
         if (!response.ok || !payload.submission) throw new Error(payload.error ?? "Failed to load submission.");
@@ -87,7 +91,7 @@ export const SubmissionWorkspace = ({
       if (loadLatest) {
         const path = "/api/robomata/submissions";
         const response = await fetch(path, {
-          headers: await getAuthHeaders({ method: "GET", path, signerAddress }),
+          headers: await getAuthHeaders({ chainId: accountChainId, method: "GET", path, signerAddress }),
         });
         const payload = (await response.json()) as { submissions?: FacilitySubmission[]; error?: string };
         if (!response.ok) throw new Error(payload.error ?? "Failed to load submissions.");
@@ -98,7 +102,7 @@ export const SubmissionWorkspace = ({
     } finally {
       setIsLoading(false);
     }
-  }, [getAuthHeaders, loadLatest, partnerAuthAddress, signerAddress, submissionId]);
+  }, [accountChainId, getAuthHeaders, loadLatest, partnerAuthAddress, signerAddress, submissionId]);
 
   useEffect(() => {
     void loadSubmission();
@@ -113,7 +117,12 @@ export const SubmissionWorkspace = ({
     setIsBusy(true);
     try {
       const headers = new Headers(init?.headers);
-      const authHeaders = await getAuthHeaders({ method: init?.method ?? "GET", path: url, signerAddress });
+      const authHeaders = await getAuthHeaders({
+        chainId: accountChainId,
+        method: init?.method ?? "GET",
+        path: url,
+        signerAddress,
+      });
       Object.entries(authHeaders).forEach(([key, value]) => headers.set(key, value));
       const response = await fetch(url, { ...init, headers });
       const payload = (await response.json().catch(() => ({}))) as { submission?: FacilitySubmission; error?: string };
@@ -137,10 +146,21 @@ export const SubmissionWorkspace = ({
     if (!submission) return;
     const formData = new FormData();
     formData.set("file", file);
-    await updateSubmission(`/api/robomata/submissions/${submission.id}/receivables/import`, {
+    const didUpdate = await updateSubmission(`/api/robomata/submissions/${submission.id}/receivables/import`, {
       method: "POST",
       body: formData,
     });
+    if (didUpdate) setReceivablesCsvText("");
+  };
+
+  const importReceivablesFromText = async () => {
+    const csvText = receivablesCsvText.trim();
+    if (!csvText) {
+      notification.error("Paste receivables CSV before importing.");
+      return;
+    }
+
+    await importReceivables(new File([csvText], "receivables.csv", { type: "text/csv" }));
   };
 
   const uploadEvidence = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -149,11 +169,28 @@ export const SubmissionWorkspace = ({
 
     const form = event.currentTarget;
     const formData = new FormData(form);
+    const uploadedFile = formData.get("file");
+    if (!(uploadedFile instanceof File) || uploadedFile.size === 0) {
+      if (!evidenceText.trim()) {
+        notification.error("Attach an evidence file or paste evidence text.");
+        return;
+      }
+
+      const label = String(formData.get("label") ?? "evidence").trim() || "evidence";
+      formData.set(
+        "file",
+        new File([evidenceText], `${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.txt`, { type: "text/plain" }),
+      );
+    }
+
     const didUpdate = await updateSubmission(`/api/robomata/submissions/${submission.id}/evidence`, {
       method: "POST",
       body: formData,
     });
-    if (didUpdate) form.reset();
+    if (didUpdate) {
+      form.reset();
+      setEvidenceText("");
+    }
   };
 
   const recompute = async () => {
@@ -233,6 +270,10 @@ export const SubmissionWorkspace = ({
                 <Link href={`/partner/submissions/${submission.id}`} className="btn btn-primary rounded-full">
                   Manage in partner workflow
                 </Link>
+              ) : isCommitted ? (
+                <div className="rounded-2xl border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
+                  This submission is committed. Create a new submission for additional evidence or receivable changes.
+                </div>
               ) : (
                 <>
                   <button className="btn btn-primary rounded-full" onClick={recompute} disabled={isBusy}>
@@ -268,7 +309,7 @@ export const SubmissionWorkspace = ({
 
       <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <div className="space-y-6">
-          {!readOnly ? (
+          {canMutate ? (
             <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
               <div className="grid gap-6 lg:grid-cols-2">
                 <div>
@@ -292,6 +333,22 @@ export const SubmissionWorkspace = ({
                     />
                     Click to upload receivables CSV
                   </label>
+                  <div className="mt-4">
+                    <textarea
+                      className="textarea textarea-bordered min-h-36 w-full text-sm"
+                      placeholder={`Or paste CSV:\nreceivable,obligor,vehicles,outstanding,dpd,utilization,insured,title,lockbox\nAR-1007,Northstar Delivery Co.,28,386400,12,91,yes,yes,yes`}
+                      value={receivablesCsvText}
+                      onChange={event => setReceivablesCsvText(event.target.value)}
+                    />
+                    <button
+                      className="btn btn-outline mt-3 rounded-full"
+                      type="button"
+                      onClick={importReceivablesFromText}
+                      disabled={isBusy}
+                    >
+                      Import pasted CSV
+                    </button>
+                  </div>
                 </div>
 
                 <form className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-5" onSubmit={uploadEvidence}>
@@ -300,7 +357,7 @@ export const SubmissionWorkspace = ({
                     Evidence upload
                   </div>
                   <div className="mt-4 grid gap-3">
-                    <input name="file" type="file" className="file-input file-input-bordered w-full" required />
+                    <input name="file" type="file" className="file-input file-input-bordered w-full" />
                     <input
                       name="label"
                       className="input input-bordered w-full"
@@ -329,6 +386,12 @@ export const SubmissionWorkspace = ({
                       className="input input-bordered w-full"
                       placeholder="Linked receivable ids (comma separated)"
                     />
+                    <textarea
+                      className="textarea textarea-bordered min-h-28 w-full text-sm"
+                      placeholder="Or paste authorized evidence text when you do not have a local file handy."
+                      value={evidenceText}
+                      onChange={event => setEvidenceText(event.target.value)}
+                    />
                     <button className="btn btn-primary rounded-full" type="submit" disabled={isBusy}>
                       Upload evidence
                     </button>
@@ -356,7 +419,7 @@ export const SubmissionWorkspace = ({
                       <th>Amount</th>
                       <th>DPD</th>
                       <th>Status</th>
-                      {readOnly ? null : <th>Actions</th>}
+                      {canMutate ? <th>Actions</th> : null}
                     </tr>
                   </thead>
                   <tbody>
@@ -384,7 +447,7 @@ export const SubmissionWorkspace = ({
                                 {result?.eligible ? "Eligible" : receivable.excluded ? "Excluded" : "Needs review"}
                               </span>
                             </td>
-                            {readOnly ? null : (
+                            {canMutate ? (
                               <td>
                                 <div className="flex flex-wrap gap-2">
                                   <button
@@ -412,11 +475,11 @@ export const SubmissionWorkspace = ({
                                   </button>
                                 </div>
                               </td>
-                            )}
+                            ) : null}
                           </tr>
-                          {isEditing ? (
+                          {canMutate && isEditing ? (
                             <tr key={`${receivable.id}-edit`}>
-                              <td colSpan={readOnly ? 5 : 6}>
+                              <td colSpan={canMutate ? 6 : 5}>
                                 <div className="grid gap-3 rounded-2xl bg-base-200/60 p-4 md:grid-cols-4">
                                   <input
                                     className="input input-bordered"
@@ -538,7 +601,13 @@ export const SubmissionWorkspace = ({
               Exceptions and next actions
             </div>
             {submission.exceptions.length === 0 ? (
-              <div className="mt-4 text-sm text-base-content/70">No exceptions yet. Compute the submission first.</div>
+              <div className="mt-4 text-sm text-base-content/70">
+                {!submission.computation
+                  ? "No exceptions yet. Compute the submission first."
+                  : isCommitted
+                    ? "All exceptions were resolved before the evidence root was committed."
+                    : "No open exceptions. The submission is ready for lender review."}
+              </div>
             ) : (
               <div className="mt-4 space-y-3">
                 {submission.exceptions.map(exception => (
@@ -593,7 +662,7 @@ export const SubmissionWorkspace = ({
                           : "Not encrypted"}
                       </span>
                     </div>
-                    {!readOnly ? (
+                    {canMutate ? (
                       <div className="mt-3 flex flex-wrap gap-2">
                         {(["verified", "pending", "exception"] as const).map(status => (
                           <button

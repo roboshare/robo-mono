@@ -19,7 +19,7 @@ function statusClass(status: FacilitySubmission["status"]) {
 
 export const SubmissionIndex = () => {
   const router = useRouter();
-  const { address: accountAddress, connectedAddress } = useTransactingAccount();
+  const { address: accountAddress, chainId: accountChainId, connectedAddress } = useTransactingAccount();
   const partnerAuthAddress = accountAddress;
   const signerAddress = connectedAddress ?? accountAddress;
   const getAuthHeaders = useRobomataApiAuth(partnerAuthAddress);
@@ -40,7 +40,7 @@ export const SubmissionIndex = () => {
       setIsLoading(true);
       try {
         const response = await fetch(path, {
-          headers: await getAuthHeaders({ method: "GET", path, signerAddress }),
+          headers: await getAuthHeaders({ chainId: accountChainId, method: "GET", path, signerAddress }),
         });
         const payload = (await response.json()) as { submissions?: FacilitySubmission[]; error?: string };
         if (!response.ok) {
@@ -56,7 +56,7 @@ export const SubmissionIndex = () => {
     };
 
     void load();
-  }, [getAuthHeaders, partnerAuthAddress, signerAddress]);
+  }, [accountChainId, getAuthHeaders, partnerAuthAddress, signerAddress]);
 
   const createSubmission = async () => {
     if (!partnerAuthAddress || !form.operatorName.trim() || !form.facilityName.trim() || !form.asOfDate) {
@@ -71,7 +71,7 @@ export const SubmissionIndex = () => {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          ...(await getAuthHeaders({ method: "POST", path, signerAddress })),
+          ...(await getAuthHeaders({ chainId: accountChainId, method: "POST", path, signerAddress })),
         },
         body: JSON.stringify({
           operatorName: form.operatorName.trim(),
