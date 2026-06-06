@@ -24,6 +24,11 @@ type RobomataAuthRequest = {
 
 const CLIENT_AUTH_CACHE_MS = ROBOMATA_AUTH_MAX_AGE_MS - 30_000;
 
+async function getPrivyAuthorizationHeader(): Promise<Record<string, string>> {
+  const privyAccessToken = await getAccessToken();
+  return privyAccessToken ? { authorization: `Bearer ${privyAccessToken}` } : {};
+}
+
 export function useRobomataApiAuth(partnerAddress?: string) {
   const { signMessageAsync } = useSignMessage();
   const cacheRef = useRef<CachedAuthHeaders | null>(null);
@@ -50,14 +55,13 @@ export function useRobomataApiAuth(partnerAddress?: string) {
         cached.path === path &&
         cached.expiresAt > Date.now()
       ) {
-        return cached.headers;
+        return { ...cached.headers, ...(await getPrivyAuthorizationHeader()) };
       }
 
       const timestamp = Date.now().toString();
       const signature = await signMessageAsync({
         message: buildRobomataAuthMessage({ chainId, method, partnerAddress, path, signerAddress, timestamp }),
       });
-      const privyAccessToken = await getAccessToken();
       const headers = {
         ...(chainId ? { [ROBOMATA_AUTH_HEADERS.chainId]: chainId.toString() } : {}),
         [ROBOMATA_AUTH_HEADERS.method]: method,
@@ -66,7 +70,6 @@ export function useRobomataApiAuth(partnerAddress?: string) {
         [ROBOMATA_AUTH_HEADERS.signerAddress]: signerAddress,
         [ROBOMATA_AUTH_HEADERS.signature]: signature,
         [ROBOMATA_AUTH_HEADERS.timestamp]: timestamp,
-        ...(privyAccessToken ? { authorization: `Bearer ${privyAccessToken}` } : {}),
       };
 
       cacheRef.current = {
@@ -79,7 +82,7 @@ export function useRobomataApiAuth(partnerAddress?: string) {
         signerAddress,
       };
 
-      return headers;
+      return { ...headers, ...(await getPrivyAuthorizationHeader()) };
     },
     [partnerAddress, signMessageAsync],
   );
