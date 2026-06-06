@@ -12,7 +12,7 @@ type ChainAttributes = {
 export type ChainWithAttributes = chains.Chain & Partial<ChainAttributes>;
 export type AllowedChainIds = (typeof scaffoldConfig.targetNetworks)[number]["id"];
 
-// Mapping of chainId to RPC chain name an format followed by alchemy and infura
+// Mapping of chainId to RPC chain name format followed by Alchemy.
 export const RPC_CHAIN_NAMES: Record<number, string> = {
   [chains.mainnet.id]: "eth-mainnet",
   [chains.goerli.id]: "eth-goerli",
@@ -36,6 +36,24 @@ export const RPC_CHAIN_NAMES: Record<number, string> = {
   [chains.baseSepolia.id]: "base-sepolia",
   [chains.celo.id]: "celo-mainnet",
   [chains.celoAlfajores.id]: "celo-alfajores",
+};
+
+export const INFURA_RPC_CHAIN_NAMES: Record<number, string> = {
+  [chains.mainnet.id]: "mainnet",
+  [chains.sepolia.id]: "sepolia",
+  [chains.arbitrum.id]: "arbitrum-mainnet",
+  [chains.arbitrumSepolia.id]: "arbitrum-sepolia",
+  [chains.polygon.id]: "polygon-mainnet",
+  [chains.polygonAmoy.id]: "polygon-amoy",
+  [chains.base.id]: "base-mainnet",
+  [chains.baseSepolia.id]: "base-sepolia",
+  [chains.monadTestnet.id]: "monad-testnet",
+};
+
+export const getInfuraHttpUrl = (chainId: number) => {
+  return scaffoldConfig.infuraApiKey && INFURA_RPC_CHAIN_NAMES[chainId]
+    ? `https://${INFURA_RPC_CHAIN_NAMES[chainId]}.infura.io/v3/${scaffoldConfig.infuraApiKey}`
+    : undefined;
 };
 
 export const getAlchemyHttpUrl = (chainId: number) => {

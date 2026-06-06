@@ -1,16 +1,19 @@
-import { ChainWithAttributes, getAlchemyHttpUrl } from "./networks";
+import { ChainWithAttributes, getAlchemyHttpUrl, getInfuraHttpUrl } from "./networks";
 import { CurrencyAmount, Token } from "@uniswap/sdk-core";
 import { Pair, Route } from "@uniswap/v2-sdk";
-import { Address, createPublicClient, http, parseAbi } from "viem";
+import { Address, createPublicClient, fallback, http, parseAbi } from "viem";
 import { mainnet } from "viem/chains";
 
+const infuraHttpUrl = getInfuraHttpUrl(mainnet.id);
 const alchemyHttpUrl = getAlchemyHttpUrl(mainnet.id);
-const publicClient = alchemyHttpUrl
-  ? createPublicClient({
-      chain: mainnet,
-      transport: http(alchemyHttpUrl),
-    })
-  : undefined;
+const mainnetTransports = [
+  ...[infuraHttpUrl, alchemyHttpUrl].flatMap(rpcUrl => (rpcUrl ? [http(rpcUrl)] : [])),
+  http(),
+];
+const publicClient = createPublicClient({
+  chain: mainnet,
+  transport: fallback(mainnetTransports),
+});
 
 const ABI = parseAbi([
   "function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)",
@@ -24,10 +27,6 @@ export const fetchPriceFromUniswap = async (targetNetwork: ChainWithAttributes):
     targetNetwork.nativeCurrency.symbol !== "SEP" &&
     !targetNetwork.nativeCurrencyTokenAddress
   ) {
-    return 0;
-  }
-
-  if (!publicClient) {
     return 0;
   }
 

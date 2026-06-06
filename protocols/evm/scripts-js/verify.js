@@ -14,14 +14,14 @@ if (help) {
 Usage: yarn verify [network] [options]
 Options:
   --network <network>   Specify the network or RPC alias (default: localhost)
-  --rpc-provider <name> Specify the RPC provider alias to use: alchemy or infura
+  --rpc-provider <name> Specify the RPC provider alias to use: infura or alchemy (default: infura)
   --file <filename>     Verify deployments from a specific deploy script broadcast
   --contract <name>     Verify deployments from Deploy<ContractName>.s.sol
   --help, -h            Show this help message
 
 Examples:
   yarn verify sepolia
-  yarn verify sepolia --rpc-provider infura
+  yarn verify sepolia --rpc-provider alchemy
   yarn verify --network polygonAmoy
   yarn verify --contract Treasury --network sepolia
   yarn verify --file DeployTreasury.s.sol --network arbitrumSepolia
