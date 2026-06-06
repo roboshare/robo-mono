@@ -97,7 +97,9 @@ Required environment:
 * `NEXT_PUBLIC_ENABLE_ROBOMATA_WORKFLOW=true`
 * `ROBOMATA_WORKFLOW_ENABLED=true`
 * `ROBOMATA_WORKFLOW_MUTATIONS_ENABLED=true`
-* `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES`
+* deployed `PartnerManager` authorization for the partner wallet used in QA
+* `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES`, only for isolated local smoke tests
+  where `PartnerManager` cannot be read
 * `POSTGRES_URL`, except for single-developer local QA where
   `ROBOMATA_SUBMISSIONS_FILE` may point at an ignored temp file
 * `WALRUS_PUBLISHER_URL`, for example the current Walrus testnet publisher

@@ -1,9 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { type Chain, createPublicClient, fallback, http, isAddress, verifyMessage as verifyEoaMessage } from "viem";
+import {
+  type Address,
+  type Chain,
+  createPublicClient,
+  fallback,
+  http,
+  isAddress,
+  verifyMessage as verifyEoaMessage,
+} from "viem";
 import { ROBOMATA_AUTH_HEADERS, ROBOMATA_AUTH_MAX_AGE_MS, buildRobomataAuthMessage } from "~~/lib/robomata/auth";
 import type { FacilitySubmission } from "~~/lib/robomata/submissions";
 import scaffoldConfig, { type ScaffoldConfig } from "~~/scaffold.config";
+import { getDeployedContract } from "~~/utils/contracts";
 import { getAlchemyHttpUrl, getInfuraHttpUrl } from "~~/utils/scaffold-eth";
+
+const PARTNER_AUTH_CACHE_MS = 60_000;
+const partnerAuthorizationCache = new Map<string, { authorized: boolean; expiresAt: number }>();
 
 function getAuthorizedPartnerAddresses(): Set<string> {
   return new Set(
@@ -32,14 +44,19 @@ function getAuthorizedSignerAddress(partnerAddress: string): string {
   }
 }
 
-function getVerificationClient(chainId: string | null) {
-  if (!chainId) return undefined;
+function getConfiguredChain(chainId: string | null) {
+  if (!chainId) return null;
   const parsedChainId = Number.parseInt(chainId, 10);
-  if (!Number.isInteger(parsedChainId)) return undefined;
+  if (!Number.isInteger(parsedChainId)) return null;
 
   const chain = scaffoldConfig.targetNetworks.find(targetNetwork => targetNetwork.id === parsedChainId) as
     | Chain
     | undefined;
+  return chain ?? null;
+}
+
+function getVerificationClient(chainId: string | null) {
+  const chain = getConfiguredChain(chainId);
   if (!chain) return undefined;
 
   const rpcFallbacks = [];
@@ -61,6 +78,49 @@ function getVerificationClient(chainId: string | null) {
     chain,
     transport: fallback(rpcFallbacks),
   });
+}
+
+function canUseLocalPartnerAllowlist() {
+  return process.env.NODE_ENV === "development";
+}
+
+async function isPartnerAuthorizedOnchain(chainId: string | null, partnerAddress: string): Promise<boolean | null> {
+  if (!isAddress(partnerAddress)) return false;
+
+  const chain = getConfiguredChain(chainId);
+  if (!chain) return null;
+
+  const partnerManager = getDeployedContract(chain.id, "PartnerManager");
+  if (!partnerManager) return null;
+
+  const normalizedPartnerAddress = partnerAddress.toLowerCase();
+  const cacheKey = `${chain.id}:${partnerManager.address.toLowerCase()}:${normalizedPartnerAddress}`;
+  const cached = partnerAuthorizationCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.authorized;
+
+  const client = getVerificationClient(chainId);
+  if (!client) return null;
+
+  try {
+    const authorized = Boolean(
+      await client.readContract({
+        address: partnerManager.address,
+        abi: partnerManager.abi,
+        functionName: "isAuthorizedPartner",
+        args: [partnerAddress as Address],
+      }),
+    );
+    partnerAuthorizationCache.set(cacheKey, { authorized, expiresAt: Date.now() + PARTNER_AUTH_CACHE_MS });
+    return authorized;
+  } catch {
+    return null;
+  }
+}
+
+function isPartnerAuthorizedByLocalAllowlist(partnerAddress: string): boolean {
+  if (!canUseLocalPartnerAllowlist()) return false;
+  const authorizedPartners = getAuthorizedPartnerAddresses();
+  return authorizedPartners.has(partnerAddress.toLowerCase());
 }
 
 async function verifyPartnerSignature({
@@ -146,19 +206,21 @@ export async function requirePartnerAddress(request: NextRequest): Promise<strin
     return NextResponse.json({ error: "Missing or invalid partner authorization." }, { status: 401 });
   }
 
-  const authorizedPartners = getAuthorizedPartnerAddresses();
-  if (authorizedPartners.size === 0) {
+  const chainId = request.headers.get(ROBOMATA_AUTH_HEADERS.chainId)?.trim() ?? null;
+  const isAuthorizedPartner = await isPartnerAuthorizedOnchain(chainId, partnerAddress);
+
+  if (isAuthorizedPartner === true) return partnerAddress;
+
+  if (isAuthorizedPartner === null) {
+    if (isPartnerAuthorizedByLocalAllowlist(partnerAddress)) return partnerAddress;
+
     return NextResponse.json(
-      { error: "Robomata partner allowlist is not configured for this environment." },
+      { error: "Unable to verify partner authorization against PartnerManager." },
       { status: 403 },
     );
   }
 
-  if (!authorizedPartners.has(partnerAddress.toLowerCase())) {
-    return NextResponse.json({ error: "Wallet is not authorized for Robomata submissions." }, { status: 403 });
-  }
-
-  return partnerAddress;
+  return NextResponse.json({ error: "Wallet is not authorized for Robomata submissions." }, { status: 403 });
 }
 
 export function requireSubmissionAccess(submission: FacilitySubmission, partnerAddress: string): NextResponse | null {
