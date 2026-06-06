@@ -166,18 +166,23 @@ Use the flags as a matrix:
   exists. With this flag, uploads fail closed unless evidence can be encrypted
   before publishing.
 * `ROBOMATA_SUI_COMMIT_ENABLED=true` enables real Sui evidence commit
-  transactions when the Sui package, client config, per-submission facility
-  mapping, per-submission operator mapping, and expected signer are configured.
-  Without this flag, evidence roots remain prepared but cannot be committed
-  onchain.
+  transactions when the Sui package, server signer private key,
+  per-submission facility mapping, per-submission operator mapping, and
+  expected signer are configured. Without this flag, evidence roots remain
+  prepared but cannot be committed onchain.
 * `ROBOMATA_SUI_FACILITY_IDS_JSON={"sub_...":"0x..."}` maps each submission id
   to its own Sui facility object. Do not use facility names as keys; names are
   mutable operator input and are not safe authorization boundaries.
 * `ROBOMATA_SUI_FACILITY_OPERATORS_JSON={"sub_...":"0x..."}` maps each
   submission id to the Sui address that created and controls the mapped facility
   object.
-* `ROBOMATA_SUI_SIGNER_ADDRESS=0x...` must match the mapped facility operator
-  before the runtime exposes the Sui commit path.
+* `ROBOMATA_SUI_PRIVATE_KEY=suiprivkey...` is the sensitive server-side Sui
+  testnet signer used by Vercel to submit evidence commit transactions. It must
+  belong to the mapped facility operator and must never be exposed to the
+  browser.
+* `ROBOMATA_SUI_SIGNER_ADDRESS=0x...` must match both the server signer's
+  derived Sui address and the mapped facility operator before the runtime
+  exposes the Sui commit path.
 * `ROBOMATA_SUI_COMMIT_STALE_MS` optionally overrides the default ten-minute
   stale threshold for in-progress Sui commits. Stale attempts are reconciled
   against Sui `EvidenceCommitted` events before the app permits another commit
@@ -186,6 +191,9 @@ Use the flags as a matrix:
   `EvidenceCommitted` events the reconciliation path requests per page.
 * `ROBOMATA_SUI_EVENT_QUERY_MAX_PAGES` optionally controls how many Sui event
   pages stale-commit reconciliation scans before releasing the attempt.
+* `ROBOMATA_SUI_TIMEOUT_MS` optionally controls Sui SDK request timeout for
+  commit transactions. The legacy `ROBOMATA_SUI_CLI_TIMEOUT_MS` name remains a
+  fallback for local smoke environments.
 * Robomata server APIs verify a fresh wallet signature and then read
   `PartnerManager.isAuthorizedPartner(partnerAddress)` on the signed request's
   configured EVM chain before listing, creating, or mutating submissions.

@@ -100,7 +100,6 @@ Those values configure:
 ```text
 ROBOMATA_SUI_PACKAGE_ID
 ROBOMATA_SUI_FACILITY_ID
-ROBOMATA_SUI_CLIENT_CONFIG
 ROBOMATA_SUI_GAS_BUDGET
 ROBOMATA_SUI_NETWORK
 ROBOMATA_SEAL_PACKAGE_ID
@@ -109,6 +108,18 @@ ROBOMATA_SEAL_KEY_SERVER_OBJECT_ID
 ROBOMATA_SEAL_KEY_SERVER_AGGREGATOR_URL
 ROBOMATA_SEAL_THRESHOLD
 ```
+
+For hosted app commits, also configure the sensitive server-side signer key:
+
+```text
+ROBOMATA_SUI_PRIVATE_KEY=suiprivkey...
+ROBOMATA_SUI_SIGNER_ADDRESS=0x...
+```
+
+`ROBOMATA_SUI_SIGNER_ADDRESS` must be the address derived from
+`ROBOMATA_SUI_PRIVATE_KEY` and must match the facility operator address stored
+in `ROBOMATA_SUI_FACILITY_OPERATORS_JSON`. Do not commit the private key or add
+it to any `NEXT_PUBLIC_` variable.
 
 For real evidence upload, also configure a Walrus publisher endpoint in the app
 runtime:

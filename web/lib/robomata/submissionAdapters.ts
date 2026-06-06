@@ -175,6 +175,7 @@ async function buildEvidenceCommitPreview(submission: FacilitySubmission, eviden
   const facilityObjectId = resolveSubmissionFacilityObjectId(submission);
   const facilityOperatorAddress = resolveSubmissionFacilityOperatorAddress(submission);
   const signerAddress = process.env.ROBOMATA_SUI_SIGNER_ADDRESS?.trim().toLowerCase();
+  const hasServerSigner = Boolean(process.env.ROBOMATA_SUI_PRIVATE_KEY?.trim());
 
   return {
     status: "ready" as const,
@@ -185,7 +186,7 @@ async function buildEvidenceCommitPreview(submission: FacilitySubmission, eviden
     facilityOperatorAddress,
     commitMode:
       process.env.ROBOMATA_SUI_PACKAGE_ID &&
-      process.env.ROBOMATA_SUI_CLIENT_CONFIG &&
+      hasServerSigner &&
       facilityObjectId &&
       facilityOperatorAddress &&
       signerAddress === facilityOperatorAddress.toLowerCase() &&

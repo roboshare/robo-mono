@@ -1,16 +1,15 @@
 #!/usr/bin/env node
 
 import { createHash, randomBytes } from "node:crypto";
-import { execFile, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
+import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { privateKeyToAccount } from "viem/accounts";
 
-const execFileAsync = promisify(execFile);
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const webDir = path.resolve(scriptDir, "..");
 const repoRoot = path.resolve(webDir, "..");
@@ -62,34 +61,9 @@ function requiredEnv(env, key) {
   return value;
 }
 
-async function activeSuiAddress(env) {
-  const { stdout } = await execFileAsync("sui", [
-    "client",
-    "--client.config",
-    requiredEnv(env, "ROBOMATA_SUI_CLIENT_CONFIG"),
-    "active-address",
-  ]);
-  return stdout.trim();
-}
-
-async function activeSuiEnv(env) {
-  const { stdout } = await execFileAsync("sui", [
-    "client",
-    "--client.config",
-    requiredEnv(env, "ROBOMATA_SUI_CLIENT_CONFIG"),
-    "active-env",
-  ]);
-  return stdout.trim();
-}
-
-async function assertSuiNetwork(env) {
-  const expectedNetwork = requiredEnv(env, "ROBOMATA_SUI_NETWORK");
-  const activeNetwork = await activeSuiEnv(env);
-  if (activeNetwork !== expectedNetwork) {
-    throw new Error(
-      `ROBOMATA_SUI_CLIENT_CONFIG active env is ${activeNetwork}, expected ${expectedNetwork}.`,
-    );
-  }
+function suiSignerAddress(env) {
+  const privateKey = requiredEnv(env, "ROBOMATA_SUI_PRIVATE_KEY");
+  return Ed25519Keypair.fromSecretKey(privateKey).getPublicKey().toSuiAddress();
 }
 
 async function assertSmokePortAvailable() {
@@ -387,8 +361,8 @@ async function main() {
   const privateKey = `0x${randomBytes(32).toString("hex")}`;
   const account = privateKeyToAccount(privateKey);
   const partnerAddress = account.address;
-  await assertSuiNetwork(mergedEnv);
-  const suiSignerAddress = await activeSuiAddress(mergedEnv);
+  requiredEnv(mergedEnv, "ROBOMATA_SUI_NETWORK");
+  const activeSuiSignerAddress = suiSignerAddress(mergedEnv);
   tempDir = await mkdtemp(path.join(tmpdir(), "robomata-smoke-"));
   const storeFile = path.join(tempDir, "submissions.json");
   await writeFile(storeFile, "", "utf8");
@@ -411,7 +385,7 @@ async function main() {
     WALRUS_AGGREGATOR_URL:
       mergedEnv.WALRUS_AGGREGATOR_URL ?? "https://aggregator.walrus-testnet.walrus.space",
     ROBOMATA_SUI_COMMIT_ENABLED: "true",
-    ROBOMATA_SUI_SIGNER_ADDRESS: suiSignerAddress,
+    ROBOMATA_SUI_SIGNER_ADDRESS: activeSuiSignerAddress,
   };
 
   const authHeaders = authHeaderBuilder({ account, partnerAddress });
@@ -422,7 +396,7 @@ async function main() {
     storeFile,
     submissionId,
     facilityId,
-    operatorAddress: suiSignerAddress,
+    operatorAddress: activeSuiSignerAddress,
   });
   const result = await runSubmissionFlow({ authHeaders, submissionId });
 
