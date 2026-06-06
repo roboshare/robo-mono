@@ -3,7 +3,7 @@ import { type Chain, createPublicClient, fallback, http, isAddress, verifyMessag
 import { ROBOMATA_AUTH_HEADERS, ROBOMATA_AUTH_MAX_AGE_MS, buildRobomataAuthMessage } from "~~/lib/robomata/auth";
 import type { FacilitySubmission } from "~~/lib/robomata/submissions";
 import scaffoldConfig, { type ScaffoldConfig } from "~~/scaffold.config";
-import { getAlchemyHttpUrl } from "~~/utils/scaffold-eth";
+import { getAlchemyHttpUrl, getInfuraHttpUrl } from "~~/utils/scaffold-eth";
 
 function getAuthorizedPartnerAddresses(): Set<string> {
   return new Set(
@@ -43,18 +43,19 @@ function getVerificationClient(chainId: string | null) {
   if (!chain) return undefined;
 
   const rpcFallbacks = [];
+  const infuraHttpUrl = getInfuraHttpUrl(chain.id);
   const alchemyHttpUrl = getAlchemyHttpUrl(chain.id);
   const rpcOverrideUrl = (scaffoldConfig.rpcOverrides as ScaffoldConfig["rpcOverrides"])?.[chain.id];
-  if (alchemyHttpUrl && !scaffoldConfig.isUsingDefaultAlchemyApiKey) {
+  if (infuraHttpUrl) {
+    rpcFallbacks.push(http(infuraHttpUrl));
+  }
+  if (alchemyHttpUrl) {
     rpcFallbacks.push(http(alchemyHttpUrl));
   }
   if (rpcOverrideUrl) {
     rpcFallbacks.push(http(rpcOverrideUrl));
   }
   rpcFallbacks.push(http());
-  if (alchemyHttpUrl && scaffoldConfig.isUsingDefaultAlchemyApiKey) {
-    rpcFallbacks.push(http(alchemyHttpUrl));
-  }
 
   return createPublicClient({
     chain,

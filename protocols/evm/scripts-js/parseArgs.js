@@ -52,7 +52,7 @@ const command =
 
 let fileName = "Deploy.s.sol";
 let network = "localhost";
-let rpcProvider = process.env.RPC_PROVIDER || null;
+let rpcProvider = process.env.RPC_PROVIDER || "infura";
 let keystoreArg = null;
 let contractName = null;
 let proxyAddress = null;
@@ -67,7 +67,7 @@ Options:
   --contract <name>       Specify the contract to upgrade (required)
   --proxy-address <addr>  Specify the proxy contract address (required)
   --network <network>     Specify the network (default: localhost)
-  --rpc-provider <name>   Specify the RPC provider alias to use: alchemy or infura
+  --rpc-provider <name>   Specify the RPC provider alias to use: infura or alchemy (default: infura)
   --keystore <name>       Specify the keystore account to use (bypasses selection prompt)
   --help, -h             Show this help message
 Examples:
@@ -81,7 +81,7 @@ Options:
   --file <filename>     Specify the deployment script file (default: Deploy.s.sol)
   --contract <name>     Deploy a specific contract (uses Deploy<ContractName>.s.sol)
   --network <network>   Specify the network (default: localhost)
-  --rpc-provider <name> Specify the RPC provider alias to use: alchemy or infura
+  --rpc-provider <name> Specify the RPC provider alias to use: infura or alchemy (default: infura)
   --args <addresses>    Comma-separated dependency addresses (no spaces)
   --keystore <name>     Specify the keystore account to use (bypasses selection prompt)
   --help, -h           Show this help message

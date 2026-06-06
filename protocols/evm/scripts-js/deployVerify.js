@@ -22,7 +22,7 @@ Options:
   --file <filename>     Specify the deployment script file (default: Deploy.s.sol)
   --contract <name>     Deploy and verify a specific contract script
   --network <network>   Specify the network (default: localhost)
-  --rpc-provider <name> Specify the RPC provider alias to use: alchemy or infura
+  --rpc-provider <name> Specify the RPC provider alias to use: infura or alchemy (default: infura)
   --args <addresses>    Comma-separated dependency addresses for deploy
   --keystore <name>     Specify the keystore account to use for deploy
   --help, -h            Show this help message

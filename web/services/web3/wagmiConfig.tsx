@@ -6,7 +6,7 @@ import { Config, createConfig } from "wagmi";
 import scaffoldConfig, { ScaffoldConfig } from "~~/scaffold.config";
 import { isPrivyEnabled } from "~~/services/web3/privyConfig";
 import { getRuntimeLocalChain } from "~~/utils/localServiceUrls";
-import { getAlchemyHttpUrl } from "~~/utils/scaffold-eth";
+import { getAlchemyHttpUrl, getInfuraHttpUrl } from "~~/utils/scaffold-eth";
 
 const { targetNetworks } = scaffoldConfig;
 
@@ -35,18 +35,19 @@ export const getWagmiConfig = () => {
     ssr: true,
     client({ chain }) {
       const rpcFallbacks = [];
+      const infuraHttpUrl = getInfuraHttpUrl(chain.id);
       const alchemyHttpUrl = getAlchemyHttpUrl(chain.id);
       const rpcOverrideUrl = (scaffoldConfig.rpcOverrides as ScaffoldConfig["rpcOverrides"])?.[chain.id];
-      if (alchemyHttpUrl && !scaffoldConfig.isUsingDefaultAlchemyApiKey) {
+      if (infuraHttpUrl) {
+        rpcFallbacks.push(http(infuraHttpUrl));
+      }
+      if (alchemyHttpUrl) {
         rpcFallbacks.push(http(alchemyHttpUrl));
       }
       if (rpcOverrideUrl) {
         rpcFallbacks.push(http(rpcOverrideUrl));
       }
       rpcFallbacks.push(http());
-      if (alchemyHttpUrl && scaffoldConfig.isUsingDefaultAlchemyApiKey) {
-        rpcFallbacks.push(http(alchemyHttpUrl));
-      }
 
       return createClient({
         chain,

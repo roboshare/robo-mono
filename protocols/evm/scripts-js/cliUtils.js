@@ -9,6 +9,7 @@ const RPC_PROVIDER_SUFFIX = {
   alchemy: "",
   infura: "Infura",
 };
+const DEFAULT_RPC_PROVIDER = "infura";
 
 export function loadFoundryToml() {
   const foundryTomlPath = join(__dirname, "..", "foundry.toml");
@@ -36,11 +37,10 @@ export function isRpcUrl(value) {
 
 export function resolveRpcNetwork(
   network,
-  rpcProvider = process.env.RPC_PROVIDER
+  rpcProvider = process.env.RPC_PROVIDER || DEFAULT_RPC_PROVIDER
 ) {
   const normalizedRpcProvider = rpcProvider?.toLowerCase();
   if (
-    !normalizedRpcProvider ||
     normalizedRpcProvider === "alchemy" ||
     isRpcUrl(network) ||
     network === "localhost"
@@ -85,7 +85,7 @@ export function parseScriptSelectionArgs(args, defaults = {}) {
   let network = defaultNetwork;
   let fileName = defaultFileName;
   let contractName = null;
-  let rpcProvider = process.env.RPC_PROVIDER || null;
+  let rpcProvider = process.env.RPC_PROVIDER || DEFAULT_RPC_PROVIDER;
   let help = false;
   let consumedPositionalNetwork = false;
 

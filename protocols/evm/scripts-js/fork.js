@@ -17,13 +17,13 @@ if (help) {
 Usage: yarn fork [network-or-rpc-url] [options]
 Options:
   --network <network>   Specify the RPC alias or full RPC URL (default: mainnet)
-  --rpc-provider <name> Specify the RPC provider alias to use: alchemy or infura
+  --rpc-provider <name> Specify the RPC provider alias to use: infura or alchemy (default: infura)
   --help, -h            Show this help message
 
 Examples:
   yarn fork
   yarn fork sepolia
-  yarn fork sepolia --rpc-provider infura
+  yarn fork sepolia --rpc-provider alchemy
   yarn fork --network https://eth-mainnet.g.alchemy.com/v2/<key>
   `);
   process.exit(0);
