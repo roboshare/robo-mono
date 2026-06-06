@@ -114,14 +114,17 @@ For real evidence upload, also configure a Walrus publisher endpoint in the app
 runtime:
 
 ```sh
-export WALRUS_PUBLISHER_URL="https://..."
+export WALRUS_PUBLISHER_URL="https://publisher.walrus-testnet.walrus.space"
 export WALRUS_AGGREGATOR_URL="https://aggregator.walrus-testnet.walrus.space"
 export ROBOMATA_REQUIRE_REAL_EVIDENCE_STORAGE="true"
+export ROBOMATA_WALRUS_UPLOADS_ENABLED="true"
 ```
 
 With `ROBOMATA_REQUIRE_REAL_EVIDENCE_STORAGE=true`, evidence upload fails closed
-unless both Seal encryption and Walrus publishing are configured. Without that
-flag, local development can still fall back to mock storage.
+unless real Walrus uploads are enabled. With
+`ROBOMATA_WALRUS_UPLOADS_ENABLED=true`, upload also fails closed unless both
+Seal encryption and the Walrus publisher are configured. Without those flags,
+local development can still fall back to mock storage.
 
 The current Seal policy binds decryption access to
 `robomata_overflow::facility::seal_approve`. The Seal identity is the facility

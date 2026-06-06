@@ -160,10 +160,11 @@ Use the flags as a matrix:
   a local-development fallback and must not be used for shared previews or
   release candidates.
 * `ROBOMATA_WALRUS_UPLOADS_ENABLED=true` enables real Walrus publisher uploads
-  when `WALRUS_PUBLISHER_URL` and `ROBOMATA_SEAL_ENCRYPTION_KEY` are configured.
-  Without this flag, evidence uploads keep using deterministic mock Walrus
-  references even if a publisher URL exists. With this flag, uploads fail closed
-  unless evidence can be encrypted before publishing.
+  when `WALRUS_PUBLISHER_URL` and the Seal package, facility identity, and
+  key-server configuration are available. Without this flag, evidence uploads
+  keep using deterministic mock Walrus references even if a publisher URL
+  exists. With this flag, uploads fail closed unless evidence can be encrypted
+  before publishing.
 * `ROBOMATA_SUI_COMMIT_ENABLED=true` enables real Sui evidence commit
   transactions when the Sui package, client config, per-submission facility
   mapping, per-submission operator mapping, and expected signer are configured.
@@ -227,11 +228,10 @@ access. In this tranche:
 - Seal is the encryption and access-control layer for uploaded evidence. The app
   encrypts evidence bytes before Walrus upload when `ROBOMATA_SEAL_*` or
   generated Sui testnet values are configured.
-- The Sui evidence-rails implementation PR adds
-  `robomata_overflow::facility::seal_approve`, using the facility object ID as
-  the Seal identity and approving access only for the facility operator. On
-  current `dev` before that PR merges, `commit_evidence` is the implemented Sui
-  evidence entry point.
+- The Sui evidence rails expose `robomata_overflow::facility::seal_approve`,
+  using the facility object ID as the Seal identity and approving access only
+  for the facility operator. `commit_evidence` is the Sui entry point for
+  anchoring the computed evidence root after submission exceptions are resolved.
 - The committed evidence digest is the ciphertext digest. The plaintext digest
   remains an internal audit field on the evidence record.
 - If `ROBOMATA_REQUIRE_REAL_EVIDENCE_STORAGE=true`, upload fails closed unless

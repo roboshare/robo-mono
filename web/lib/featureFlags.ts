@@ -20,6 +20,10 @@ export function isRobomataWalrusUploadsEnabled(): boolean {
   return isEnabled(process.env.ROBOMATA_WALRUS_UPLOADS_ENABLED);
 }
 
+export function isRobomataRealEvidenceStorageRequired(): boolean {
+  return isEnabled(process.env.ROBOMATA_REQUIRE_REAL_EVIDENCE_STORAGE);
+}
+
 export function isRobomataSuiCommitEnabled(): boolean {
   return isEnabled(process.env.ROBOMATA_SUI_COMMIT_ENABLED);
 }

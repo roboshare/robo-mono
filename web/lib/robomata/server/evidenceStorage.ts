@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { isRobomataWalrusUploadsEnabled } from "~~/lib/featureFlags";
+import { isRobomataRealEvidenceStorageRequired, isRobomataWalrusUploadsEnabled } from "~~/lib/featureFlags";
 import { encryptEvidenceWithSeal, isSealEncryptionConfigured } from "~~/lib/robomata/server/sealEncryption";
 import type { SubmissionEvidence, SubmissionStorageBackend } from "~~/lib/robomata/submissions";
 
@@ -90,6 +90,12 @@ export async function createEvidenceRecord(input: {
   const plaintext = Buffer.from(await input.file.arrayBuffer());
   const plaintextDigest = digestBuffer(plaintext);
   const uploadsEnabled = isRobomataWalrusUploadsEnabled();
+
+  if (isRobomataRealEvidenceStorageRequired() && !uploadsEnabled) {
+    throw new Error(
+      "Real evidence storage is required for this environment. Set ROBOMATA_WALRUS_UPLOADS_ENABLED=true and configure Walrus/Seal before uploading evidence.",
+    );
+  }
 
   if (uploadsEnabled && !isSealEncryptionConfigured(input.sealIdentity)) {
     throw new Error(

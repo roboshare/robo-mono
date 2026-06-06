@@ -52,6 +52,7 @@
     "postinstall": "husky install",
     "ipfs": "yarn workspace web ipfs",
     "lint": "yarn web:lint && yarn evm:lint",
+    "robomata:testnet-smoke": "yarn workspace web robomata:testnet-smoke",
     "web:build": "yarn workspace web build",
     "web:check-types": "yarn workspace web check-types",
     "web:format": "yarn workspace web format",
