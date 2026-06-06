@@ -48,6 +48,11 @@ Configure the following in the Privy Dashboard before testing embedded smart-wal
    - a paymaster URL if you want sponsored gas
 6. Prefer dedicated Pimlico endpoints over the default Privy-offered rate-limited bundler for any serious testing or production traffic.
 
+For local QA accounts that already have an external wallet linked to Privy, set
+`NEXT_PUBLIC_PRIVY_EMBEDDED_WALLET_CREATE_ON_LOGIN=all-users` in the local or
+Vercel Development environment. The app defaults to `users-without-wallets`, so
+production behavior only changes when the override is explicitly set.
+
 ## Important Distinction
 
 Privy exposes two different gas-related setup models:
