@@ -6,6 +6,7 @@ import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy
 import { AssetMetadataBaseTest } from "../base/AssetMetadataBaseTest.t.sol";
 import { AssetLib } from "../../contracts/Libraries.sol";
 import { RegistryRouter } from "../../contracts/RegistryRouter.sol";
+import { RoboshareTokens } from "../../contracts/RoboshareTokens.sol";
 
 contract RegistryRouterTest is AssetMetadataBaseTest {
     function _setupBuffersFunded() internal override { }
@@ -193,12 +194,7 @@ contract RegistryRouterTest is AssetMetadataBaseTest {
     function testRoutingGetAssetInfo() public {
         // Register asset via VehicleRegistry (which calls router)
         vm.prank(partner1);
-        uint256 assetId = assetRegistry.registerAsset(
-            abi.encode(
-                TEST_VIN, TEST_MAKE, TEST_MODEL, TEST_YEAR, TEST_MANUFACTURER_ID, TEST_OPTION_CODES, TEST_METADATA_URI
-            ),
-            ASSET_VALUE
-        );
+        uint256 assetId = assetRegistry.registerAsset(_vehicleRegistrationData(TEST_VIN), ASSET_VALUE);
 
         // Call via Router
         AssetLib.AssetInfo memory info = router.getAssetInfo(assetId);
@@ -207,12 +203,7 @@ contract RegistryRouterTest is AssetMetadataBaseTest {
 
     function testRoutingAssetExists() public {
         vm.prank(partner1);
-        uint256 assetId = assetRegistry.registerAsset(
-            abi.encode(
-                TEST_VIN, TEST_MAKE, TEST_MODEL, TEST_YEAR, TEST_MANUFACTURER_ID, TEST_OPTION_CODES, TEST_METADATA_URI
-            ),
-            ASSET_VALUE
-        );
+        uint256 assetId = assetRegistry.registerAsset(_vehicleRegistrationData(TEST_VIN), ASSET_VALUE);
 
         assertTrue(router.assetExists(assetId));
         assertFalse(router.assetExists(999));
@@ -230,8 +221,8 @@ contract RegistryRouterTest is AssetMetadataBaseTest {
         );
     }
 
-    function testClaimSettlementDirectCallNotAllowed() public {
-        vm.expectRevert(RegistryRouter.DirectCallNotAllowed.selector);
+    function testClaimSettlementRegistryNotFound() public {
+        vm.expectRevert(abi.encodeWithSelector(RegistryRouter.RegistryNotFound.selector, uint256(0)));
         router.claimSettlement(scenario.assetId, false);
     }
 
@@ -251,6 +242,63 @@ contract RegistryRouterTest is AssetMetadataBaseTest {
         vm.prank(address(treasury));
         vm.expectRevert(abi.encodeWithSelector(RegistryRouter.RegistryNotFound.selector, tokenIdWithoutRegistry));
         router.recordImmediateProceedsRelease(tokenIdWithoutRegistry, 1);
+    }
+
+    function testRecordImmediateProceedsReleaseRevertsWhenPositionManagerUnset() public {
+        _ensureState(SetupState.PrimaryPoolCreated);
+
+        RoboshareTokens freshToken = RoboshareTokens(
+            address(
+                new ERC1967Proxy(address(new RoboshareTokens()), abi.encodeWithSignature("initialize(address)", admin))
+            )
+        );
+
+        vm.prank(admin);
+        router.updateRoboshareTokens(address(freshToken));
+
+        vm.prank(address(treasury));
+        vm.expectRevert(RegistryRouter.PositionManagerNotSet.selector);
+        router.recordImmediateProceedsRelease(scenario.revenueTokenId, 1);
+    }
+
+    function testCreateRevenueTokenPoolRevertsWhenMarketplaceIsNotContract() public {
+        _ensureState(SetupState.AssetRegistered);
+
+        vm.prank(admin);
+        router.setMarketplace(unauthorized);
+
+        vm.prank(partner1);
+        vm.expectRevert(abi.encodeWithSelector(RegistryRouter.InvalidMarketplace.selector, unauthorized));
+        assetRegistry.createRevenueTokenPool(
+            scenario.assetId,
+            REVENUE_TOKEN_PRICE,
+            block.timestamp + 365 days,
+            10_000,
+            1_000,
+            ASSET_VALUE / REVENUE_TOKEN_PRICE,
+            false,
+            false
+        );
+    }
+
+    function testBurnRevenueTokensFromHolderForPrimaryRedemptionRevertsWhenPositionManagerIsNotContract() public {
+        _ensureState(SetupState.PrimaryPoolCreated);
+
+        RoboshareTokens freshToken = RoboshareTokens(
+            address(
+                new ERC1967Proxy(address(new RoboshareTokens()), abi.encodeWithSignature("initialize(address)", admin))
+            )
+        );
+
+        vm.prank(admin);
+        freshToken.setPositionManager(unauthorized);
+
+        vm.prank(admin);
+        router.updateRoboshareTokens(address(freshToken));
+
+        vm.prank(address(treasury));
+        vm.expectRevert(abi.encodeWithSelector(RegistryRouter.InvalidPositionManager.selector, unauthorized));
+        router.burnRevenueTokensFromHolderForPrimaryRedemption(buyer, scenario.revenueTokenId, 1);
     }
 
     function testRecordPrimaryRedemptionPayoutNotTreasury() public {

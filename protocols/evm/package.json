@@ -10,6 +10,7 @@
     "chain": "make chain",
     "clean": "forge clean",
     "compile": "make compile",
+    "generate:protocol-config": "node scripts-js/generateFrontendProtocolConfig.js",
     "deploy": "node scripts-js/parseArgs.js",
     "deploy:verify": "node scripts-js/deployVerify.js",
     "upgrade": "node scripts-js/parseArgs.js",

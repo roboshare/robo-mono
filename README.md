@@ -99,6 +99,29 @@ yarn start
 
 Visit `http://localhost:3000`.
 
+### Vercel Environment Variables
+
+If you do not want Vercel development environment variables written to disk,
+use the injected-at-runtime flow instead:
+
+```sh
+yarn vercel:link
+yarn vercel:start
+```
+
+Notes:
+
+- `yarn vercel:link` links the `web` app directory to the correct Vercel
+  project and creates `web/.vercel/project.json`
+- `yarn vercel:start` runs the web app through `vercel env run -- yarn dev`, so
+  Vercel development variables are injected into the process without being
+  written to `web/.env.local`
+- use plain `yarn start` when you want the repo's normal local web flow without
+  Vercel-managed environment injection
+- if `/markets` shows `No subgraph endpoint configured...`, the matching
+  subgraph env vars are still missing from the injected environment and should
+  be added in Vercel
+
 Useful commands:
 
 - `yarn evm:test`

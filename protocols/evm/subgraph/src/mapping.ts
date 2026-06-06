@@ -1,35 +1,9 @@
-import { BigInt, Address } from "@graphprotocol/graph-ts"
+import { BigInt } from "@graphprotocol/graph-ts"
 import {
-  MockUSDC,
-  Transfer as MockUSDCTransferEvent
-} from "../generated/MockUSDC/MockUSDC"
-import {
-  RoboshareTokens,
-  TransferSingle as RoboshareTokensTransferSingleEvent,
-  RevenueTokenInfoSet as RevenueTokenInfoSetEvent
-} from "../generated/RoboshareTokens/RoboshareTokens"
-import {
-  PartnerManager,
-  PartnerAuthorized as PartnerAuthorizedEvent
-} from "../generated/PartnerManager/PartnerManager"
-import {
-  RegistryRouter,
-  IdBoundToRegistry as IdBoundToRegistryEvent
-} from "../generated/RegistryRouter/RegistryRouter"
-import {
-  VehicleRegistry,
   AssetRegistered as AssetRegisteredEvent,
-  VehicleRegistered as VehicleRegisteredEvent
+  VehicleMetadataUpdated as VehicleMetadataUpdatedEvent
 } from "../generated/VehicleRegistry/VehicleRegistry"
 import {
-  Treasury,
-  CollateralLocked as CollateralLockedEvent
-} from "../generated/Treasury/Treasury"
-import {
-  EarningsDistributed as EarningsDistributedEvent
-} from "../generated/EarningsManager/EarningsManager"
-import {
-  Marketplace,
   ListingCreated as ListingCreatedEvent,
   RevenueTokensTraded as RevenueTokensTradedEvent,
   ListingExtended as ListingExtendedEvent,
@@ -37,35 +11,14 @@ import {
   PrimaryPoolCreated as PrimaryPoolCreatedEvent,
   PrimaryPoolPaused as PrimaryPoolPausedEvent,
   PrimaryPoolUnpaused as PrimaryPoolUnpausedEvent,
-  PrimaryPoolClosed as PrimaryPoolClosedEvent,
-  PrimaryPoolPurchased as PrimaryPoolPurchasedEvent,
-  PrimaryPoolRedeemed as PrimaryPoolRedeemedEvent
+  PrimaryPoolClosed as PrimaryPoolClosedEvent
 } from "../generated/Marketplace/Marketplace"
 
 import {
-  MockUSDCContract,
-  Transfer,
-  RoboshareTokensContract,
-  RoboshareToken,
-  TransferSingleEvent,
-  PartnerManagerContract,
-  Partner,
-  RegistryRouterContract,
-  BoundId,
-  VehicleRegistryContract,
   Vehicle,
-  TreasuryContract,
-  CollateralLock,
-  MarketplaceContract,
   Listing,
-  EarningsDistribution,
-  AssetEarning,
-  PrimaryPool,
-  PrimaryPoolPurchase,
-  PrimaryPoolRedemption
+  PrimaryPool
 } from "../generated/schema"
-
-const DEFAULT_TARGET_YIELD_BP = BigInt.fromI32(1000)
 
 function assetIdFromTokenId(tokenId: BigInt): BigInt {
   const one = BigInt.fromI32(1)
@@ -73,199 +26,39 @@ function assetIdFromTokenId(tokenId: BigInt): BigInt {
   return tokenId.minus(one)
 }
 
-export function handleMockUSDCTransfer(event: MockUSDCTransferEvent): void {
-  let entity = new Transfer(
-    event.transaction.hash.toHex() + "-" + event.logIndex.toString()
-  )
-  entity.from = event.params.from
-  entity.to = event.params.to
-  entity.value = event.params.value
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-  entity.save()
-
-  let contract = MockUSDCContract.load("1")
-  if (!contract) {
-    contract = new MockUSDCContract("1")
-    contract.address = event.address
-    contract.save()
-  }
-}
-
-export function handleRoboshareTokensTransferSingle(
-  event: RoboshareTokensTransferSingleEvent
-): void {
-  let entity = new TransferSingleEvent(
-    event.transaction.hash.toHex() + "-" + event.logIndex.toString()
-  )
-  entity.operator = event.params.operator
-  entity.from = event.params.from
-  entity.to = event.params.to
-  entity.tokenId = event.params.id
-  entity.value = event.params.value
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-  entity.save()
-
-  let contract = RoboshareTokensContract.load("1")
-  if (!contract) {
-    contract = new RoboshareTokensContract("1")
-    contract.address = event.address
-    contract.save()
-  }
-}
-
-export function handleRevenueTokenInfoSet(event: RevenueTokenInfoSetEvent): void {
-  let token = new RoboshareToken(event.params.revenueTokenId.toString())
-  token.revenueTokenId = event.params.revenueTokenId
-  token.price = event.params.price
-  token.supply = event.params.supply
-  // Avoid historical eth_call reads during indexing so chains without archival call support can still index.
-  token.targetYieldBP = DEFAULT_TARGET_YIELD_BP
-  token.maturityDate = event.params.maturityDate
-  token.createdAt = event.block.timestamp
-  token.setAtBlock = event.block.number
-  token.save()
-}
-
-export function handlePartnerAuthorized(event: PartnerAuthorizedEvent): void {
-  let partner = new Partner(event.params.partner.toHex())
-  partner.address = event.params.partner
-  partner.name = event.params.name
-  partner.authorizedAt = event.block.timestamp
-  partner.save()
-
-  let contract = PartnerManagerContract.load("1")
-  if (!contract) {
-    contract = new PartnerManagerContract("1")
-    contract.address = event.address
-    contract.save()
-  }
-}
-
-export function handleIdBoundToRegistry(event: IdBoundToRegistryEvent): void {
-  let boundId = new BoundId(event.params.id.toString())
-  boundId.idValue = event.params.id
-  boundId.registry = event.params.registry
-  boundId.blockNumber = event.block.number
-  boundId.blockTimestamp = event.block.timestamp
-  boundId.transactionHash = event.transaction.hash
-  boundId.save()
-
-  let contract = RegistryRouterContract.load("1")
-  if (!contract) {
-    contract = new RegistryRouterContract("1")
-    contract.address = event.address
-    contract.save()
-  }
-}
-
 export function handleAssetRegistered(event: AssetRegisteredEvent): void {
   let id = event.params.assetId.toString()
   let vehicle = Vehicle.load(id)
-
   if (!vehicle) {
     vehicle = new Vehicle(id)
-    vehicle.partner = event.params.owner
-    vehicle.vin = ""
-    vehicle.blockNumber = event.block.number
-    vehicle.blockTimestamp = event.block.timestamp
-    vehicle.transactionHash = event.transaction.hash
-  } else {
-    vehicle.partner = event.params.owner
-    vehicle.blockNumber = event.block.number
-    vehicle.blockTimestamp = event.block.timestamp
-    vehicle.transactionHash = event.transaction.hash
   }
 
+  vehicle.partner = event.params.owner
   vehicle.assetValue = event.params.assetValue
+  vehicle.blockNumber = event.block.number
+  vehicle.blockTimestamp = event.block.timestamp
+  vehicle.transactionHash = event.transaction.hash
   vehicle.save()
 }
 
-export function handleVehicleRegistered(event: VehicleRegisteredEvent): void {
-  let id = event.params.vehicleId.toString()
-  let vehicle = Vehicle.load(id)
-  if (!vehicle) {
-    vehicle = new Vehicle(id)
-    vehicle.partner = event.params.partner
-    vehicle.blockNumber = event.block.number
-    vehicle.blockTimestamp = event.block.timestamp
-    vehicle.transactionHash = event.transaction.hash
-  } else {
-    vehicle.partner = event.params.partner
-  }
-  vehicle.vin = event.params.vin
+export function handleVehicleMetadataUpdated(event: VehicleMetadataUpdatedEvent): void {
+  let vehicle = Vehicle.load(event.params.vehicleId.toString())
+  if (!vehicle) return
 
+  vehicle.metadataURI = event.params.assetMetadataURI
+  vehicle.blockNumber = event.block.number
+  vehicle.blockTimestamp = event.block.timestamp
+  vehicle.transactionHash = event.transaction.hash
   vehicle.save()
-
-  let registryContract = VehicleRegistryContract.load("1")
-  if (!registryContract) {
-    registryContract = new VehicleRegistryContract("1")
-    registryContract.address = event.address
-    registryContract.save()
-  }
-}
-
-
-export function handleCollateralLocked(event: CollateralLockedEvent): void {
-  let collateralLock = new CollateralLock(
-    event.params.assetId.toString() + "-" + event.transaction.hash.toHex()
-  )
-  collateralLock.assetId = event.params.assetId
-  collateralLock.partner = event.params.partner
-  collateralLock.amount = event.params.amount
-  collateralLock.blockNumber = event.block.number
-  collateralLock.blockTimestamp = event.block.timestamp
-  collateralLock.transactionHash = event.transaction.hash
-  collateralLock.save()
-
-  let contract = TreasuryContract.load("1")
-  if (!contract) {
-    contract = new TreasuryContract("1")
-    contract.address = event.address
-    contract.save()
-  }
-}
-
-export function handleEarningsDistributed(event: EarningsDistributedEvent): void {
-  // Create individual distribution record
-  let distribution = new EarningsDistribution(
-    event.transaction.hash.toHex() + "-" + event.logIndex.toString()
-  )
-  distribution.assetId = event.params.assetId
-  distribution.partner = event.params.partner
-  distribution.totalRevenue = event.params.totalRevenue
-  distribution.netEarnings = event.params.investorEarnings
-  distribution.period = event.params.period
-  distribution.blockNumber = event.block.number
-  distribution.blockTimestamp = event.block.timestamp
-  distribution.transactionHash = event.transaction.hash
-  distribution.save()
-
-  // Update or create aggregate earnings for asset
-  let assetEarningsId = event.params.assetId.toString()
-  let assetEarnings = AssetEarning.load(assetEarningsId)
-
-  if (!assetEarnings) {
-    assetEarnings = new AssetEarning(assetEarningsId)
-    assetEarnings.assetId = event.params.assetId
-    assetEarnings.totalEarnings = BigInt.fromI32(0)
-    assetEarnings.totalRevenue = BigInt.fromI32(0)
-    assetEarnings.distributionCount = BigInt.fromI32(0)
-    assetEarnings.firstDistributionAt = event.block.timestamp
-  }
-
-  assetEarnings.totalEarnings = assetEarnings.totalEarnings.plus(event.params.investorEarnings)
-  assetEarnings.totalRevenue = assetEarnings.totalRevenue.plus(event.params.totalRevenue)
-  assetEarnings.distributionCount = assetEarnings.distributionCount.plus(BigInt.fromI32(1))
-  assetEarnings.lastDistributionAt = event.block.timestamp
-  assetEarnings.save()
 }
 
 export function handleListingCreated(event: ListingCreatedEvent): void {
-  let listing = new Listing(event.params.listingId.toString())
+  let listingId = event.params.listingId.toString()
+  if (Listing.load(listingId) != null) {
+    return
+  }
+
+  let listing = new Listing(listingId)
   listing.tokenId = event.params.tokenId
   listing.assetId = event.params.assetId
   listing.seller = event.params.seller
@@ -282,13 +75,6 @@ export function handleListingCreated(event: ListingCreatedEvent): void {
   listing.blockTimestamp = event.block.timestamp
   listing.transactionHash = event.transaction.hash
   listing.save()
-
-  let contract = MarketplaceContract.load("1")
-  if (!contract) {
-    contract = new MarketplaceContract("1")
-    contract.address = event.address
-    contract.save()
-  }
 }
 
 export function handleRevenueTokensTraded(event: RevenueTokensTradedEvent): void {
@@ -325,7 +111,12 @@ export function handleListingExtended(event: ListingExtendedEvent): void {
 }
 
 export function handlePrimaryPoolCreated(event: PrimaryPoolCreatedEvent): void {
-  let pool = new PrimaryPool(event.params.tokenId.toString())
+  let poolId = event.params.tokenId.toString()
+  if (PrimaryPool.load(poolId) != null) {
+    return
+  }
+
+  let pool = new PrimaryPool(poolId)
   pool.tokenId = event.params.tokenId
   pool.assetId = assetIdFromTokenId(event.params.tokenId)
   pool.partner = event.params.partner
@@ -336,11 +127,6 @@ export function handlePrimaryPoolCreated(event: PrimaryPoolCreatedEvent): void {
   pool.isPaused = false
   pool.isClosed = false
   pool.createdAt = event.block.timestamp
-  pool.pausedAt = null
-  pool.closedAt = null
-  pool.totalPurchased = BigInt.fromI32(0)
-  pool.totalRedeemed = BigInt.fromI32(0)
-  pool.totalPartnerProceedsReleased = BigInt.fromI32(0)
   pool.save()
 }
 
@@ -348,7 +134,6 @@ export function handlePrimaryPoolPaused(event: PrimaryPoolPausedEvent): void {
   let pool = PrimaryPool.load(event.params.tokenId.toString())
   if (!pool) return
   pool.isPaused = true
-  pool.pausedAt = event.block.timestamp
   pool.save()
 }
 
@@ -363,48 +148,5 @@ export function handlePrimaryPoolClosed(event: PrimaryPoolClosedEvent): void {
   let pool = PrimaryPool.load(event.params.tokenId.toString())
   if (!pool) return
   pool.isClosed = true
-  pool.closedAt = event.block.timestamp
-  pool.save()
-}
-
-export function handlePrimaryPoolPurchased(event: PrimaryPoolPurchasedEvent): void {
-  let purchase = new PrimaryPoolPurchase(
-    event.transaction.hash.toHex() + "-" + event.logIndex.toString()
-  )
-  purchase.tokenId = event.params.tokenId
-  purchase.buyer = event.params.buyer
-  purchase.amount = event.params.amount
-  purchase.totalCost = event.params.totalCost
-  purchase.protocolFee = event.params.protocolFee
-  purchase.partnerProceeds = event.params.partnerProceeds
-  purchase.blockNumber = event.block.number
-  purchase.blockTimestamp = event.block.timestamp
-  purchase.transactionHash = event.transaction.hash
-  purchase.save()
-
-  let pool = PrimaryPool.load(event.params.tokenId.toString())
-  if (!pool) return
-  pool.totalPurchased = pool.totalPurchased.plus(event.params.amount)
-  pool.totalPartnerProceedsReleased = pool.totalPartnerProceedsReleased.plus(event.params.partnerProceeds)
-  pool.save()
-}
-
-export function handlePrimaryPoolRedeemed(event: PrimaryPoolRedeemedEvent): void {
-  let redemption = new PrimaryPoolRedemption(
-    event.transaction.hash.toHex() + "-" + event.logIndex.toString()
-  )
-  redemption.tokenId = event.params.tokenId
-  redemption.holder = event.params.holder
-  redemption.amountBurned = event.params.amountBurned
-  redemption.payout = event.params.payout
-  redemption.investorLiquidityAfter = event.params.investorLiquidityAfter
-  redemption.blockNumber = event.block.number
-  redemption.blockTimestamp = event.block.timestamp
-  redemption.transactionHash = event.transaction.hash
-  redemption.save()
-
-  let pool = PrimaryPool.load(event.params.tokenId.toString())
-  if (!pool) return
-  pool.totalRedeemed = pool.totalRedeemed.plus(event.params.amountBurned)
   pool.save()
 }

@@ -1,22 +1,10 @@
 "use client";
 
-import { type ReactNode, createContext, useContext } from "react";
+import { type ReactNode, createContext, useCallback, useContext } from "react";
 import { useSmartWallets } from "@privy-io/react-auth/smart-wallets";
-import type { Address, Hash, Hex } from "viem";
+import type { Address } from "viem";
 import { useAccount } from "wagmi";
-
-type SmartWalletCall = {
-  data?: Hex;
-  to?: Address;
-  value?: bigint;
-};
-
-type SmartWalletClient = {
-  account?: { address?: Address };
-  chain?: { id: number };
-  switchChain?: (args: { id: number }) => Promise<void>;
-  sendTransaction: (params: { calls: readonly SmartWalletCall[] }) => Promise<Hash>;
-};
+import type { GetSmartWalletClientForChain, SmartWalletTransactClient } from "~~/hooks/useSmartWalletTransaction";
 
 type TransactingAccountState = {
   address?: Address;
@@ -24,7 +12,8 @@ type TransactingAccountState = {
   connectedAddress?: Address;
   connectedChainId?: number;
   isSmartWallet: boolean;
-  smartWalletClient?: SmartWalletClient;
+  smartWalletClient?: SmartWalletTransactClient;
+  getSmartWalletClientForChain?: GetSmartWalletClientForChain;
 };
 
 const TransactingAccountContext = createContext<TransactingAccountState>({
@@ -56,9 +45,20 @@ const DefaultTransactingAccountProvider = ({ children }: { children: ReactNode }
 
 const PrivyTransactingAccountProvider = ({ children }: { children: ReactNode }) => {
   const { address: connectedAddress, chainId: connectedChainId } = useAccount();
-  const { client: smartWalletClient } = useSmartWallets();
-  const address = (smartWalletClient?.account?.address as Address | undefined) ?? connectedAddress;
+  const { client: smartWalletClient, getClientForChain } = useSmartWallets();
+  const address =
+    ((smartWalletClient as SmartWalletTransactClient & { account?: { address?: Address } })?.account?.address as
+      | Address
+      | undefined) ?? connectedAddress;
   const chainId = connectedChainId ?? smartWalletClient?.chain?.id;
+
+  const getSmartWalletClientForChain = useCallback<GetSmartWalletClientForChain>(
+    async (targetChainId: number) => {
+      const client = await getClientForChain({ id: targetChainId });
+      return client as SmartWalletTransactClient | undefined;
+    },
+    [getClientForChain],
+  );
 
   return (
     <TransactingAccountContext.Provider
@@ -68,7 +68,8 @@ const PrivyTransactingAccountProvider = ({ children }: { children: ReactNode }) 
         connectedAddress,
         connectedChainId,
         isSmartWallet: Boolean(smartWalletClient),
-        smartWalletClient: smartWalletClient as SmartWalletClient | undefined,
+        smartWalletClient: smartWalletClient as SmartWalletTransactClient | undefined,
+        getSmartWalletClientForChain,
       }}
     >
       {children}

@@ -21,6 +21,13 @@ node_modules
 
 # cli
 dist
+.antigravitycli/
 .claude/
 CLAUDE.md
 CLAUDE.local.md
+
+# Sui Move build artifacts
+protocols/sui/build/
+protocols/sui/Published.toml
+protocols/sui/fixtures/testnet-deploy.generated.json
+protocols/sui/fixtures/testnet-env.generated.sh

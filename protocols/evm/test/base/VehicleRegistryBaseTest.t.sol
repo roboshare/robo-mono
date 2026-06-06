@@ -44,8 +44,8 @@ abstract contract VehicleRegistryBaseTest is AssetMetadataBaseTest {
         _assertAssetState(assetId, expectedOwner, shouldExist);
 
         if (shouldExist && bytes(expectedVin).length > 0) {
-            (string memory vin,,,,,,) = assetRegistry.getVehicleInfo(assetId);
-            assertEq(vin, expectedVin, "Vehicle VIN mismatch");
+            (bytes32 vinHash,,) = assetRegistry.getVehicleInfo(assetId);
+            assertEq(vinHash, keccak256(bytes(expectedVin)), "Vehicle VIN hash mismatch");
         }
     }
 }

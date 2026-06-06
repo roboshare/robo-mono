@@ -1,21 +1,22 @@
 "use client";
 
 // @refresh reset
+import { useState } from "react";
 import { Balance } from "../Balance";
 import { AddressInfoDropdown } from "./AddressInfoDropdown";
 import { AddressQRCodeModal } from "./AddressQRCodeModal";
 import { WrongNetworkDropdown } from "./WrongNetworkDropdown";
-import { useLogout, usePrivy } from "@privy-io/react-auth";
-import { useSmartWallets } from "@privy-io/react-auth/smart-wallets";
+import { useCreateWallet, useLogout, usePrivy } from "@privy-io/react-auth";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { Address, formatUnits } from "viem";
 import { useAccount, useDisconnect } from "wagmi";
-import { useNetworkColor, useWatchTokenBalance } from "~~/hooks/scaffold-eth";
+import { useNetworkColor, useSelectedNetwork, useWatchTokenBalance } from "~~/hooks/scaffold-eth";
 import { useTargetNetwork } from "~~/hooks/scaffold-eth/useTargetNetwork";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
+import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
 import { isPrivyEnabled } from "~~/services/web3/privyConfig";
 import { getPrivyIdentityLabel } from "~~/services/web3/privyIdentity";
-import { getBlockExplorerAddressLink } from "~~/utils/scaffold-eth";
+import { getBlockExplorerAddressLink, notification } from "~~/utils/scaffold-eth";
 
 const ConnectedWalletSummary = ({ address, chainName }: { address: Address; chainName?: string }) => {
   const networkColor = useNetworkColor();
@@ -133,13 +134,16 @@ const LegacyRainbowKitConnectButton = () => {
 
 const PrivyConnectButton = () => {
   const { targetNetwork } = useTargetNetwork();
-  const { address, chain, connector } = useAccount();
-  const { client: smartWalletClient } = useSmartWallets();
+  const { chain, connector } = useAccount();
+  const { address: transactingAddress, chainId: transactingChainId } = useTransactingAccount();
   const { disconnect } = useDisconnect();
   const { ready, authenticated, login, connectWallet, user } = usePrivy();
+  const { createWallet } = useCreateWallet();
   const { logout } = useLogout();
-  const transactingAddress = (smartWalletClient?.account?.address as Address | undefined) ?? address;
-  const transactingChainName = smartWalletClient?.chain?.name ?? chain?.name;
+  const [isCreatingWallet, setIsCreatingWallet] = useState(false);
+  const [walletCreationError, setWalletCreationError] = useState<string | null>(null);
+  const selectedNetwork = useSelectedNetwork(transactingChainId);
+  const transactingChainName = selectedNetwork.name;
 
   const handleDisconnect = async () => {
     const isPrivyConnector = connector?.id.startsWith("io.privy");
@@ -158,6 +162,23 @@ const PrivyConnectButton = () => {
     disconnect();
   };
 
+  const handleCreateEmbeddedWallet = async () => {
+    setIsCreatingWallet(true);
+    setWalletCreationError(null);
+
+    try {
+      await createWallet();
+      notification.success("Embedded wallet created. Reloading wallet session...");
+      window.location.reload();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to create embedded wallet.";
+      setWalletCreationError(message);
+      notification.error(message);
+    } finally {
+      setIsCreatingWallet(false);
+    }
+  };
+
   if (!ready) {
     return (
       <button className="btn btn-primary btn-sm" disabled type="button">
@@ -166,15 +187,34 @@ const PrivyConnectButton = () => {
     );
   }
 
+  if (!authenticated && (!transactingAddress || !chain)) {
+    return (
+      <button className="btn btn-primary btn-sm" onClick={() => login()} type="button">
+        Get Started
+      </button>
+    );
+  }
+
   if (!transactingAddress || !chain) {
     return (
-      <button
-        className="btn btn-primary btn-sm"
-        onClick={() => (authenticated ? connectWallet() : login())}
-        type="button"
-      >
-        {authenticated ? "Connect Wallet" : "Get Started"}
-      </button>
+      <div className="flex flex-col items-end gap-1">
+        <div className="flex items-center gap-2">
+          <button
+            className="btn btn-primary btn-sm"
+            disabled={isCreatingWallet}
+            onClick={handleCreateEmbeddedWallet}
+            type="button"
+          >
+            {isCreatingWallet ? "Creating..." : "Create app wallet"}
+          </button>
+          <button className="btn btn-outline btn-sm" onClick={() => connectWallet()} type="button">
+            Connect external
+          </button>
+        </div>
+        {walletCreationError ? (
+          <span className="max-w-[18rem] text-right text-xs text-error">{walletCreationError}</span>
+        ) : null}
+      </div>
     );
   }
 

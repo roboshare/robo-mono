@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { NextPage } from "next";
 import { formatUnits } from "viem";
 import { useBlock, useChains, useReadContract, useReadContracts, useSwitchChain } from "wagmi";
@@ -16,11 +17,15 @@ import { RegisterAssetModal } from "~~/components/partner/RegisterAssetModal";
 import { SettleAssetModal } from "~~/components/partner/SettleAssetModal";
 import { WithdrawProceedsModal } from "~~/components/partner/WithdrawProceedsModal";
 import { ASSET_REGISTRIES, AssetType } from "~~/config/assetTypes";
+import { PROTOCOL_DEPRECIATION_RATE_BP } from "~~/config/protocol";
+import { BP_PRECISION, SECONDS_PER_YEAR } from "~~/config/units";
 import { useScaffoldWriteContract, useSelectedNetwork } from "~~/hooks/scaffold-eth";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
+import { isRobomataWorkflowEnabled } from "~~/lib/featureFlags";
 import { getDeployedContract } from "~~/utils/contracts";
-import { fetchIpfsMetadata, ipfsToHttp } from "~~/utils/ipfsGateway";
+import { fetchIpfsMetadata, mergeVehicleMetadata } from "~~/utils/ipfsGateway";
+import { normalizeVehicleMetadata } from "~~/utils/protocolState";
 import { getTargetNetworks, notification } from "~~/utils/scaffold-eth";
 import { getSubgraphQueryUrl } from "~~/utils/subgraph";
 
@@ -119,6 +124,8 @@ interface CategorizedAsset extends DashboardAsset {
   primaryPoolClosed?: boolean;
   primaryInvestorLiquidity?: bigint;
   bufferFundingDue?: bigint;
+  settlementTopUpMinimum?: bigint;
+  settlementEarningsBuffer?: bigint;
 }
 
 type AssetAction = {
@@ -132,6 +139,33 @@ const SUBGRAPH_REFRESH_DELAYS_MS = [1500, 5000, 12000, 25000];
 
 const payoutGhostActionClass =
   "btn btn-primary border-0 bg-primary/15 text-primary hover:bg-primary/25 dark:bg-primary/25 dark:text-primary-content dark:hover:bg-primary/35";
+
+const calculateResidualSettlementTopUp = ({
+  immediateProceeds,
+  maturityDate,
+  chainNowSec,
+  unredeemedBasePrincipal,
+  baseCollateral,
+  lockedAt,
+}: {
+  immediateProceeds: boolean;
+  maturityDate: bigint;
+  chainNowSec: number;
+  unredeemedBasePrincipal: bigint;
+  baseCollateral: bigint;
+  lockedAt: bigint;
+}) => {
+  if (!immediateProceeds || maturityDate === 0n || BigInt(chainNowSec) >= maturityDate) return 0n;
+  if (unredeemedBasePrincipal === 0n) return 0n;
+
+  const currentTimestamp = BigInt(chainNowSec);
+  const elapsedSinceLock = lockedAt === 0n || currentTimestamp <= lockedAt ? 0n : currentTimestamp - lockedAt;
+  const depreciation =
+    (unredeemedBasePrincipal * PROTOCOL_DEPRECIATION_RATE_BP * elapsedSinceLock) / (BP_PRECISION * SECONDS_PER_YEAR);
+  const residualBase = depreciation >= unredeemedBasePrincipal ? 0n : unredeemedBasePrincipal - depreciation;
+
+  return residualBase > baseCollateral ? residualBase - baseCollateral : 0n;
+};
 
 const PartnerDashboard: NextPage = () => {
   const { address: accountAddress, chainId: accountChainId } = useTransactingAccount();
@@ -327,16 +361,7 @@ const PartnerDashboard: NextPage = () => {
         return asset;
       }
 
-      const info = result.result;
-      const liveYear = info[3];
-      return {
-        ...asset,
-        vin: (info[0] as string | undefined) || asset.vin,
-        make: (info[1] as string | undefined) || asset.make,
-        model: (info[2] as string | undefined) || asset.model,
-        year: liveYear !== undefined && liveYear !== null ? String(liveYear as bigint | number | string) : asset.year,
-        metadataURI: (info[6] as string | undefined) || asset.metadataURI,
-      };
+      return normalizeVehicleMetadata(result.result, asset);
     });
   }, [allAssets, assetMetadataData]);
 
@@ -345,17 +370,20 @@ const PartnerDashboard: NextPage = () => {
   // Fetch image URLs from IPFS metadata
   useEffect(() => {
     const fetchImageUrls = async () => {
-      const assetsWithMetadata = assetRecords.filter(a => a.metadataURI && !a.imageUrl);
-      if (assetsWithMetadata.length === 0) return;
+      const assetsNeedingMetadata = assetRecords.filter(
+        a => a.metadataURI && (!a.imageUrl || !a.vin || !a.make || !a.model || !a.year),
+      );
+      if (assetsNeedingMetadata.length === 0) return;
 
       const updatedAssets = await Promise.all(
         assetRecords.map(async asset => {
-          if (asset.imageUrl || !asset.metadataURI) return asset;
+          const needsHydration = !asset.imageUrl || !asset.vin || !asset.make || !asset.model || !asset.year;
+          if (!needsHydration || !asset.metadataURI) return asset;
 
           try {
             const metadata = await fetchIpfsMetadata(asset.metadataURI);
-            if (metadata?.image) {
-              return { ...asset, imageUrl: ipfsToHttp(metadata.image) || undefined };
+            if (metadata) {
+              return mergeVehicleMetadata(asset, metadata);
             }
           } catch (error) {
             console.error(`Error fetching metadata for asset ${asset.id}:`, error);
@@ -364,8 +392,17 @@ const PartnerDashboard: NextPage = () => {
         }),
       );
 
-      const hasNewImages = updatedAssets.some((a, i) => a.imageUrl !== assetRecords[i].imageUrl);
-      if (hasNewImages) {
+      const hasMetadataChanges = updatedAssets.some((asset, index) => {
+        const previous = assetRecords[index];
+        return (
+          asset.imageUrl !== previous.imageUrl ||
+          asset.vin !== previous.vin ||
+          asset.make !== previous.make ||
+          asset.model !== previous.model ||
+          asset.year !== previous.year
+        );
+      });
+      if (hasMetadataChanges) {
         setAllAssets(updatedAssets);
       }
     };
@@ -674,9 +711,11 @@ const PartnerDashboard: NextPage = () => {
       const protectionEnabled = (protectionEnabledFlags?.[index]?.result as boolean | undefined) ?? false;
       const collateral = collateralInfo?.[index]?.result as
         | {
+            unredeemedBasePrincipal?: bigint;
             baseCollateral?: bigint;
             earningsBuffer?: bigint;
             protocolBuffer?: bigint;
+            lockedAt?: bigint;
             releasedProtectedBase?: bigint;
           }
         | readonly unknown[]
@@ -687,16 +726,24 @@ const PartnerDashboard: NextPage = () => {
       const collateralObject = !Array.isArray(collateral)
         ? (collateral as
             | {
+                unredeemedBasePrincipal?: bigint;
                 baseCollateral?: bigint;
                 earningsBuffer?: bigint;
                 protocolBuffer?: bigint;
+                lockedAt?: bigint;
                 releasedProtectedBase?: bigint;
               }
             | undefined)
         : undefined;
+      const unredeemedBasePrincipal = Array.isArray(collateral)
+        ? ((collateral[0] as bigint | undefined) ?? 0n)
+        : (collateralObject?.unredeemedBasePrincipal ?? 0n);
       const investorLiquidity = Array.isArray(collateral)
         ? ((collateral[1] as bigint | undefined) ?? 0n)
         : (collateralObject?.baseCollateral ?? 0n);
+      const lockedAt = Array.isArray(collateral)
+        ? ((collateral[5] as bigint | undefined) ?? 0n)
+        : (collateralObject?.lockedAt ?? 0n);
       const currentProtocolBuffer = Array.isArray(collateral)
         ? ((collateral[3] as bigint | undefined) ?? 0n)
         : (collateralObject?.protocolBuffer ?? 0n);
@@ -708,6 +755,15 @@ const PartnerDashboard: NextPage = () => {
       const protectionBufferDue =
         requiredProtectionBuffer > currentProtectionBuffer ? requiredProtectionBuffer - currentProtectionBuffer : 0n;
       const bufferFundingDue = protocolBufferDue + protectionBufferDue;
+      const maturityDate = assetMaturityDateById.get(asset.id) ?? 0n;
+      const settlementTopUpMinimum = calculateResidualSettlementTopUp({
+        immediateProceeds,
+        maturityDate,
+        chainNowSec,
+        unredeemedBasePrincipal,
+        baseCollateral: investorLiquidity,
+        lockedAt,
+      });
       const assetListings = listings.filter(l => l.assetId === asset.id);
       const activeAssetListings = assetListings.filter(l => l.status === "active");
       const totalSold = assetListings
@@ -732,6 +788,8 @@ const PartnerDashboard: NextPage = () => {
         primaryPoolClosed,
         primaryInvestorLiquidity: investorLiquidity,
         bufferFundingDue,
+        settlementTopUpMinimum,
+        settlementEarningsBuffer: currentProtectionBuffer,
         state: "PENDING_LISTINGS",
       };
 
@@ -1109,32 +1167,39 @@ const PartnerDashboard: NextPage = () => {
             <p className="opacity-70 text-lg mt-2">{dashboardSubtitle}</p>
           </div>
 
-          <div className="flex">
-            <button
-              className="btn btn-primary rounded-r-none border-r-base-100"
-              onClick={() => {
-                setIsRegisterOpen(true);
-                setMaxStep(3);
-              }}
-            >
-              Launch Offering
-            </button>
-            <div className="dropdown sm:dropdown-end">
-              <div tabIndex={0} role="button" className="btn btn-primary rounded-l-none px-2 min-h-0 h-full">
-                <ChevronDownIcon className="h-5 w-5" />
+          <div className="flex flex-col items-stretch gap-3 sm:flex-row">
+            {isRobomataWorkflowEnabled() && (
+              <Link href="/partner/submissions" className="btn btn-outline rounded-full">
+                Borrowing Base Submissions
+              </Link>
+            )}
+            <div className="flex">
+              <button
+                className="btn btn-primary rounded-r-none border-r-base-100"
+                onClick={() => {
+                  setIsRegisterOpen(true);
+                  setMaxStep(3);
+                }}
+              >
+                Launch Offering
+              </button>
+              <div className="dropdown sm:dropdown-end">
+                <div tabIndex={0} role="button" className="btn btn-primary rounded-l-none px-2 min-h-0 h-full">
+                  <ChevronDownIcon className="h-5 w-5" />
+                </div>
+                <ul tabIndex={0} className="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52 mt-2">
+                  <li>
+                    <a
+                      onClick={() => {
+                        setIsRegisterOpen(true);
+                        setMaxStep(1);
+                      }}
+                    >
+                      Register Only
+                    </a>
+                  </li>
+                </ul>
               </div>
-              <ul tabIndex={0} className="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52 mt-2">
-                <li>
-                  <a
-                    onClick={() => {
-                      setIsRegisterOpen(true);
-                      setMaxStep(1);
-                    }}
-                  >
-                    Register Only
-                  </a>
-                </li>
-              </ul>
             </div>
           </div>
         </div>
@@ -1645,6 +1710,8 @@ const PartnerDashboard: NextPage = () => {
             }}
             assetId={selectedCategorizedAsset.id}
             assetName={getAssetDisplayName(selectedCategorizedAsset)}
+            minimumTopUpAmount={selectedCategorizedAsset.settlementTopUpMinimum ?? 0n}
+            earningsBufferAmount={selectedCategorizedAsset.settlementEarningsBuffer ?? 0n}
           />
         </>
       )}

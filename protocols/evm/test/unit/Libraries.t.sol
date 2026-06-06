@@ -76,31 +76,22 @@ contract VehicleHelper {
 
     VehicleLib.VehicleInfo internal info;
 
-    function init(
-        string memory vin,
-        string memory make,
-        string memory model,
-        uint256 year,
-        uint256 manufacturerId,
-        string memory optionCodes,
-        string memory metadataUri
-    ) external {
-        info.initializeVehicleInfo(vin, make, model, year, manufacturerId, optionCodes, metadataUri);
+    function init(string memory vin, string memory assetMetadataURI, string memory revenueTokenMetadataURI) external {
+        info.initializeVehicleInfo(VehicleLib.toVINHash(vin), assetMetadataURI, revenueTokenMetadataURI);
     }
 
-    // Intentional raw-state injection for VehicleLib malformed-input tests only.
-    function setRaw(string memory make, string memory model, uint256 year) external {
-        info.make = make;
-        info.model = model;
-        info.year = year;
+    function vinHash() external view returns (bytes32) {
+        return info.vinHash;
     }
 
-    function displayName() external view returns (string memory) {
-        return info.getDisplayName();
+    function initWithHash(bytes32 vinHashValue, string memory assetMetadataURI, string memory revenueTokenMetadataURI)
+        external
+    {
+        info.initializeVehicleInfo(vinHashValue, assetMetadataURI, revenueTokenMetadataURI);
     }
 
     function updateMeta(string memory uri) external {
-        info.updateDynamicMetadata(uri);
+        info.updateMetadata(uri, uri);
     }
 }
 
@@ -689,14 +680,23 @@ contract LibrariesTest is Test {
         assertEq(cteh.salesPenalty(alice, 0), 0);
     }
 
-    function testVehicleDisplayNameZeroYear() public {
-        vh.setRaw("Honda", "Civic", 0);
-        assertEq(vh.displayName(), "Honda Civic 0");
+    function testVehicleVinHash() public {
+        vh.init(
+            "1HGCM82633A123456", "ipfs://QmYwAPJzv5CZsnAzt8auVTLpG1bG6dkprdFM5ocTyBCQb", "ipfs://QmRevenueTokenMetadata"
+        );
+        assertEq(vh.vinHash(), keccak256(bytes("1HGCM82633A123456")));
     }
 
     function testVehicleInvalidMetadataUri() public {
         vm.expectRevert(VehicleLib.InvalidMetadataURI.selector);
-        vh.init("1HGCM82633A123456", "Honda", "Civic", 2020, 1, "EX-L", "http://bad-uri");
+        vh.init("1HGCM82633A123456", "http://bad-uri", "ipfs://QmRevenueTokenMetadata");
+    }
+
+    function testVehicleInitializeRejectsZeroVinHash() public {
+        vm.expectRevert(VehicleLib.InvalidVINLength.selector);
+        vh.initWithHash(
+            bytes32(0), "ipfs://QmYwAPJzv5CZsnAzt8auVTLpG1bG6dkprdFM5ocTyBCQb", "ipfs://QmRevenueTokenMetadata"
+        );
     }
 
     function testTokenUnclaimedForPositionsAndEarningsHelpers() public {

@@ -448,6 +448,7 @@ contract TreasuryTest is TreasuryFlowBaseTest {
     }
 
     function testPreviewLiquidationEligibilityEarningsManagerNotSet() public {
+        _ensureState(SetupState.AssetRegistered);
         vm.store(address(treasury), bytes32(uint256(3)), bytes32(0));
 
         vm.expectRevert(ITreasury.EarningsManagerNotSet.selector);

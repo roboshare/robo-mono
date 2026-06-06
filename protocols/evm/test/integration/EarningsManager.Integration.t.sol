@@ -2,8 +2,9 @@
 pragma solidity ^0.8.19;
 
 import { MarketplaceFlowBaseTest } from "../base/MarketplaceFlowBaseTest.t.sol";
-import { ProtocolLib, AssetLib, CollateralLib } from "../../contracts/Libraries.sol";
+import { ProtocolLib, AssetLib, CollateralLib, TokenLib } from "../../contracts/Libraries.sol";
 import { IEarningsManager } from "../../contracts/interfaces/IEarningsManager.sol";
+import { IPositionManager } from "../../contracts/interfaces/IPositionManager.sol";
 import { ITreasury } from "../../contracts/interfaces/ITreasury.sol";
 import { PartnerManager } from "../../contracts/PartnerManager.sol";
 
@@ -53,6 +54,27 @@ contract EarningsManagerIntegrationTest is MarketplaceFlowBaseTest {
         vm.prank(partner1);
         vm.expectRevert(ITreasury.NoEarningsToClaim.selector);
         earningsManager.claimEarnings(scenario.assetId);
+    }
+
+    function testAssetOwnerTransfersDoNotCreateHistoricalEarningsCredit() public {
+        _ensureState(SetupState.BuffersFunded);
+        uint256 earningsAmount = EARNINGS_AMOUNT;
+        uint256 revenueTokenId = scenario.revenueTokenId;
+        uint256 buyerBalance = roboshareTokens.balanceOf(buyer, revenueTokenId);
+        uint256 transferAmount = buyerBalance / 2;
+
+        vm.prank(buyer);
+        roboshareTokens.safeTransferFrom(buyer, partner1, revenueTokenId, transferAmount, "");
+
+        uint256 investorAmount = _calculateInvestorAmountFromRevenue(revenueTokenId, partner1, earningsAmount);
+
+        vm.startPrank(partner1);
+        usdc.approve(address(earningsManager), investorAmount);
+        earningsManager.distributeEarnings(scenario.assetId, earningsAmount, false);
+        roboshareTokens.safeTransferFrom(partner1, partner2, revenueTokenId, transferAmount, "");
+        vm.stopPrank();
+
+        assertEq(earningsManager.previewClaimEarnings(scenario.assetId, partner1), 0);
     }
 
     function testDistributeEarningsUnauthorizedPartner() public {
@@ -172,6 +194,30 @@ contract EarningsManagerIntegrationTest is MarketplaceFlowBaseTest {
         assertEq(earningsManager.previewClaimEarnings(scenario.assetId, unauthorized), 0);
     }
 
+    function testClaimEarningsUsesTokenBalanceGateBeforeManagerPositions() public {
+        _ensureState(SetupState.EarningsDistributed);
+
+        TokenLib.TokenPosition[] memory positions = roboshareTokens.getUserPositions(scenario.revenueTokenId, buyer);
+        assertGt(positions.length, 0);
+
+        address mockManager = makeAddr("mockManager");
+        vm.mockCall(address(roboshareTokens), abi.encodeWithSignature("positionManager()"), abi.encode(mockManager));
+        vm.mockCall(
+            mockManager,
+            abi.encodeWithSelector(IPositionManager.getUserPositions.selector, scenario.revenueTokenId, buyer),
+            abi.encode(positions)
+        );
+        vm.mockCall(
+            address(roboshareTokens),
+            abi.encodeWithSignature("balanceOf(address,uint256)", buyer, scenario.revenueTokenId),
+            abi.encode(uint256(0))
+        );
+
+        vm.expectRevert(ITreasury.InsufficientTokenBalance.selector);
+        vm.prank(buyer);
+        earningsManager.claimEarnings(scenario.assetId);
+    }
+
     function testPreviewClaimEarningsNoEarningsInitialized() public {
         _ensureState(SetupState.PurchasedFromPrimaryPool);
         assertEq(earningsManager.previewClaimEarnings(scenario.assetId, buyer), 0);
@@ -183,8 +229,13 @@ contract EarningsManagerIntegrationTest is MarketplaceFlowBaseTest {
         vm.prank(partner1);
         assetRegistry.settleAsset(scenario.assetId, 0);
 
+        uint256 buyerBalance = roboshareTokens.balanceOf(buyer, scenario.revenueTokenId);
         vm.prank(buyer);
-        assetRegistry.claimSettlement(scenario.assetId, false);
+        router.claimSettlement(scenario.assetId, false);
+        assertEq(roboshareTokens.balanceOf(buyer, scenario.revenueTokenId), 0);
+        IPositionManager.SettlementClaimState memory claimState =
+            roboshareTokens.positionManager().getSettlementClaimState(scenario.assetId, buyer);
+        assertEq(claimState.burnedAmount, buyerBalance);
 
         uint256 previewAmount = earningsManager.previewClaimEarnings(scenario.assetId, buyer);
         assertGt(previewAmount, 0);
@@ -328,7 +379,7 @@ contract EarningsManagerIntegrationTest is MarketplaceFlowBaseTest {
         uint256 pendingBefore = treasury.pendingWithdrawals(buyer);
 
         vm.prank(buyer);
-        (uint256 settlement, uint256 earnings) = assetRegistry.claimSettlement(scenario.assetId, true);
+        (uint256 settlement, uint256 earnings) = router.claimSettlement(scenario.assetId, true);
 
         assertGt(settlement, 0);
         assertGt(earnings, 0);
@@ -379,17 +430,42 @@ contract EarningsManagerIntegrationTest is MarketplaceFlowBaseTest {
         uint256 buyerPendingBefore = treasury.pendingWithdrawals(buyer);
 
         vm.prank(buyer);
-        (uint256 settlementClaimed, uint256 earningsClaimed) = assetRegistry.claimSettlement(scenario.assetId, false);
+        (uint256 settlementClaimed, uint256 earningsClaimed) = router.claimSettlement(scenario.assetId, false);
 
         assertGt(settlementClaimed, 0);
         assertEq(earningsClaimed, 0);
         assertEq(roboshareTokens.balanceOf(buyer, scenario.revenueTokenId), 0);
+        assertGt(earningsManager.previewClaimEarnings(scenario.assetId, buyer), 0);
 
         vm.prank(buyer);
         earningsManager.claimEarnings(scenario.assetId);
 
         uint256 buyerPendingAfter = treasury.pendingWithdrawals(buyer);
         assertGt(buyerPendingAfter, buyerPendingBefore);
+    }
+
+    function testClaimSettlementAutoClaimIncludesTransferredCredits() public {
+        _ensureState(SetupState.EarningsDistributed);
+
+        uint256 transferAmount = roboshareTokens.balanceOf(buyer, scenario.revenueTokenId) / 2;
+        vm.prank(buyer);
+        roboshareTokens.safeTransferFrom(buyer, partner2, scenario.revenueTokenId, transferAmount, "");
+
+        uint256 expectedEarnings = earningsManager.previewClaimEarnings(scenario.assetId, buyer);
+        assertGt(expectedEarnings, 0);
+
+        vm.prank(partner1);
+        assetRegistry.settleAsset(scenario.assetId, 0);
+
+        uint256 pendingBefore = treasury.pendingWithdrawals(buyer);
+
+        vm.prank(buyer);
+        (uint256 settlementClaimed, uint256 earningsClaimed) = router.claimSettlement(scenario.assetId, true);
+
+        assertGt(settlementClaimed, 0);
+        assertEq(earningsClaimed, expectedEarnings);
+        assertEq(treasury.pendingWithdrawals(buyer), pendingBefore + settlementClaimed + earningsClaimed);
+        assertEq(earningsManager.previewClaimEarnings(scenario.assetId, buyer), 0);
     }
 
     function testClaimEarningsCannotClaimSnapshotTwice() public {
@@ -399,7 +475,7 @@ contract EarningsManagerIntegrationTest is MarketplaceFlowBaseTest {
         assetRegistry.settleAsset(scenario.assetId, 0);
 
         vm.prank(buyer);
-        assetRegistry.claimSettlement(scenario.assetId, false);
+        router.claimSettlement(scenario.assetId, false);
 
         vm.prank(buyer);
         earningsManager.claimEarnings(scenario.assetId);
@@ -498,12 +574,7 @@ contract EarningsManagerIntegrationTest is MarketplaceFlowBaseTest {
         _ensureState(SetupState.InitialAccountsSetup);
 
         vm.prank(partner1);
-        uint256 assetId = assetRegistry.registerAsset(
-            abi.encode(
-                TEST_VIN, TEST_MAKE, TEST_MODEL, TEST_YEAR, TEST_MANUFACTURER_ID, TEST_OPTION_CODES, TEST_METADATA_URI
-            ),
-            ASSET_VALUE
-        );
+        uint256 assetId = assetRegistry.registerAsset(_vehicleRegistrationData(TEST_VIN), ASSET_VALUE);
 
         uint256 supply = ASSET_VALUE / REVENUE_TOKEN_PRICE;
         uint256 maturityDate = block.timestamp + 365 days;
@@ -579,7 +650,7 @@ contract EarningsManagerIntegrationTest is MarketplaceFlowBaseTest {
         assetRegistry.settleAsset(scenario.assetId, 0);
 
         vm.prank(buyer);
-        assetRegistry.claimSettlement(scenario.assetId, false);
+        router.claimSettlement(scenario.assetId, false);
 
         uint256 buyerUsdcBefore = usdc.balanceOf(buyer);
         uint256 buyerPendingBefore = treasury.pendingWithdrawals(buyer);
@@ -602,6 +673,67 @@ contract EarningsManagerIntegrationTest is MarketplaceFlowBaseTest {
         vm.prank(buyer);
         vm.expectRevert(ITreasury.NoEarningsToClaim.selector);
         earningsManager.claimEarnings(scenario.assetId);
+    }
+
+    function testTransferredPositionsCannotClaimAlreadyClaimedHistoricalEarnings() public {
+        _ensureState(SetupState.EarningsDistributed);
+
+        vm.prank(buyer);
+        earningsManager.claimEarnings(scenario.assetId);
+
+        uint256 transferAmount = roboshareTokens.balanceOf(buyer, scenario.revenueTokenId) / 2;
+        vm.prank(buyer);
+        roboshareTokens.safeTransferFrom(buyer, partner2, scenario.revenueTokenId, transferAmount, "");
+
+        assertEq(earningsManager.previewClaimEarnings(scenario.assetId, partner2), 0);
+    }
+
+    function testTransferredPositionsCannotClaimUnclaimedHistoricalEarnings() public {
+        _ensureState(SetupState.EarningsDistributed);
+
+        uint256 buyerUnclaimed = earningsManager.previewClaimEarnings(scenario.assetId, buyer);
+        assertGt(buyerUnclaimed, 0);
+
+        uint256 transferAmount = roboshareTokens.balanceOf(buyer, scenario.revenueTokenId) / 2;
+        vm.prank(buyer);
+        roboshareTokens.safeTransferFrom(buyer, partner2, scenario.revenueTokenId, transferAmount, "");
+
+        assertEq(earningsManager.previewClaimEarnings(scenario.assetId, partner2), 0);
+        assertGt(earningsManager.previewClaimEarnings(scenario.assetId, buyer), 0);
+    }
+
+    function testPartialTransferPreservesSellerHistoricalEarnings() public {
+        _ensureState(SetupState.EarningsDistributed);
+
+        uint256 buyerUnclaimedBefore = earningsManager.previewClaimEarnings(scenario.assetId, buyer);
+        assertGt(buyerUnclaimedBefore, 0);
+
+        uint256 transferAmount = roboshareTokens.balanceOf(buyer, scenario.revenueTokenId) / 2;
+        vm.prank(buyer);
+        roboshareTokens.safeTransferFrom(buyer, partner2, scenario.revenueTokenId, transferAmount, "");
+
+        assertEq(earningsManager.previewClaimEarnings(scenario.assetId, partner2), 0);
+        assertEq(earningsManager.previewClaimEarnings(scenario.assetId, buyer), buyerUnclaimedBefore);
+    }
+
+    function testFullTransferPreservesSellerHistoricalEarningsWithoutRemainingBalance() public {
+        _ensureState(SetupState.EarningsDistributed);
+
+        uint256 buyerUnclaimedBefore = earningsManager.previewClaimEarnings(scenario.assetId, buyer);
+        assertGt(buyerUnclaimedBefore, 0);
+
+        uint256 transferAmount = roboshareTokens.balanceOf(buyer, scenario.revenueTokenId);
+        vm.prank(buyer);
+        roboshareTokens.safeTransferFrom(buyer, partner2, scenario.revenueTokenId, transferAmount, "");
+
+        assertEq(roboshareTokens.balanceOf(buyer, scenario.revenueTokenId), 0);
+        assertEq(earningsManager.previewClaimEarnings(scenario.assetId, partner2), 0);
+        assertEq(earningsManager.previewClaimEarnings(scenario.assetId, buyer), buyerUnclaimedBefore);
+
+        vm.prank(buyer);
+        earningsManager.claimEarnings(scenario.assetId);
+
+        assertEq(earningsManager.previewClaimEarnings(scenario.assetId, buyer), 0);
     }
 
     function testCompleteEarningsLifecycle() public {

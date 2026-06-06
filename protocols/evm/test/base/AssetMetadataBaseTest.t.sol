@@ -11,15 +11,11 @@ abstract contract AssetMetadataBaseTest is BaseTest {
     uint256 constant TEST_MANUFACTURER_ID = 1;
     string constant TEST_OPTION_CODES = "EX-L,NAV,HSS";
     string constant TEST_METADATA_URI = "ipfs://QmYwAPJzv5CZsnA625b3Xm2fa12p45a8V34vG27s2p45a8";
+    string constant TEST_REVENUE_TOKEN_METADATA_URI = "ipfs://QmRevenueTokenMetadata";
 
     function _setupAssetRegistered() internal virtual override returns (uint256 assetId) {
         vm.prank(partner1);
-        assetId = assetRegistry.registerAsset(
-            abi.encode(
-                TEST_VIN, TEST_MAKE, TEST_MODEL, TEST_YEAR, TEST_MANUFACTURER_ID, TEST_OPTION_CODES, TEST_METADATA_URI
-            ),
-            ASSET_VALUE
-        );
+        assetId = assetRegistry.registerAsset(_vehicleRegistrationData(TEST_VIN), ASSET_VALUE);
     }
 
     function _setupPrimaryPoolCreated() internal virtual override returns (uint256 revenueTokenId) {
@@ -71,28 +67,8 @@ abstract contract AssetMetadataBaseTest is BaseTest {
         return string(abi.encodePacked(vinPrefixes[prefixIndex], vm.toString(suffix)));
     }
 
-    function _generateVehicleData(uint256 seed)
-        internal
-        pure
-        returns (
-            string memory vin,
-            string memory make,
-            string memory model,
-            uint256 year,
-            uint256 manufacturerId,
-            string memory optionCodes,
-            string memory metadataURI
-        )
-    {
-        string[5] memory makes = ["Toyota", "Honda", "Ford", "BMW", "Tesla"];
-        string[5] memory models = ["Camry", "Civic", "F-150", "X3", "Model 3"];
-
+    function _generateVehicleData(uint256 seed) internal pure returns (string memory vin, string memory metadataURI) {
         vin = _generateVin(seed);
-        make = makes[seed % 5];
-        model = models[(seed + 1) % 5];
-        year = 2020 + (seed % 5);
-        manufacturerId = (seed % 100) + 1;
-        optionCodes = "TEST,OPTION";
         metadataURI = "ipfs://QmYwAPJzv5CZsnAzt8auVTLpG1bG6dkprdFM5ocTyBCQb";
     }
 
@@ -101,22 +77,35 @@ abstract contract AssetMetadataBaseTest is BaseTest {
 
         vm.startPrank(partner);
         for (uint256 i = 0; i < count; i++) {
-            (
-                string memory vin,
-                string memory make,
-                string memory model,
-                uint256 year,
-                uint256 manufacturerId,
-                string memory optionCodes,
-                string memory metadataURI
-            ) = _generateVehicleData(i + uint256(keccak256(abi.encodePacked(partner, block.timestamp))));
+            (string memory vin, string memory metadataURI) =
+                _generateVehicleData(i + uint256(keccak256(abi.encodePacked(partner, block.timestamp))));
 
             assetIds[i] = assetRegistry.registerAsset(
-                abi.encode(vin, make, model, year, manufacturerId, optionCodes, metadataURI), ASSET_VALUE
+                _vehicleRegistrationData(vin, metadataURI, TEST_REVENUE_TOKEN_METADATA_URI), ASSET_VALUE
             );
         }
         vm.stopPrank();
 
         return assetIds;
+    }
+
+    function _vehicleRegistrationData(string memory vin) internal pure returns (bytes memory) {
+        return _vehicleRegistrationData(vin, TEST_METADATA_URI, TEST_REVENUE_TOKEN_METADATA_URI);
+    }
+
+    function _vehicleRegistrationData(
+        string memory vin,
+        string memory assetMetadataURI,
+        string memory revenueTokenMetadataURI
+    ) internal pure returns (bytes memory) {
+        return abi.encode(vin, assetMetadataURI, revenueTokenMetadataURI);
+    }
+
+    function _legacyVehicleRegistrationData(string memory vin, string memory metadataURI)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return abi.encode(vin, TEST_MAKE, TEST_MODEL, TEST_YEAR, TEST_MANUFACTURER_ID, TEST_OPTION_CODES, metadataURI);
     }
 }

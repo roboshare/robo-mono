@@ -37,6 +37,7 @@
     "evm:fork": "yarn workspace evm fork",
     "evm:format": "yarn workspace evm format",
     "evm:generate": "yarn workspace evm account:generate",
+    "evm:generate:protocol-config": "yarn workspace evm generate:protocol-config",
     "evm:lint": "yarn workspace evm lint",
     "evm:storage-layout:check": "yarn workspace evm storage:layout:check",
     "evm:storage-layout:snapshot": "yarn workspace evm storage:layout:snapshot",
@@ -51,6 +52,7 @@
     "postinstall": "husky install",
     "ipfs": "yarn workspace web ipfs",
     "lint": "yarn web:lint && yarn evm:lint",
+    "robomata:testnet-smoke": "yarn workspace web robomata:testnet-smoke",
     "web:build": "yarn workspace web build",
     "web:check-types": "yarn workspace web check-types",
     "web:format": "yarn workspace web format",
@@ -64,7 +66,7 @@
     "subgraph:clean-node": "yarn workspace subgraph clean-node",
     "subgraph:codegen": "sh -c 'network=\"${SUBGRAPH_NETWORK:-localhost}\"; while [ $# -gt 0 ]; do case \"$1\" in --network|-n) network=\"$2\"; shift 2 ;; *) echo \"Unsupported argument for subgraph:codegen: $1\"; exit 1 ;; esac; done; export SUBGRAPH_NETWORK=\"$network\"; yarn workspace subgraph abi-copy --network \"$network\" && yarn workspace subgraph codegen' --",
     "subgraph:create-local": "yarn workspace subgraph create-local",
-    "subgraph:deploy": "sh -c 'set -a; [ -f protocols/evm/.env ] && . protocols/evm/.env; set +a; network=\"${SUBGRAPH_NETWORK:-localhost}\"; version_label=\"\"; while [ $# -gt 0 ]; do case \"$1\" in --network|-n) network=\"$2\"; shift 2 ;; --version-label) version_label=\"$2\"; shift 2 ;; *) echo \"Unsupported argument for subgraph:deploy: $1\"; exit 1 ;; esac; done; export SUBGRAPH_NETWORK=\"$network\"; yarn workspace subgraph abi-copy --network \"$network\" && yarn workspace subgraph codegen && yarn workspace subgraph build && if [ -n \"$version_label\" ]; then yarn workspace subgraph deploy --version-label \"$version_label\"; else yarn workspace subgraph deploy; fi' --",
+    "subgraph:deploy": "sh -c 'set -a; [ -f protocols/evm/.env ] && . protocols/evm/.env; set +a; network=\"${SUBGRAPH_NETWORK:-localhost}\"; version_label=\"\"; while [ $# -gt 0 ]; do case \"$1\" in --network|-n) network=\"$2\"; shift 2 ;; --version-label) version_label=\"$2\"; shift 2 ;; *) echo \"Unsupported argument for subgraph:deploy: $1\"; exit 1 ;; esac; done; export SUBGRAPH_NETWORK=\"$network\"; yarn workspace subgraph abi-copy --network \"$network\" && yarn workspace subgraph codegen --network \"$network\" && if [ -n \"$version_label\" ]; then yarn workspace subgraph deploy --network \"$network\" --version-label \"$version_label\"; else yarn workspace subgraph deploy --network \"$network\"; fi' --",
     "subgraph:local-ship": "yarn workspace subgraph local-ship",
     "subgraph:local-ship-auto": "yarn workspace subgraph local-ship-auto",
     "subgraph:run-node": "yarn workspace subgraph run-node",
@@ -74,6 +76,8 @@
     "test:fork": "yarn evm:test:fork",
     "coverage": "yarn evm:coverage",
     "vercel": "yarn workspace web vercel",
+    "vercel:link": "sh -c 'cd web && vercel link'",
+    "vercel:start": "sh -c 'cd web && vercel env run -- yarn dev'",
     "vercel:login": "yarn workspace web vercel:login",
     "vercel:yolo": "yarn workspace web vercel:yolo",
     "verify": "yarn evm:verify"
@@ -84,6 +88,6 @@
   },
   "packageManager": "yarn@3.2.3",
   "engines": {
-    "node": ">=20.18.3"
+    "node": ">=24 <25"
   }
 }

@@ -27,12 +27,7 @@ abstract contract TreasuryFlowBaseTest is AssetMetadataBaseTest {
         returns (uint256 assetId, uint256 revenueTokenId, uint256 supply)
     {
         vm.prank(partner);
-        assetId = assetRegistry.registerAsset(
-            abi.encode(
-                vin, TEST_MAKE, TEST_MODEL, TEST_YEAR, TEST_MANUFACTURER_ID, TEST_OPTION_CODES, TEST_METADATA_URI
-            ),
-            ASSET_VALUE
-        );
+        assetId = assetRegistry.registerAsset(_vehicleRegistrationData(vin), ASSET_VALUE);
 
         supply = ASSET_VALUE / REVENUE_TOKEN_PRICE;
         uint256 maturityDate = block.timestamp + 365 days;
@@ -50,12 +45,7 @@ abstract contract TreasuryFlowBaseTest is AssetMetadataBaseTest {
     {
         string memory vin = _generateVin(999);
         vm.prank(partner1);
-        assetId = assetRegistry.registerAsset(
-            abi.encode(
-                vin, TEST_MAKE, TEST_MODEL, TEST_YEAR, TEST_MANUFACTURER_ID, TEST_OPTION_CODES, TEST_METADATA_URI
-            ),
-            ASSET_VALUE
-        );
+        assetId = assetRegistry.registerAsset(_vehicleRegistrationData(vin), ASSET_VALUE);
 
         uint256 supply = ASSET_VALUE / REVENUE_TOKEN_PRICE;
         uint256 maturityDate = block.timestamp + 365 days;
@@ -180,5 +170,18 @@ abstract contract TreasuryFlowBaseTest is AssetMetadataBaseTest {
         earningsBuffer = (expectedQuarterlyEarnings * ProtocolLib.BENCHMARK_YIELD_BP) / ProtocolLib.BP_PRECISION;
         protocolBuffer = (expectedQuarterlyEarnings * ProtocolLib.PROTOCOL_FEE_BP) / ProtocolLib.BP_PRECISION;
         total = earningsBuffer + protocolBuffer;
+    }
+
+    function _grantBurnerRoleToSelf() internal {
+        vm.startPrank(admin);
+        roboshareTokens.grantRole(roboshareTokens.BURNER_ROLE(), address(this));
+        vm.stopPrank();
+    }
+
+    function _burnRevenueTokenBalance(uint256 revenueTokenId, address holder) internal {
+        uint256 balance = roboshareTokens.balanceOf(holder, revenueTokenId);
+        if (balance > 0) {
+            roboshareTokens.burn(holder, revenueTokenId, balance);
+        }
     }
 }

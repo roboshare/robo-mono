@@ -4,12 +4,12 @@ import { type KeyboardEvent, type MouseEvent, useEffect, useMemo, useRef, useSta
 import Image from "next/image";
 import { formatUnits } from "viem";
 import { ASSET_REGISTRIES, AssetType } from "~~/config/assetTypes";
+import { PROTOCOL_BENCHMARK_YIELD_BP } from "~~/config/protocol";
+import { BP_PRECISION, SECONDS_PER_YEAR } from "~~/config/units";
 import { useScaffoldReadContract } from "~~/hooks/scaffold-eth";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
-
-const BP_PRECISION = 10000n;
-const BENCHMARK_YIELD_BP = 1000n;
+import { isSettledAssetStatus } from "~~/utils/assetStatus";
 
 interface ListingCardProps {
   listing: {
@@ -45,8 +45,6 @@ interface ListingCardProps {
   earnings?: {
     totalEarnings: string;
     totalRevenue: string;
-    distributionCount: string;
-    firstDistributionAt: string;
     lastDistributionAt: string;
   };
   partner?: {
@@ -105,11 +103,11 @@ export function ListingCard({
     args: [BigInt(listing.assetId)],
   });
   const hasAvailableTokens = BigInt(listing.amount) > 0n;
-  const hasEarnings = Boolean(earnings && (earnings.distributionCount !== "0" || earnings.totalEarnings !== "0"));
+  const hasEarnings = Boolean(earnings && earnings.totalEarnings !== "0");
   const hasHoldings = (walletTokenBalance || 0n) > 0n;
   const canClaimEarnings = (previewClaimAmount || 0n) > 0n;
   const canClaimEarningsOnThisListing = canClaimEarnings && hasHoldings;
-  const isAssetSettled = Number(assetStatus ?? -1) === 3 || Number(assetStatus ?? -1) === 4;
+  const isAssetSettled = isSettledAssetStatus(Number(assetStatus ?? -1));
   const canClaimSettlement = hasHoldings && isAssetSettled;
   const listingSoldAmount = useMemo(() => {
     if (listing.amountSold && listing.amountSold !== "0") return BigInt(listing.amountSold);
@@ -143,7 +141,7 @@ export function ListingCard({
   // Calculate APY - use token-level realized earnings if available, otherwise target yield
   const apyDisplay = useMemo(() => {
     if (!token) {
-      return `${(Number(BENCHMARK_YIELD_BP) / 100).toFixed(2)}%`;
+      return `${(Number(PROTOCOL_BENCHMARK_YIELD_BP) / 100).toFixed(2)}%`;
     }
 
     const tokenPrice = BigInt(token.price);
@@ -157,8 +155,7 @@ export function ListingCard({
       const duration = durationStart > 0n && lastDistAt > durationStart ? lastDistAt - durationStart : 0n;
 
       if (duration > 0n && totalEarnings > 0n) {
-        const secondsPerYear = 365n * 24n * 60n * 60n;
-        const annualizedEarnings = (totalEarnings * secondsPerYear) / duration;
+        const annualizedEarnings = (totalEarnings * SECONDS_PER_YEAR) / duration;
         const aprBps = (annualizedEarnings * BP_PRECISION) / totalValue;
         const aprPercent = Number(aprBps) / 100;
         return `${aprPercent.toFixed(2)}%`;
@@ -166,7 +163,7 @@ export function ListingCard({
     }
 
     // Fallback to target yield APY (or benchmark if unavailable)
-    const targetYieldBps = token.targetYieldBP ? Number(token.targetYieldBP) : Number(BENCHMARK_YIELD_BP);
+    const targetYieldBps = token.targetYieldBP ? Number(token.targetYieldBP) : Number(PROTOCOL_BENCHMARK_YIELD_BP);
     const targetYieldPercent = targetYieldBps / 100;
     return `${targetYieldPercent.toFixed(2)}%`;
   }, [earnings, token]);
@@ -187,7 +184,7 @@ export function ListingCard({
     const totalValue = tokenPrice * listingAmountForProjection;
     if (totalValue === 0n) return "0.00";
 
-    const targetYieldBps = token.targetYieldBP ? BigInt(token.targetYieldBP) : BENCHMARK_YIELD_BP;
+    const targetYieldBps = token.targetYieldBP ? BigInt(token.targetYieldBP) : PROTOCOL_BENCHMARK_YIELD_BP;
     const earningsPerYear = (totalValue * targetYieldBps) / BP_PRECISION;
 
     return Number(formatUnits(earningsPerYear, paymentDecimals)).toLocaleString(undefined, {
@@ -270,7 +267,7 @@ export function ListingCard({
     const durationSec = Math.max(0, Math.floor(soldOutAt - createdAt));
     return `Sold Out In ${formatDuration(durationSec)}`;
   }, [hasAvailableTokens, listing.createdAt, listing.soldOutAt]);
-  const isNewlyListed = hasAvailableTokens && !isEnded && (!earnings || earnings.distributionCount === "0");
+  const isNewlyListed = hasAvailableTokens && !isEnded && !hasEarnings;
   const isSellerOfListing = Boolean(address && listing.seller.toLowerCase() === address.toLowerCase());
   const showSecondaryListingBadge = !isInactive;
   const listableTokensAmount = walletTokenBalance || 0n;
@@ -462,7 +459,7 @@ export function ListingCard({
   if (isListMode) {
     return (
       <article
-        className={`overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-sm transition-all duration-200 ${
+        className={`relative overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-sm transition-all duration-200 ${
           hasAvailableActions ? "hover:shadow-md" : "opacity-70 saturate-50"
         } ${isCardPressable ? "cursor-pointer" : ""}`}
         onClick={handleCardClick}
@@ -640,7 +637,7 @@ export function ListingCard({
 
   return (
     <article
-      className={`rounded-2xl border border-base-300 bg-base-100 shadow-lg transition-all duration-300 overflow-hidden flex flex-col group ${
+      className={`relative rounded-2xl border border-base-300 bg-base-100 shadow-lg transition-all duration-300 overflow-hidden flex flex-col group ${
         hasAvailableActions ? "hover:shadow-xl" : "opacity-70 saturate-50"
       } ${isCardPressable ? "cursor-pointer hover:-translate-y-1 active:translate-y-0 active:scale-[0.995]" : ""}`}
       onClick={handleCardClick}

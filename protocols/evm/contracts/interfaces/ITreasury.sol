@@ -57,6 +57,7 @@ interface ITreasury {
     error AssetNotOperationalForSettlement(uint256 assetId, AssetLib.AssetStatus currentStatus);
     error AssetNotOperationalForLiquidation(uint256 assetId, AssetLib.AssetStatus currentStatus);
     error AssetNotEligibleForLiquidation(uint256 assetId);
+    error InsufficientSettlementTopUp(uint256 assetId, uint256 requiredAmount, uint256 providedAmount);
     error CollateralAlreadyLocked();
     error InsufficientCollateral();
     error NotRouter();
@@ -213,10 +214,10 @@ interface ITreasury {
     function previewLiquidationEligibility(uint256 assetId) external view returns (bool eligible, uint8 reason);
 
     /**
-     * @notice Forces liquidation for an eligible asset and records a settlement pool for holders.
+     * @notice Forces liquidation for an eligible asset and computes the settlement pool for holders.
      * @param assetId Asset to liquidate
      * @return liquidationAmount Total USDC placed into the liquidation settlement pool
-     * @return settlementPerToken Integer per-token settlement rate recorded for later claims
+     * @return settlementPerToken Integer per-token settlement rate recorded in the manager for later claims
      */
     function executeLiquidation(uint256 assetId)
         external
@@ -236,7 +237,7 @@ interface ITreasury {
      * @param assetId Asset being voluntarily settled
      * @param topUpAmount Additional USDC contributed by the partner before settlement
      * @return settlementAmount Total USDC made available to token holders through settlement
-     * @return settlementPerToken Integer per-token settlement rate recorded for later claims
+     * @return settlementPerToken Integer per-token settlement rate recorded in the manager for later claims
      */
     function initiateSettlement(address partner, uint256 assetId, uint256 topUpAmount)
         external

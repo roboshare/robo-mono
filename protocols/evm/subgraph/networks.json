@@ -103,70 +103,78 @@
   },
   "arbitrum-sepolia": {
     "MockUSDC": {
-      "address": "0x20896fD729BCA167df95d6a352a934E729486E74",
-      "startBlock": 255124696
+      "address": "0xDaE1dC5aCB1648D555388F72404226117a0eB117",
+      "startBlock": 273622759
     },
     "RoboshareTokens": {
-      "address": "0x3a88Df4a4548DB7387968576DDDDdea457C72dea",
-      "startBlock": 255124710
+      "address": "0xFB8bA8Ed4Ffedc3b9526fF7AAF7a523d19efF0B8",
+      "startBlock": 273622765
     },
     "PartnerManager": {
-      "address": "0x46c813123b15e59630F2960FB3C70e0501563206",
-      "startBlock": 255124713
+      "address": "0xeC495982D245452FaEa7B5665ee6aC34272D3fa3",
+      "startBlock": 273622768
     },
     "RegistryRouter": {
-      "address": "0x7d379E0a8edD6Fe73f05809f3b33f2F7D115E1F5",
-      "startBlock": 255124719
+      "address": "0xB9fB4C2F0D399804EE7d6939bB3a5970fB95ceAe",
+      "startBlock": 273622772
     },
     "VehicleRegistry": {
-      "address": "0x25c79d5b080535D9ADc34bC3a9f0Bb11Cb217522",
-      "startBlock": 255124723
+      "address": "0x9942790f93D99a371153961Fd6E68c664615d6Cf",
+      "startBlock": 273622775
     },
     "Treasury": {
-      "address": "0x25E58C66C730Cb0FC434F735450D209938B8Cf51",
-      "startBlock": 255124727
+      "address": "0x4A44b0C97990fCD16EB3113638CfeB93A504C28d",
+      "startBlock": 273622779
     },
     "EarningsManager": {
-      "address": "0x15590892f5F65c2a111f886477d7b4061c006F76",
-      "startBlock": 255124731
+      "address": "0x3925Ad29EE9dAaBFE56145a3257a14BaD5f1BBe3",
+      "startBlock": 273622781
     },
     "Marketplace": {
-      "address": "0xB631aEc2dC4Cea4D2ADF2ba9d71C10bB67d9Ab2D",
-      "startBlock": 255124735
+      "address": "0x7E4Ac466D881c3f3a7Aa99B835A214F03Be59087",
+      "startBlock": 273622784
+    },
+    "PositionManager": {
+      "address": "0x7A2798D26Ae56a691504A2073e5EF0Dd68B0513f",
+      "startBlock": 273622788
     }
   },
   "monad-testnet": {
     "MockUSDC": {
-      "address": "0xBbE0B5998D4d58223c897CdAC2699Fb36d5BB82C",
-      "startBlock": 24353517
+      "address": "0x263A2eE5F7d49D841213f35d3186f8f6979BA186",
+      "startBlock": 36027040
     },
     "RoboshareTokens": {
-      "address": "0xA1353ccD55F09Af47de80828E06F7669998f811C",
-      "startBlock": 24353532
+      "address": "0x7Bc650383Bf42B2A0083e2125A38028CE60f4d7B",
+      "startBlock": 36027053
     },
     "PartnerManager": {
-      "address": "0xcF4c05b594Dc5AA7836D8aCF09c5A301eA4248b0",
-      "startBlock": 24353537
+      "address": "0x0136589688b73d662AAB7E18A0458E393a6D7143",
+      "startBlock": 36027061
     },
     "RegistryRouter": {
-      "address": "0xb86D8392b96C1F6DdFa79bc8c3e90cC81C248FD1",
-      "startBlock": 24353546
+      "address": "0xe308b1c3B1dE64A927EB627e1950F05536f1E9b9",
+      "startBlock": 36027071
     },
     "VehicleRegistry": {
-      "address": "0x9f0b752c8170bb329DDb27F3381DDB662D5d532b",
-      "startBlock": 24353554
+      "address": "0x3F1080BE542F4cdf76b1660c77b377286b54C720",
+      "startBlock": 36027080
     },
     "Treasury": {
-      "address": "0xdc76F725D9319758DdF9bFC7FC155399Ec957F63",
-      "startBlock": 24353564
+      "address": "0xce6BB8CCC65a14D7328B13338273bca567ad89A1",
+      "startBlock": 36027088
     },
     "EarningsManager": {
-      "address": "0xB6B045d7Eb6Fe5b63715C9f9BA385B11ED9a2a9E",
-      "startBlock": 24353573
+      "address": "0x7560d5D1968E80bF16F76EeFc24EebBDB8C80311",
+      "startBlock": 36027098
     },
     "Marketplace": {
-      "address": "0x7F53aa8860c254909467FBC7b29AeD125d78c94c",
-      "startBlock": 24353578
+      "address": "0x65c011405670448DF1A512C726dC9308981dA638",
+      "startBlock": 36027107
+    },
+    "PositionManager": {
+      "address": "0xFB8bA8Ed4Ffedc3b9526fF7AAF7a523d19efF0B8",
+      "startBlock": 36027116
     }
   }
 }

@@ -8,15 +8,56 @@ import { StdStorage, stdStorage } from "forge-std/StdStorage.sol";
 import { MarketplaceFlowBaseTest } from "../base/MarketplaceFlowBaseTest.t.sol";
 import { ProtocolLib, AssetLib, TokenLib, CollateralLib, EarningsLib } from "../../contracts/Libraries.sol";
 import { IAssetRegistry } from "../../contracts/interfaces/IAssetRegistry.sol";
+import { IPositionManager } from "../../contracts/interfaces/IPositionManager.sol";
 import { ITreasury } from "../../contracts/interfaces/ITreasury.sol";
 import { PartnerManager } from "../../contracts/PartnerManager.sol";
 
 contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
     using stdStorage for StdStorage;
 
+    function _positionManager() internal view returns (IPositionManager) {
+        return roboshareTokens.positionManager();
+    }
+
     function setUp() public {
         // Integration tests need funded accounts and authorized partners as a baseline
         _ensureState(SetupState.InitialAccountsSetup);
+    }
+
+    function _setupImmediateProceedsSettlementAsset()
+        internal
+        returns (uint256 assetId, uint256 revenueTokenId, uint256 releasedPrincipal)
+    {
+        vm.prank(partner1);
+        assetId = assetRegistry.registerAsset(_vehicleRegistrationData(TEST_VIN), ASSET_VALUE);
+
+        uint256 supply = ASSET_VALUE / REVENUE_TOKEN_PRICE;
+        uint256 targetYieldBP = 2_500;
+
+        vm.prank(partner1);
+        (revenueTokenId,) = assetRegistry.createRevenueTokenPool(
+            assetId, REVENUE_TOKEN_PRICE, block.timestamp + 365 days, 10_000, targetYieldBP, supply, true, true
+        );
+
+        releasedPrincipal = 10_000e6;
+        uint256 purchaseAmount = releasedPrincipal / REVENUE_TOKEN_PRICE;
+        uint256 protocolFee = ProtocolLib.calculateProtocolFee(releasedPrincipal);
+
+        vm.startPrank(buyer);
+        usdc.approve(address(marketplace), releasedPrincipal + protocolFee);
+        marketplace.buyFromPrimaryPool(revenueTokenId, purchaseAmount);
+        vm.stopPrank();
+
+        uint256 requiredCollateral = _getTotalBufferRequirement(releasedPrincipal, targetYieldBP, true);
+        vm.prank(partner1);
+        usdc.approve(address(treasury), requiredCollateral);
+        vm.prank(partner1);
+        treasury.enableProceeds(assetId);
+
+        CollateralLib.CollateralInfo memory infoAfterEnable = _getCollateralInfo(assetId);
+        assertEq(infoAfterEnable.baseCollateral, 0, "Immediate proceeds should release covered base");
+        assertEq(infoAfterEnable.releasedProtectedBase, releasedPrincipal, "Released protected base mismatch");
+        assertGt(infoAfterEnable.earningsBuffer, 0, "Protection buffer should be funded");
     }
 
     function _getProtectedBenchmarkPrincipal(uint256 assetId, uint256 revenueTokenId)
@@ -310,12 +351,7 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
         _ensureState(SetupState.InitialAccountsSetup);
 
         vm.prank(partner1);
-        scenario.assetId = assetRegistry.registerAsset(
-            abi.encode(
-                TEST_VIN, TEST_MAKE, TEST_MODEL, TEST_YEAR, TEST_MANUFACTURER_ID, TEST_OPTION_CODES, TEST_METADATA_URI
-            ),
-            ASSET_VALUE
-        );
+        scenario.assetId = assetRegistry.registerAsset(_vehicleRegistrationData(TEST_VIN), ASSET_VALUE);
 
         uint256 supply = ASSET_VALUE / REVENUE_TOKEN_PRICE;
         vm.prank(partner1);
@@ -355,12 +391,7 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
         _ensureState(SetupState.InitialAccountsSetup);
 
         vm.prank(partner1);
-        scenario.assetId = assetRegistry.registerAsset(
-            abi.encode(
-                TEST_VIN, TEST_MAKE, TEST_MODEL, TEST_YEAR, TEST_MANUFACTURER_ID, TEST_OPTION_CODES, TEST_METADATA_URI
-            ),
-            ASSET_VALUE
-        );
+        scenario.assetId = assetRegistry.registerAsset(_vehicleRegistrationData(TEST_VIN), ASSET_VALUE);
 
         uint256 supply = ASSET_VALUE / REVENUE_TOKEN_PRICE;
         vm.prank(partner1);
@@ -412,11 +443,15 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
     function testProcessPrimaryRedemptionFor() public {
         _ensureState(SetupState.PurchasedFromPrimaryPool);
 
+        IPositionManager manager = roboshareTokens.positionManager();
         uint256 burnAmount = PRIMARY_PURCHASE_AMOUNT / 2;
         (uint256 preview,,,) = marketplace.previewPrimaryRedemption(scenario.revenueTokenId, buyer, burnAmount);
         assertGt(preview, 0);
 
         CollateralLib.CollateralInfo memory beforeInfo = _getCollateralInfo(scenario.assetId);
+        uint256 supplyBefore = manager.getCurrentPrimaryRedemptionEpochSupply(scenario.revenueTokenId);
+        uint256 principalBefore = manager.getCurrentPrimaryRedemptionBackedPrincipal(scenario.revenueTokenId);
+        uint256 eligibleBefore = manager.getPrimaryRedemptionEligibleBalance(buyer, scenario.revenueTokenId);
         uint256 buyerUsdcBefore = usdc.balanceOf(buyer);
         uint256 buyerTokensBefore = roboshareTokens.balanceOf(buyer, scenario.revenueTokenId);
 
@@ -427,10 +462,33 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
         assertEq(payout, preview);
         assertEq(usdc.balanceOf(buyer), buyerUsdcBefore + payout);
         assertEq(roboshareTokens.balanceOf(buyer, scenario.revenueTokenId), buyerTokensBefore - burnAmount);
+        assertEq(manager.getCurrentPrimaryRedemptionEpochSupply(scenario.revenueTokenId), supplyBefore - burnAmount);
+        assertEq(manager.getCurrentPrimaryRedemptionBackedPrincipal(scenario.revenueTokenId), principalBefore - payout);
+        assertEq(
+            manager.getPrimaryRedemptionEligibleBalance(buyer, scenario.revenueTokenId), eligibleBefore - burnAmount
+        );
         assertEq(
             afterInfo.unredeemedBasePrincipal,
             beforeInfo.unredeemedBasePrincipal - (burnAmount * roboshareTokens.getTokenPrice(scenario.revenueTokenId))
         );
+    }
+
+    function testProcessPrimaryRedemptionForConsumesManagerStateAfterFullPayout() public {
+        _ensureState(SetupState.PurchasedFromPrimaryPool);
+
+        IPositionManager manager = roboshareTokens.positionManager();
+        uint256 burnAmount = PRIMARY_PURCHASE_AMOUNT;
+        (uint256 preview,,,) = marketplace.previewPrimaryRedemption(scenario.revenueTokenId, buyer, burnAmount);
+        uint256 epochBefore = manager.getCurrentPrimaryRedemptionEpoch(scenario.revenueTokenId);
+
+        vm.prank(address(marketplace));
+        uint256 payout = treasury.processPrimaryRedemptionFor(buyer, scenario.revenueTokenId, burnAmount, preview);
+
+        assertEq(payout, preview);
+        assertEq(manager.getPrimaryRedemptionEligibleBalance(buyer, scenario.revenueTokenId), 0);
+        assertEq(manager.getCurrentPrimaryRedemptionEpochSupply(scenario.revenueTokenId), 0);
+        assertEq(manager.getCurrentPrimaryRedemptionBackedPrincipal(scenario.revenueTokenId), 0);
+        assertEq(manager.getCurrentPrimaryRedemptionEpoch(scenario.revenueTokenId), epochBefore + 1);
     }
 
     function testProcessPrimaryRedemptionForMultipleBurnsPreservesSnapshottedEarnings() public {
@@ -455,7 +513,7 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
         assetRegistry.settleAsset(scenario.assetId, 0);
 
         vm.prank(buyer);
-        assetRegistry.claimSettlement(scenario.assetId, false);
+        router.claimSettlement(scenario.assetId, false);
 
         uint256 settledEarningsPreview = earningsManager.previewClaimEarnings(scenario.assetId, buyer);
         assertEq(settledEarningsPreview, initialEarningsPreview);
@@ -543,12 +601,7 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
         _ensureState(SetupState.InitialAccountsSetup);
 
         vm.prank(partner1);
-        scenario.assetId = assetRegistry.registerAsset(
-            abi.encode(
-                TEST_VIN, TEST_MAKE, TEST_MODEL, TEST_YEAR, TEST_MANUFACTURER_ID, TEST_OPTION_CODES, TEST_METADATA_URI
-            ),
-            ASSET_VALUE
-        );
+        scenario.assetId = assetRegistry.registerAsset(_vehicleRegistrationData(TEST_VIN), ASSET_VALUE);
 
         uint256 supply = ASSET_VALUE / REVENUE_TOKEN_PRICE;
         vm.prank(partner1);
@@ -626,12 +679,7 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
         _ensureState(SetupState.InitialAccountsSetup);
 
         vm.prank(partner1);
-        scenario.assetId = assetRegistry.registerAsset(
-            abi.encode(
-                TEST_VIN, TEST_MAKE, TEST_MODEL, TEST_YEAR, TEST_MANUFACTURER_ID, TEST_OPTION_CODES, TEST_METADATA_URI
-            ),
-            ASSET_VALUE
-        );
+        scenario.assetId = assetRegistry.registerAsset(_vehicleRegistrationData(TEST_VIN), ASSET_VALUE);
 
         uint256 supply = ASSET_VALUE / REVENUE_TOKEN_PRICE;
         vm.prank(partner1);
@@ -668,26 +716,10 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
     function testReleaseCollateral() public {
         _ensureState(SetupState.BuffersFunded);
 
-        // Burn tokens first (prerequisite for full release)
         uint256 revenueTokenId = TokenLib.getTokenIdFromAssetId(scenario.assetId);
-
-        // Grant burner role to this test contract to simulate burning
-        vm.startPrank(admin);
-        roboshareTokens.grantRole(roboshareTokens.BURNER_ROLE(), address(this));
-        vm.stopPrank();
-
-        uint256 marketplaceBalance = roboshareTokens.balanceOf(address(marketplace), revenueTokenId);
-        if (marketplaceBalance > 0) {
-            roboshareTokens.burn(address(marketplace), revenueTokenId, marketplaceBalance);
-        }
-        uint256 buyerBalance = roboshareTokens.balanceOf(buyer, revenueTokenId);
-        if (buyerBalance > 0) {
-            roboshareTokens.burn(buyer, revenueTokenId, buyerBalance);
-        }
-        uint256 partnerBalance = roboshareTokens.balanceOf(partner1, revenueTokenId);
-        if (partnerBalance > 0) {
-            roboshareTokens.burn(partner1, revenueTokenId, partnerBalance);
-        }
+        _grantBurnerRoleToSelf();
+        _burnRevenueTokenBalance(revenueTokenId, buyer);
+        _burnRevenueTokenBalance(revenueTokenId, partner1);
 
         // Partner calls releaseCollateral
         uint256 pendingBefore = treasury.pendingWithdrawals(partner1);
@@ -702,25 +734,10 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
     function testReleaseCollateralFor() public {
         _ensureState(SetupState.BuffersFunded);
 
-        // Burn tokens first
         uint256 revenueTokenId = TokenLib.getTokenIdFromAssetId(scenario.assetId);
-
-        vm.startPrank(admin);
-        roboshareTokens.grantRole(roboshareTokens.BURNER_ROLE(), address(this));
-        vm.stopPrank();
-
-        uint256 marketplaceBalance = roboshareTokens.balanceOf(address(marketplace), revenueTokenId);
-        if (marketplaceBalance > 0) {
-            roboshareTokens.burn(address(marketplace), revenueTokenId, marketplaceBalance);
-        }
-        uint256 buyerBalance = roboshareTokens.balanceOf(buyer, revenueTokenId);
-        if (buyerBalance > 0) {
-            roboshareTokens.burn(buyer, revenueTokenId, buyerBalance);
-        }
-        uint256 partnerBalance = roboshareTokens.balanceOf(partner1, revenueTokenId);
-        if (partnerBalance > 0) {
-            roboshareTokens.burn(partner1, revenueTokenId, partnerBalance);
-        }
+        _grantBurnerRoleToSelf();
+        _burnRevenueTokenBalance(revenueTokenId, buyer);
+        _burnRevenueTokenBalance(revenueTokenId, partner1);
 
         uint256 pendingBefore = treasury.pendingWithdrawals(partner1);
         vm.prank(address(router));
@@ -808,25 +825,10 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
     function testProcessWithdrawal() public {
         _ensureState(SetupState.BuffersFunded);
 
-        // Burn tokens first
         uint256 revenueTokenId = TokenLib.getTokenIdFromAssetId(scenario.assetId);
-
-        vm.startPrank(admin);
-        roboshareTokens.grantRole(roboshareTokens.BURNER_ROLE(), address(this));
-        vm.stopPrank();
-
-        uint256 marketplaceBalance = roboshareTokens.balanceOf(address(marketplace), revenueTokenId);
-        if (marketplaceBalance > 0) {
-            roboshareTokens.burn(address(marketplace), revenueTokenId, marketplaceBalance);
-        }
-        uint256 buyerBalance = roboshareTokens.balanceOf(buyer, revenueTokenId);
-        if (buyerBalance > 0) {
-            roboshareTokens.burn(buyer, revenueTokenId, buyerBalance);
-        }
-        uint256 partnerBalance = roboshareTokens.balanceOf(partner1, revenueTokenId);
-        if (partnerBalance > 0) {
-            roboshareTokens.burn(partner1, revenueTokenId, partnerBalance);
-        }
+        _grantBurnerRoleToSelf();
+        _burnRevenueTokenBalance(revenueTokenId, buyer);
+        _burnRevenueTokenBalance(revenueTokenId, partner1);
 
         vm.prank(address(router));
         treasury.releaseCollateralFor(partner1, scenario.assetId);
@@ -918,25 +920,10 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
         // 1. Lock Collateral (already done in setup)
         assertTrue(_getCollateralInfo(scenario.assetId).isLocked);
 
-        // 2. Burn tokens
         uint256 revenueTokenId = TokenLib.getTokenIdFromAssetId(scenario.assetId);
-
-        vm.startPrank(admin);
-        roboshareTokens.grantRole(roboshareTokens.BURNER_ROLE(), address(this));
-        vm.stopPrank();
-
-        uint256 marketplaceBalance = roboshareTokens.balanceOf(address(marketplace), revenueTokenId);
-        if (marketplaceBalance > 0) {
-            roboshareTokens.burn(address(marketplace), revenueTokenId, marketplaceBalance);
-        }
-        uint256 buyerBalance = roboshareTokens.balanceOf(buyer, revenueTokenId);
-        if (buyerBalance > 0) {
-            roboshareTokens.burn(buyer, revenueTokenId, buyerBalance);
-        }
-        uint256 partnerBalance = roboshareTokens.balanceOf(partner1, revenueTokenId);
-        if (partnerBalance > 0) {
-            roboshareTokens.burn(partner1, revenueTokenId, partnerBalance);
-        }
+        _grantBurnerRoleToSelf();
+        _burnRevenueTokenBalance(revenueTokenId, buyer);
+        _burnRevenueTokenBalance(revenueTokenId, partner1);
 
         // 3. Unlock Collateral
         vm.prank(address(router));
@@ -977,13 +964,30 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
         vm.prank(partner1);
         assetRegistry.settleAsset(scenario.assetId, 0);
 
+        IPositionManager positionManager = _positionManager();
+        IPositionManager.SettlementState memory settlementState = positionManager.getSettlementState(scenario.assetId);
+        assertTrue(settlementState.isConfigured, "PositionManager settlement should be configured");
+
+        uint256 buyerBalance = roboshareTokens.balanceOf(buyer, scenario.revenueTokenId);
         uint256 previewAmount = treasury.previewSettlementClaim(scenario.assetId, buyer);
         assertGt(previewAmount, 0, "Settled preview should be positive");
+        assertEq(
+            previewAmount,
+            positionManager.previewSettlementClaim(scenario.assetId, buyerBalance),
+            "Treasury preview should use PositionManager settlement rate"
+        );
 
         vm.prank(buyer);
-        (uint256 settlementClaimed,) = assetRegistry.claimSettlement(scenario.assetId, false);
+        (uint256 settlementClaimed,) = router.claimSettlement(scenario.assetId, false);
 
         assertEq(settlementClaimed, previewAmount, "Preview should match settlement claimed");
+        settlementState = positionManager.getSettlementState(scenario.assetId);
+        assertEq(settlementState.claimedBurnAmount, buyerBalance, "Settlement aggregate should track burned amount");
+        assertEq(settlementState.claimedPayout, settlementClaimed, "Settlement aggregate should track claimed payout");
+        IPositionManager.SettlementClaimState memory claimState =
+            positionManager.getSettlementClaimState(scenario.assetId, buyer);
+        assertEq(claimState.burnedAmount, buyerBalance, "PositionManager should track claimed burn amount");
+        assertEq(claimState.payout, settlementClaimed, "PositionManager should track claimed payout");
         assertEq(treasury.previewSettlementClaim(scenario.assetId, buyer), 0, "Preview should be zero after claim");
     }
 
@@ -1322,6 +1326,44 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
         assertEq(settlementPerToken, expectedSettlementPerToken);
     }
 
+    function testEarlySettlementRequiresImmediateProceedsResidualTopUp() public {
+        (uint256 assetId,, uint256 releasedPrincipal) = _setupImmediateProceedsSettlementAsset();
+
+        uint256 requiredTopUp = releasedPrincipal;
+        assertEq(requiredTopUp, releasedPrincipal, "Required top-up should cover released protected base");
+
+        vm.prank(partner1);
+        vm.expectRevert(
+            abi.encodeWithSelector(ITreasury.InsufficientSettlementTopUp.selector, assetId, requiredTopUp, 0)
+        );
+        assetRegistry.settleAsset(assetId, 0);
+    }
+
+    function testEarlySettlementPaysImmediateProceedsResidualAndEarningsBuffer() public {
+        (uint256 assetId, uint256 revenueTokenId, uint256 requiredTopUp) = _setupImmediateProceedsSettlementAsset();
+
+        CollateralLib.CollateralInfo memory infoBefore = _getCollateralInfo(assetId);
+        uint256 expectedSettlementAmount =
+            infoBefore.baseCollateral + infoBefore.reservedForLiquidation + infoBefore.earningsBuffer + requiredTopUp;
+        uint256 totalSupply = roboshareTokens.getRevenueTokenSupply(revenueTokenId);
+        uint256 feeRecipientPendingBefore = treasury.pendingWithdrawals(config.treasuryFeeRecipient);
+
+        vm.prank(partner1);
+        usdc.approve(address(treasury), requiredTopUp);
+        vm.prank(partner1);
+        assetRegistry.settleAsset(assetId, requiredTopUp);
+
+        IPositionManager.SettlementState memory settlementState = positionManager.getSettlementState(assetId);
+        assertEq(settlementState.settlementAmount, expectedSettlementAmount);
+        assertEq(settlementState.settlementPerToken, expectedSettlementAmount / totalSupply);
+        assertEq(
+            treasury.pendingWithdrawals(config.treasuryFeeRecipient) - feeRecipientPendingBefore,
+            infoBefore.protocolBuffer,
+            "Protocol buffer should be routed to protocol fees"
+        );
+        assertFalse(_getCollateralInfo(assetId).isLocked, "Settlement should clear collateral state");
+    }
+
     function testInitiateSettlementPartnerRefundAfterMaturity() public {
         _ensureState(SetupState.BuffersFunded);
 
@@ -1502,12 +1544,7 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
         _ensureState(SetupState.InitialAccountsSetup);
 
         vm.prank(partner1);
-        uint256 assetId = assetRegistry.registerAsset(
-            abi.encode(
-                TEST_VIN, TEST_MAKE, TEST_MODEL, TEST_YEAR, TEST_MANUFACTURER_ID, TEST_OPTION_CODES, TEST_METADATA_URI
-            ),
-            ASSET_VALUE
-        );
+        uint256 assetId = assetRegistry.registerAsset(_vehicleRegistrationData(TEST_VIN), ASSET_VALUE);
 
         uint256 supply = ASSET_VALUE / REVENUE_TOKEN_PRICE;
         uint256 maturityDate = block.timestamp + 365 days;
@@ -1629,7 +1666,7 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
         (, uint256 settlementPerToken,) = treasury.assetSettlements(scenario.assetId);
 
         vm.startPrank(buyer);
-        (uint256 claimed,) = assetRegistry.claimSettlement(scenario.assetId, false);
+        (uint256 claimed,) = router.claimSettlement(scenario.assetId, false);
         // Settlement now uses pendingWithdrawals pattern - need to withdraw
         treasury.processWithdrawal();
         vm.stopPrank();
@@ -1669,9 +1706,8 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
     function testInitiateSettlementAlreadySettled() public {
         _ensureState(SetupState.PurchasedFromPrimaryPool);
 
-        // First settlement via Treasury directly (simulating router call)
-        vm.prank(address(router));
-        treasury.initiateSettlement(partner1, scenario.assetId, 0);
+        vm.prank(partner1);
+        assetRegistry.settleAsset(scenario.assetId, 0);
 
         // Second settlement should revert with IAssetRegistry.AssetAlreadySettled
         vm.prank(address(router));
@@ -1687,9 +1723,8 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
     function testExecuteLiquidationAlreadySettled() public {
         _ensureState(SetupState.PurchasedFromPrimaryPool);
 
-        // First: settle via Treasury directly (simulating router call)
-        vm.prank(address(router));
-        treasury.initiateSettlement(partner1, scenario.assetId, 0);
+        vm.prank(partner1);
+        assetRegistry.settleAsset(scenario.assetId, 0);
 
         (bool eligible, uint8 reason) = treasury.previewLiquidationEligibility(scenario.assetId);
         assertFalse(eligible);
@@ -1752,7 +1787,7 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
 
         // Claim settlement with autoClaimEarnings=true
         vm.prank(buyer);
-        (uint256 settlementClaimed, uint256 earningsClaimed) = assetRegistry.claimSettlement(scenario.assetId, true);
+        (uint256 settlementClaimed, uint256 earningsClaimed) = router.claimSettlement(scenario.assetId, true);
 
         assertGt(settlementClaimed, 0, "Settlement should be > 0");
         assertGt(earningsClaimed, 0, "Earnings should be > 0 with autoClaim");
@@ -1804,13 +1839,12 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
 
         // Buyer1 claims with autoClaim, buyer2 claims without then claims earnings separately
         vm.prank(buyer);
-        (uint256 buyer1Settlement, uint256 buyer1Earnings) = assetRegistry.claimSettlement(scenario.assetId, true);
+        (uint256 buyer1Settlement, uint256 buyer1Earnings) = router.claimSettlement(scenario.assetId, true);
         assertGt(buyer1Settlement, 0, "Buyer1 settlement should be > 0");
         assertGt(buyer1Earnings, 0, "Buyer1 should have auto-claimed earnings");
 
         vm.prank(buyer2);
-        (uint256 buyer2Settlement, uint256 buyer2EarningsClaimed) =
-            assetRegistry.claimSettlement(scenario.assetId, false);
+        (uint256 buyer2Settlement, uint256 buyer2EarningsClaimed) = router.claimSettlement(scenario.assetId, false);
         assertGt(buyer2Settlement, 0, "Buyer2 settlement should be > 0");
         assertEq(buyer2EarningsClaimed, 0, "Buyer2 did not auto-claim");
 
@@ -1843,7 +1877,7 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
 
         // Claim settlement with autoClaim - should work, but earnings should be 0
         vm.prank(buyer);
-        (uint256 settlement, uint256 earnings) = assetRegistry.claimSettlement(scenario.assetId, true);
+        (uint256 settlement, uint256 earnings) = router.claimSettlement(scenario.assetId, true);
 
         assertGt(settlement, 0, "Should still get settlement");
         assertEq(earnings, 0, "No unclaimed earnings");
@@ -1881,12 +1915,7 @@ contract TreasuryIntegrationTest is MarketplaceFlowBaseTest, ERC1155Holder {
         string memory vin = _generateVin(4242);
         uint256 assetValue = 4_400 * 10 ** 6;
         vm.prank(partner1);
-        uint256 assetId = assetRegistry.registerAsset(
-            abi.encode(
-                vin, TEST_MAKE, TEST_MODEL, TEST_YEAR, TEST_MANUFACTURER_ID, TEST_OPTION_CODES, TEST_METADATA_URI
-            ),
-            assetValue
-        );
+        uint256 assetId = assetRegistry.registerAsset(_vehicleRegistrationData(vin), assetValue);
 
         vm.prank(partner1);
         (uint256 revenueTokenId,) = assetRegistry.createRevenueTokenPool(
