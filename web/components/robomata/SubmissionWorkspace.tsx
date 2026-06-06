@@ -169,8 +169,7 @@ export const SubmissionWorkspace = ({
     const formData = new FormData(form);
     const uploadedFile = formData.get("file");
     if (!(uploadedFile instanceof File) || uploadedFile.size === 0) {
-      const text = evidenceText.trim();
-      if (!text) {
+      if (!evidenceText.trim()) {
         notification.error("Attach an evidence file or paste evidence text.");
         return;
       }
@@ -178,7 +177,7 @@ export const SubmissionWorkspace = ({
       const label = String(formData.get("label") ?? "evidence").trim() || "evidence";
       formData.set(
         "file",
-        new File([text], `${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.txt`, { type: "text/plain" }),
+        new File([evidenceText], `${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.txt`, { type: "text/plain" }),
       );
     }
 
