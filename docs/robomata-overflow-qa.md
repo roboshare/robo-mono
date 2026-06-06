@@ -73,6 +73,16 @@ Status: pending final implementation merge.
 
 Tracking issue: `ROB-134`.
 
+Command:
+
+* `yarn robomata:testnet-smoke`
+
+The smoke command starts the local app on an isolated port, creates a temporary
+partner API signer, uses an ignored temporary submission file, uploads evidence
+through Seal and Walrus, computes a zero-exception borrowing base, and commits
+the evidence root to the configured Sui testnet facility. It prints only
+non-secret submission, storage, encryption, and transaction metadata.
+
 Required environment:
 
 * `NEXT_PUBLIC_ENABLE_ROBOMATA_WORKFLOW=true`
