@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { PrivyClient } from "@privy-io/server-auth";
 import {
   type Address,
   type Chain,
@@ -16,6 +17,7 @@ import { getAlchemyHttpUrl, getInfuraHttpUrl } from "~~/utils/scaffold-eth";
 
 const PARTNER_AUTH_CACHE_MS = 60_000;
 const partnerAuthorizationCache = new Map<string, { authorized: boolean; expiresAt: number }>();
+let privyClient: PrivyClient | null | undefined;
 
 function getAuthorizedPartnerAddresses(): Set<string> {
   return new Set(
@@ -24,24 +26,6 @@ function getAuthorizedPartnerAddresses(): Set<string> {
       .map(address => address.trim().toLowerCase())
       .filter(Boolean),
   );
-}
-
-function getAuthorizedSignerAddress(partnerAddress: string): string {
-  const rawSignerMap = process.env.ROBOMATA_AUTHORIZED_PARTNER_SIGNERS_JSON;
-  if (!rawSignerMap) return partnerAddress;
-
-  try {
-    const signerMap = JSON.parse(rawSignerMap) as Record<string, string | undefined>;
-    const normalizedSignerMap = Object.fromEntries(
-      Object.entries(signerMap)
-        .map(([address, signer]) => [address.trim().toLowerCase(), signer?.trim()] as const)
-        .filter(([address, signer]) => Boolean(address && signer)),
-    ) as Record<string, string | undefined>;
-
-    return normalizedSignerMap[partnerAddress.toLowerCase()] ?? partnerAddress;
-  } catch {
-    return partnerAddress;
-  }
 }
 
 function getConfiguredChain(chainId: string | null) {
@@ -82,6 +66,79 @@ function getVerificationClient(chainId: string | null) {
 
 function canUseLocalPartnerAllowlist() {
   return process.env.NODE_ENV === "development";
+}
+
+function getPrivyAppId() {
+  return process.env.PRIVY_APP_ID ?? process.env.NEXT_PUBLIC_PRIVY_APP_ID;
+}
+
+function getPrivyClient() {
+  if (privyClient !== undefined) return privyClient;
+
+  const appId = getPrivyAppId();
+  const appSecret = process.env.PRIVY_APP_SECRET;
+  privyClient = appId && appSecret ? new PrivyClient(appId, appSecret) : null;
+  return privyClient;
+}
+
+function getPrivyAccessToken(request: NextRequest): string | null {
+  const authorizationHeader = request.headers.get("authorization")?.trim();
+  if (authorizationHeader?.toLowerCase().startsWith("bearer ")) {
+    return authorizationHeader.slice("bearer ".length).trim() || null;
+  }
+
+  return request.cookies.get("privy-token")?.value?.trim() || null;
+}
+
+type PrivyUser = Awaited<ReturnType<PrivyClient["getUser"]>>;
+
+function accountAddress(account: unknown): string | null {
+  if (!account || typeof account !== "object") return null;
+  const address = (account as { address?: unknown }).address;
+  return typeof address === "string" && isAddress(address) ? address.toLowerCase() : null;
+}
+
+function userHasAddress(user: PrivyUser, type: "smart_wallet" | "wallet", address: string): boolean {
+  const normalizedAddress = address.toLowerCase();
+  const directAccount = type === "smart_wallet" ? accountAddress(user.smartWallet) : accountAddress(user.wallet);
+  if (directAccount === normalizedAddress) return true;
+
+  return user.linkedAccounts.some(account => {
+    const linkedType = (account as { type?: unknown }).type;
+    if (linkedType !== type) return false;
+    return accountAddress(account) === normalizedAddress;
+  });
+}
+
+async function verifyPrivyWalletOwnership({
+  partnerAddress,
+  request,
+  signerAddress,
+}: {
+  partnerAddress: string;
+  request: NextRequest;
+  signerAddress: string;
+}): Promise<boolean> {
+  if (canUseLocalPartnerAllowlist() && partnerAddress.toLowerCase() === signerAddress.toLowerCase()) return true;
+
+  const client = getPrivyClient();
+  const accessToken = getPrivyAccessToken(request);
+  if (!client || !accessToken) return false;
+
+  try {
+    const claims = await client.verifyAuthToken(accessToken);
+    const user = await client.getUser(claims.userId);
+    if (user.id !== claims.userId) return false;
+
+    const signerIsLinkedAccount =
+      userHasAddress(user, "wallet", signerAddress) || userHasAddress(user, "smart_wallet", signerAddress);
+    const partnerIsLinkedAccount =
+      userHasAddress(user, "smart_wallet", partnerAddress) || userHasAddress(user, "wallet", partnerAddress);
+
+    return signerIsLinkedAccount && partnerIsLinkedAccount;
+  } catch {
+    return false;
+  }
 }
 
 async function isPartnerAuthorizedOnchain(chainId: string | null, partnerAddress: string): Promise<boolean | null> {
@@ -171,11 +228,12 @@ async function getVerifiedPartnerAddress(request: NextRequest): Promise<string |
   if (method !== request.method.toUpperCase()) return null;
   if (path !== request.nextUrl.pathname) return null;
   if (!isAddress(signerAddress)) return null;
-  const authorizedSignerAddress = getAuthorizedSignerAddress(partnerAddress);
-  if (authorizedSignerAddress.toLowerCase() !== signerAddress.toLowerCase()) return null;
 
   const timestampMs = Number(timestamp);
   if (!Number.isFinite(timestampMs) || Math.abs(Date.now() - timestampMs) > ROBOMATA_AUTH_MAX_AGE_MS) return null;
+
+  const hasPrivyOwnership = await verifyPrivyWalletOwnership({ partnerAddress, request, signerAddress });
+  if (!hasPrivyOwnership) return null;
 
   let valid = false;
   try {
