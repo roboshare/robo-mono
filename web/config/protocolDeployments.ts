@@ -48,14 +48,15 @@ export const PROTOCOL_CONTRACT_START_BLOCKS_BY_CHAIN_ID = {
     PositionManager: 273622788,
   },
   "11155111": {
-    MockUSDC: 10555421,
-    RoboshareTokens: 10555424,
-    PartnerManager: 10555426,
-    RegistryRouter: 10555428,
-    VehicleRegistry: 10555430,
-    Treasury: 10555432,
-    EarningsManager: 10555434,
-    Marketplace: 10555436,
+    MockUSDC: 10997576,
+    RoboshareTokens: 10997584,
+    PartnerManager: 10997587,
+    RegistryRouter: 10997592,
+    VehicleRegistry: 10997595,
+    Treasury: 10997598,
+    EarningsManager: 10997602,
+    Marketplace: 10997608,
+    PositionManager: 10997611,
   },
 } as const;
 
