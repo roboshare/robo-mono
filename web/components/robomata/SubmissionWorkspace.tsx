@@ -64,6 +64,8 @@ export const SubmissionWorkspace = ({
     () => (submission?.computation ? buildSubmissionSummaryCards(submission.computation) : []),
     [submission],
   );
+  const isCommitted = submission?.status === "committed" || submission?.evidenceCommit.status === "committed";
+  const canMutate = !readOnly && !isCommitted;
 
   const loadSubmission = useCallback(async () => {
     setIsLoading(true);
@@ -268,6 +270,10 @@ export const SubmissionWorkspace = ({
                 <Link href={`/partner/submissions/${submission.id}`} className="btn btn-primary rounded-full">
                   Manage in partner workflow
                 </Link>
+              ) : isCommitted ? (
+                <div className="rounded-2xl border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
+                  This submission is committed. Create a new submission for additional evidence or receivable changes.
+                </div>
               ) : (
                 <>
                   <button className="btn btn-primary rounded-full" onClick={recompute} disabled={isBusy}>
@@ -303,7 +309,7 @@ export const SubmissionWorkspace = ({
 
       <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <div className="space-y-6">
-          {!readOnly ? (
+          {canMutate ? (
             <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
               <div className="grid gap-6 lg:grid-cols-2">
                 <div>
@@ -413,7 +419,7 @@ export const SubmissionWorkspace = ({
                       <th>Amount</th>
                       <th>DPD</th>
                       <th>Status</th>
-                      {readOnly ? null : <th>Actions</th>}
+                      {canMutate ? <th>Actions</th> : null}
                     </tr>
                   </thead>
                   <tbody>
@@ -441,7 +447,7 @@ export const SubmissionWorkspace = ({
                                 {result?.eligible ? "Eligible" : receivable.excluded ? "Excluded" : "Needs review"}
                               </span>
                             </td>
-                            {readOnly ? null : (
+                            {canMutate ? (
                               <td>
                                 <div className="flex flex-wrap gap-2">
                                   <button
@@ -469,11 +475,11 @@ export const SubmissionWorkspace = ({
                                   </button>
                                 </div>
                               </td>
-                            )}
+                            ) : null}
                           </tr>
-                          {isEditing ? (
+                          {canMutate && isEditing ? (
                             <tr key={`${receivable.id}-edit`}>
-                              <td colSpan={readOnly ? 5 : 6}>
+                              <td colSpan={canMutate ? 6 : 5}>
                                 <div className="grid gap-3 rounded-2xl bg-base-200/60 p-4 md:grid-cols-4">
                                   <input
                                     className="input input-bordered"
@@ -595,7 +601,13 @@ export const SubmissionWorkspace = ({
               Exceptions and next actions
             </div>
             {submission.exceptions.length === 0 ? (
-              <div className="mt-4 text-sm text-base-content/70">No exceptions yet. Compute the submission first.</div>
+              <div className="mt-4 text-sm text-base-content/70">
+                {!submission.computation
+                  ? "No exceptions yet. Compute the submission first."
+                  : isCommitted
+                    ? "All exceptions were resolved before the evidence root was committed."
+                    : "No open exceptions. The submission is ready for lender review."}
+              </div>
             ) : (
               <div className="mt-4 space-y-3">
                 {submission.exceptions.map(exception => (
@@ -650,7 +662,7 @@ export const SubmissionWorkspace = ({
                           : "Not encrypted"}
                       </span>
                     </div>
-                    {!readOnly ? (
+                    {canMutate ? (
                       <div className="mt-3 flex flex-wrap gap-2">
                         {(["verified", "pending", "exception"] as const).map(status => (
                           <button
