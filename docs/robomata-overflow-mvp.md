@@ -146,78 +146,89 @@ dark unless a controlled preview is explicitly configured.
 
 Use the flags as a matrix:
 
-* `NEXT_PUBLIC_ENABLE_ROBOMATA_WORKFLOW=true` exposes the `/partner` borrowing
+- `NEXT_PUBLIC_ENABLE_ROBOMATA_WORKFLOW=true` exposes the `/partner` borrowing
   base entry point and lets `/robomata` attempt the real read-only submission
   projection.
-* `ROBOMATA_WORKFLOW_ENABLED=true` enables the server-side submission APIs.
+- `ROBOMATA_WORKFLOW_ENABLED=true` enables the server-side submission APIs.
   Without this flag, the APIs fail closed with `404`.
-* `ROBOMATA_WORKFLOW_MUTATIONS_ENABLED=true` enables write actions such as
+- `ROBOMATA_WORKFLOW_MUTATIONS_ENABLED=true` enables write actions such as
   creating submissions, importing receivables, uploading evidence, computing the
   borrowing base, and committing evidence. Without this flag, writes fail closed
   with `403`.
-* `POSTGRES_URL` is required when the server workflow is enabled outside local
+- `POSTGRES_URL` is required when the server workflow is enabled outside local
   development. `ROBOMATA_SUBMISSIONS_FILE=/local/path/submissions.json` is only
   a local-development fallback and must not be used for shared previews or
   release candidates.
-* `ROBOMATA_WALRUS_UPLOADS_ENABLED=true` enables real Walrus publisher uploads
+- `ROBOMATA_WALRUS_UPLOADS_ENABLED=true` enables real Walrus publisher uploads
   when `WALRUS_PUBLISHER_URL` and the Seal package, facility identity, and
   key-server configuration are available. Without this flag, evidence uploads
   keep using deterministic mock Walrus references even if a publisher URL
   exists. With this flag, uploads fail closed unless evidence can be encrypted
   before publishing.
-* `ROBOMATA_SUI_COMMIT_ENABLED=true` enables real Sui evidence commit
-  transactions when the Sui package, server signer private key,
-  per-submission facility mapping, per-submission operator mapping, and
-  expected signer are configured. Without this flag, evidence roots remain
-  prepared but cannot be committed onchain.
-* `ROBOMATA_SUI_FACILITY_IDS_JSON={"sub_...":"0x..."}` maps each submission id
+- `ROBOMATA_SUI_COMMIT_ENABLED=true` enables real Sui evidence commit
+  transactions. Without this flag, evidence roots remain prepared but cannot be
+  committed onchain.
+- `ROBOMATA_SUI_OPERATOR_COMMIT_ENABLED=true` enables the operator-owned wallet
+  path. In this mode the server prepares the exact
+  `robomata_overflow::facility::commit_evidence` transaction for the mapped
+  facility, the browser asks a Sui wallet that exposes
+  `sui:signAndExecuteTransaction` to execute it, and the server marks the
+  submission committed only after reconciling the matching Sui
+  `EvidenceCommitted` event. This path still requires `ROBOMATA_SUI_PACKAGE_ID`,
+  per-submission facility mapping, and per-submission operator mapping, but it
+  does not require `ROBOMATA_SUI_PRIVATE_KEY` or `ROBOMATA_SUI_SIGNER_ADDRESS`.
+- `ROBOMATA_SUI_FACILITY_IDS_JSON={"sub_...":"0x..."}` maps each submission id
   to its own Sui facility object. Do not use facility names as keys; names are
   mutable operator input and are not safe authorization boundaries.
-* `ROBOMATA_SUI_FACILITY_OPERATORS_JSON={"sub_...":"0x..."}` maps each
+- `ROBOMATA_SUI_FACILITY_OPERATORS_JSON={"sub_...":"0x..."}` maps each
   submission id to the Sui address that created and controls the mapped facility
   object.
-* `ROBOMATA_SUI_PRIVATE_KEY=suiprivkey...` is the sensitive server-side Sui
-  testnet signer used by Vercel to submit evidence commit transactions. It must
-  belong to the mapped facility operator and must never be exposed to the
-  browser.
-* `ROBOMATA_SUI_SIGNER_ADDRESS=0x...` must match both the server signer's
+- `ROBOMATA_SUI_PRIVATE_KEY=suiprivkey...` is the sensitive server-side Sui
+  testnet signer used by Vercel to submit evidence commit transactions when the
+  operator-owned wallet path is disabled or unavailable. It must belong to the
+  mapped facility operator and must never be exposed to the browser.
+- `ROBOMATA_SUI_SIGNER_ADDRESS=0x...` must match both the server signer's
   derived Sui address and the mapped facility operator before the runtime
-  exposes the Sui commit path.
-* `ROBOMATA_SUI_COMMIT_STALE_MS` optionally overrides the default ten-minute
+  exposes the server-side Sui commit path.
+- Privy currently supports Sui at the wallet-abstraction/signing layer rather
+  than through this repo's existing EVM wagmi hooks. The MVP uses
+  wallet-standard discovery for Sui execution, so a Privy-provided or external
+  Sui wallet must be available in the browser for operator-owned commits.
+- `ROBOMATA_SUI_COMMIT_STALE_MS` optionally overrides the default ten-minute
   stale threshold for in-progress Sui commits. Stale attempts are reconciled
   against Sui `EvidenceCommitted` events before the app permits another commit
   attempt.
-* `ROBOMATA_SUI_EVENT_QUERY_LIMIT` optionally controls how many recent
+- `ROBOMATA_SUI_EVENT_QUERY_LIMIT` optionally controls how many recent
   `EvidenceCommitted` events the reconciliation path requests per page.
-* `ROBOMATA_SUI_EVENT_QUERY_MAX_PAGES` optionally controls how many Sui event
+- `ROBOMATA_SUI_EVENT_QUERY_MAX_PAGES` optionally controls how many Sui event
   pages stale-commit reconciliation scans before releasing the attempt.
-* `ROBOMATA_SUI_TIMEOUT_MS` optionally controls Sui SDK request timeout for
+- `ROBOMATA_SUI_TIMEOUT_MS` optionally controls Sui SDK request timeout for
   commit transactions. The legacy `ROBOMATA_SUI_CLI_TIMEOUT_MS` name remains a
   fallback for local smoke environments.
-* Robomata server APIs verify a fresh wallet signature and then read
+- Robomata server APIs verify a fresh wallet signature and then read
   `PartnerManager.isAuthorizedPartner(partnerAddress)` on the signed request's
   configured EVM chain before listing, creating, or mutating submissions.
-* Deployed Robomata server APIs also require Privy server authentication:
+- Deployed Robomata server APIs also require Privy server authentication:
   `NEXT_PUBLIC_PRIVY_APP_ID` and `PRIVY_APP_SECRET` must be configured so the
   server can verify the current user's access token and confirm that the partner
   smart wallet plus signing wallet are linked to the same Privy user.
-* `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES=0x...,0x...` is a local-development
+- `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES=0x...,0x...` is a local-development
   fallback for isolated smoke tests when `PartnerManager` cannot be read. It is
   not the deployed authorization source of truth.
 
 Recommended environments:
 
-* production and release-candidate branches: leave workflow, mutation, Walrus,
+- production and release-candidate branches: leave workflow, mutation, Walrus,
   and Sui side-effect flags unset unless the Robomata QA gate has explicitly
   passed for that release
-* controlled preview: set the workflow and mutation flags, configure
+- controlled preview: set the workflow and mutation flags, configure
   `POSTGRES_URL`, ensure the tester wallet is authorized in the deployed EVM
   `PartnerManager`, configure Privy server auth with `NEXT_PUBLIC_PRIVY_APP_ID`
   and `PRIVY_APP_SECRET`, and enable Walrus/Sui side-effect flags only for
   testnet runs that should write to external infrastructure
-* local QA: use `ROBOMATA_SUBMISSIONS_FILE` only for single-developer local
+- local QA: use `ROBOMATA_SUBMISSIONS_FILE` only for single-developer local
   runs when Postgres is not configured
-* public demo mode: leave the server flags unset so `/robomata` remains a
+- public demo mode: leave the server flags unset so `/robomata` remains a
   read-only demo narrative and `/partner/submissions` stays hidden
 
 ## Sui, Walrus, Seal, And Nautilus Role

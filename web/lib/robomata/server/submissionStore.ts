@@ -47,6 +47,8 @@ type CompleteEvidenceCommitInput = {
   committedAt: string;
   facilityObjectId: string;
   facilityOperatorAddress: string;
+  commitAuthority?: "server" | "operator";
+  operatorWalletAddress?: string;
 };
 
 let ensuredPostgresTable = false;
@@ -78,7 +80,10 @@ function canBeginEvidenceCommit(submission: FacilitySubmission, rootDigest: stri
 }
 
 function canFinishEvidenceCommit(submission: FacilitySubmission, rootDigest: string): boolean {
-  return submission.evidenceCommit.status === "committing" && submission.evidenceCommit.rootDigest === rootDigest;
+  return (
+    ["ready", "failed", "committing"].includes(submission.evidenceCommit.status) &&
+    submission.evidenceCommit.rootDigest === rootDigest
+  );
 }
 
 function applyBeginEvidenceCommit(
@@ -109,14 +114,17 @@ function applyCompleteEvidenceCommit(
     status: "committed",
     txDigest: input.txDigest,
     committedAt: input.committedAt,
-    commitMode: "configured",
+    commitMode: input.commitAuthority === "operator" ? "operator_configured" : "configured",
+    commitAuthority: input.commitAuthority,
     facilityObjectId: input.facilityObjectId,
     facilityOperatorAddress: input.facilityOperatorAddress,
+    operatorWalletAddress: input.operatorWalletAddress,
     errorMessage: undefined,
   };
   submission.auditEvents.unshift(
     createAuditEvent("sui_commit_completed", `Committed evidence root for ${submission.facilityName}.`, {
       txDigest: input.txDigest ?? null,
+      commitAuthority: input.commitAuthority ?? "server",
     }),
   );
   return touchSubmission(submission);
@@ -403,7 +411,7 @@ function createPostgresStore(): SubmissionStore {
           updated_at = ${nextSubmission.updatedAt}::timestamptz
         WHERE
           id = ${id}
-          AND payload->'evidenceCommit'->>'status' = 'committing'
+          AND payload->'evidenceCommit'->>'status' IN ('ready', 'failed', 'committing')
           AND payload->'evidenceCommit'->>'rootDigest' = ${rootDigest}
         RETURNING payload;
       `;

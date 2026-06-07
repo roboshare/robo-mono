@@ -6,9 +6,11 @@ import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
 import {
   getRobomataSuiClient,
   getRobomataSuiGasBudget,
+  getRobomataSuiNetwork,
   getRobomataSuiServerSigner,
   getRobomataSuiTimeoutMs,
   isRobomataSuiCommitRuntimeConfigured,
+  isRobomataSuiOperatorCommitRuntimeConfigured,
   parsePositiveInteger,
 } from "~~/lib/robomata/server/suiCommitConfig";
 import {
@@ -125,11 +127,109 @@ async function findCommittedEvidenceEvent(input: {
   return undefined;
 }
 
+function matchesCommittedEvidenceEvent(input: {
+  event: Record<string, unknown>;
+  facilityObjectId: string;
+  label: string;
+  rootDigest: string;
+}): boolean {
+  const parsedJson = (input.event.parsedJson ?? input.event.parsed_json) as
+    | { facility_id?: unknown; evidence_kind?: unknown; evidence_digest?: unknown }
+    | undefined;
+  return Boolean(
+    parsedJson &&
+      typeof parsedJson.facility_id === "string" &&
+      parsedJson.facility_id.toLowerCase() === input.facilityObjectId.toLowerCase() &&
+      parsedJson.evidence_kind === input.label &&
+      digestMatches(parsedJson.evidence_digest, input.rootDigest),
+  );
+}
+
+async function findCommittedEvidenceEventInTransaction(input: {
+  txDigest: string;
+  facilityObjectId: string;
+  label: string;
+  rootDigest: string;
+}): Promise<string | undefined> {
+  const client = getRobomataSuiClient();
+  const expectedEventType = `${process.env.ROBOMATA_SUI_PACKAGE_ID}::facility::EvidenceCommitted`;
+  const response = await withTimeout(
+    signal =>
+      client
+        .getTransactionBlock({
+          digest: input.txDigest,
+          options: { showEvents: true, showEffects: true },
+          signal,
+        })
+        .catch(() => undefined),
+    getRobomataSuiTimeoutMs(),
+  );
+  if (!response) return undefined;
+  const status = response.effects?.status;
+  if (status?.status === "failure") {
+    throw new Error(
+      status.error
+        ? `Sui transaction ${input.txDigest} failed: ${status.error}`
+        : `Sui transaction ${input.txDigest} failed before emitting EvidenceCommitted.`,
+    );
+  }
+  const events = (response.events ?? []) as unknown as Record<string, unknown>[];
+  const match = events.find(event => {
+    const eventType = event.type;
+    return (
+      typeof eventType === "string" &&
+      eventType === expectedEventType &&
+      matchesCommittedEvidenceEvent({ ...input, event })
+    );
+  });
+
+  return match ? input.txDigest : undefined;
+}
+
+function isFailedSuiTransactionError(error: unknown): error is Error {
+  return error instanceof Error && /^Sui transaction .+ failed/.test(error.message);
+}
+
 type SuiCommitResult = {
   errorMessage?: string;
   txDigest?: string;
   uncertain: boolean;
 };
+
+type CommitEvidenceRequest = {
+  mode?: "server" | "operator_prepare" | "operator_complete" | "operator_release";
+  txDigest?: string;
+  walletAddress?: string;
+};
+
+type OperatorCommitPayload = {
+  chain: string;
+  transactionJson: string;
+  facilityObjectId: string;
+  facilityOperatorAddress: string;
+  label: string;
+  rootDigest: string;
+  packageId: string;
+};
+
+async function parseCommitEvidenceRequest(request: NextRequest): Promise<CommitEvidenceRequest> {
+  try {
+    const parsed = (await request.json()) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const input = parsed as Record<string, unknown>;
+    const mode = input.mode;
+    return {
+      mode:
+        mode === "operator_prepare" || mode === "operator_complete" || mode === "operator_release" || mode === "server"
+          ? mode
+          : undefined,
+      txDigest: typeof input.txDigest === "string" ? input.txDigest.trim() : undefined,
+      walletAddress: typeof input.walletAddress === "string" ? input.walletAddress.trim() : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
 
 function hexToBytes(value: string): number[] {
   const hex = normalizeHex(value);
@@ -154,6 +254,47 @@ async function withTimeout<T>(operation: (signal: AbortSignal) => Promise<T>, ti
   }
 }
 
+function buildSuiCommitTransaction(input: {
+  facilityObjectId: string;
+  label: string;
+  rootDigest: string;
+  senderAddress?: string;
+}): Transaction {
+  const tx = new Transaction();
+  if (input.senderAddress) tx.setSender(input.senderAddress);
+  tx.setGasBudget(getRobomataSuiGasBudget());
+  tx.moveCall({
+    target: `${process.env.ROBOMATA_SUI_PACKAGE_ID}::facility::commit_evidence`,
+    arguments: [
+      tx.object(input.facilityObjectId),
+      tx.pure.string(input.label),
+      tx.pure.vector("u8", hexToBytes(input.rootDigest)),
+    ],
+  });
+  return tx;
+}
+
+async function prepareOperatorSuiCommit(input: {
+  facilityObjectId: string;
+  facilityOperatorAddress: string;
+  label: string;
+  rootDigest: string;
+}): Promise<OperatorCommitPayload> {
+  const tx = buildSuiCommitTransaction({ ...input, senderAddress: input.facilityOperatorAddress });
+  const client = getRobomataSuiClient();
+  const transactionJson = await withTimeout(() => tx.toJSON({ client }), getRobomataSuiTimeoutMs());
+
+  return {
+    chain: `sui:${getRobomataSuiNetwork()}`,
+    transactionJson,
+    facilityObjectId: input.facilityObjectId,
+    facilityOperatorAddress: input.facilityOperatorAddress,
+    label: input.label,
+    rootDigest: input.rootDigest,
+    packageId: process.env.ROBOMATA_SUI_PACKAGE_ID ?? "",
+  };
+}
+
 async function executeSuiCommit(input: {
   facilityObjectId: string;
   label: string;
@@ -167,16 +308,7 @@ async function executeSuiCommit(input: {
     };
   }
 
-  const tx = new Transaction();
-  tx.setGasBudget(getRobomataSuiGasBudget());
-  tx.moveCall({
-    target: `${process.env.ROBOMATA_SUI_PACKAGE_ID}::facility::commit_evidence`,
-    arguments: [
-      tx.object(input.facilityObjectId),
-      tx.pure.string(input.label),
-      tx.pure.vector("u8", hexToBytes(input.rootDigest)),
-    ],
-  });
+  const tx = buildSuiCommitTransaction(input);
 
   try {
     const client = getRobomataSuiClient();
@@ -263,6 +395,9 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
   const accessError = requireSubmissionAccess(submission, partnerAddress);
   if (accessError) return accessError;
 
+  const requestBody = await parseCommitEvidenceRequest(request);
+  const commitMode = requestBody.mode ?? "server";
+
   if (submission.evidenceCommit.status === "committed") {
     return NextResponse.json({ submission });
   }
@@ -292,17 +427,53 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     );
   }
 
-  if (!isRobomataSuiCommitRuntimeConfigured({ facilityObjectId, facilityOperatorAddress })) {
+  const serverCommitConfigured = isRobomataSuiCommitRuntimeConfigured({ facilityObjectId, facilityOperatorAddress });
+  const operatorCommitConfigured = isRobomataSuiOperatorCommitRuntimeConfigured({
+    facilityObjectId,
+    facilityOperatorAddress,
+  });
+
+  if (commitMode === "server" && operatorCommitConfigured) {
+    return NextResponse.json(
+      { error: "Operator-owned Sui commit is enabled for this submission; server signing is disabled." },
+      { status: 400 },
+    );
+  }
+
+  if (commitMode === "server" && !serverCommitConfigured) {
     return NextResponse.json(
       { error: "Sui commit environment is not configured for this app runtime." },
       { status: 400 },
     );
   }
 
+  if (["operator_prepare", "operator_complete", "operator_release"].includes(commitMode) && !operatorCommitConfigured) {
+    return NextResponse.json(
+      { error: "Operator-owned Sui commit is not configured for this app runtime." },
+      { status: 400 },
+    );
+  }
+
   const rootDigest = submission.evidenceCommit.rootDigest;
   const label = `submission_${submission.id}`;
+  let operatorWalletAddress: string | undefined;
+  if (commitMode === "operator_complete") {
+    operatorWalletAddress = requestBody.walletAddress?.toLowerCase();
+    if (requestBody.txDigest && !operatorWalletAddress) {
+      return NextResponse.json({ error: "Operator Sui wallet address is required." }, { status: 400 });
+    }
+    if (operatorWalletAddress && operatorWalletAddress !== facilityOperatorAddress.toLowerCase()) {
+      return NextResponse.json(
+        { error: "Operator Sui wallet does not match the configured facility operator." },
+        { status: 400 },
+      );
+    }
+  }
 
-  if (submission.evidenceCommit.status === "committing") {
+  if (
+    submission.evidenceCommit.status === "committing" &&
+    (!(commitMode === "operator_complete" || commitMode === "operator_release") || isStaleCommit(submission))
+  ) {
     if (!isStaleCommit(submission)) {
       return NextResponse.json(
         { error: "Evidence commit is already in progress for this submission." },
@@ -312,13 +483,26 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
 
     let txDigest: string | undefined;
     try {
-      txDigest = await findCommittedEvidenceEvent({ facilityObjectId, label, rootDigest });
+      txDigest = requestBody.txDigest
+        ? await findCommittedEvidenceEventInTransaction({
+            txDigest: requestBody.txDigest,
+            facilityObjectId,
+            label,
+            rootDigest,
+          })
+        : undefined;
+      txDigest ??= await findCommittedEvidenceEvent({ facilityObjectId, label, rootDigest });
     } catch (error) {
+      if (isFailedSuiTransactionError(error)) {
+        const released = await store.failEvidenceCommit(submission.id, rootDigest, error.message);
+        return NextResponse.json({ submission: released ?? submission, error: error.message }, { status: 409 });
+      }
+
       return NextResponse.json(
         {
           error:
             error instanceof Error
-              ? `Stale evidence commit requires Sui reconciliation, but event lookup failed: ${error.message}`
+              ? "Stale evidence commit requires Sui reconciliation, but event lookup failed: " + error.message
               : "Stale evidence commit requires Sui reconciliation, but event lookup failed.",
         },
         { status: 409 },
@@ -331,6 +515,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
         committedAt: new Date().toISOString(),
         facilityObjectId,
         facilityOperatorAddress,
+        ...(commitMode === "operator_complete"
+          ? {
+              commitAuthority: "operator" as const,
+              operatorWalletAddress: operatorWalletAddress ?? facilityOperatorAddress,
+            }
+          : {}),
       });
       if (reconciled) return NextResponse.json({ submission: reconciled });
 
@@ -353,7 +543,120 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
         { status: 409 },
       );
     }
+    if (commitMode === "operator_complete") {
+      return NextResponse.json(
+        {
+          submission: released,
+          error: "Previous operator evidence commit attempt timed out before a matching Sui event was found.",
+        },
+        { status: 409 },
+      );
+    }
     submission = released;
+  }
+
+  if (commitMode === "operator_release") {
+    if (submission.evidenceCommit.status !== "committing") return NextResponse.json({ submission });
+    const released = await store.failEvidenceCommit(
+      submission.id,
+      rootDigest,
+      "Operator Sui wallet signing was cancelled before a transaction digest was returned.",
+    );
+    return NextResponse.json({ submission: released ?? submission });
+  }
+
+  if (commitMode === "operator_prepare") {
+    const committingSubmission = await store.beginEvidenceCommit(submission.id, rootDigest, new Date().toISOString());
+    if (!committingSubmission) {
+      const latest = await store.get(submission.id);
+      if (latest?.evidenceCommit.status === "committed") return NextResponse.json({ submission: latest });
+      return NextResponse.json(
+        { error: "Evidence commit is already in progress or the evidence root has changed." },
+        { status: 409 },
+      );
+    }
+
+    try {
+      const operatorCommit = await prepareOperatorSuiCommit({
+        facilityObjectId,
+        facilityOperatorAddress,
+        label,
+        rootDigest,
+      });
+      return NextResponse.json({ submission: committingSubmission, operatorCommit });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? "Failed to prepare operator Sui transaction: " + error.message
+          : "Failed to prepare operator Sui transaction.";
+      const failed = await store.failEvidenceCommit(committingSubmission.id, rootDigest, errorMessage);
+      return NextResponse.json(
+        {
+          submission: failed ?? committingSubmission,
+          error: errorMessage,
+        },
+        { status: 500 },
+      );
+    }
+  }
+
+  if (commitMode === "operator_complete") {
+    let txDigest: string | undefined;
+    try {
+      txDigest = requestBody.txDigest
+        ? await findCommittedEvidenceEventInTransaction({
+            txDigest: requestBody.txDigest,
+            facilityObjectId,
+            label,
+            rootDigest,
+          })
+        : undefined;
+      txDigest ??= await findCommittedEvidenceEvent({ facilityObjectId, label, rootDigest });
+    } catch (error) {
+      if (isFailedSuiTransactionError(error)) {
+        const released = await store.failEvidenceCommit(submission.id, rootDigest, error.message);
+        return NextResponse.json({ submission: released ?? submission, error: error.message }, { status: 409 });
+      }
+
+      return NextResponse.json(
+        {
+          error:
+            error instanceof Error
+              ? "Operator Sui commit requires event reconciliation, but event lookup failed: " + error.message
+              : "Operator Sui commit requires event reconciliation, but event lookup failed.",
+        },
+        { status: 409 },
+      );
+    }
+
+    if (!txDigest) {
+      return NextResponse.json(
+        {
+          submission,
+          error: requestBody.txDigest
+            ? `Sui transaction ${requestBody.txDigest} was submitted, but the matching EvidenceCommitted event is not indexed yet. Retry completion shortly.`
+            : "The matching EvidenceCommitted event is not indexed yet. Retry completion shortly.",
+        },
+        { status: 202 },
+      );
+    }
+
+    const saved = await store.completeEvidenceCommit(submission.id, rootDigest, {
+      txDigest,
+      committedAt: new Date().toISOString(),
+      facilityObjectId,
+      facilityOperatorAddress,
+      commitAuthority: "operator",
+      operatorWalletAddress: operatorWalletAddress ?? facilityOperatorAddress,
+    });
+
+    if (saved) return NextResponse.json({ submission: saved });
+    const latest = await store.get(submission.id);
+    if (latest?.evidenceCommit.status === "committed") return NextResponse.json({ submission: latest });
+    return NextResponse.json(
+      { error: "Operator Sui commit was found, but local commit state changed before it could be saved." },
+      { status: 409 },
+    );
   }
 
   const committingSubmission = await store.beginEvidenceCommit(submission.id, rootDigest, new Date().toISOString());
@@ -391,6 +694,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       committedAt: new Date().toISOString(),
       facilityObjectId,
       facilityOperatorAddress,
+      commitAuthority: "server",
     });
     if (saved) return NextResponse.json({ submission: saved });
   } catch {

@@ -3,7 +3,7 @@ import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from "@mysten/sui/jsonRpc";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { Secp256k1Keypair } from "@mysten/sui/keypairs/secp256k1";
 import { Secp256r1Keypair } from "@mysten/sui/keypairs/secp256r1";
-import { isRobomataSuiCommitEnabled } from "~~/lib/featureFlags";
+import { isRobomataSuiCommitEnabled, isRobomataSuiOperatorCommitEnabled } from "~~/lib/featureFlags";
 
 export const DEFAULT_ROBOMATA_SUI_GAS_BUDGET = 100_000_000;
 export const DEFAULT_ROBOMATA_SUI_TIMEOUT_MS = 120_000;
@@ -103,5 +103,29 @@ export function isRobomataSuiCommitRuntimeConfigured(input: {
       signer.address === expectedSignerAddress &&
       signer.address === facilityOperatorAddress &&
       isRobomataSuiCommitEnabled(),
+  );
+}
+
+export function isRobomataSuiOperatorCommitRuntimeConfigured(input: {
+  facilityObjectId: string | undefined;
+  facilityOperatorAddress: string | undefined;
+}): boolean {
+  const packageId = trimmedEnv("ROBOMATA_SUI_PACKAGE_ID");
+  const facilityOperatorAddress = input.facilityOperatorAddress?.toLowerCase();
+  let networkConfigured = false;
+  try {
+    getRobomataSuiNetwork();
+    networkConfigured = true;
+  } catch {
+    networkConfigured = false;
+  }
+
+  return Boolean(
+    packageId &&
+      input.facilityObjectId &&
+      facilityOperatorAddress &&
+      networkConfigured &&
+      isRobomataSuiCommitEnabled() &&
+      isRobomataSuiOperatorCommitEnabled(),
   );
 }
