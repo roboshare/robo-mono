@@ -32,6 +32,7 @@ export type OperatorSuiCommitRequest = {
   chain: string;
   transactionJson: string;
   facilityOperatorAddress: string;
+  rootDigest: string;
 };
 
 function normalizeAddress(address: string): string {
@@ -81,6 +82,26 @@ function responseDigest(response: { digest?: string }): string {
   throw new Error("Sui wallet did not return a transaction digest.");
 }
 
+async function executeWithWallet(input: {
+  wallet: SuiWallet;
+  account: SuiWalletAccount;
+  request: OperatorSuiCommitRequest;
+  signFeature: SuiSignAndExecuteFeature;
+}) {
+  const transaction = Transaction.from(input.request.transactionJson);
+  const response = await input.signFeature.signAndExecuteTransaction({
+    account: input.account,
+    chain: input.request.chain,
+    transaction,
+  });
+
+  return {
+    txDigest: responseDigest(response),
+    walletAddress: input.account.address,
+    walletName: input.wallet.name,
+  };
+}
+
 export function useSuiOperatorWallet() {
   const [wallets, setWallets] = useState<SuiWallet[]>([]);
 
@@ -108,45 +129,67 @@ export function useSuiOperatorWallet() {
     async (
       request: OperatorSuiCommitRequest,
     ): Promise<{ txDigest: string; walletAddress: string; walletName: string }> => {
-      const wallet = wallets[0];
-      if (!wallet) {
+      if (!wallets.length) {
         throw new Error("No Sui wallet with sign-and-execute support is available in this browser.");
       }
 
-      const connectFeature = getConnectFeature(wallet);
-      const signFeature = getSignAndExecuteFeature(wallet);
-      if (!connectFeature || !signFeature) {
-        throw new Error(`${wallet.name} does not expose the required Sui wallet-standard features.`);
+      const candidates = wallets
+        .map(wallet => ({
+          wallet,
+          connectFeature: getConnectFeature(wallet),
+          signFeature: getSignAndExecuteFeature(wallet),
+        }))
+        .filter(
+          (
+            candidate,
+          ): candidate is {
+            wallet: SuiWallet;
+            connectFeature: StandardConnectFeature;
+            signFeature: SuiSignAndExecuteFeature;
+          } => Boolean(candidate.connectFeature && candidate.signFeature),
+        );
+
+      if (!candidates.length) {
+        throw new Error("No Sui wallet exposes the required wallet-standard connection and execution features.");
       }
 
-      const silent = await connectFeature.connect({ silent: true }).catch(() => ({ accounts: [] }));
-      let account = findOperatorAccount(
-        silent.accounts ?? wallet.accounts,
-        request.chain,
-        request.facilityOperatorAddress,
-      );
-      if (!account) {
-        const connected = await connectFeature.connect({ silent: false });
-        account = findOperatorAccount(
-          connected.accounts ?? wallet.accounts,
+      for (const candidate of candidates) {
+        const silent = await candidate.connectFeature.connect({ silent: true }).catch(() => ({ accounts: [] }));
+        const account = findOperatorAccount(
+          silent.accounts ?? candidate.wallet.accounts,
           request.chain,
           request.facilityOperatorAddress,
         );
-      }
-      if (!account) {
-        throw new Error(
-          `${wallet.name} is connected, but it does not expose the configured facility operator address ${request.facilityOperatorAddress}.`,
-        );
+        if (account) return executeWithWallet({ ...candidate, account, request });
       }
 
-      const transaction = Transaction.from(request.transactionJson);
-      const response = await signFeature.signAndExecuteTransaction({
-        account,
-        chain: request.chain,
-        transaction,
-      });
+      const connectionErrors: string[] = [];
+      for (const candidate of candidates) {
+        try {
+          const connected = await candidate.connectFeature.connect({ silent: false });
+          const account = findOperatorAccount(
+            connected.accounts ?? candidate.wallet.accounts,
+            request.chain,
+            request.facilityOperatorAddress,
+          );
+          if (account) return executeWithWallet({ ...candidate, account, request });
+        } catch (error) {
+          connectionErrors.push(
+            error instanceof Error
+              ? `${candidate.wallet.name}: ${error.message}`
+              : `${candidate.wallet.name}: connection failed`,
+          );
+        }
+      }
 
-      return { txDigest: responseDigest(response), walletAddress: account.address, walletName: wallet.name };
+      throw new Error(
+        [
+          `No connected Sui wallet exposes the configured facility operator address ${request.facilityOperatorAddress}.`,
+          connectionErrors.length ? `Wallet errors: ${connectionErrors.join("; ")}` : undefined,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      );
     },
     [wallets],
   );

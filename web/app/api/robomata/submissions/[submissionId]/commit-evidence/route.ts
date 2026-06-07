@@ -127,6 +127,57 @@ async function findCommittedEvidenceEvent(input: {
   return undefined;
 }
 
+function matchesCommittedEvidenceEvent(input: {
+  event: Record<string, unknown>;
+  facilityObjectId: string;
+  label: string;
+  rootDigest: string;
+}): boolean {
+  const parsedJson = (input.event.parsedJson ?? input.event.parsed_json) as
+    | { facility_id?: unknown; evidence_kind?: unknown; evidence_digest?: unknown }
+    | undefined;
+  return Boolean(
+    parsedJson &&
+      typeof parsedJson.facility_id === "string" &&
+      parsedJson.facility_id.toLowerCase() === input.facilityObjectId.toLowerCase() &&
+      parsedJson.evidence_kind === input.label &&
+      digestMatches(parsedJson.evidence_digest, input.rootDigest),
+  );
+}
+
+async function findCommittedEvidenceEventInTransaction(input: {
+  txDigest: string;
+  facilityObjectId: string;
+  label: string;
+  rootDigest: string;
+}): Promise<string | undefined> {
+  const client = getRobomataSuiClient();
+  const expectedEventType = `${process.env.ROBOMATA_SUI_PACKAGE_ID}::facility::EvidenceCommitted`;
+  const response = await withTimeout(
+    signal =>
+      client
+        .getTransactionBlock({
+          digest: input.txDigest,
+          options: { showEvents: true },
+          signal,
+        })
+        .catch(() => undefined),
+    getRobomataSuiTimeoutMs(),
+  );
+  if (!response) return undefined;
+  const events = (response.events ?? []) as unknown as Record<string, unknown>[];
+  const match = events.find(event => {
+    const eventType = event.type;
+    return (
+      typeof eventType === "string" &&
+      eventType === expectedEventType &&
+      matchesCommittedEvidenceEvent({ ...input, event })
+    );
+  });
+
+  return match ? input.txDigest : undefined;
+}
+
 type SuiCommitResult = {
   errorMessage?: string;
   txDigest?: string;
@@ -394,7 +445,15 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
 
     let txDigest: string | undefined;
     try {
-      txDigest = await findCommittedEvidenceEvent({ facilityObjectId, label, rootDigest });
+      txDigest = requestBody.txDigest
+        ? await findCommittedEvidenceEventInTransaction({
+            txDigest: requestBody.txDigest,
+            facilityObjectId,
+            label,
+            rootDigest,
+          })
+        : undefined;
+      txDigest ??= await findCommittedEvidenceEvent({ facilityObjectId, label, rootDigest });
     } catch (error) {
       return NextResponse.json(
         {

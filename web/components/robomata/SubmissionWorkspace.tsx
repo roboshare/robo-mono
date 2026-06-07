@@ -31,6 +31,14 @@ type CommitEvidenceResponse = {
   error?: string;
 };
 
+type PendingOperatorCommit = {
+  submissionId: string;
+  rootDigest: string;
+  txDigest: string;
+  walletAddress: string;
+  walletName: string;
+};
+
 function statusClass(status: FacilitySubmission["status"]) {
   if (status === "committed") return "badge-success";
   if (status === "ready_for_lender") return "badge-info";
@@ -73,6 +81,7 @@ export const SubmissionWorkspace = ({
   const [draftReceivable, setDraftReceivable] = useState<Partial<SubmissionReceivable>>({});
   const [receivablesCsvText, setReceivablesCsvText] = useState("");
   const [evidenceText, setEvidenceText] = useState("");
+  const [pendingOperatorCommit, setPendingOperatorCommit] = useState<PendingOperatorCommit | null>(null);
   const { address: accountAddress, chainId: accountChainId, connectedAddress } = useTransactingAccount();
   const selectedNetwork = useSelectedNetwork(accountChainId);
   const partnerAuthAddress = accountAddress;
@@ -234,6 +243,49 @@ export const SubmissionWorkspace = ({
 
     setIsBusy(true);
     try {
+      const completeOperatorCommit = async (commit: PendingOperatorCommit) => {
+        const completeHeaders = new Headers({ "content-type": "application/json" });
+        const completeAuthHeaders = await getAuthHeaders({
+          chainId: selectedNetwork.id,
+          method: "POST",
+          path,
+          signerAddress,
+        });
+        Object.entries(completeAuthHeaders).forEach(([key, value]) => completeHeaders.set(key, value));
+        const completeResponse = await fetch(path, {
+          method: "POST",
+          headers: completeHeaders,
+          body: JSON.stringify({
+            mode: "operator_complete",
+            txDigest: commit.txDigest,
+            walletAddress: commit.walletAddress,
+          }),
+        });
+        const completePayload = (await completeResponse.json().catch(() => ({}))) as CommitEvidenceResponse;
+        if (completePayload.submission) setSubmission(completePayload.submission);
+        if (!completeResponse.ok || !completePayload.submission) {
+          throw new Error(completePayload.error ?? "Failed to reconcile the operator Sui commit.");
+        }
+
+        if (completeResponse.status === 202) {
+          setPendingOperatorCommit(commit);
+          notification.error(
+            completePayload.error ?? "Sui commit is awaiting event indexing. Retry completion shortly.",
+          );
+        } else {
+          setPendingOperatorCommit(null);
+          notification.success(`Evidence committed with ${commit.walletName}.`);
+        }
+      };
+
+      if (
+        pendingOperatorCommit?.submissionId === submission.id &&
+        pendingOperatorCommit.rootDigest === submission.evidenceCommit.rootDigest
+      ) {
+        await completeOperatorCommit(pendingOperatorCommit);
+        return;
+      }
+
       const prepareHeaders = new Headers({ "content-type": "application/json" });
       const prepareAuthHeaders = await getAuthHeaders({
         chainId: selectedNetwork.id,
@@ -254,35 +306,13 @@ export const SubmissionWorkspace = ({
 
       setSubmission(preparePayload.submission);
       const signed = await signAndExecuteOperatorCommit(preparePayload.operatorCommit);
-
-      const completeHeaders = new Headers({ "content-type": "application/json" });
-      const completeAuthHeaders = await getAuthHeaders({
-        chainId: selectedNetwork.id,
-        method: "POST",
-        path,
-        signerAddress,
+      await completeOperatorCommit({
+        submissionId: submission.id,
+        rootDigest: preparePayload.operatorCommit.rootDigest,
+        txDigest: signed.txDigest,
+        walletAddress: signed.walletAddress,
+        walletName: signed.walletName,
       });
-      Object.entries(completeAuthHeaders).forEach(([key, value]) => completeHeaders.set(key, value));
-      const completeResponse = await fetch(path, {
-        method: "POST",
-        headers: completeHeaders,
-        body: JSON.stringify({
-          mode: "operator_complete",
-          txDigest: signed.txDigest,
-          walletAddress: signed.walletAddress,
-        }),
-      });
-      const completePayload = (await completeResponse.json().catch(() => ({}))) as CommitEvidenceResponse;
-      if (completePayload.submission) setSubmission(completePayload.submission);
-      if (!completeResponse.ok || !completePayload.submission) {
-        throw new Error(completePayload.error ?? "Failed to reconcile the operator Sui commit.");
-      }
-
-      if (completeResponse.status === 202) {
-        notification.error(completePayload.error ?? "Sui commit is awaiting event indexing. Retry completion shortly.");
-      } else {
-        notification.success(`Evidence committed with ${signed.walletName}.`);
-      }
     } catch (error) {
       notification.error(error instanceof Error ? error.message : "Operator Sui evidence commit failed.");
     } finally {
