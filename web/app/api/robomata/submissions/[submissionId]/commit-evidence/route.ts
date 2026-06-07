@@ -186,6 +186,10 @@ async function findCommittedEvidenceEventInTransaction(input: {
   return match ? input.txDigest : undefined;
 }
 
+function isFailedSuiTransactionError(error: unknown): error is Error {
+  return error instanceof Error && /^Sui transaction .+ failed/.test(error.message);
+}
+
 type SuiCommitResult = {
   errorMessage?: string;
   txDigest?: string;
@@ -482,11 +486,16 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
         : undefined;
       txDigest ??= await findCommittedEvidenceEvent({ facilityObjectId, label, rootDigest });
     } catch (error) {
+      if (isFailedSuiTransactionError(error)) {
+        const released = await store.failEvidenceCommit(submission.id, rootDigest, error.message);
+        return NextResponse.json({ submission: released ?? submission, error: error.message }, { status: 409 });
+      }
+
       return NextResponse.json(
         {
           error:
             error instanceof Error
-              ? `Stale evidence commit requires Sui reconciliation, but event lookup failed: ${error.message}`
+              ? "Stale evidence commit requires Sui reconciliation, but event lookup failed: " + error.message
               : "Stale evidence commit requires Sui reconciliation, but event lookup failed.",
         },
         { status: 409 },
@@ -588,11 +597,16 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
         : undefined;
       txDigest ??= await findCommittedEvidenceEvent({ facilityObjectId, label, rootDigest });
     } catch (error) {
+      if (isFailedSuiTransactionError(error)) {
+        const released = await store.failEvidenceCommit(submission.id, rootDigest, error.message);
+        return NextResponse.json({ submission: released ?? submission, error: error.message }, { status: 409 });
+      }
+
       return NextResponse.json(
         {
           error:
             error instanceof Error
-              ? `Operator Sui commit requires event reconciliation, but event lookup failed: ${error.message}`
+              ? "Operator Sui commit requires event reconciliation, but event lookup failed: " + error.message
               : "Operator Sui commit requires event reconciliation, but event lookup failed.",
         },
         { status: 409 },
