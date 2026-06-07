@@ -264,7 +264,11 @@ export const SubmissionWorkspace = ({
         const completePayload = (await completeResponse.json().catch(() => ({}))) as CommitEvidenceResponse;
         if (completePayload.submission) setSubmission(completePayload.submission);
         if (!completeResponse.ok || !completePayload.submission) {
-          throw new Error(completePayload.error ?? "Failed to reconcile the operator Sui commit.");
+          const errorMessage = completePayload.error ?? "Failed to reconcile the operator Sui commit.";
+          if (errorMessage.includes("Sui transaction") && errorMessage.includes("failed")) {
+            setPendingOperatorCommit(null);
+          }
+          throw new Error(errorMessage);
         }
 
         if (completeResponse.status === 202) {
@@ -306,13 +310,15 @@ export const SubmissionWorkspace = ({
 
       setSubmission(preparePayload.submission);
       const signed = await signAndExecuteOperatorCommit(preparePayload.operatorCommit);
-      await completeOperatorCommit({
+      const pendingCommit = {
         submissionId: submission.id,
         rootDigest: preparePayload.operatorCommit.rootDigest,
         txDigest: signed.txDigest,
         walletAddress: signed.walletAddress,
         walletName: signed.walletName,
-      });
+      };
+      setPendingOperatorCommit(pendingCommit);
+      await completeOperatorCommit(pendingCommit);
     } catch (error) {
       notification.error(error instanceof Error ? error.message : "Operator Sui evidence commit failed.");
     } finally {

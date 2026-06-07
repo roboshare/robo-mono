@@ -179,10 +179,10 @@ async function buildEvidenceCommitPreview(submission: FacilitySubmission, eviden
     modulePath: SUI_COMMIT_MODULE_PATH,
     facilityObjectId,
     facilityOperatorAddress,
-    commitMode: isRobomataSuiCommitRuntimeConfigured({ facilityObjectId, facilityOperatorAddress })
-      ? ("configured" as const)
-      : isRobomataSuiOperatorCommitRuntimeConfigured({ facilityObjectId, facilityOperatorAddress })
-        ? ("operator_configured" as const)
+    commitMode: isRobomataSuiOperatorCommitRuntimeConfigured({ facilityObjectId, facilityOperatorAddress })
+      ? ("operator_configured" as const)
+      : isRobomataSuiCommitRuntimeConfigured({ facilityObjectId, facilityOperatorAddress })
+        ? ("configured" as const)
         : ("prepared" as const),
   };
 }

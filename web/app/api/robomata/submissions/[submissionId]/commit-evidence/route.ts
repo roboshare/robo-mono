@@ -165,6 +165,14 @@ async function findCommittedEvidenceEventInTransaction(input: {
     getRobomataSuiTimeoutMs(),
   );
   if (!response) return undefined;
+  const status = response.effects?.status;
+  if (status?.status === "failure") {
+    throw new Error(
+      status.error
+        ? `Sui transaction ${input.txDigest} failed: ${status.error}`
+        : `Sui transaction ${input.txDigest} failed before emitting EvidenceCommitted.`,
+    );
+  }
   const events = (response.events ?? []) as unknown as Record<string, unknown>[];
   const match = events.find(event => {
     const eventType = event.type;
@@ -533,7 +541,15 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
 
     let txDigest: string | undefined;
     try {
-      txDigest = await findCommittedEvidenceEvent({ facilityObjectId, label, rootDigest });
+      txDigest = requestBody.txDigest
+        ? await findCommittedEvidenceEventInTransaction({
+            txDigest: requestBody.txDigest,
+            facilityObjectId,
+            label,
+            rootDigest,
+          })
+        : undefined;
+      txDigest ??= await findCommittedEvidenceEvent({ facilityObjectId, label, rootDigest });
     } catch (error) {
       return NextResponse.json(
         {

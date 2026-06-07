@@ -25,7 +25,12 @@ type SuiSignAndExecuteFeature = {
     account: SuiWalletAccount;
     chain: string;
     transaction: Transaction;
-  }) => Promise<{ digest?: string; effects?: string; bytes?: string; signature?: string }>;
+  }) => Promise<{
+    digest?: string;
+    effects?: string | { status?: { status?: string; error?: string } };
+    bytes?: string;
+    signature?: string;
+  }>;
 };
 
 export type OperatorSuiCommitRequest = {
@@ -82,6 +87,20 @@ function responseDigest(response: { digest?: string }): string {
   throw new Error("Sui wallet did not return a transaction digest.");
 }
 
+function assertWalletExecutionSucceeded(response: {
+  effects?: string | { status?: { status?: string; error?: string } };
+}) {
+  if (!response.effects || typeof response.effects === "string") return;
+  const status = response.effects.status;
+  if (status?.status === "failure") {
+    throw new Error(
+      status.error
+        ? `Sui wallet executed a failed transaction: ${status.error}`
+        : "Sui wallet executed a failed transaction.",
+    );
+  }
+}
+
 async function executeWithWallet(input: {
   wallet: SuiWallet;
   account: SuiWalletAccount;
@@ -94,6 +113,7 @@ async function executeWithWallet(input: {
     chain: input.request.chain,
     transaction,
   });
+  assertWalletExecutionSucceeded(response);
 
   return {
     txDigest: responseDigest(response),
