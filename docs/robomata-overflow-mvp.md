@@ -190,10 +190,14 @@ Use the flags as a matrix:
 - `ROBOMATA_SUI_SIGNER_ADDRESS=0x...` must match both the server signer's
   derived Sui address and the mapped facility operator before the runtime
   exposes the server-side Sui commit path.
-- Privy currently supports Sui at the wallet-abstraction/signing layer rather
-  than through this repo's existing EVM wagmi hooks. The MVP uses
-  wallet-standard discovery for Sui execution, so a Privy-provided or external
-  Sui wallet must be available in the browser for operator-owned commits.
+- `ROBOMATA_PRIVY_SUI_WALLET_BINDING_ENABLED=true` and
+  `NEXT_PUBLIC_ROBOMATA_PRIVY_SUI_WALLET_BINDING_ENABLED=true` let Robomata
+  automatically provision and bind a Privy-managed Sui wallet for an authorized
+  signed-in partner. The wallet is created with `chain_type=sui` and owned by
+  the verified Privy user. The current execution path still keeps
+  wallet-standard Sui extensions available as the transaction-signing fallback
+  until Privy raw-sign execution is enabled with user authorization signatures
+  and a suitable Sui policy.
 - `ROBOMATA_SUI_COMMIT_STALE_MS` optionally overrides the default ten-minute
   stale threshold for in-progress Sui commits. Stale attempts are reconciled
   against Sui `EvidenceCommitted` events before the app permits another commit
