@@ -39,6 +39,7 @@ type CommitEvidenceResponse = {
 
 type PendingOperatorCommit = {
   operatorSignature?: string;
+  sponsorGasObjectId?: string;
   sponsorSignature?: string;
   submissionId: string;
   rootDigest: string;
@@ -287,6 +288,7 @@ export const SubmissionWorkspace = ({
           body: JSON.stringify({
             mode: isSponsoredCommit ? "operator_complete_sponsored" : "operator_complete",
             operatorSignature: commit.operatorSignature,
+            sponsorGasObjectId: commit.sponsorGasObjectId,
             sponsorSignature: commit.sponsorSignature,
             transactionBytes: commit.transactionBytes,
             txDigest: commit.txDigest,
@@ -317,7 +319,7 @@ export const SubmissionWorkspace = ({
         }
       };
 
-      const releasePreparedOperatorCommit = async () => {
+      const releasePreparedOperatorCommit = async (sponsorGasObjectId?: string) => {
         const releaseHeaders = new Headers({ "content-type": "application/json" });
         const releaseAuthHeaders = await getAuthHeaders({
           chainId: selectedNetwork.id,
@@ -329,7 +331,7 @@ export const SubmissionWorkspace = ({
         const releaseResponse = await fetch(path, {
           method: "POST",
           headers: releaseHeaders,
-          body: JSON.stringify({ mode: "operator_release" }),
+          body: JSON.stringify({ mode: "operator_release", sponsorGasObjectId }),
         });
         const releasePayload = (await releaseResponse.json().catch(() => ({}))) as CommitEvidenceResponse;
         if (releasePayload.submission) setSubmission(releasePayload.submission);
@@ -376,7 +378,7 @@ export const SubmissionWorkspace = ({
         signed = await signAndExecuteOperatorCommit(preparePayload.operatorCommit);
       } catch (error) {
         if (shouldReleaseOperatorCommitReservation(error)) {
-          await releasePreparedOperatorCommit();
+          await releasePreparedOperatorCommit(preparePayload.operatorCommit.sponsorship?.gasObjectId);
         }
         throw error;
       }
@@ -384,6 +386,7 @@ export const SubmissionWorkspace = ({
         submissionId: submission.id,
         rootDigest: preparePayload.operatorCommit.rootDigest,
         operatorSignature: signed.operatorSignature,
+        sponsorGasObjectId: signed.sponsorGasObjectId,
         sponsorSignature: signed.sponsorSignature,
         transactionBytes: signed.transactionBytes,
         txDigest: signed.txDigest,

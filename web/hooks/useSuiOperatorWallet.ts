@@ -211,6 +211,7 @@ async function signSponsoredWithWallet(input: {
   }
 
   return {
+    sponsorGasObjectId: input.request.sponsorship.gasObjectId,
     operatorSignature: response.signature,
     sponsorSignature: input.request.sponsorship.sponsorSignature,
     transactionBytes: response.bytes ?? input.request.sponsorship.transactionBytes,
@@ -247,6 +248,7 @@ export function useSuiOperatorWallet() {
       request: OperatorSuiCommitRequest,
     ): Promise<{
       operatorSignature?: string;
+      sponsorGasObjectId?: string;
       sponsorSignature?: string;
       transactionBytes?: string;
       txDigest?: string;

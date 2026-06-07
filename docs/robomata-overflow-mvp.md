@@ -195,8 +195,12 @@ Use the flags as a matrix:
   requiring the sponsor private key to derive to the expected address.
 - `ROBOMATA_SUI_SPONSOR_GAS_BUDGET` and
   `ROBOMATA_SUI_SPONSOR_MIN_COIN_BALANCE` optionally tune native sponsorship
-  budgets in MIST. The first tranche selects one sponsor SUI coin whose balance
-  is at least the configured minimum.
+  budgets in MIST. The sponsor selector scans paginated SUI coins, reserves the
+  selected gas object id before sponsor-signing, and releases the reservation if
+  the operator cancels before a digest is returned.
+- `ROBOMATA_SUI_SPONSOR_COIN_QUERY_MAX_PAGES` optionally controls how many pages
+  of sponsor SUI coins are scanned before reporting no available unreserved gas
+  coin.
 - `ROBOMATA_SUI_FACILITY_IDS_JSON={"sub_...":"0x..."}` maps each submission id
   to its own Sui facility object. Do not use facility names as keys; names are
   mutable operator input and are not safe authorization boundaries.
