@@ -193,7 +193,7 @@ type SuiCommitResult = {
 };
 
 type CommitEvidenceRequest = {
-  mode?: "server" | "operator_prepare" | "operator_complete";
+  mode?: "server" | "operator_prepare" | "operator_complete" | "operator_release";
   txDigest?: string;
   walletAddress?: string;
 };
@@ -215,7 +215,10 @@ async function parseCommitEvidenceRequest(request: NextRequest): Promise<CommitE
     const input = parsed as Record<string, unknown>;
     const mode = input.mode;
     return {
-      mode: mode === "operator_prepare" || mode === "operator_complete" || mode === "server" ? mode : undefined,
+      mode:
+        mode === "operator_prepare" || mode === "operator_complete" || mode === "operator_release" || mode === "server"
+          ? mode
+          : undefined,
       txDigest: typeof input.txDigest === "string" ? input.txDigest.trim() : undefined,
       walletAddress: typeof input.walletAddress === "string" ? input.walletAddress.trim() : undefined,
     };
@@ -433,7 +436,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     );
   }
 
-  if ((commitMode === "operator_prepare" || commitMode === "operator_complete") && !operatorCommitConfigured) {
+  if (["operator_prepare", "operator_complete", "operator_release"].includes(commitMode) && !operatorCommitConfigured) {
     return NextResponse.json(
       { error: "Operator-owned Sui commit is not configured for this app runtime." },
       { status: 400 },
@@ -442,10 +445,23 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
 
   const rootDigest = submission.evidenceCommit.rootDigest;
   const label = `submission_${submission.id}`;
+  let operatorWalletAddress: string | undefined;
+  if (commitMode === "operator_complete") {
+    operatorWalletAddress = requestBody.walletAddress?.toLowerCase();
+    if (!operatorWalletAddress) {
+      return NextResponse.json({ error: "Operator Sui wallet address is required." }, { status: 400 });
+    }
+    if (operatorWalletAddress !== facilityOperatorAddress.toLowerCase()) {
+      return NextResponse.json(
+        { error: "Operator Sui wallet does not match the configured facility operator." },
+        { status: 400 },
+      );
+    }
+  }
 
   if (
     submission.evidenceCommit.status === "committing" &&
-    (commitMode !== "operator_complete" || isStaleCommit(submission))
+    (!(commitMode === "operator_complete" || commitMode === "operator_release") || isStaleCommit(submission))
   ) {
     if (!isStaleCommit(submission)) {
       return NextResponse.json(
@@ -483,6 +499,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
         committedAt: new Date().toISOString(),
         facilityObjectId,
         facilityOperatorAddress,
+        ...(commitMode === "operator_complete"
+          ? {
+              commitAuthority: "operator" as const,
+              operatorWalletAddress: operatorWalletAddress ?? facilityOperatorAddress,
+            }
+          : {}),
       });
       if (reconciled) return NextResponse.json({ submission: reconciled });
 
@@ -506,6 +528,16 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       );
     }
     submission = released;
+  }
+
+  if (commitMode === "operator_release") {
+    if (submission.evidenceCommit.status !== "committing") return NextResponse.json({ submission });
+    const released = await store.failEvidenceCommit(
+      submission.id,
+      rootDigest,
+      "Operator Sui wallet signing was cancelled before a transaction digest was returned.",
+    );
+    return NextResponse.json({ submission: released ?? submission });
   }
 
   if (commitMode === "operator_prepare") {
@@ -544,17 +576,6 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
   }
 
   if (commitMode === "operator_complete") {
-    const walletAddress = requestBody.walletAddress?.toLowerCase();
-    if (!walletAddress) {
-      return NextResponse.json({ error: "Operator Sui wallet address is required." }, { status: 400 });
-    }
-    if (walletAddress !== facilityOperatorAddress.toLowerCase()) {
-      return NextResponse.json(
-        { error: "Operator Sui wallet does not match the configured facility operator." },
-        { status: 400 },
-      );
-    }
-
     let txDigest: string | undefined;
     try {
       txDigest = requestBody.txDigest
@@ -596,7 +617,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       facilityObjectId,
       facilityOperatorAddress,
       commitAuthority: "operator",
-      operatorWalletAddress: walletAddress,
+      operatorWalletAddress: operatorWalletAddress ?? facilityOperatorAddress,
     });
 
     if (saved) return NextResponse.json({ submission: saved });

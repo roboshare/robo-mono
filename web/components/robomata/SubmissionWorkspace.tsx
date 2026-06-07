@@ -95,6 +95,11 @@ export const SubmissionWorkspace = ({
   );
   const isCommitted = submission?.status === "committed" || submission?.evidenceCommit.status === "committed";
   const canMutate = !readOnly && !isCommitted;
+  const canRetryPendingOperatorCommit = Boolean(
+    submission &&
+      pendingOperatorCommit?.submissionId === submission.id &&
+      pendingOperatorCommit.rootDigest === submission.evidenceCommit.rootDigest,
+  );
 
   const loadSubmission = useCallback(async () => {
     setIsLoading(true);
@@ -282,10 +287,28 @@ export const SubmissionWorkspace = ({
         }
       };
 
-      if (
-        pendingOperatorCommit?.submissionId === submission.id &&
-        pendingOperatorCommit.rootDigest === submission.evidenceCommit.rootDigest
-      ) {
+      const releasePreparedOperatorCommit = async () => {
+        const releaseHeaders = new Headers({ "content-type": "application/json" });
+        const releaseAuthHeaders = await getAuthHeaders({
+          chainId: selectedNetwork.id,
+          method: "POST",
+          path,
+          signerAddress,
+        });
+        Object.entries(releaseAuthHeaders).forEach(([key, value]) => releaseHeaders.set(key, value));
+        const releaseResponse = await fetch(path, {
+          method: "POST",
+          headers: releaseHeaders,
+          body: JSON.stringify({ mode: "operator_release" }),
+        });
+        const releasePayload = (await releaseResponse.json().catch(() => ({}))) as CommitEvidenceResponse;
+        if (releasePayload.submission) setSubmission(releasePayload.submission);
+        if (!releaseResponse.ok) {
+          throw new Error(releasePayload.error ?? "Failed to release the prepared Sui commit.");
+        }
+      };
+
+      if (canRetryPendingOperatorCommit && pendingOperatorCommit) {
         await completeOperatorCommit(pendingOperatorCommit);
         return;
       }
@@ -309,7 +332,13 @@ export const SubmissionWorkspace = ({
       }
 
       setSubmission(preparePayload.submission);
-      const signed = await signAndExecuteOperatorCommit(preparePayload.operatorCommit);
+      let signed;
+      try {
+        signed = await signAndExecuteOperatorCommit(preparePayload.operatorCommit);
+      } catch (error) {
+        await releasePreparedOperatorCommit();
+        throw error;
+      }
       const pendingCommit = {
         submissionId: submission.id,
         rootDigest: preparePayload.operatorCommit.rootDigest,
@@ -924,7 +953,10 @@ export const SubmissionWorkspace = ({
                       className="btn btn-primary mt-4 rounded-full"
                       onClick={commitEvidence}
                       disabled={
-                        isBusy || (submission.evidenceCommit.commitMode === "operator_configured" && !hasSuiWallet)
+                        isBusy ||
+                        (submission.evidenceCommit.commitMode === "operator_configured" &&
+                          !hasSuiWallet &&
+                          !canRetryPendingOperatorCommit)
                       }
                     >
                       {submission.evidenceCommit.status === "committing"
