@@ -158,7 +158,7 @@ async function findCommittedEvidenceEventInTransaction(input: {
       client
         .getTransactionBlock({
           digest: input.txDigest,
-          options: { showEvents: true },
+          options: { showEvents: true, showEffects: true },
           signal,
         })
         .catch(() => undefined),
@@ -443,7 +443,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
   const rootDigest = submission.evidenceCommit.rootDigest;
   const label = `submission_${submission.id}`;
 
-  if (submission.evidenceCommit.status === "committing") {
+  if (
+    submission.evidenceCommit.status === "committing" &&
+    (commitMode !== "operator_complete" || isStaleCommit(submission))
+  ) {
     if (!isStaleCommit(submission)) {
       return NextResponse.json(
         { error: "Evidence commit is already in progress for this submission." },
@@ -506,6 +509,16 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
   }
 
   if (commitMode === "operator_prepare") {
+    const committingSubmission = await store.beginEvidenceCommit(submission.id, rootDigest, new Date().toISOString());
+    if (!committingSubmission) {
+      const latest = await store.get(submission.id);
+      if (latest?.evidenceCommit.status === "committed") return NextResponse.json({ submission: latest });
+      return NextResponse.json(
+        { error: "Evidence commit is already in progress or the evidence root has changed." },
+        { status: 409 },
+      );
+    }
+
     try {
       const operatorCommit = await prepareOperatorSuiCommit({
         facilityObjectId,
@@ -513,14 +526,17 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
         label,
         rootDigest,
       });
-      return NextResponse.json({ submission, operatorCommit });
+      return NextResponse.json({ submission: committingSubmission, operatorCommit });
     } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? "Failed to prepare operator Sui transaction: " + error.message
+          : "Failed to prepare operator Sui transaction.";
+      const failed = await store.failEvidenceCommit(committingSubmission.id, rootDigest, errorMessage);
       return NextResponse.json(
         {
-          error:
-            error instanceof Error
-              ? `Failed to prepare operator Sui transaction: ${error.message}`
-              : "Failed to prepare operator Sui transaction.",
+          submission: failed ?? committingSubmission,
+          error: errorMessage,
         },
         { status: 500 },
       );
