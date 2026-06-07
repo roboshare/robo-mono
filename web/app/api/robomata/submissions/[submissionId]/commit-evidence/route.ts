@@ -433,6 +433,13 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     facilityOperatorAddress,
   });
 
+  if (commitMode === "server" && operatorCommitConfigured) {
+    return NextResponse.json(
+      { error: "Operator-owned Sui commit is enabled for this submission; server signing is disabled." },
+      { status: 400 },
+    );
+  }
+
   if (commitMode === "server" && !serverCommitConfigured) {
     return NextResponse.json(
       { error: "Sui commit environment is not configured for this app runtime." },
@@ -452,10 +459,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
   let operatorWalletAddress: string | undefined;
   if (commitMode === "operator_complete") {
     operatorWalletAddress = requestBody.walletAddress?.toLowerCase();
-    if (!operatorWalletAddress) {
+    if (requestBody.txDigest && !operatorWalletAddress) {
       return NextResponse.json({ error: "Operator Sui wallet address is required." }, { status: 400 });
     }
-    if (operatorWalletAddress !== facilityOperatorAddress.toLowerCase()) {
+    if (operatorWalletAddress && operatorWalletAddress !== facilityOperatorAddress.toLowerCase()) {
       return NextResponse.json(
         { error: "Operator Sui wallet does not match the configured facility operator." },
         { status: 400 },
@@ -533,6 +540,15 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       if (latest?.evidenceCommit.status === "committed") return NextResponse.json({ submission: latest });
       return NextResponse.json(
         { error: "Evidence commit state changed before the stale attempt could be released." },
+        { status: 409 },
+      );
+    }
+    if (commitMode === "operator_complete") {
+      return NextResponse.json(
+        {
+          submission: released,
+          error: "Previous operator evidence commit attempt timed out before a matching Sui event was found.",
+        },
         { status: 409 },
       );
     }

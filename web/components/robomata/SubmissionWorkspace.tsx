@@ -38,8 +38,8 @@ type CommitEvidenceResponse = {
 type PendingOperatorCommit = {
   submissionId: string;
   rootDigest: string;
-  txDigest: string;
-  walletAddress: string;
+  txDigest?: string;
+  walletAddress?: string;
   walletName: string;
 };
 
@@ -274,7 +274,10 @@ export const SubmissionWorkspace = ({
         if (completePayload.submission) setSubmission(completePayload.submission);
         if (!completeResponse.ok || !completePayload.submission) {
           const errorMessage = completePayload.error ?? "Failed to reconcile the operator Sui commit.";
-          if (errorMessage.includes("Sui transaction") && errorMessage.includes("failed")) {
+          if (
+            completePayload.submission?.evidenceCommit.status === "failed" ||
+            (errorMessage.includes("Sui transaction") && errorMessage.includes("failed"))
+          ) {
             setPendingOperatorCommit(null);
           }
           throw new Error(errorMessage);
@@ -314,6 +317,15 @@ export const SubmissionWorkspace = ({
 
       if (canRetryPendingOperatorCommit && pendingOperatorCommit) {
         await completeOperatorCommit(pendingOperatorCommit);
+        return;
+      }
+
+      if (submission.evidenceCommit.status === "committing") {
+        await completeOperatorCommit({
+          submissionId: submission.id,
+          rootDigest: submission.evidenceCommit.rootDigest ?? "",
+          walletName: "Sui wallet",
+        });
         return;
       }
 
