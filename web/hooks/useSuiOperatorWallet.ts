@@ -40,6 +40,31 @@ export type OperatorSuiCommitRequest = {
   rootDigest: string;
 };
 
+export class OperatorSuiWalletError extends Error {
+  constructor(
+    message: string,
+    readonly releaseReservation: boolean,
+  ) {
+    super(message);
+    this.name = "OperatorSuiWalletError";
+  }
+}
+
+export function shouldReleaseOperatorCommitReservation(error: unknown): boolean {
+  return error instanceof OperatorSuiWalletError && error.releaseReservation;
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
+function isUserRejectedWalletError(error: unknown): boolean {
+  if (typeof error === "object" && error && "code" in error && (error as { code?: unknown }).code === 4001) {
+    return true;
+  }
+  return /\b(cancelled|canceled|denied|rejected)\b/i.test(errorMessage(error, ""));
+}
+
 function normalizeAddress(address: string): string {
   return address.trim().toLowerCase();
 }
@@ -84,7 +109,7 @@ function findOperatorAccount(accounts: readonly SuiWalletAccount[], chain: strin
 
 function responseDigest(response: { digest?: string }): string {
   if (typeof response.digest === "string" && response.digest.trim()) return response.digest.trim();
-  throw new Error("Sui wallet did not return a transaction digest.");
+  throw new OperatorSuiWalletError("Sui wallet did not return a transaction digest.", false);
 }
 
 function assertWalletExecutionSucceeded(response: {
@@ -93,10 +118,11 @@ function assertWalletExecutionSucceeded(response: {
   if (!response.effects || typeof response.effects === "string") return;
   const status = response.effects.status;
   if (status?.status === "failure") {
-    throw new Error(
+    throw new OperatorSuiWalletError(
       status.error
         ? `Sui wallet executed a failed transaction: ${status.error}`
         : "Sui wallet executed a failed transaction.",
+      true,
     );
   }
 }
@@ -108,11 +134,19 @@ async function executeWithWallet(input: {
   signFeature: SuiSignAndExecuteFeature;
 }) {
   const transaction = Transaction.from(input.request.transactionJson);
-  const response = await input.signFeature.signAndExecuteTransaction({
-    account: input.account,
-    chain: input.request.chain,
-    transaction,
-  });
+  let response: Awaited<ReturnType<SuiSignAndExecuteFeature["signAndExecuteTransaction"]>>;
+  try {
+    response = await input.signFeature.signAndExecuteTransaction({
+      account: input.account,
+      chain: input.request.chain,
+      transaction,
+    });
+  } catch (error) {
+    throw new OperatorSuiWalletError(
+      errorMessage(error, "Sui wallet did not return a transaction execution response."),
+      isUserRejectedWalletError(error),
+    );
+  }
   assertWalletExecutionSucceeded(response);
 
   return {
@@ -150,7 +184,10 @@ export function useSuiOperatorWallet() {
       request: OperatorSuiCommitRequest,
     ): Promise<{ txDigest: string; walletAddress: string; walletName: string }> => {
       if (!wallets.length) {
-        throw new Error("No Sui wallet with sign-and-execute support is available in this browser.");
+        throw new OperatorSuiWalletError(
+          "No Sui wallet with sign-and-execute support is available in this browser.",
+          true,
+        );
       }
 
       const candidates = wallets
@@ -170,7 +207,10 @@ export function useSuiOperatorWallet() {
         );
 
       if (!candidates.length) {
-        throw new Error("No Sui wallet exposes the required wallet-standard connection and execution features.");
+        throw new OperatorSuiWalletError(
+          "No Sui wallet exposes the required wallet-standard connection and execution features.",
+          true,
+        );
       }
 
       for (const candidate of candidates) {
@@ -202,13 +242,14 @@ export function useSuiOperatorWallet() {
         }
       }
 
-      throw new Error(
+      throw new OperatorSuiWalletError(
         [
           `No connected Sui wallet exposes the configured facility operator address ${request.facilityOperatorAddress}.`,
           connectionErrors.length ? `Wallet errors: ${connectionErrors.join("; ")}` : undefined,
         ]
           .filter(Boolean)
           .join(" "),
+        true,
       );
     },
     [wallets],

@@ -13,7 +13,11 @@ import {
 } from "@heroicons/react/24/outline";
 import { useSelectedNetwork } from "~~/hooks/scaffold-eth";
 import { useRobomataApiAuth } from "~~/hooks/useRobomataApiAuth";
-import { type OperatorSuiCommitRequest, useSuiOperatorWallet } from "~~/hooks/useSuiOperatorWallet";
+import {
+  type OperatorSuiCommitRequest,
+  shouldReleaseOperatorCommitReservation,
+  useSuiOperatorWallet,
+} from "~~/hooks/useSuiOperatorWallet";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
 import { formatPercentFromBps, formatUsd } from "~~/lib/robomata/borrowingBase";
 import type { FacilitySubmission, SubmissionComputation, SubmissionReceivable } from "~~/lib/robomata/submissions";
@@ -336,7 +340,9 @@ export const SubmissionWorkspace = ({
       try {
         signed = await signAndExecuteOperatorCommit(preparePayload.operatorCommit);
       } catch (error) {
-        await releasePreparedOperatorCommit();
+        if (shouldReleaseOperatorCommitReservation(error)) {
+          await releasePreparedOperatorCommit();
+        }
         throw error;
       }
       const pendingCommit = {
