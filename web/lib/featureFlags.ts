@@ -32,6 +32,10 @@ export function isRobomataSuiOperatorCommitEnabled(): boolean {
   return isEnabled(process.env.ROBOMATA_SUI_OPERATOR_COMMIT_ENABLED);
 }
 
+export function isRobomataSuiSponsorshipEnabled(): boolean {
+  return isEnabled(process.env.ROBOMATA_SUI_SPONSORSHIP_ENABLED);
+}
+
 export function isRobomataPrivySuiWalletBindingEnabled(): boolean {
   return isEnabled(process.env.ROBOMATA_PRIVY_SUI_WALLET_BINDING_ENABLED);
 }

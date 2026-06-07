@@ -33,12 +33,17 @@ type SubmissionWorkspaceProps = {
 type CommitEvidenceResponse = {
   submission?: FacilitySubmission;
   operatorCommit?: OperatorSuiCommitRequest;
+  txDigest?: string;
   error?: string;
 };
 
 type PendingOperatorCommit = {
+  operatorSignature?: string;
+  sponsorGasObjectId?: string;
+  sponsorSignature?: string;
   submissionId: string;
   rootDigest: string;
+  transactionBytes?: string;
   txDigest?: string;
   walletAddress?: string;
   walletName: string;
@@ -266,6 +271,9 @@ export const SubmissionWorkspace = ({
     setIsBusy(true);
     try {
       const completeOperatorCommit = async (commit: PendingOperatorCommit) => {
+        const isSponsoredCommit = Boolean(
+          commit.sponsorSignature || commit.operatorSignature || commit.transactionBytes,
+        );
         const completeHeaders = new Headers({ "content-type": "application/json" });
         const completeAuthHeaders = await getAuthHeaders({
           chainId: selectedNetwork.id,
@@ -278,7 +286,11 @@ export const SubmissionWorkspace = ({
           method: "POST",
           headers: completeHeaders,
           body: JSON.stringify({
-            mode: "operator_complete",
+            mode: isSponsoredCommit ? "operator_complete_sponsored" : "operator_complete",
+            operatorSignature: commit.operatorSignature,
+            sponsorGasObjectId: commit.sponsorGasObjectId,
+            sponsorSignature: commit.sponsorSignature,
+            transactionBytes: commit.transactionBytes,
             txDigest: commit.txDigest,
             walletAddress: commit.walletAddress,
           }),
@@ -297,7 +309,7 @@ export const SubmissionWorkspace = ({
         }
 
         if (completeResponse.status === 202) {
-          setPendingOperatorCommit(commit);
+          setPendingOperatorCommit({ ...commit, txDigest: completePayload.txDigest ?? commit.txDigest });
           notification.error(
             completePayload.error ?? "Sui commit is awaiting event indexing. Retry completion shortly.",
           );
@@ -307,7 +319,7 @@ export const SubmissionWorkspace = ({
         }
       };
 
-      const releasePreparedOperatorCommit = async () => {
+      const releasePreparedOperatorCommit = async (sponsorGasObjectId?: string) => {
         const releaseHeaders = new Headers({ "content-type": "application/json" });
         const releaseAuthHeaders = await getAuthHeaders({
           chainId: selectedNetwork.id,
@@ -319,7 +331,7 @@ export const SubmissionWorkspace = ({
         const releaseResponse = await fetch(path, {
           method: "POST",
           headers: releaseHeaders,
-          body: JSON.stringify({ mode: "operator_release" }),
+          body: JSON.stringify({ mode: "operator_release", sponsorGasObjectId }),
         });
         const releasePayload = (await releaseResponse.json().catch(() => ({}))) as CommitEvidenceResponse;
         if (releasePayload.submission) setSubmission(releasePayload.submission);
@@ -366,13 +378,17 @@ export const SubmissionWorkspace = ({
         signed = await signAndExecuteOperatorCommit(preparePayload.operatorCommit);
       } catch (error) {
         if (shouldReleaseOperatorCommitReservation(error)) {
-          await releasePreparedOperatorCommit();
+          await releasePreparedOperatorCommit(preparePayload.operatorCommit.sponsorship?.gasObjectId);
         }
         throw error;
       }
       const pendingCommit = {
         submissionId: submission.id,
         rootDigest: preparePayload.operatorCommit.rootDigest,
+        operatorSignature: signed.operatorSignature,
+        sponsorGasObjectId: signed.sponsorGasObjectId,
+        sponsorSignature: signed.sponsorSignature,
+        transactionBytes: signed.transactionBytes,
         txDigest: signed.txDigest,
         walletAddress: signed.walletAddress,
         walletName: signed.walletName,

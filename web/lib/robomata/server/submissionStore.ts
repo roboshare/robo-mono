@@ -49,6 +49,8 @@ type CompleteEvidenceCommitInput = {
   facilityOperatorAddress: string;
   commitAuthority?: "server" | "operator";
   operatorWalletAddress?: string;
+  sponsorshipMode?: "native_sui";
+  sponsorAddress?: string;
 };
 
 let ensuredPostgresTable = false;
@@ -119,12 +121,16 @@ function applyCompleteEvidenceCommit(
     facilityObjectId: input.facilityObjectId,
     facilityOperatorAddress: input.facilityOperatorAddress,
     operatorWalletAddress: input.operatorWalletAddress,
+    sponsorshipMode: input.sponsorshipMode,
+    sponsorAddress: input.sponsorAddress,
     errorMessage: undefined,
   };
   submission.auditEvents.unshift(
     createAuditEvent("sui_commit_completed", `Committed evidence root for ${submission.facilityName}.`, {
       txDigest: input.txDigest ?? null,
       commitAuthority: input.commitAuthority ?? "server",
+      sponsorshipMode: input.sponsorshipMode ?? null,
+      sponsorAddress: input.sponsorAddress ?? null,
     }),
   );
   return touchSubmission(submission);
