@@ -2,7 +2,10 @@ import { buildAgentReviewInput, reviewBorrowingBase } from "~~/lib/robomata/agen
 import { type BorrowingBaseResult, type FleetPortfolio, type ReceivableResult } from "~~/lib/robomata/borrowingBase";
 import { buildEvidenceAnchor, buildEvidenceRail } from "~~/lib/robomata/evidence";
 import { buildLenderPacket } from "~~/lib/robomata/lenderPacket";
-import { isRobomataSuiCommitRuntimeConfigured } from "~~/lib/robomata/server/suiCommitConfig";
+import {
+  isRobomataSuiCommitRuntimeConfigured,
+  isRobomataSuiOperatorCommitRuntimeConfigured,
+} from "~~/lib/robomata/server/suiCommitConfig";
 import {
   type FacilitySubmission,
   SUI_COMMIT_MODULE_PATH,
@@ -178,7 +181,9 @@ async function buildEvidenceCommitPreview(submission: FacilitySubmission, eviden
     facilityOperatorAddress,
     commitMode: isRobomataSuiCommitRuntimeConfigured({ facilityObjectId, facilityOperatorAddress })
       ? ("configured" as const)
-      : ("prepared" as const),
+      : isRobomataSuiOperatorCommitRuntimeConfigured({ facilityObjectId, facilityOperatorAddress })
+        ? ("operator_configured" as const)
+        : ("prepared" as const),
   };
 }
 
