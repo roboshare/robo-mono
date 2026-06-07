@@ -973,6 +973,7 @@ export const SubmissionWorkspace = ({
                       disabled={
                         isBusy ||
                         (submission.evidenceCommit.commitMode === "operator_configured" &&
+                          submission.evidenceCommit.status !== "committing" &&
                           !hasSuiWallet &&
                           !canRetryPendingOperatorCommit)
                       }
