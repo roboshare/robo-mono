@@ -171,12 +171,32 @@ Use the flags as a matrix:
 - `ROBOMATA_SUI_OPERATOR_COMMIT_ENABLED=true` enables the operator-owned wallet
   path. In this mode the server prepares the exact
   `robomata_overflow::facility::commit_evidence` transaction for the mapped
-  facility, the browser asks a Sui wallet that exposes
-  `sui:signAndExecuteTransaction` to execute it, and the server marks the
-  submission committed only after reconciling the matching Sui
-  `EvidenceCommitted` event. This path still requires `ROBOMATA_SUI_PACKAGE_ID`,
-  per-submission facility mapping, and per-submission operator mapping, but it
-  does not require `ROBOMATA_SUI_PRIVATE_KEY` or `ROBOMATA_SUI_SIGNER_ADDRESS`.
+  facility, the browser asks a Sui wallet to sign or execute it, and the server
+  marks the submission committed only after reconciling the matching Sui
+  `EvidenceCommitted` event. Unsponsored operator commits require
+  `sui:signAndExecuteTransaction`. Native sponsored commits require
+  `sui:signTransaction` so the server can execute the transaction with both the
+  operator signature and sponsor signature. This path still requires
+  `ROBOMATA_SUI_PACKAGE_ID`, per-submission facility mapping, and per-submission
+  operator mapping, but it does not require `ROBOMATA_SUI_PRIVATE_KEY` or
+  `ROBOMATA_SUI_SIGNER_ADDRESS`.
+- `ROBOMATA_SUI_SPONSORSHIP_ENABLED=true` enables native Sui gas sponsorship for
+  operator-owned commits. The server builds transaction-kind bytes for the
+  allowlisted `commit_evidence` call, sets the mapped facility operator as the
+  sender, sets the sponsor as gas owner, selects a sponsor-owned SUI gas coin,
+  signs the final transaction bytes with the sponsor key, and asks the operator
+  wallet to sign the same bytes. The server executes only after both signatures
+  are available and still reconciles the `EvidenceCommitted` event before
+  persisting `committed`.
+- `ROBOMATA_SUI_SPONSOR_PRIVATE_KEY=suiprivkey...` is the sensitive native Sui
+  gas-sponsor key. It funds gas only; it must not be the mapped facility
+  operator and must never be exposed to the browser.
+- `ROBOMATA_SUI_SPONSOR_ADDRESS=0x...` optionally hardens runtime startup by
+  requiring the sponsor private key to derive to the expected address.
+- `ROBOMATA_SUI_SPONSOR_GAS_BUDGET` and
+  `ROBOMATA_SUI_SPONSOR_MIN_COIN_BALANCE` optionally tune native sponsorship
+  budgets in MIST. The first tranche selects one sponsor SUI coin whose balance
+  is at least the configured minimum.
 - `ROBOMATA_SUI_FACILITY_IDS_JSON={"sub_...":"0x..."}` maps each submission id
   to its own Sui facility object. Do not use facility names as keys; names are
   mutable operator input and are not safe authorization boundaries.

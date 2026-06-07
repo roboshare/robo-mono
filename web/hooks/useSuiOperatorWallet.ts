@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { Transaction } from "@mysten/sui/transactions";
+import { fromBase64 } from "@mysten/sui/utils";
 import { getWallets } from "@wallet-standard/app";
 
 const STANDARD_CONNECT = "standard:connect";
+const SUI_SIGN_TRANSACTION = "sui:signTransaction";
 const SUI_SIGN_AND_EXECUTE_TRANSACTION = "sui:signAndExecuteTransaction";
 
 type SuiWalletAccount = {
@@ -33,8 +35,22 @@ type SuiSignAndExecuteFeature = {
   }>;
 };
 
+type SuiSignTransactionFeature = {
+  signTransaction: (input: { account: SuiWalletAccount; chain: string; transaction: Transaction }) => Promise<{
+    bytes?: string;
+    signature?: string;
+  }>;
+};
+
 export type OperatorSuiCommitRequest = {
   chain: string;
+  sponsorship?: {
+    gasBudget: number;
+    gasObjectId: string;
+    sponsorAddress: string;
+    sponsorSignature: string;
+    transactionBytes: string;
+  };
   transactionJson: string;
   facilityOperatorAddress: string;
   rootDigest: string;
@@ -74,7 +90,9 @@ function asSuiWallet(wallet: unknown): SuiWallet | null {
   const candidate = wallet as Partial<SuiWallet>;
   if (typeof candidate.name !== "string") return null;
   if (!candidate.features || typeof candidate.features !== "object") return null;
-  if (!(SUI_SIGN_AND_EXECUTE_TRANSACTION in candidate.features)) return null;
+  if (!(SUI_SIGN_AND_EXECUTE_TRANSACTION in candidate.features) && !(SUI_SIGN_TRANSACTION in candidate.features)) {
+    return null;
+  }
   return {
     name: candidate.name,
     accounts: Array.isArray(candidate.accounts) ? candidate.accounts : [],
@@ -94,6 +112,13 @@ function getSignAndExecuteFeature(wallet: SuiWallet): SuiSignAndExecuteFeature |
   if (!feature || typeof feature !== "object") return null;
   const signAndExecuteTransaction = (feature as Partial<SuiSignAndExecuteFeature>).signAndExecuteTransaction;
   return typeof signAndExecuteTransaction === "function" ? { signAndExecuteTransaction } : null;
+}
+
+function getSignTransactionFeature(wallet: SuiWallet): SuiSignTransactionFeature | null {
+  const feature = wallet.features[SUI_SIGN_TRANSACTION];
+  if (!feature || typeof feature !== "object") return null;
+  const signTransaction = (feature as Partial<SuiSignTransactionFeature>).signTransaction;
+  return typeof signTransaction === "function" ? { signTransaction } : null;
 }
 
 function accountSupportsChain(account: SuiWalletAccount, chain: string): boolean {
@@ -156,6 +181,44 @@ async function executeWithWallet(input: {
   };
 }
 
+async function signSponsoredWithWallet(input: {
+  wallet: SuiWallet;
+  account: SuiWalletAccount;
+  request: OperatorSuiCommitRequest;
+  signFeature: SuiSignTransactionFeature;
+}) {
+  if (!input.request.sponsorship) {
+    throw new OperatorSuiWalletError("Sponsored Sui transaction payload is missing.", true);
+  }
+
+  const transaction = Transaction.from(fromBase64(input.request.sponsorship.transactionBytes));
+  let response: Awaited<ReturnType<SuiSignTransactionFeature["signTransaction"]>>;
+  try {
+    response = await input.signFeature.signTransaction({
+      account: input.account,
+      chain: input.request.chain,
+      transaction,
+    });
+  } catch (error) {
+    throw new OperatorSuiWalletError(
+      errorMessage(error, "Sui wallet did not return a transaction signature."),
+      isUserRejectedWalletError(error),
+    );
+  }
+
+  if (!response.signature) {
+    throw new OperatorSuiWalletError("Sui wallet did not return an operator signature.", false);
+  }
+
+  return {
+    operatorSignature: response.signature,
+    sponsorSignature: input.request.sponsorship.sponsorSignature,
+    transactionBytes: response.bytes ?? input.request.sponsorship.transactionBytes,
+    walletAddress: input.account.address,
+    walletName: input.wallet.name,
+  };
+}
+
 export function useSuiOperatorWallet() {
   const [wallets, setWallets] = useState<SuiWallet[]>([]);
 
@@ -182,10 +245,17 @@ export function useSuiOperatorWallet() {
   const signAndExecuteOperatorCommit = useCallback(
     async (
       request: OperatorSuiCommitRequest,
-    ): Promise<{ txDigest: string; walletAddress: string; walletName: string }> => {
+    ): Promise<{
+      operatorSignature?: string;
+      sponsorSignature?: string;
+      transactionBytes?: string;
+      txDigest?: string;
+      walletAddress: string;
+      walletName: string;
+    }> => {
       if (!wallets.length) {
         throw new OperatorSuiWalletError(
-          "No Sui wallet with sign-and-execute support is available in this browser.",
+          "No Sui wallet with transaction-signing support is available in this browser.",
           true,
         );
       }
@@ -194,7 +264,8 @@ export function useSuiOperatorWallet() {
         .map(wallet => ({
           wallet,
           connectFeature: getConnectFeature(wallet),
-          signFeature: getSignAndExecuteFeature(wallet),
+          signAndExecuteFeature: getSignAndExecuteFeature(wallet),
+          signTransactionFeature: getSignTransactionFeature(wallet),
         }))
         .filter(
           (
@@ -202,13 +273,14 @@ export function useSuiOperatorWallet() {
           ): candidate is {
             wallet: SuiWallet;
             connectFeature: StandardConnectFeature;
-            signFeature: SuiSignAndExecuteFeature;
-          } => Boolean(candidate.connectFeature && candidate.signFeature),
+            signAndExecuteFeature: SuiSignAndExecuteFeature | null;
+            signTransactionFeature: SuiSignTransactionFeature | null;
+          } => Boolean(candidate.connectFeature),
         );
 
       if (!candidates.length) {
         throw new OperatorSuiWalletError(
-          "No Sui wallet exposes the required wallet-standard connection and execution features.",
+          "No Sui wallet exposes the required wallet-standard connection feature.",
           true,
         );
       }
@@ -220,7 +292,24 @@ export function useSuiOperatorWallet() {
           request.chain,
           request.facilityOperatorAddress,
         );
-        if (account) return executeWithWallet({ ...candidate, account, request });
+        if (account) {
+          if (request.sponsorship) {
+            if (!candidate.signTransactionFeature) continue;
+            return signSponsoredWithWallet({
+              wallet: candidate.wallet,
+              account,
+              request,
+              signFeature: candidate.signTransactionFeature,
+            });
+          }
+          if (!candidate.signAndExecuteFeature) continue;
+          return executeWithWallet({
+            wallet: candidate.wallet,
+            account,
+            request,
+            signFeature: candidate.signAndExecuteFeature,
+          });
+        }
       }
 
       const connectionErrors: string[] = [];
@@ -232,7 +321,24 @@ export function useSuiOperatorWallet() {
             request.chain,
             request.facilityOperatorAddress,
           );
-          if (account) return executeWithWallet({ ...candidate, account, request });
+          if (account) {
+            if (request.sponsorship) {
+              if (!candidate.signTransactionFeature) continue;
+              return signSponsoredWithWallet({
+                wallet: candidate.wallet,
+                account,
+                request,
+                signFeature: candidate.signTransactionFeature,
+              });
+            }
+            if (!candidate.signAndExecuteFeature) continue;
+            return executeWithWallet({
+              wallet: candidate.wallet,
+              account,
+              request,
+              signFeature: candidate.signAndExecuteFeature,
+            });
+          }
         } catch (error) {
           connectionErrors.push(
             error instanceof Error

@@ -58,11 +58,19 @@ ROBOMATA_OPERATOR_SUI_WALLETS_FILE=/tmp/robomata-operator-sui-wallets.json
 created wallets. `ROBOMATA_OPERATOR_SUI_WALLETS_FILE` is local-development only;
 deployed environments should use the existing `POSTGRES_URL` persistence path.
 
-The current Sui evidence commit UI still supports wallet-standard Sui extensions
-for transaction execution. Bound Privy Sui wallets become the default operator
-identity and facility-operator mapping target; raw-sign execution from those
-wallets should require a user authorization signature and an allowlisted Sui
-policy before it is enabled for production.
+The current Sui evidence commit UI supports wallet-standard Sui extensions for
+operator execution. Bound Privy Sui wallets become the default operator identity
+and facility-operator mapping target; raw-sign execution from those wallets
+should require a user authorization signature and an allowlisted Sui policy
+before it is enabled for production.
+
+Native Sui gas sponsorship is handled by Robomata, not by Privy/Pimlico. When
+`ROBOMATA_SUI_SPONSORSHIP_ENABLED=true`, the Robomata server prepares the
+allowlisted `commit_evidence` transaction, attaches sponsor-owned SUI gas,
+sponsor-signs the transaction bytes, asks the operator wallet to
+`sui:signTransaction`, then submits the dual-signed transaction server-side.
+This requires `ROBOMATA_SUI_SPONSOR_PRIVATE_KEY` and funded sponsor SUI coins in
+the target Sui network.
 
 ## Recommended Production Topology
 

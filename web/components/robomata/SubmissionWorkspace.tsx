@@ -33,12 +33,16 @@ type SubmissionWorkspaceProps = {
 type CommitEvidenceResponse = {
   submission?: FacilitySubmission;
   operatorCommit?: OperatorSuiCommitRequest;
+  txDigest?: string;
   error?: string;
 };
 
 type PendingOperatorCommit = {
+  operatorSignature?: string;
+  sponsorSignature?: string;
   submissionId: string;
   rootDigest: string;
+  transactionBytes?: string;
   txDigest?: string;
   walletAddress?: string;
   walletName: string;
@@ -266,6 +270,9 @@ export const SubmissionWorkspace = ({
     setIsBusy(true);
     try {
       const completeOperatorCommit = async (commit: PendingOperatorCommit) => {
+        const isSponsoredCommit = Boolean(
+          commit.sponsorSignature || commit.operatorSignature || commit.transactionBytes,
+        );
         const completeHeaders = new Headers({ "content-type": "application/json" });
         const completeAuthHeaders = await getAuthHeaders({
           chainId: selectedNetwork.id,
@@ -278,7 +285,10 @@ export const SubmissionWorkspace = ({
           method: "POST",
           headers: completeHeaders,
           body: JSON.stringify({
-            mode: "operator_complete",
+            mode: isSponsoredCommit ? "operator_complete_sponsored" : "operator_complete",
+            operatorSignature: commit.operatorSignature,
+            sponsorSignature: commit.sponsorSignature,
+            transactionBytes: commit.transactionBytes,
             txDigest: commit.txDigest,
             walletAddress: commit.walletAddress,
           }),
@@ -297,7 +307,7 @@ export const SubmissionWorkspace = ({
         }
 
         if (completeResponse.status === 202) {
-          setPendingOperatorCommit(commit);
+          setPendingOperatorCommit({ ...commit, txDigest: completePayload.txDigest ?? commit.txDigest });
           notification.error(
             completePayload.error ?? "Sui commit is awaiting event indexing. Retry completion shortly.",
           );
@@ -373,6 +383,9 @@ export const SubmissionWorkspace = ({
       const pendingCommit = {
         submissionId: submission.id,
         rootDigest: preparePayload.operatorCommit.rootDigest,
+        operatorSignature: signed.operatorSignature,
+        sponsorSignature: signed.sponsorSignature,
+        transactionBytes: signed.transactionBytes,
         txDigest: signed.txDigest,
         walletAddress: signed.walletAddress,
         walletName: signed.walletName,

@@ -96,6 +96,8 @@ export type SubmissionEvidenceCommit = {
   commitMode: "prepared" | "configured" | "operator_configured";
   commitAuthority?: "server" | "operator";
   operatorWalletAddress?: string;
+  sponsorshipMode?: "native_sui";
+  sponsorAddress?: string;
   errorMessage?: string;
 };
 

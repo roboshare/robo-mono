@@ -3,9 +3,14 @@ import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from "@mysten/sui/jsonRpc";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { Secp256k1Keypair } from "@mysten/sui/keypairs/secp256k1";
 import { Secp256r1Keypair } from "@mysten/sui/keypairs/secp256r1";
-import { isRobomataSuiCommitEnabled, isRobomataSuiOperatorCommitEnabled } from "~~/lib/featureFlags";
+import {
+  isRobomataSuiCommitEnabled,
+  isRobomataSuiOperatorCommitEnabled,
+  isRobomataSuiSponsorshipEnabled,
+} from "~~/lib/featureFlags";
 
 export const DEFAULT_ROBOMATA_SUI_GAS_BUDGET = 100_000_000;
+export const DEFAULT_ROBOMATA_SUI_SPONSOR_MIN_COIN_BALANCE = 100_000_000;
 export const DEFAULT_ROBOMATA_SUI_TIMEOUT_MS = 120_000;
 
 type SuiNetwork = "mainnet" | "testnet" | "devnet" | "localnet";
@@ -66,8 +71,35 @@ export function getRobomataSuiServerSigner(): { keypair: Keypair; address: strin
   }
 }
 
+export function getRobomataSuiSponsorSigner(): { keypair: Keypair; address: string } | null {
+  const privateKey = trimmedEnv("ROBOMATA_SUI_SPONSOR_PRIVATE_KEY");
+  if (!privateKey) return null;
+
+  try {
+    const keypair = keypairFromSuiPrivateKey(privateKey);
+    const address = keypair.getPublicKey().toSuiAddress().toLowerCase();
+    const expectedSponsorAddress = trimmedEnv("ROBOMATA_SUI_SPONSOR_ADDRESS")?.toLowerCase();
+    if (expectedSponsorAddress && address !== expectedSponsorAddress) return null;
+
+    return { keypair, address };
+  } catch {
+    return null;
+  }
+}
+
 export function getRobomataSuiGasBudget(): number {
   return parsePositiveInteger(trimmedEnv("ROBOMATA_SUI_GAS_BUDGET"), DEFAULT_ROBOMATA_SUI_GAS_BUDGET);
+}
+
+export function getRobomataSuiSponsorGasBudget(): number {
+  return parsePositiveInteger(trimmedEnv("ROBOMATA_SUI_SPONSOR_GAS_BUDGET"), getRobomataSuiGasBudget());
+}
+
+export function getRobomataSuiSponsorMinCoinBalance(): number {
+  return parsePositiveInteger(
+    trimmedEnv("ROBOMATA_SUI_SPONSOR_MIN_COIN_BALANCE"),
+    Math.max(getRobomataSuiSponsorGasBudget(), DEFAULT_ROBOMATA_SUI_SPONSOR_MIN_COIN_BALANCE),
+  );
 }
 
 export function getRobomataSuiTimeoutMs(): number {
@@ -103,6 +135,34 @@ export function isRobomataSuiCommitRuntimeConfigured(input: {
       signer.address === expectedSignerAddress &&
       signer.address === facilityOperatorAddress &&
       isRobomataSuiCommitEnabled(),
+  );
+}
+
+export function isRobomataSuiSponsorshipRuntimeConfigured(input: {
+  facilityObjectId: string | undefined;
+  facilityOperatorAddress: string | undefined;
+}): boolean {
+  const sponsor = getRobomataSuiSponsorSigner();
+  const packageId = trimmedEnv("ROBOMATA_SUI_PACKAGE_ID");
+  const facilityOperatorAddress = input.facilityOperatorAddress?.toLowerCase();
+  let networkConfigured = false;
+  try {
+    getRobomataSuiNetwork();
+    networkConfigured = true;
+  } catch {
+    networkConfigured = false;
+  }
+
+  return Boolean(
+    packageId &&
+      input.facilityObjectId &&
+      facilityOperatorAddress &&
+      networkConfigured &&
+      sponsor &&
+      sponsor.address !== facilityOperatorAddress &&
+      isRobomataSuiCommitEnabled() &&
+      isRobomataSuiOperatorCommitEnabled() &&
+      isRobomataSuiSponsorshipEnabled(),
   );
 }
 
