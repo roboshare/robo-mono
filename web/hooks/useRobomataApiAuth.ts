@@ -62,6 +62,7 @@ export function useRobomataApiAuth(partnerAddress?: string) {
       const signature = await signMessageAsync({
         message: buildRobomataAuthMessage({ chainId, method, partnerAddress, path, signerAddress, timestamp }),
       });
+      const privyAccessToken = await getAccessToken();
       const headers = {
         ...(chainId ? { [ROBOMATA_AUTH_HEADERS.chainId]: chainId.toString() } : {}),
         [ROBOMATA_AUTH_HEADERS.method]: method,
@@ -70,6 +71,7 @@ export function useRobomataApiAuth(partnerAddress?: string) {
         [ROBOMATA_AUTH_HEADERS.signerAddress]: signerAddress,
         [ROBOMATA_AUTH_HEADERS.signature]: signature,
         [ROBOMATA_AUTH_HEADERS.timestamp]: timestamp,
+        ...(privyAccessToken ? { authorization: `Bearer ${privyAccessToken}` } : {}),
       };
 
       cacheRef.current = {

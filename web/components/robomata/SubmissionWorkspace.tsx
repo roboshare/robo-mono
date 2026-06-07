@@ -12,7 +12,13 @@ import {
   ShieldCheckIcon,
 } from "@heroicons/react/24/outline";
 import { useSelectedNetwork } from "~~/hooks/scaffold-eth";
+import { usePrivySuiWalletBinding } from "~~/hooks/usePrivySuiWalletBinding";
 import { useRobomataApiAuth } from "~~/hooks/useRobomataApiAuth";
+import {
+  type OperatorSuiCommitRequest,
+  shouldReleaseOperatorCommitReservation,
+  useSuiOperatorWallet,
+} from "~~/hooks/useSuiOperatorWallet";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
 import { formatPercentFromBps, formatUsd } from "~~/lib/robomata/borrowingBase";
 import type { FacilitySubmission, SubmissionComputation, SubmissionReceivable } from "~~/lib/robomata/submissions";
@@ -22,6 +28,20 @@ type SubmissionWorkspaceProps = {
   submissionId?: string;
   readOnly?: boolean;
   loadLatest?: boolean;
+};
+
+type CommitEvidenceResponse = {
+  submission?: FacilitySubmission;
+  operatorCommit?: OperatorSuiCommitRequest;
+  error?: string;
+};
+
+type PendingOperatorCommit = {
+  submissionId: string;
+  rootDigest: string;
+  txDigest?: string;
+  walletAddress?: string;
+  walletName: string;
 };
 
 function statusClass(status: FacilitySubmission["status"]) {
@@ -66,11 +86,25 @@ export const SubmissionWorkspace = ({
   const [draftReceivable, setDraftReceivable] = useState<Partial<SubmissionReceivable>>({});
   const [receivablesCsvText, setReceivablesCsvText] = useState("");
   const [evidenceText, setEvidenceText] = useState("");
+  const [pendingOperatorCommit, setPendingOperatorCommit] = useState<PendingOperatorCommit | null>(null);
   const { address: accountAddress, chainId: accountChainId, connectedAddress } = useTransactingAccount();
   const selectedNetwork = useSelectedNetwork(accountChainId);
   const partnerAuthAddress = accountAddress;
   const signerAddress = connectedAddress ?? accountAddress;
   const getAuthHeaders = useRobomataApiAuth(partnerAuthAddress);
+  const { hasSuiWallet, signAndExecuteOperatorCommit, suiWalletNames } = useSuiOperatorWallet();
+  const {
+    binding: privySuiBinding,
+    error: privySuiBindingError,
+    featureEnabled: privySuiBindingFeatureEnabled,
+    isEnsuring: isEnsuringPrivySuiBinding,
+  } = usePrivySuiWalletBinding({
+    chainId: selectedNetwork.id,
+    enabled: !readOnly,
+    getAuthHeaders,
+    partnerAddress: partnerAuthAddress,
+    signerAddress,
+  });
 
   const summaryCards = useMemo(
     () => (submission?.computation ? buildSubmissionSummaryCards(submission.computation) : []),
@@ -78,6 +112,11 @@ export const SubmissionWorkspace = ({
   );
   const isCommitted = submission?.status === "committed" || submission?.evidenceCommit.status === "committed";
   const canMutate = !readOnly && !isCommitted;
+  const canRetryPendingOperatorCommit = Boolean(
+    submission &&
+      pendingOperatorCommit?.submissionId === submission.id &&
+      pendingOperatorCommit.rootDigest === submission.evidenceCommit.rootDigest,
+  );
 
   const loadSubmission = useCallback(async () => {
     setIsLoading(true);
@@ -212,7 +251,139 @@ export const SubmissionWorkspace = ({
 
   const commitEvidence = async () => {
     if (!submission) return;
-    await updateSubmission(`/api/robomata/submissions/${submission.id}/commit-evidence`, { method: "POST" });
+    const path = `/api/robomata/submissions/${submission.id}/commit-evidence`;
+
+    if (submission.evidenceCommit.commitMode !== "operator_configured") {
+      await updateSubmission(path, { method: "POST" });
+      return;
+    }
+
+    if (!partnerAuthAddress) {
+      notification.error("Connect a partner wallet before committing evidence.");
+      return;
+    }
+
+    setIsBusy(true);
+    try {
+      const completeOperatorCommit = async (commit: PendingOperatorCommit) => {
+        const completeHeaders = new Headers({ "content-type": "application/json" });
+        const completeAuthHeaders = await getAuthHeaders({
+          chainId: selectedNetwork.id,
+          method: "POST",
+          path,
+          signerAddress,
+        });
+        Object.entries(completeAuthHeaders).forEach(([key, value]) => completeHeaders.set(key, value));
+        const completeResponse = await fetch(path, {
+          method: "POST",
+          headers: completeHeaders,
+          body: JSON.stringify({
+            mode: "operator_complete",
+            txDigest: commit.txDigest,
+            walletAddress: commit.walletAddress,
+          }),
+        });
+        const completePayload = (await completeResponse.json().catch(() => ({}))) as CommitEvidenceResponse;
+        if (completePayload.submission) setSubmission(completePayload.submission);
+        if (!completeResponse.ok || !completePayload.submission) {
+          const errorMessage = completePayload.error ?? "Failed to reconcile the operator Sui commit.";
+          if (
+            completePayload.submission?.evidenceCommit.status === "failed" ||
+            (errorMessage.includes("Sui transaction") && errorMessage.includes("failed"))
+          ) {
+            setPendingOperatorCommit(null);
+          }
+          throw new Error(errorMessage);
+        }
+
+        if (completeResponse.status === 202) {
+          setPendingOperatorCommit(commit);
+          notification.error(
+            completePayload.error ?? "Sui commit is awaiting event indexing. Retry completion shortly.",
+          );
+        } else {
+          setPendingOperatorCommit(null);
+          notification.success(`Evidence committed with ${commit.walletName}.`);
+        }
+      };
+
+      const releasePreparedOperatorCommit = async () => {
+        const releaseHeaders = new Headers({ "content-type": "application/json" });
+        const releaseAuthHeaders = await getAuthHeaders({
+          chainId: selectedNetwork.id,
+          method: "POST",
+          path,
+          signerAddress,
+        });
+        Object.entries(releaseAuthHeaders).forEach(([key, value]) => releaseHeaders.set(key, value));
+        const releaseResponse = await fetch(path, {
+          method: "POST",
+          headers: releaseHeaders,
+          body: JSON.stringify({ mode: "operator_release" }),
+        });
+        const releasePayload = (await releaseResponse.json().catch(() => ({}))) as CommitEvidenceResponse;
+        if (releasePayload.submission) setSubmission(releasePayload.submission);
+        if (!releaseResponse.ok) {
+          throw new Error(releasePayload.error ?? "Failed to release the prepared Sui commit.");
+        }
+      };
+
+      if (canRetryPendingOperatorCommit && pendingOperatorCommit) {
+        await completeOperatorCommit(pendingOperatorCommit);
+        return;
+      }
+
+      if (submission.evidenceCommit.status === "committing") {
+        await completeOperatorCommit({
+          submissionId: submission.id,
+          rootDigest: submission.evidenceCommit.rootDigest ?? "",
+          walletName: "Sui wallet",
+        });
+        return;
+      }
+
+      const prepareHeaders = new Headers({ "content-type": "application/json" });
+      const prepareAuthHeaders = await getAuthHeaders({
+        chainId: selectedNetwork.id,
+        method: "POST",
+        path,
+        signerAddress,
+      });
+      Object.entries(prepareAuthHeaders).forEach(([key, value]) => prepareHeaders.set(key, value));
+      const prepareResponse = await fetch(path, {
+        method: "POST",
+        headers: prepareHeaders,
+        body: JSON.stringify({ mode: "operator_prepare" }),
+      });
+      const preparePayload = (await prepareResponse.json().catch(() => ({}))) as CommitEvidenceResponse;
+      if (!prepareResponse.ok || !preparePayload.submission || !preparePayload.operatorCommit) {
+        throw new Error(preparePayload.error ?? "Failed to prepare Sui transaction for operator signing.");
+      }
+
+      setSubmission(preparePayload.submission);
+      let signed;
+      try {
+        signed = await signAndExecuteOperatorCommit(preparePayload.operatorCommit);
+      } catch (error) {
+        if (shouldReleaseOperatorCommitReservation(error)) {
+          await releasePreparedOperatorCommit();
+        }
+        throw error;
+      }
+      const pendingCommit = {
+        submissionId: submission.id,
+        rootDigest: preparePayload.operatorCommit.rootDigest,
+        txDigest: signed.txDigest,
+        walletAddress: signed.walletAddress,
+        walletName: signed.walletName,
+      };
+      setPendingOperatorCommit(pendingCommit);
+      await completeOperatorCommit(pendingCommit);
+    } catch (error) {
+      notification.error(error instanceof Error ? error.message : "Operator Sui evidence commit failed.");
+    } finally {
+      setIsBusy(false);
+    }
   };
 
   const patchSubmission = async (body: Record<string, unknown>) => {
@@ -807,15 +978,58 @@ export const SubmissionWorkspace = ({
                     <div className="mt-3 text-sm text-error">{submission.evidenceCommit.errorMessage}</div>
                   ) : null}
                   {!readOnly &&
-                  submission.evidenceCommit.commitMode === "configured" &&
+                  ["configured", "operator_configured"].includes(submission.evidenceCommit.commitMode) &&
                   submission.evidenceCommit.status !== "committed" ? (
-                    <button className="btn btn-primary mt-4 rounded-full" onClick={commitEvidence} disabled={isBusy}>
+                    <button
+                      className="btn btn-primary mt-4 rounded-full"
+                      onClick={commitEvidence}
+                      disabled={
+                        isBusy ||
+                        (submission.evidenceCommit.commitMode === "operator_configured" &&
+                          submission.evidenceCommit.status !== "committing" &&
+                          !hasSuiWallet &&
+                          !canRetryPendingOperatorCommit)
+                      }
+                    >
                       {submission.evidenceCommit.status === "committing"
                         ? "Reconcile Sui evidence commit"
                         : submission.evidenceCommit.status === "failed"
                           ? "Retry Sui evidence commit"
-                          : "Commit evidence on Sui"}
+                          : submission.evidenceCommit.commitMode === "operator_configured"
+                            ? "Sign and commit with Sui wallet"
+                            : "Commit evidence on Sui"}
                     </button>
+                  ) : null}
+                  {!readOnly && submission.evidenceCommit.commitMode === "operator_configured" ? (
+                    <div className="mt-3 rounded-2xl border border-info/20 bg-info/10 p-3 text-sm text-base-content/70">
+                      <div className="font-semibold text-base-content">Operator-owned commit is enabled.</div>
+                      {privySuiBindingFeatureEnabled ? (
+                        <div className="mt-2">
+                          {isEnsuringPrivySuiBinding
+                            ? "Creating or locating the operator's Robomata Sui wallet..."
+                            : privySuiBinding
+                              ? `Default operator Sui wallet: ${privySuiBinding.suiAddress}`
+                              : privySuiBindingError
+                                ? `Privy Sui wallet binding is unavailable: ${privySuiBindingError}`
+                                : "Privy Sui wallet binding is enabled but no wallet is bound yet."}
+                        </div>
+                      ) : null}
+                      <div className="mt-2">
+                        Evidence signing currently uses a compatible Sui wallet-standard extension
+                        {suiWalletNames.length
+                          ? ` (${suiWalletNames.join(", ")}).`
+                          : ". No compatible Sui wallet is available in this browser."}
+                      </div>
+                      {privySuiBinding?.suiAddress &&
+                      submission.evidenceCommit.facilityOperatorAddress &&
+                      privySuiBinding.suiAddress.toLowerCase() !==
+                        submission.evidenceCommit.facilityOperatorAddress.toLowerCase() ? (
+                        <div className="mt-2 text-warning">
+                          The bound Privy Sui wallet does not match this submission&apos;s configured facility operator.
+                          Update the facility operator mapping before using the embedded wallet as the signer.
+                        </div>
+                      ) : null}
+                    </div>
                   ) : null}
                   {!readOnly &&
                   submission.evidenceCommit.commitMode === "configured" &&

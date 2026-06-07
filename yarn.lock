@@ -23815,6 +23815,7 @@ __metadata:
     "@uniswap/v2-sdk": ~4.6.1
     "@vercel/analytics": ^2.0.1
     "@vercel/postgres": ^0.10.0
+    "@wallet-standard/app": ^1.1.0
     abitype: 1.0.6
     autoprefixer: ~10.4.20
     bgipfs: ~0.0.12

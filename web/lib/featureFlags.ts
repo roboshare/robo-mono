@@ -27,3 +27,15 @@ export function isRobomataRealEvidenceStorageRequired(): boolean {
 export function isRobomataSuiCommitEnabled(): boolean {
   return isEnabled(process.env.ROBOMATA_SUI_COMMIT_ENABLED);
 }
+
+export function isRobomataSuiOperatorCommitEnabled(): boolean {
+  return isEnabled(process.env.ROBOMATA_SUI_OPERATOR_COMMIT_ENABLED);
+}
+
+export function isRobomataPrivySuiWalletBindingEnabled(): boolean {
+  return isEnabled(process.env.ROBOMATA_PRIVY_SUI_WALLET_BINDING_ENABLED);
+}
+
+export function isRobomataPrivySuiWalletBindingClientEnabled(): boolean {
+  return isEnabled(process.env.NEXT_PUBLIC_ROBOMATA_PRIVY_SUI_WALLET_BINDING_ENABLED);
+}
