@@ -31,6 +31,39 @@ belong to the same Privy user before Robomata accepts API requests.
 
 No additional bundler or paymaster environment variables are required in this repo. Those values are configured in the Privy dashboard.
 
+## Robomata Sui Operator Wallets
+
+Robomata can automatically provision and bind a Privy-managed Sui wallet for an
+authorized partner operator. Enable this only after the Robomata workflow and
+partner authorization path are working:
+
+```bash
+ROBOMATA_PRIVY_SUI_WALLET_BINDING_ENABLED=true
+NEXT_PUBLIC_ROBOMATA_PRIVY_SUI_WALLET_BINDING_ENABLED=true
+```
+
+The binding API verifies the signed Robomata partner request, verifies the Privy
+access token, finds an existing Sui wallet for the Privy user, or creates one
+with `chain_type=sui` and `owner.user_id=<Privy user id>`. It persists the
+resulting `walletId` and Sui address in the Robomata persistence backend.
+
+Optional:
+
+```bash
+ROBOMATA_PRIVY_SUI_WALLET_POLICY_ID=your-privy-sui-policy-id
+ROBOMATA_OPERATOR_SUI_WALLETS_FILE=/tmp/robomata-operator-sui-wallets.json
+```
+
+`ROBOMATA_PRIVY_SUI_WALLET_POLICY_ID` attaches a Privy Sui policy to newly
+created wallets. `ROBOMATA_OPERATOR_SUI_WALLETS_FILE` is local-development only;
+deployed environments should use the existing `POSTGRES_URL` persistence path.
+
+The current Sui evidence commit UI still supports wallet-standard Sui extensions
+for transaction execution. Bound Privy Sui wallets become the default operator
+identity and facility-operator mapping target; raw-sign execution from those
+wallets should require a user authorization signature and an allowlisted Sui
+policy before it is enabled for production.
+
 ## Recommended Production Topology
 
 For Roboshare, the recommended setup is:

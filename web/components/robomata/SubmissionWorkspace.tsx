@@ -12,6 +12,7 @@ import {
   ShieldCheckIcon,
 } from "@heroicons/react/24/outline";
 import { useSelectedNetwork } from "~~/hooks/scaffold-eth";
+import { usePrivySuiWalletBinding } from "~~/hooks/usePrivySuiWalletBinding";
 import { useRobomataApiAuth } from "~~/hooks/useRobomataApiAuth";
 import {
   type OperatorSuiCommitRequest,
@@ -92,6 +93,18 @@ export const SubmissionWorkspace = ({
   const signerAddress = connectedAddress ?? accountAddress;
   const getAuthHeaders = useRobomataApiAuth(partnerAuthAddress);
   const { hasSuiWallet, signAndExecuteOperatorCommit, suiWalletNames } = useSuiOperatorWallet();
+  const {
+    binding: privySuiBinding,
+    error: privySuiBindingError,
+    featureEnabled: privySuiBindingFeatureEnabled,
+    isEnsuring: isEnsuringPrivySuiBinding,
+  } = usePrivySuiWalletBinding({
+    chainId: selectedNetwork.id,
+    enabled: !readOnly,
+    getAuthHeaders,
+    partnerAddress: partnerAuthAddress,
+    signerAddress,
+  });
 
   const summaryCards = useMemo(
     () => (submission?.computation ? buildSubmissionSummaryCards(submission.computation) : []),
@@ -989,11 +1002,33 @@ export const SubmissionWorkspace = ({
                   ) : null}
                   {!readOnly && submission.evidenceCommit.commitMode === "operator_configured" ? (
                     <div className="mt-3 rounded-2xl border border-info/20 bg-info/10 p-3 text-sm text-base-content/70">
-                      Operator-owned commit is enabled. The configured facility operator must sign this evidence commit
-                      from a Sui wallet
-                      {suiWalletNames.length
-                        ? ` (${suiWalletNames.join(", ")}).`
-                        : ". No compatible Sui wallet is available in this browser."}
+                      <div className="font-semibold text-base-content">Operator-owned commit is enabled.</div>
+                      {privySuiBindingFeatureEnabled ? (
+                        <div className="mt-2">
+                          {isEnsuringPrivySuiBinding
+                            ? "Creating or locating the operator's Robomata Sui wallet..."
+                            : privySuiBinding
+                              ? `Default operator Sui wallet: ${privySuiBinding.suiAddress}`
+                              : privySuiBindingError
+                                ? `Privy Sui wallet binding is unavailable: ${privySuiBindingError}`
+                                : "Privy Sui wallet binding is enabled but no wallet is bound yet."}
+                        </div>
+                      ) : null}
+                      <div className="mt-2">
+                        Evidence signing currently uses a compatible Sui wallet-standard extension
+                        {suiWalletNames.length
+                          ? ` (${suiWalletNames.join(", ")}).`
+                          : ". No compatible Sui wallet is available in this browser."}
+                      </div>
+                      {privySuiBinding?.suiAddress &&
+                      submission.evidenceCommit.facilityOperatorAddress &&
+                      privySuiBinding.suiAddress.toLowerCase() !==
+                        submission.evidenceCommit.facilityOperatorAddress.toLowerCase() ? (
+                        <div className="mt-2 text-warning">
+                          The bound Privy Sui wallet does not match this submission&apos;s configured facility operator.
+                          Update the facility operator mapping before using the embedded wallet as the signer.
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
                   {!readOnly &&

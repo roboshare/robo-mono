@@ -72,7 +72,7 @@ function getPrivyAppId() {
   return process.env.PRIVY_APP_ID ?? process.env.NEXT_PUBLIC_PRIVY_APP_ID;
 }
 
-function getPrivyClient() {
+export function getPrivyClient() {
   if (privyClient !== undefined) return privyClient;
 
   const appId = getPrivyAppId();
@@ -81,7 +81,7 @@ function getPrivyClient() {
   return privyClient;
 }
 
-function getPrivyAccessToken(request: NextRequest): string | null {
+export function getPrivyAccessToken(request: NextRequest): string | null {
   const authorizationHeader = request.headers.get("authorization")?.trim();
   if (authorizationHeader?.toLowerCase().startsWith("bearer ")) {
     return authorizationHeader.slice("bearer ".length).trim() || null;
@@ -91,6 +91,16 @@ function getPrivyAccessToken(request: NextRequest): string | null {
 }
 
 type PrivyUser = Awaited<ReturnType<PrivyClient["getUser"]>>;
+
+export async function getPrivyUserFromRequest(request: NextRequest): Promise<PrivyUser | null> {
+  const client = getPrivyClient();
+  const accessToken = getPrivyAccessToken(request);
+  if (!client || !accessToken) return null;
+
+  const claims = await client.verifyAuthToken(accessToken);
+  const user = await client.getUser(claims.userId);
+  return user.id === claims.userId ? user : null;
+}
 
 function accountAddress(account: unknown): string | null {
   if (!account || typeof account !== "object") return null;
@@ -126,9 +136,8 @@ async function verifyPrivyWalletOwnership({
   if (!client || !accessToken) return false;
 
   try {
-    const claims = await client.verifyAuthToken(accessToken);
-    const user = await client.getUser(claims.userId);
-    if (user.id !== claims.userId) return false;
+    const user = await getPrivyUserFromRequest(request);
+    if (!user) return false;
 
     const signerIsLinkedAccount =
       userHasAddress(user, "wallet", signerAddress) || userHasAddress(user, "smart_wallet", signerAddress);
