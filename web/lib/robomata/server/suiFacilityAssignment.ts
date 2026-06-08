@@ -4,6 +4,7 @@ import {
   isRobomataPrivySuiWalletBindingEnabled,
   isRobomataSuiCommitEnabled,
   isRobomataSuiOperatorCommitEnabled,
+  isRobomataSuiSponsorshipEnabled,
 } from "~~/lib/featureFlags";
 import { ensurePrivySuiWalletBinding } from "~~/lib/robomata/server/privySuiWallets";
 import {
@@ -15,6 +16,14 @@ import {
 import { type FacilitySubmission } from "~~/lib/robomata/submissions";
 
 type AssignmentStore = {
+  beginSuiFacilityAssignment: (
+    id: string,
+    input: {
+      expectedRootDigest: string;
+      expectedUpdatedAt: string;
+      facilityOperatorAddress: string;
+    },
+  ) => Promise<FacilitySubmission | null>;
   assignSuiFacility: (
     id: string,
     input: {
@@ -23,6 +32,13 @@ type AssignmentStore = {
       expectedRootDigest: string;
       expectedUpdatedAt: string;
       txDigest?: string;
+    },
+  ) => Promise<FacilitySubmission | null>;
+  failSuiFacilityAssignment: (
+    id: string,
+    input: {
+      errorMessage: string;
+      expectedRootDigest: string;
     },
   ) => Promise<FacilitySubmission | null>;
 };
@@ -71,6 +87,7 @@ function isSuiFacilityAssignmentRuntimeConfigured(): boolean {
   return Boolean(
     isRobomataSuiCommitEnabled() &&
       isRobomataSuiOperatorCommitEnabled() &&
+      isRobomataSuiSponsorshipEnabled() &&
       isRobomataPrivySuiWalletBindingEnabled() &&
       trimmedEnv("ROBOMATA_SUI_PACKAGE_ID") &&
       getRobomataSuiServerSigner(),
@@ -188,15 +205,36 @@ export async function ensureSubmissionSuiFacility(input: {
     partnerAddress: input.partnerAddress,
     privyUserId: input.privyUserId,
   });
-  const created = await createSuiFacilityForOperator({
-    operatorAddress: binding.suiAddress,
-    submission: input.submission,
+  const rootDigest = input.submission.evidenceCommit.rootDigest ?? "";
+  const claimed = await input.store.beginSuiFacilityAssignment(input.submission.id, {
+    expectedRootDigest: rootDigest,
+    expectedUpdatedAt: input.submission.updatedAt,
+    facilityOperatorAddress: binding.suiAddress,
   });
-  const saved = await input.store.assignSuiFacility(input.submission.id, {
+
+  if (!claimed) {
+    return { assigned: false, submission: input.submission, reason: "assignment_in_progress_or_changed" };
+  }
+
+  let created: { facilityObjectId: string; txDigest?: string };
+  try {
+    created = await createSuiFacilityForOperator({
+      operatorAddress: binding.suiAddress,
+      submission: claimed,
+    });
+  } catch (error) {
+    await input.store.failSuiFacilityAssignment(claimed.id, {
+      errorMessage: error instanceof Error ? error.message : "Sui facility assignment failed.",
+      expectedRootDigest: rootDigest,
+    });
+    throw error;
+  }
+
+  const saved = await input.store.assignSuiFacility(claimed.id, {
     facilityObjectId: created.facilityObjectId,
     facilityOperatorAddress: binding.suiAddress,
-    expectedRootDigest: input.submission.evidenceCommit.rootDigest ?? "",
-    expectedUpdatedAt: input.submission.updatedAt,
+    expectedRootDigest: rootDigest,
+    expectedUpdatedAt: claimed.updatedAt,
     txDigest: created.txDigest,
   });
 

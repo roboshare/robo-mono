@@ -93,6 +93,10 @@ export type SubmissionEvidenceCommit = {
   committedAt?: string;
   facilityObjectId?: string;
   facilityOperatorAddress?: string;
+  facilityAssignmentStartedAt?: string;
+  facilityAssignmentRootDigest?: string;
+  facilityAssignmentOperatorAddress?: string;
+  facilityAssignmentErrorMessage?: string;
   modulePath: string;
   commitMode: "prepared" | "configured" | "operator_configured";
   commitAuthority?: "server" | "operator";

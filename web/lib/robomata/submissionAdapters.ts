@@ -4,7 +4,6 @@ import { buildEvidenceAnchor, buildEvidenceRail } from "~~/lib/robomata/evidence
 import { buildLenderPacket } from "~~/lib/robomata/lenderPacket";
 import {
   isRobomataSuiCommitRuntimeConfigured,
-  isRobomataSuiOperatorCommitRuntimeConfigured,
   isRobomataSuiSponsorshipRuntimeConfigured,
 } from "~~/lib/robomata/server/suiCommitConfig";
 import {
@@ -180,13 +179,11 @@ async function buildEvidenceCommitPreview(submission: FacilitySubmission, eviden
     modulePath: SUI_COMMIT_MODULE_PATH,
     facilityObjectId,
     facilityOperatorAddress,
-    commitMode:
-      isRobomataSuiSponsorshipRuntimeConfigured({ facilityObjectId, facilityOperatorAddress }) ||
-      isRobomataSuiOperatorCommitRuntimeConfigured({ facilityObjectId, facilityOperatorAddress })
-        ? ("operator_configured" as const)
-        : isRobomataSuiCommitRuntimeConfigured({ facilityObjectId, facilityOperatorAddress })
-          ? ("configured" as const)
-          : ("prepared" as const),
+    commitMode: isRobomataSuiSponsorshipRuntimeConfigured({ facilityObjectId, facilityOperatorAddress })
+      ? ("operator_configured" as const)
+      : isRobomataSuiCommitRuntimeConfigured({ facilityObjectId, facilityOperatorAddress })
+        ? ("configured" as const)
+        : ("prepared" as const),
   };
 }
 
