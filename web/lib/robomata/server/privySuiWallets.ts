@@ -1,12 +1,12 @@
-import { sql } from "@vercel/postgres";
 import { eq } from "drizzle-orm";
 import { jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
-import { drizzle } from "drizzle-orm/vercel-postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import "server-only";
+import { getRobomataPostgresSql } from "~~/lib/robomata/server/postgres";
 
 export type PrivySuiWalletBinding = {
   id: string;
@@ -72,6 +72,7 @@ function fileStorePath(): string {
 async function ensurePostgresTable() {
   if (ensuredPostgresTable) return;
 
+  const sql = getRobomataPostgresSql();
   await sql`
     CREATE TABLE IF NOT EXISTS robomata_operator_sui_wallet_bindings (
       id text PRIMARY KEY,
@@ -140,6 +141,7 @@ function createFileStore(): BindingStore {
 }
 
 function createPostgresStore(): BindingStore {
+  const sql = getRobomataPostgresSql();
   const db = drizzle(sql);
 
   return {

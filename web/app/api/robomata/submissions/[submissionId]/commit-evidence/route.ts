@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Transaction } from "@mysten/sui/transactions";
 import { fromBase64, toBase64 } from "@mysten/sui/utils";
-import { sql } from "@vercel/postgres";
 import { isRobomataWorkflowMutationEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
+import { getRobomataPostgresSql } from "~~/lib/robomata/server/postgres";
 import { requirePartnerAddress, requireSubmissionAccess } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
 import {
@@ -294,6 +294,7 @@ function getSponsorGasReservationTtlMs() {
 
 async function ensureSponsorGasReservationTable() {
   if (sponsorGasReservationTableReady || !hasPostgresConfig()) return;
+  const sql = getRobomataPostgresSql();
   await sql`
     CREATE TABLE IF NOT EXISTS robomata_sui_sponsor_gas_reservations (
       gas_object_id text PRIMARY KEY,
@@ -325,6 +326,7 @@ async function expireSponsorGasReservations() {
   }
 
   if (!hasPostgresConfig()) return;
+  const sql = getRobomataPostgresSql();
   await ensureSponsorGasReservationTable();
   await sql`
     DELETE FROM robomata_sui_sponsor_gas_reservations
@@ -350,6 +352,7 @@ async function reserveSponsorGasObject(input: {
   }
 
   await ensureSponsorGasReservationTable();
+  const sql = getRobomataPostgresSql();
   const result = await sql`
     INSERT INTO robomata_sui_sponsor_gas_reservations (
       gas_object_id,
@@ -366,7 +369,7 @@ async function reserveSponsorGasObject(input: {
     ON CONFLICT (gas_object_id) DO NOTHING
     RETURNING gas_object_id
   `;
-  return result.rowCount === 1;
+  return result.length === 1;
 }
 
 async function releaseSponsorGasReservation(input: {
@@ -383,6 +386,7 @@ async function releaseSponsorGasReservation(input: {
   if (!hasPostgresConfig()) return;
 
   await ensureSponsorGasReservationTable();
+  const sql = getRobomataPostgresSql();
   await sql`
     DELETE FROM robomata_sui_sponsor_gas_reservations
     WHERE gas_object_id = ${input.gasObjectId}
