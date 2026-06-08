@@ -1,12 +1,12 @@
-import { sql } from "@vercel/postgres";
 import { and, desc, sql as drizzleSql, eq } from "drizzle-orm";
 import { jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
-import { drizzle } from "drizzle-orm/vercel-postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import "server-only";
 import { isRobomataWorkflowMutationEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
+import { getRobomataPostgresSql } from "~~/lib/robomata/server/postgres";
 import {
   isRobomataSuiCommitRuntimeConfigured,
   isRobomataSuiSponsorshipRuntimeConfigured,
@@ -358,6 +358,7 @@ function applySuiFacilityAssignment(submission: FacilitySubmission, input: Assig
 async function ensurePostgresTable() {
   if (ensuredPostgresTable) return;
 
+  const sql = getRobomataPostgresSql();
   await sql`
     CREATE TABLE IF NOT EXISTS robomata_facility_submissions (
       id text PRIMARY KEY,
@@ -602,6 +603,7 @@ function createFileStore(): SubmissionStore {
 }
 
 function createPostgresStore(): SubmissionStore {
+  const sql = getRobomataPostgresSql();
   const db = drizzle(sql);
 
   return {
@@ -669,7 +671,7 @@ function createPostgresStore(): SubmissionStore {
       if (!current) return null;
       const nextSubmission = applyBeginSuiFacilityAssignment(current, input);
       if (!nextSubmission) return null;
-      const result = await sql<{ payload: FacilitySubmission }>`
+      const result = (await sql`
         UPDATE robomata_facility_submissions
         SET
           status = ${nextSubmission.status},
@@ -687,9 +689,9 @@ function createPostgresStore(): SubmissionStore {
               < now() - interval '5 minutes'
           )
         RETURNING payload;
-      `;
+      `) as Array<{ payload: FacilitySubmission }>;
 
-      const row = result.rows[0];
+      const row = result[0];
       return row ? markLoadedSubmission(row.payload) : null;
     },
     async beginSuiFacilityUpdate(id, input) {
@@ -698,7 +700,7 @@ function createPostgresStore(): SubmissionStore {
       if (!current) return null;
       const nextSubmission = applyBeginSuiFacilityUpdate(current, input);
       if (!nextSubmission) return null;
-      const result = await sql<{ payload: FacilitySubmission }>`
+      const result = (await sql`
         UPDATE robomata_facility_submissions
         SET
           status = ${nextSubmission.status},
@@ -716,9 +718,9 @@ function createPostgresStore(): SubmissionStore {
               < now() - interval '5 minutes'
           )
         RETURNING payload;
-      `;
+      `) as Array<{ payload: FacilitySubmission }>;
 
-      const row = result.rows[0];
+      const row = result[0];
       return row ? markLoadedSubmission(row.payload) : null;
     },
     async assignSuiFacility(id, input) {
@@ -740,7 +742,7 @@ function createPostgresStore(): SubmissionStore {
       }
 
       const nextSubmission = applySuiFacilityAssignment(current, input);
-      const result = await sql<{ payload: FacilitySubmission }>`
+      const result = (await sql`
         UPDATE robomata_facility_submissions
         SET
           status = ${nextSubmission.status},
@@ -756,9 +758,9 @@ function createPostgresStore(): SubmissionStore {
           AND COALESCE(payload->'evidenceCommit'->>'facilityObjectId', '') = ''
           AND COALESCE(payload->'evidenceCommit'->>'facilityOperatorAddress', '') = ''
         RETURNING payload;
-      `;
+      `) as Array<{ payload: FacilitySubmission }>;
 
-      const row = result.rows[0];
+      const row = result[0];
       if (row) return markLoadedSubmission(row.payload);
       const latest = await this.get(id);
       if (latest?.evidenceCommit.facilityObjectId && latest.evidenceCommit.facilityOperatorAddress) return latest;
@@ -769,7 +771,7 @@ function createPostgresStore(): SubmissionStore {
       const current = await this.get(id);
       if (!current || !canCompleteSuiFacilityUpdate(current, input)) return null;
       const nextSubmission = applyCompleteSuiFacilityUpdate(submission, input);
-      const result = await sql<{ payload: FacilitySubmission }>`
+      const result = (await sql`
         UPDATE robomata_facility_submissions
         SET
           status = ${nextSubmission.status},
@@ -781,9 +783,9 @@ function createPostgresStore(): SubmissionStore {
           AND payload->'evidenceCommit'->>'facilityAssignmentOperatorAddress' = ${input.expectedFacilityOperatorAddress}
           AND payload->'evidenceCommit'->>'facilityAssignmentStartedAt' = ${input.expectedStartedAt}
         RETURNING payload;
-      `;
+      `) as Array<{ payload: FacilitySubmission }>;
 
-      const row = result.rows[0];
+      const row = result[0];
       return row ? markLoadedSubmission(row.payload) : null;
     },
     async failSuiFacilityAssignment(id, input) {
@@ -792,7 +794,7 @@ function createPostgresStore(): SubmissionStore {
       if (!current) return null;
       const nextSubmission = applyFailSuiFacilityAssignment(current, input);
       if (!nextSubmission) return null;
-      const result = await sql<{ payload: FacilitySubmission }>`
+      const result = (await sql`
         UPDATE robomata_facility_submissions
         SET
           status = ${nextSubmission.status},
@@ -808,9 +810,9 @@ function createPostgresStore(): SubmissionStore {
             OR payload->'evidenceCommit'->>'facilityObjectId' = ${input.expectedFacilityObjectId ?? ""}
           )
         RETURNING payload;
-      `;
+      `) as Array<{ payload: FacilitySubmission }>;
 
-      const row = result.rows[0];
+      const row = result[0];
       return row ? markLoadedSubmission(row.payload) : null;
     },
     async beginEvidenceCommit(id, rootDigest, commitStartedAt) {
@@ -819,7 +821,7 @@ function createPostgresStore(): SubmissionStore {
       if (!current) return null;
       const nextSubmission = applyBeginEvidenceCommit(current, rootDigest, commitStartedAt);
       if (!nextSubmission) return null;
-      const result = await sql<{ payload: FacilitySubmission }>`
+      const result = (await sql`
         UPDATE robomata_facility_submissions
         SET
           status = ${nextSubmission.status},
@@ -831,9 +833,9 @@ function createPostgresStore(): SubmissionStore {
           AND payload->'evidenceCommit'->>'rootDigest' = ${rootDigest}
           AND COALESCE(payload->'evidenceCommit'->>'facilityAssignmentStartedAt', '') = ''
         RETURNING payload;
-      `;
+      `) as Array<{ payload: FacilitySubmission }>;
 
-      const row = result.rows[0];
+      const row = result[0];
       if (!row) return null;
       return markLoadedSubmission(row.payload);
     },
@@ -843,7 +845,7 @@ function createPostgresStore(): SubmissionStore {
       if (!current) return null;
       const nextSubmission = applyCompleteEvidenceCommit(current, rootDigest, input);
       if (!nextSubmission) return null;
-      const result = await sql<{ payload: FacilitySubmission }>`
+      const result = (await sql`
         UPDATE robomata_facility_submissions
         SET
           status = ${nextSubmission.status},
@@ -854,9 +856,9 @@ function createPostgresStore(): SubmissionStore {
           AND payload->'evidenceCommit'->>'status' IN ('ready', 'failed', 'committing')
           AND payload->'evidenceCommit'->>'rootDigest' = ${rootDigest}
         RETURNING payload;
-      `;
+      `) as Array<{ payload: FacilitySubmission }>;
 
-      const row = result.rows[0];
+      const row = result[0];
       return row ? markLoadedSubmission(row.payload) : null;
     },
     async failEvidenceCommit(id, rootDigest, errorMessage) {
@@ -865,7 +867,7 @@ function createPostgresStore(): SubmissionStore {
       if (!current) return null;
       const nextSubmission = applyFailEvidenceCommit(current, rootDigest, errorMessage);
       if (!nextSubmission) return null;
-      const result = await sql<{ payload: FacilitySubmission }>`
+      const result = (await sql`
         UPDATE robomata_facility_submissions
         SET
           status = ${nextSubmission.status},
@@ -876,9 +878,9 @@ function createPostgresStore(): SubmissionStore {
           AND payload->'evidenceCommit'->>'status' = 'committing'
           AND payload->'evidenceCommit'->>'rootDigest' = ${rootDigest}
         RETURNING payload;
-      `;
+      `) as Array<{ payload: FacilitySubmission }>;
 
-      const row = result.rows[0];
+      const row = result[0];
       return row ? markLoadedSubmission(row.payload) : null;
     },
   };
