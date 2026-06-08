@@ -171,28 +171,33 @@ Use the flags as a matrix:
 - `ROBOMATA_SUI_OPERATOR_COMMIT_ENABLED=true` enables the operator-owned wallet
   path. In this mode the server prepares the exact
   `robomata_overflow::facility::commit_evidence` transaction for the mapped
-  facility, the browser asks a Sui wallet to sign or execute it, and the server
-  marks the submission committed only after reconciling the matching Sui
-  `EvidenceCommitted` event. Unsponsored operator commits require
-  `sui:signAndExecuteTransaction`. Native sponsored commits require
-  `sui:signTransaction` so the server can execute the transaction with both the
-  operator signature and sponsor signature. This path still requires
-  `ROBOMATA_SUI_PACKAGE_ID`, per-submission facility mapping, and per-submission
-  operator mapping, but it does not require `ROBOMATA_SUI_PRIVATE_KEY` or
-  `ROBOMATA_SUI_SIGNER_ADDRESS`.
+  facility, the browser asks a Sui wallet to sign it, and the server marks the
+  submission committed only after reconciling the matching Sui
+  `EvidenceCommitted` event. Operator-owned commits are native sponsored
+  commits: they require `ROBOMATA_SUI_SPONSORSHIP_ENABLED=true`,
+  `ROBOMATA_SUI_PRIVATE_KEY`, and `sui:signTransaction` so the server can
+  execute the transaction with both the operator signature and sponsor
+  signature. This path still requires `ROBOMATA_SUI_PACKAGE_ID`,
+  per-submission facility mapping, and per-submission operator mapping, but it
+  does not require `ROBOMATA_SUI_SIGNER_ADDRESS`.
 - `ROBOMATA_SUI_SPONSORSHIP_ENABLED=true` enables native Sui gas sponsorship for
   operator-owned commits. The server builds transaction-kind bytes for the
   allowlisted `commit_evidence` call, sets the mapped facility operator as the
   sender, sets the sponsor as gas owner, selects a sponsor-owned SUI gas coin,
-  signs the final transaction bytes with the sponsor key, and asks the operator
-  wallet to sign the same bytes. The server executes only after both signatures
-  are available and still reconciles the `EvidenceCommitted` event before
-  persisting `committed`.
-- `ROBOMATA_SUI_SPONSOR_PRIVATE_KEY=suiprivkey...` is the sensitive native Sui
-  gas-sponsor key. It funds gas only; it must not be the mapped facility
-  operator and must never be exposed to the browser.
+  signs the final transaction bytes with `ROBOMATA_SUI_PRIVATE_KEY`, and asks
+  the operator wallet to sign the same bytes. The server executes only after
+  both signatures are available and still reconciles the `EvidenceCommitted`
+  event before persisting `committed`.
+- `ROBOMATA_SUI_PRIVATE_KEY=suiprivkey...` is the single sensitive server-held
+  Sui key. In the intended operator-owned native sponsorship path it signs only
+  as the gas sponsor; it must not be the mapped facility operator and must never
+  be exposed to the browser. The same variable is reused as the legacy
+  server-side signer only when `ROBOMATA_SUI_OPERATOR_COMMIT_ENABLED` is false,
+  `ROBOMATA_SUI_SIGNER_ADDRESS` matches the derived address, and that address is
+  the mapped facility operator.
 - `ROBOMATA_SUI_SPONSOR_ADDRESS=0x...` optionally hardens runtime startup by
-  requiring the sponsor private key to derive to the expected address.
+  requiring `ROBOMATA_SUI_PRIVATE_KEY` to derive to the expected gas sponsor
+  address when native sponsorship is enabled.
 - `ROBOMATA_SUI_SPONSOR_GAS_BUDGET` and
   `ROBOMATA_SUI_SPONSOR_MIN_COIN_BALANCE` optionally tune native sponsorship
   budgets in MIST. The sponsor selector scans paginated SUI coins, reserves the
@@ -214,12 +219,6 @@ Use the flags as a matrix:
 - `ROBOMATA_SUI_FACILITY_OPERATORS_JSON={"sub_...":"0x..."}` maps each
   submission id to the Sui address that created and controls the mapped facility
   object.
-- `ROBOMATA_SUI_PRIVATE_KEY=suiprivkey...` is the sensitive server-side Sui
-  signer for the legacy/test-only server-signed path. It is useful for smoke
-  tests, migration debugging, or demos where operator wallet binding is
-  unavailable, but it is not the intended production fallback after the
-  operator-owned native sponsorship path is enabled. If used, it must belong to
-  the mapped facility operator and must never be exposed to the browser.
 - `ROBOMATA_SUI_SIGNER_ADDRESS=0x...` must match both the server signer's
   derived Sui address and the mapped facility operator before the runtime
   exposes the legacy server-side Sui commit path.

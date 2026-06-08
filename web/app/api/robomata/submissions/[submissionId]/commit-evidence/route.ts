@@ -429,27 +429,6 @@ function buildSuiCommitTransaction(input: {
   return tx;
 }
 
-async function prepareOperatorSuiCommit(input: {
-  facilityObjectId: string;
-  facilityOperatorAddress: string;
-  label: string;
-  rootDigest: string;
-}): Promise<OperatorCommitPayload> {
-  const tx = buildSuiCommitTransaction({ ...input, senderAddress: input.facilityOperatorAddress });
-  const client = getRobomataSuiClient();
-  const transactionJson = await withTimeout(() => tx.toJSON({ client }), getRobomataSuiTimeoutMs());
-
-  return {
-    chain: `sui:${getRobomataSuiNetwork()}`,
-    transactionJson,
-    facilityObjectId: input.facilityObjectId,
-    facilityOperatorAddress: input.facilityOperatorAddress,
-    label: input.label,
-    rootDigest: input.rootDigest,
-    packageId: process.env.ROBOMATA_SUI_PACKAGE_ID ?? "",
-  };
-}
-
 async function selectSponsorGasPayment(input: {
   rootDigest: string;
   sponsorAddress: string;
@@ -512,7 +491,7 @@ async function prepareSponsoredOperatorSuiCommit(input: {
   submissionId: string;
 }): Promise<OperatorCommitPayload> {
   const sponsor = getRobomataSuiSponsorSigner();
-  if (!sponsor) throw new Error("ROBOMATA_SUI_SPONSOR_PRIVATE_KEY is missing, invalid, or address-mismatched.");
+  if (!sponsor) throw new Error("ROBOMATA_SUI_PRIVATE_KEY is missing, invalid, or sponsor address-mismatched.");
 
   const client = getRobomataSuiClient();
   const gasBudget = getRobomataSuiSponsorGasBudget();
@@ -772,10 +751,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       "operator_complete_sponsored",
       "operator_release",
     ].includes(commitMode) &&
-    !operatorCommitConfigured
+    !sponsoredOperatorCommitConfigured
   ) {
     return NextResponse.json(
-      { error: "Operator-owned Sui commit is not configured for this app runtime." },
+      { error: "Native Sui sponsored operator commit is not configured for this app runtime." },
       { status: 400 },
     );
   }
@@ -932,21 +911,13 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     }
 
     try {
-      const operatorCommit =
-        sponsoredOperatorCommitConfigured || commitMode === "operator_prepare_sponsored"
-          ? await prepareSponsoredOperatorSuiCommit({
-              facilityObjectId,
-              facilityOperatorAddress,
-              label,
-              rootDigest,
-              submissionId: submission.id,
-            })
-          : await prepareOperatorSuiCommit({
-              facilityObjectId,
-              facilityOperatorAddress,
-              label,
-              rootDigest,
-            });
+      const operatorCommit = await prepareSponsoredOperatorSuiCommit({
+        facilityObjectId,
+        facilityOperatorAddress,
+        label,
+        rootDigest,
+        submissionId: submission.id,
+      });
       return NextResponse.json({ submission: committingSubmission, operatorCommit });
     } catch (error) {
       const errorMessage =
@@ -968,7 +939,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     const sponsor = getRobomataSuiSponsorSigner();
     if (!sponsor) {
       return NextResponse.json(
-        { error: "ROBOMATA_SUI_SPONSOR_PRIVATE_KEY is missing, invalid, or address-mismatched." },
+        { error: "ROBOMATA_SUI_PRIVATE_KEY is missing, invalid, or sponsor address-mismatched." },
         { status: 400 },
       );
     }

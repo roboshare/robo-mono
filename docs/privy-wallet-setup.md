@@ -69,10 +69,10 @@ Native Sui gas sponsorship is handled by Robomata, not by Privy/Pimlico. When
 allowlisted `commit_evidence` transaction, attaches sponsor-owned SUI gas,
 sponsor-signs the transaction bytes, asks the operator wallet to
 `sui:signTransaction`, then submits the dual-signed transaction server-side.
-This requires `ROBOMATA_SUI_SPONSOR_PRIVATE_KEY` and funded sponsor SUI coins in
-the target Sui network. It does not require `ROBOMATA_SUI_PRIVATE_KEY`; that
-variable is reserved for the legacy/test-only server-signed path where the
-server itself is the mapped facility operator.
+This requires `ROBOMATA_SUI_PRIVATE_KEY` and funded sponsor SUI coins in the
+target Sui network. In this mode the key signs only as gas sponsor. The same
+variable is reused as a legacy/test-only server signer only when operator-owned
+commits are disabled and the server itself is the mapped facility operator.
 
 ## Recommended Production Topology
 

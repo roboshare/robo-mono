@@ -115,10 +115,10 @@ Required environment:
   `ROBOMATA_SUI_SIGNER_ADDRESS`. Do not use this as the normal production
   fallback once operator-owned native sponsorship is enabled.
 - For operator-signed browser QA: `ROBOMATA_SUI_OPERATOR_COMMIT_ENABLED=true`
-  and a Sui wallet for the mapped facility operator address. Unsponsored QA
-  requires `sui:signAndExecuteTransaction`; native sponsored QA requires
-  `ROBOMATA_SUI_SPONSORSHIP_ENABLED=true`, `ROBOMATA_SUI_SPONSOR_PRIVATE_KEY`,
-  funded sponsor SUI coins, and a wallet exposing `sui:signTransaction`.
+  and a Sui wallet for the mapped facility operator address. Product-path QA is
+  native sponsored and requires `ROBOMATA_SUI_SPONSORSHIP_ENABLED=true`,
+  `ROBOMATA_SUI_PRIVATE_KEY`, funded sponsor SUI coins, and a wallet exposing
+  `sui:signTransaction`.
 - `ROBOMATA_SUI_FACILITY_IDS_JSON`
 - `ROBOMATA_SUI_FACILITY_OPERATORS_JSON`
 - `ROBOMATA_SEAL_PACKAGE_ID`, `ROBOMATA_SEAL_IDENTITY`,
