@@ -70,7 +70,9 @@ allowlisted `commit_evidence` transaction, attaches sponsor-owned SUI gas,
 sponsor-signs the transaction bytes, asks the operator wallet to
 `sui:signTransaction`, then submits the dual-signed transaction server-side.
 This requires `ROBOMATA_SUI_SPONSOR_PRIVATE_KEY` and funded sponsor SUI coins in
-the target Sui network.
+the target Sui network. It does not require `ROBOMATA_SUI_PRIVATE_KEY`; that
+variable is reserved for the legacy/test-only server-signed path where the
+server itself is the mapped facility operator.
 
 ## Recommended Production Topology
 

@@ -215,12 +215,14 @@ Use the flags as a matrix:
   submission id to the Sui address that created and controls the mapped facility
   object.
 - `ROBOMATA_SUI_PRIVATE_KEY=suiprivkey...` is the sensitive server-side Sui
-  testnet signer used by Vercel to submit evidence commit transactions when the
-  operator-owned wallet path is disabled or unavailable. It must belong to the
-  mapped facility operator and must never be exposed to the browser.
+  signer for the legacy/test-only server-signed path. It is useful for smoke
+  tests, migration debugging, or demos where operator wallet binding is
+  unavailable, but it is not the intended production fallback after the
+  operator-owned native sponsorship path is enabled. If used, it must belong to
+  the mapped facility operator and must never be exposed to the browser.
 - `ROBOMATA_SUI_SIGNER_ADDRESS=0x...` must match both the server signer's
   derived Sui address and the mapped facility operator before the runtime
-  exposes the server-side Sui commit path.
+  exposes the legacy server-side Sui commit path.
 - `ROBOMATA_PRIVY_SUI_WALLET_BINDING_ENABLED=true` and
   `NEXT_PUBLIC_ROBOMATA_PRIVY_SUI_WALLET_BINDING_ENABLED=true` let Robomata
   automatically provision and bind a Privy-managed Sui wallet for an authorized
