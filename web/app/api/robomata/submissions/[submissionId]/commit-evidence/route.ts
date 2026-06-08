@@ -29,8 +29,16 @@ const DEFAULT_COMMIT_STALE_MS = 10 * 60 * 1000;
 const DEFAULT_EVENT_QUERY_LIMIT = 100;
 const DEFAULT_EVENT_QUERY_MAX_PAGES = 10;
 const DEFAULT_SPONSOR_COIN_QUERY_MAX_PAGES = 10;
+const DEFAULT_SPONSOR_GAS_RESERVATION_TTL_MS = DEFAULT_COMMIT_STALE_MS;
 
-const localSponsorGasReservations = new Set<string>();
+type SponsorGasReservation = {
+  reservedAt: number;
+  rootDigest: string;
+  sponsorAddress: string;
+  submissionId: string;
+};
+
+const localSponsorGasReservations = new Map<string, SponsorGasReservation>();
 let sponsorGasReservationTableReady = false;
 
 export const runtime = "nodejs";
@@ -277,6 +285,13 @@ function hasPostgresConfig() {
   return Boolean(process.env.POSTGRES_URL);
 }
 
+function getSponsorGasReservationTtlMs() {
+  return parsePositiveInteger(
+    process.env.ROBOMATA_SUI_SPONSOR_RESERVATION_TTL_MS,
+    DEFAULT_SPONSOR_GAS_RESERVATION_TTL_MS,
+  );
+}
+
 async function ensureSponsorGasReservationTable() {
   if (sponsorGasReservationTableReady || !hasPostgresConfig()) return;
   await sql`
@@ -291,6 +306,32 @@ async function ensureSponsorGasReservationTable() {
   sponsorGasReservationTableReady = true;
 }
 
+function isMatchingSponsorGasReservation(
+  reservation: SponsorGasReservation | undefined,
+  input: { rootDigest: string; sponsorAddress: string; submissionId: string },
+) {
+  return (
+    reservation?.rootDigest === input.rootDigest &&
+    reservation.sponsorAddress === input.sponsorAddress &&
+    reservation.submissionId === input.submissionId
+  );
+}
+
+async function expireSponsorGasReservations() {
+  const ttlMs = getSponsorGasReservationTtlMs();
+  const staleBefore = Date.now() - ttlMs;
+  for (const [gasObjectId, reservation] of localSponsorGasReservations.entries()) {
+    if (reservation.reservedAt < staleBefore) localSponsorGasReservations.delete(gasObjectId);
+  }
+
+  if (!hasPostgresConfig()) return;
+  await ensureSponsorGasReservationTable();
+  await sql`
+    DELETE FROM robomata_sui_sponsor_gas_reservations
+    WHERE reserved_at < now() - (${ttlMs} * interval '1 millisecond')
+  `;
+}
+
 async function reserveSponsorGasObject(input: {
   gasObjectId: string;
   rootDigest: string;
@@ -299,7 +340,12 @@ async function reserveSponsorGasObject(input: {
 }): Promise<boolean> {
   if (!hasPostgresConfig()) {
     if (localSponsorGasReservations.has(input.gasObjectId)) return false;
-    localSponsorGasReservations.add(input.gasObjectId);
+    localSponsorGasReservations.set(input.gasObjectId, {
+      reservedAt: Date.now(),
+      rootDigest: input.rootDigest,
+      sponsorAddress: input.sponsorAddress,
+      submissionId: input.submissionId,
+    });
     return true;
   }
 
@@ -323,15 +369,26 @@ async function reserveSponsorGasObject(input: {
   return result.rowCount === 1;
 }
 
-async function releaseSponsorGasReservation(gasObjectId: string | undefined) {
-  if (!gasObjectId) return;
-  localSponsorGasReservations.delete(gasObjectId);
+async function releaseSponsorGasReservation(input: {
+  gasObjectId: string | undefined;
+  rootDigest: string;
+  sponsorAddress: string;
+  submissionId: string;
+}) {
+  if (!input.gasObjectId) return;
+  const localReservation = localSponsorGasReservations.get(input.gasObjectId);
+  if (isMatchingSponsorGasReservation(localReservation, input)) {
+    localSponsorGasReservations.delete(input.gasObjectId);
+  }
   if (!hasPostgresConfig()) return;
 
   await ensureSponsorGasReservationTable();
   await sql`
     DELETE FROM robomata_sui_sponsor_gas_reservations
-    WHERE gas_object_id = ${gasObjectId}
+    WHERE gas_object_id = ${input.gasObjectId}
+      AND submission_id = ${input.submissionId}
+      AND root_digest = ${input.rootDigest}
+      AND sponsor_address = ${input.sponsorAddress}
   `;
 }
 
@@ -406,6 +463,8 @@ async function selectSponsorGasPayment(input: {
     DEFAULT_SPONSOR_COIN_QUERY_MAX_PAGES,
   );
   let cursor: string | null | undefined;
+
+  await expireSponsorGasReservations();
 
   for (let page = 0; page < maxPages; page++) {
     const coins = await withTimeout(
@@ -495,7 +554,12 @@ async function prepareSponsoredOperatorSuiCommit(input: {
       },
     };
   } catch (error) {
-    await releaseSponsorGasReservation(gasPayment?.objectId);
+    await releaseSponsorGasReservation({
+      gasObjectId: gasPayment?.objectId,
+      rootDigest: input.rootDigest,
+      sponsorAddress: sponsor.address,
+      submissionId: input.submissionId,
+    });
     throw error;
   }
 }
@@ -727,7 +791,18 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
   }
 
   const rootDigest = submission.evidenceCommit.rootDigest;
+  const reservationSubmissionId = submission.id;
   const label = `submission_${submission.id}`;
+  const releaseCurrentSponsorGasReservation = async (gasObjectId: string | undefined) => {
+    const sponsorAddress = getRobomataSuiSponsorSigner()?.address;
+    if (!sponsorAddress) return;
+    await releaseSponsorGasReservation({
+      gasObjectId,
+      rootDigest,
+      sponsorAddress,
+      submissionId: reservationSubmissionId,
+    });
+  };
   let operatorWalletAddress: string | undefined;
   if (commitMode === "operator_complete" || commitMode === "operator_complete_sponsored") {
     operatorWalletAddress = requestBody.walletAddress?.toLowerCase();
@@ -835,7 +910,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
   }
 
   if (commitMode === "operator_release") {
-    await releaseSponsorGasReservation(requestBody.sponsorGasObjectId);
+    await releaseCurrentSponsorGasReservation(requestBody.sponsorGasObjectId);
     if (submission.evidenceCommit.status !== "committing") return NextResponse.json({ submission });
     const released = await store.failEvidenceCommit(
       submission.id,
@@ -926,7 +1001,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
         });
       }
 
-      await releaseSponsorGasReservation(requestBody.sponsorGasObjectId);
+      await releaseCurrentSponsorGasReservation(requestBody.sponsorGasObjectId);
       return markCommitFailed({
         store,
         submission,
@@ -948,7 +1023,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       txDigest ??= await findCommittedEvidenceEvent({ facilityObjectId, label, rootDigest });
     } catch (error) {
       if (isFailedSuiTransactionError(error)) {
-        await releaseSponsorGasReservation(requestBody.sponsorGasObjectId);
+        await releaseCurrentSponsorGasReservation(requestBody.sponsorGasObjectId);
         const released = await store.failEvidenceCommit(submission.id, rootDigest, error.message);
         return NextResponse.json({ submission: released ?? submission, error: error.message }, { status: 409 });
       }
@@ -989,15 +1064,15 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     });
 
     if (saved) {
-      await releaseSponsorGasReservation(requestBody.sponsorGasObjectId);
+      await releaseCurrentSponsorGasReservation(requestBody.sponsorGasObjectId);
       return NextResponse.json({ submission: saved });
     }
     const latest = await store.get(submission.id);
     if (latest?.evidenceCommit.status === "committed") {
-      await releaseSponsorGasReservation(requestBody.sponsorGasObjectId);
+      await releaseCurrentSponsorGasReservation(requestBody.sponsorGasObjectId);
       return NextResponse.json({ submission: latest });
     }
-    await releaseSponsorGasReservation(requestBody.sponsorGasObjectId);
+    await releaseCurrentSponsorGasReservation(requestBody.sponsorGasObjectId);
     return NextResponse.json(
       { error: "Sponsored operator Sui commit was found, but local commit state changed before it could be saved." },
       { status: 409 },
