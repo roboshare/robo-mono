@@ -72,7 +72,7 @@ export function getRobomataSuiServerSigner(): { keypair: Keypair; address: strin
 }
 
 export function getRobomataSuiSponsorSigner(): { keypair: Keypair; address: string } | null {
-  const privateKey = trimmedEnv("ROBOMATA_SUI_SPONSOR_PRIVATE_KEY");
+  const privateKey = trimmedEnv("ROBOMATA_SUI_PRIVATE_KEY");
   if (!privateKey) return null;
 
   try {
@@ -134,6 +134,7 @@ export function isRobomataSuiCommitRuntimeConfigured(input: {
       expectedSignerAddress &&
       signer.address === expectedSignerAddress &&
       signer.address === facilityOperatorAddress &&
+      !isRobomataSuiOperatorCommitEnabled() &&
       isRobomataSuiCommitEnabled(),
   );
 }
