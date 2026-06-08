@@ -76,6 +76,7 @@ export type SubmissionAuditEvent = {
     | "receivable_excluded"
     | "receivable_updated"
     | "evidence_updated"
+    | "sui_facility_assigned"
     | "sui_commit_prepared"
     | "sui_commit_completed";
   createdAt: string;
@@ -92,6 +93,10 @@ export type SubmissionEvidenceCommit = {
   committedAt?: string;
   facilityObjectId?: string;
   facilityOperatorAddress?: string;
+  facilityAssignmentStartedAt?: string;
+  facilityAssignmentRootDigest?: string;
+  facilityAssignmentOperatorAddress?: string;
+  facilityAssignmentErrorMessage?: string;
   modulePath: string;
   commitMode: "prepared" | "configured" | "operator_configured";
   commitAuthority?: "server" | "operator";
@@ -158,38 +163,9 @@ export function createAuditEvent(
   };
 }
 
-function parseStringMap(raw: string | undefined): Record<string, string> {
-  if (!raw) return {};
-
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-
-    return Object.fromEntries(
-      Object.entries(parsed)
-        .filter(([, value]) => typeof value === "string" && value.trim())
-        .map(([key, value]) => [key, (value as string).trim()]),
-    );
-  } catch {
-    return {};
-  }
-}
-
-function parseSuiFacilityObjectIdMap(): Record<string, string> {
-  return parseStringMap(process.env.ROBOMATA_SUI_FACILITY_IDS_JSON);
-}
-
-function parseSuiFacilityOperatorMap(): Record<string, string> {
-  return parseStringMap(process.env.ROBOMATA_SUI_FACILITY_OPERATORS_JSON);
-}
-
 export function resolveSubmissionFacilityObjectId(
   submission: Pick<FacilitySubmission, "id" | "evidenceCommit">,
 ): string | undefined {
-  const facilityIds = parseSuiFacilityObjectIdMap();
-  const configured = facilityIds[submission.id];
-  if (configured) return configured;
-
   const existing = submission.evidenceCommit.facilityObjectId?.trim();
   if (existing) return existing;
 }
@@ -197,10 +173,6 @@ export function resolveSubmissionFacilityObjectId(
 export function resolveSubmissionFacilityOperatorAddress(
   submission: Pick<FacilitySubmission, "id" | "evidenceCommit">,
 ): string | undefined {
-  const operators = parseSuiFacilityOperatorMap();
-  const configured = operators[submission.id];
-  if (configured) return configured;
-
   const existing = submission.evidenceCommit.facilityOperatorAddress?.trim();
   if (existing) return existing;
 }
@@ -254,16 +226,19 @@ export function touchSubmission(submission: FacilitySubmission): FacilitySubmiss
 }
 
 export function invalidateSubmissionArtifacts(submission: FacilitySubmission): FacilitySubmission {
-  const facilityObjectId = resolveSubmissionFacilityObjectId(submission);
-  const facilityOperatorAddress = resolveSubmissionFacilityOperatorAddress(submission);
+  const previousCommit = submission.evidenceCommit;
   submission.computation = null;
   submission.exceptions = [];
   submission.evidenceCommit = {
     status: "not_started",
     modulePath: SUI_COMMIT_MODULE_PATH,
-    commitMode: "prepared",
-    facilityObjectId,
-    facilityOperatorAddress,
+    commitMode: previousCommit.commitMode,
+    facilityObjectId: previousCommit.facilityObjectId,
+    facilityOperatorAddress: previousCommit.facilityOperatorAddress,
+    facilityAssignmentStartedAt: previousCommit.facilityAssignmentStartedAt,
+    facilityAssignmentRootDigest: previousCommit.facilityAssignmentRootDigest,
+    facilityAssignmentOperatorAddress: previousCommit.facilityAssignmentOperatorAddress,
+    facilityAssignmentErrorMessage: previousCommit.facilityAssignmentErrorMessage,
   };
   return touchSubmission(submission);
 }

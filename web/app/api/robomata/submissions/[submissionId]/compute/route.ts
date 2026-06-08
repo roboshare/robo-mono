@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isRobomataWorkflowMutationEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
 import {
+  getPrivyUserFromRequest,
   requirePartnerAddress,
   requireSubmissionAccess,
   requireSubmissionMutable,
 } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
+import { ensureSubmissionSuiFacility } from "~~/lib/robomata/server/suiFacilityAssignment";
 import { computeSubmissionArtifacts } from "~~/lib/robomata/submissionAdapters";
-import { addAuditEvent } from "~~/lib/robomata/submissions";
+import { createAuditEvent } from "~~/lib/robomata/submissions";
 
 export const runtime = "nodejs";
 
@@ -53,12 +55,48 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     }
 
     submission.computation = await computeSubmissionArtifacts(submission);
-    addAuditEvent(submission, "borrowing_base_computed", `Computed borrowing base for ${submission.facilityName}.`, {
-      exceptionCount: submission.computation.borrowingBase.exceptionCount,
-    });
+    submission.auditEvents.unshift(
+      createAuditEvent("borrowing_base_computed", `Computed borrowing base for ${submission.facilityName}.`, {
+        exceptionCount: submission.computation.borrowingBase.exceptionCount,
+      }),
+    );
+
+    const privyUser = await getPrivyUserFromRequest(request).catch(() => null);
+    if (submission.evidenceCommit.facilityObjectId && submission.evidenceCommit.facilityOperatorAddress) {
+      const assignment = await ensureSubmissionSuiFacility({
+        partnerAddress,
+        privyUserId: privyUser?.id ?? null,
+        store,
+        submission,
+      });
+      if (!assignment.assigned && assignment.reason === "assignment_in_progress_or_changed") {
+        return NextResponse.json(
+          { error: "Sui facility update is in progress for this submission. Try again after it completes." },
+          { status: 409 },
+        );
+      }
+      if (!assignment.assigned && assignment.reason === "updated") {
+        return NextResponse.json({ submission: assignment.submission });
+      }
+      if (assignment.assigned) {
+        return NextResponse.json({ submission: assignment.submission });
+      }
+
+      return NextResponse.json(
+        { error: "Sui facility borrowing-base update did not run. Local computation was not saved." },
+        { status: assignment.reason === "runtime_not_configured" ? 503 : 409 },
+      );
+    }
 
     const saved = await store.save(submission);
-    return NextResponse.json({ submission: saved });
+    const assignment = await ensureSubmissionSuiFacility({
+      partnerAddress,
+      privyUserId: privyUser?.id ?? null,
+      store,
+      submission: saved,
+    });
+
+    return NextResponse.json({ submission: assignment.submission });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to compute borrowing base." },

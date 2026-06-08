@@ -177,9 +177,9 @@ Use the flags as a matrix:
   commits: they require `ROBOMATA_SUI_SPONSORSHIP_ENABLED=true`,
   `ROBOMATA_SUI_PRIVATE_KEY`, and `sui:signTransaction` so the server can
   execute the transaction with both the operator signature and sponsor
-  signature. This path still requires `ROBOMATA_SUI_PACKAGE_ID`,
-  per-submission facility mapping, and per-submission operator mapping, but it
-  does not require `ROBOMATA_SUI_SIGNER_ADDRESS`.
+  signature. This path requires `ROBOMATA_SUI_PACKAGE_ID` and the Sui facility
+  assignment persisted on the submission; it does not require
+  `ROBOMATA_SUI_SIGNER_ADDRESS`.
 - `ROBOMATA_SUI_SPONSORSHIP_ENABLED=true` enables native Sui gas sponsorship for
   operator-owned commits. The server builds transaction-kind bytes for the
   allowlisted `commit_evidence` call, sets the mapped facility operator as the
@@ -213,14 +213,14 @@ Use the flags as a matrix:
   prepared sponsor gas reservation can remain idle before the next prepare
   attempt expires it. It defaults to the commit stale window so abandoned tabs or
   interrupted network requests cannot permanently strand sponsor gas coins.
-- `ROBOMATA_SUI_FACILITY_IDS_JSON={"sub_...":"0x..."}` maps each submission id
-  to its own Sui facility object. Do not use facility names as keys; names are
-  mutable operator input and are not safe authorization boundaries.
-- `ROBOMATA_SUI_FACILITY_OPERATORS_JSON={"sub_...":"0x..."}` maps each
-  submission id to the Sui address that created and controls the mapped facility
-  object.
+- When `ROBOMATA_SUI_COMMIT_ENABLED=true`,
+  `ROBOMATA_PRIVY_SUI_WALLET_BINDING_ENABLED=true`, `ROBOMATA_SUI_PACKAGE_ID`,
+  and `ROBOMATA_SUI_PRIVATE_KEY` are configured, submission creation or compute
+  creates a Sui facility and persists `facilityObjectId` plus
+  `facilityOperatorAddress` on the submission. The facility operator is the
+  bound Privy Sui wallet address; no per-submission env maps are required.
 - `ROBOMATA_SUI_SIGNER_ADDRESS=0x...` must match both the server signer's
-  derived Sui address and the mapped facility operator before the runtime
+  derived Sui address and the persisted facility operator before the runtime
   exposes the legacy server-side Sui commit path.
 - `ROBOMATA_PRIVY_SUI_WALLET_BINDING_ENABLED=true` and
   `NEXT_PUBLIC_ROBOMATA_PRIVY_SUI_WALLET_BINDING_ENABLED=true` let Robomata

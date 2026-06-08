@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isRobomataWorkflowMutationEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
+import {
+  isRobomataWalrusUploadsEnabled,
+  isRobomataWorkflowMutationEnabled,
+  isRobomataWorkflowServerEnabled,
+} from "~~/lib/featureFlags";
 import { createEvidenceRecord } from "~~/lib/robomata/server/evidenceStorage";
 import {
   requirePartnerAddress,
@@ -242,6 +246,15 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     if (accessError) return accessError;
     const mutabilityError = requireSubmissionMutable(submission);
     if (mutabilityError) return mutabilityError;
+    if (isRobomataWalrusUploadsEnabled() && !resolveSubmissionFacilityObjectId(submission)) {
+      return NextResponse.json(
+        {
+          error:
+            "Real Seal/Walrus evidence upload requires an assigned Sui facility identity. Reopen the submission after Sui facility assignment completes.",
+        },
+        { status: 409 },
+      );
+    }
 
     const maxEvidenceUploadBytes = getEvidenceUploadMaxBytes();
     const contentLength = Number.parseInt(request.headers.get("content-length") ?? "", 10);

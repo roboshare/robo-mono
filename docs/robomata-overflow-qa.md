@@ -115,12 +115,14 @@ Required environment:
   `ROBOMATA_SUI_SIGNER_ADDRESS`. Do not use this as the normal production
   fallback once operator-owned native sponsorship is enabled.
 - For operator-signed browser QA: `ROBOMATA_SUI_OPERATOR_COMMIT_ENABLED=true`
-  and a Sui wallet for the mapped facility operator address. Product-path QA is
-  native sponsored and requires `ROBOMATA_SUI_SPONSORSHIP_ENABLED=true`,
+  and a Sui wallet for the persisted facility operator address. Product-path QA
+  is native sponsored and requires `ROBOMATA_SUI_SPONSORSHIP_ENABLED=true`,
   `ROBOMATA_SUI_PRIVATE_KEY`, funded sponsor SUI coins, and a wallet exposing
   `sui:signTransaction`.
-- `ROBOMATA_SUI_FACILITY_IDS_JSON`
-- `ROBOMATA_SUI_FACILITY_OPERATORS_JSON`
+- Submission creation or compute assigns the Sui facility automatically when the
+  Privy Sui wallet binding and Sui package/signing runtime are configured. QA
+  should confirm `facilityObjectId` and `facilityOperatorAddress` are persisted
+  in Postgres on the submission payload.
 - `ROBOMATA_SEAL_PACKAGE_ID`, `ROBOMATA_SEAL_IDENTITY`,
   `ROBOMATA_SEAL_KEY_SERVER_OBJECT_ID`,
   `ROBOMATA_SEAL_KEY_SERVER_AGGREGATOR_URL`, and `ROBOMATA_SEAL_THRESHOLD`
