@@ -73,6 +73,7 @@ export async function POST(request: NextRequest) {
     });
     const privyUser = await getPrivyUserFromRequest(request).catch(() => null);
     const assignment = await ensureSubmissionSuiFacility({
+      allowDraftFacility: true,
       partnerAddress,
       privyUserId: privyUser?.id ?? null,
       store,

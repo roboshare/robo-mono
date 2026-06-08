@@ -55,6 +55,7 @@ type SubmissionStore = {
 type AssignSuiFacilityInput = {
   facilityObjectId: string;
   facilityOperatorAddress: string;
+  expectedAssignmentStartedAt: string;
   expectedRootDigest: string;
   expectedUpdatedAt: string;
   txDigest?: string;
@@ -68,7 +69,10 @@ type BeginSuiFacilityAssignmentInput = {
 
 type FailSuiFacilityAssignmentInput = {
   errorMessage: string;
+  expectedFacilityOperatorAddress: string;
   expectedRootDigest: string;
+  expectedStartedAt: string;
+  releaseReservation: boolean;
 };
 
 type CompleteEvidenceCommitInput = {
@@ -131,8 +135,9 @@ function canBeginSuiFacilityAssignment(
   input: BeginSuiFacilityAssignmentInput,
 ): boolean {
   if (submission.evidenceCommit.facilityObjectId || submission.evidenceCommit.facilityOperatorAddress) return false;
-  if (submission.updatedAt !== input.expectedUpdatedAt) return false;
-  if (submission.evidenceCommit.rootDigest !== input.expectedRootDigest) return false;
+  if (expectedUpdatedAt(submission) !== input.expectedUpdatedAt) return false;
+  if ((submission.evidenceCommit.rootDigest ?? "") !== input.expectedRootDigest) return false;
+  if (submission.evidenceCommit.facilityAssignmentErrorMessage?.startsWith("uncertain:")) return false;
   if (submission.evidenceCommit.facilityAssignmentStartedAt && !isStaleFacilityAssignmentLock(submission)) {
     return false;
   }
@@ -160,12 +165,22 @@ function applyFailSuiFacilityAssignment(
   input: FailSuiFacilityAssignmentInput,
 ): FacilitySubmission | null {
   if (submission.evidenceCommit.facilityAssignmentRootDigest !== input.expectedRootDigest) return null;
+  if (submission.evidenceCommit.facilityAssignmentOperatorAddress !== input.expectedFacilityOperatorAddress) {
+    return null;
+  }
+  if (submission.evidenceCommit.facilityAssignmentStartedAt !== input.expectedStartedAt) return null;
 
   submission.evidenceCommit = {
     ...submission.evidenceCommit,
-    facilityAssignmentStartedAt: undefined,
-    facilityAssignmentRootDigest: undefined,
-    facilityAssignmentOperatorAddress: undefined,
+    facilityAssignmentStartedAt: input.releaseReservation
+      ? undefined
+      : submission.evidenceCommit.facilityAssignmentStartedAt,
+    facilityAssignmentRootDigest: input.releaseReservation
+      ? undefined
+      : submission.evidenceCommit.facilityAssignmentRootDigest,
+    facilityAssignmentOperatorAddress: input.releaseReservation
+      ? undefined
+      : submission.evidenceCommit.facilityAssignmentOperatorAddress,
     facilityAssignmentErrorMessage: input.errorMessage,
   };
   return touchSubmission(submission);
@@ -423,10 +438,10 @@ function createFileStore(): SubmissionStore {
         }
         if (
           submission.updatedAt !== input.expectedUpdatedAt ||
-          submission.evidenceCommit.rootDigest !== input.expectedRootDigest ||
+          (submission.evidenceCommit.rootDigest ?? "") !== input.expectedRootDigest ||
           submission.evidenceCommit.facilityAssignmentRootDigest !== input.expectedRootDigest ||
           submission.evidenceCommit.facilityAssignmentOperatorAddress !== input.facilityOperatorAddress ||
-          !submission.evidenceCommit.facilityAssignmentStartedAt
+          submission.evidenceCommit.facilityAssignmentStartedAt !== input.expectedAssignmentStartedAt
         ) {
           return null;
         }
@@ -569,7 +584,7 @@ function createPostgresStore(): SubmissionStore {
         WHERE
           id = ${id}
           AND updated_at = ${input.expectedUpdatedAt}::timestamptz
-          AND payload->'evidenceCommit'->>'rootDigest' = ${input.expectedRootDigest}
+          AND COALESCE(payload->'evidenceCommit'->>'rootDigest', '') = ${input.expectedRootDigest}
           AND COALESCE(payload->'evidenceCommit'->>'facilityObjectId', '') = ''
           AND COALESCE(payload->'evidenceCommit'->>'facilityOperatorAddress', '') = ''
           AND (
@@ -596,7 +611,7 @@ function createPostgresStore(): SubmissionStore {
       }
       if (
         current.updatedAt !== input.expectedUpdatedAt ||
-        current.evidenceCommit.rootDigest !== input.expectedRootDigest
+        (current.evidenceCommit.rootDigest ?? "") !== input.expectedRootDigest
       ) {
         return null;
       }
@@ -611,7 +626,10 @@ function createPostgresStore(): SubmissionStore {
         WHERE
           id = ${id}
           AND updated_at = ${input.expectedUpdatedAt}::timestamptz
-          AND payload->'evidenceCommit'->>'rootDigest' = ${input.expectedRootDigest}
+          AND COALESCE(payload->'evidenceCommit'->>'rootDigest', '') = ${input.expectedRootDigest}
+          AND payload->'evidenceCommit'->>'facilityAssignmentRootDigest' = ${input.expectedRootDigest}
+          AND payload->'evidenceCommit'->>'facilityAssignmentOperatorAddress' = ${input.facilityOperatorAddress}
+          AND payload->'evidenceCommit'->>'facilityAssignmentStartedAt' = ${input.expectedAssignmentStartedAt}
           AND COALESCE(payload->'evidenceCommit'->>'facilityObjectId', '') = ''
           AND COALESCE(payload->'evidenceCommit'->>'facilityOperatorAddress', '') = ''
         RETURNING payload;
@@ -638,6 +656,8 @@ function createPostgresStore(): SubmissionStore {
         WHERE
           id = ${id}
           AND payload->'evidenceCommit'->>'facilityAssignmentRootDigest' = ${input.expectedRootDigest}
+          AND payload->'evidenceCommit'->>'facilityAssignmentOperatorAddress' = ${input.expectedFacilityOperatorAddress}
+          AND payload->'evidenceCommit'->>'facilityAssignmentStartedAt' = ${input.expectedStartedAt}
           AND COALESCE(payload->'evidenceCommit'->>'facilityObjectId', '') = ''
         RETURNING payload;
       `;

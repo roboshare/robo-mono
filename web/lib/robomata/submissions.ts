@@ -226,12 +226,19 @@ export function touchSubmission(submission: FacilitySubmission): FacilitySubmiss
 }
 
 export function invalidateSubmissionArtifacts(submission: FacilitySubmission): FacilitySubmission {
+  const previousCommit = submission.evidenceCommit;
   submission.computation = null;
   submission.exceptions = [];
   submission.evidenceCommit = {
     status: "not_started",
     modulePath: SUI_COMMIT_MODULE_PATH,
-    commitMode: "prepared",
+    commitMode: previousCommit.commitMode,
+    facilityObjectId: previousCommit.facilityObjectId,
+    facilityOperatorAddress: previousCommit.facilityOperatorAddress,
+    facilityAssignmentStartedAt: previousCommit.facilityAssignmentStartedAt,
+    facilityAssignmentRootDigest: previousCommit.facilityAssignmentRootDigest,
+    facilityAssignmentOperatorAddress: previousCommit.facilityAssignmentOperatorAddress,
+    facilityAssignmentErrorMessage: previousCommit.facilityAssignmentErrorMessage,
   };
   return touchSubmission(submission);
 }

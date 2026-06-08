@@ -313,5 +313,12 @@ export function requireSubmissionMutable(submission: FacilitySubmission): NextRe
     );
   }
 
+  if (submission.evidenceCommit.facilityAssignmentStartedAt) {
+    return NextResponse.json(
+      { error: "Sui facility assignment is in progress for this submission. Try again after it completes." },
+      { status: 409 },
+    );
+  }
+
   return null;
 }
