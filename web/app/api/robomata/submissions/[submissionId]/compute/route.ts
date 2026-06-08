@@ -71,16 +71,21 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       });
       if (!assignment.assigned && assignment.reason === "assignment_in_progress_or_changed") {
         return NextResponse.json(
-          { error: "Sui facility assignment is in progress for this submission. Try again after it completes." },
+          { error: "Sui facility update is in progress for this submission. Try again after it completes." },
           { status: 409 },
         );
       }
       if (!assignment.assigned && assignment.reason === "updated") {
         return NextResponse.json({ submission: assignment.submission });
       }
+      if (assignment.assigned) {
+        return NextResponse.json({ submission: assignment.submission });
+      }
 
-      const saved = await store.save(submission);
-      return NextResponse.json({ submission: saved });
+      return NextResponse.json(
+        { error: "Sui facility borrowing-base update did not run. Local computation was not saved." },
+        { status: assignment.reason === "runtime_not_configured" ? 503 : 409 },
+      );
     }
 
     const saved = await store.save(submission);

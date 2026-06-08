@@ -83,6 +83,7 @@ type CompleteSuiFacilityUpdateInput = {
 
 type FailSuiFacilityAssignmentInput = {
   errorMessage: string;
+  expectedFacilityObjectId?: string;
   expectedFacilityOperatorAddress: string;
   expectedRootDigest: string;
   expectedStartedAt: string;
@@ -801,7 +802,10 @@ function createPostgresStore(): SubmissionStore {
           AND payload->'evidenceCommit'->>'facilityAssignmentRootDigest' = ${input.expectedRootDigest}
           AND payload->'evidenceCommit'->>'facilityAssignmentOperatorAddress' = ${input.expectedFacilityOperatorAddress}
           AND payload->'evidenceCommit'->>'facilityAssignmentStartedAt' = ${input.expectedStartedAt}
-          AND COALESCE(payload->'evidenceCommit'->>'facilityObjectId', '') = ''
+          AND (
+            COALESCE(payload->'evidenceCommit'->>'facilityObjectId', '') = ''
+            OR payload->'evidenceCommit'->>'facilityObjectId' = ${input.expectedFacilityObjectId ?? ""}
+          )
         RETURNING payload;
       `;
 

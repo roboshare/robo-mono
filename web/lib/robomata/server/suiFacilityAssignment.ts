@@ -56,6 +56,7 @@ type AssignmentStore = {
     id: string,
     input: {
       errorMessage: string;
+      expectedFacilityObjectId?: string;
       expectedFacilityOperatorAddress: string;
       expectedRootDigest: string;
       expectedStartedAt: string;
@@ -313,6 +314,7 @@ export async function ensureSubmissionSuiFacility(input: {
           errorMessage: `${uncertain ? "uncertain: " : ""}${
             error instanceof Error ? error.message : "Sui facility borrowing-base update failed."
           }`,
+          expectedFacilityObjectId: facilityObjectId,
           expectedFacilityOperatorAddress: facilityOperatorAddress,
           expectedRootDigest: rootDigest,
           expectedStartedAt: assignmentStartedAt,

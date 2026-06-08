@@ -133,7 +133,7 @@ module robomata_overflow::facility {
     }
 
     fun assert_update_authority(facility: &Facility, caller: address) {
-        assert!(facility.operator == caller || facility.update_authority == caller, E_NOT_AUTHORIZED_OPERATOR);
+        assert!(facility.update_authority == caller, E_NOT_AUTHORIZED_OPERATOR);
     }
 
     fun assert_operator_address(operator: address, caller: address) {
@@ -141,8 +141,8 @@ module robomata_overflow::facility {
     }
 
     #[test_only]
-    fun assert_update_authority_address(operator: address, update_authority: address, caller: address) {
-        assert!(operator == caller || update_authority == caller, E_NOT_AUTHORIZED_OPERATOR);
+    fun assert_update_authority_address(update_authority: address, caller: address) {
+        assert!(update_authority == caller, E_NOT_AUTHORIZED_OPERATOR);
     }
 
     #[test]
@@ -152,12 +152,17 @@ module robomata_overflow::facility {
 
     #[test]
     fun authorized_update_authority_passes() {
-        assert_update_authority_address(@0xA, @0xB, @0xB);
+        assert_update_authority_address(@0xB, @0xB);
+    }
+
+    #[test, expected_failure(abort_code = E_NOT_AUTHORIZED_OPERATOR)]
+    fun operator_cannot_update_borrowing_base() {
+        assert_update_authority_address(@0xB, @0xA);
     }
 
     #[test, expected_failure(abort_code = E_NOT_AUTHORIZED_OPERATOR)]
     fun unauthorized_update_authority_fails() {
-        assert_update_authority_address(@0xA, @0xB, @0xC);
+        assert_update_authority_address(@0xB, @0xC);
     }
 
     #[test, expected_failure(abort_code = E_NOT_AUTHORIZED_OPERATOR)]
