@@ -197,10 +197,17 @@ Use the flags as a matrix:
   `ROBOMATA_SUI_SPONSOR_MIN_COIN_BALANCE` optionally tune native sponsorship
   budgets in MIST. The sponsor selector scans paginated SUI coins, reserves the
   selected gas object id before sponsor-signing, and releases the reservation if
-  the operator cancels before a digest is returned.
+  the operator cancels before a digest is returned. Reservation release is
+  scoped to the submission id, evidence root, and sponsor address so a caller
+  cannot release another submission's in-flight sponsor coin by passing a public
+  gas object id.
 - `ROBOMATA_SUI_SPONSOR_COIN_QUERY_MAX_PAGES` optionally controls how many pages
   of sponsor SUI coins are scanned before reporting no available unreserved gas
   coin.
+- `ROBOMATA_SUI_SPONSOR_RESERVATION_TTL_MS` optionally controls how long a
+  prepared sponsor gas reservation can remain idle before the next prepare
+  attempt expires it. It defaults to the commit stale window so abandoned tabs or
+  interrupted network requests cannot permanently strand sponsor gas coins.
 - `ROBOMATA_SUI_FACILITY_IDS_JSON={"sub_...":"0x..."}` maps each submission id
   to its own Sui facility object. Do not use facility names as keys; names are
   mutable operator input and are not safe authorization boundaries.
