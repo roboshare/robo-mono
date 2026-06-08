@@ -19,6 +19,7 @@ module robomata_overflow::facility {
 
     public struct FacilityCreated has copy, drop {
         facility_id: address,
+        operator: address,
         available_cents: u64,
     }
 
@@ -40,6 +41,7 @@ module robomata_overflow::facility {
     }
 
     entry fun create_facility(
+        operator: address,
         gross_receivables_cents: u64,
         eligible_receivables_cents: u64,
         advance_rate_bps: u64,
@@ -52,7 +54,7 @@ module robomata_overflow::facility {
         let facility_id = sui::object::uid_to_address(&id);
         let facility = Facility {
             id,
-            operator: tx_context::sender(ctx),
+            operator,
             gross_receivables_cents,
             eligible_receivables_cents,
             advance_rate_bps,
@@ -63,6 +65,7 @@ module robomata_overflow::facility {
 
         sui::event::emit(FacilityCreated {
             facility_id,
+            operator,
             available_cents,
         });
 

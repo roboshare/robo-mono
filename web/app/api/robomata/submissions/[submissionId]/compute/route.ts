@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isRobomataWorkflowMutationEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
 import {
+  getPrivyUserFromRequest,
   requirePartnerAddress,
   requireSubmissionAccess,
   requireSubmissionMutable,
 } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
+import { ensureSubmissionSuiFacility } from "~~/lib/robomata/server/suiFacilityAssignment";
 import { computeSubmissionArtifacts } from "~~/lib/robomata/submissionAdapters";
 import { addAuditEvent } from "~~/lib/robomata/submissions";
 
@@ -58,7 +60,15 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     });
 
     const saved = await store.save(submission);
-    return NextResponse.json({ submission: saved });
+    const privyUser = await getPrivyUserFromRequest(request).catch(() => null);
+    const assignment = await ensureSubmissionSuiFacility({
+      partnerAddress,
+      privyUserId: privyUser?.id ?? null,
+      store,
+      submission: saved,
+    });
+
+    return NextResponse.json({ submission: assignment.submission });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to compute borrowing base." },

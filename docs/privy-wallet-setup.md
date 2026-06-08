@@ -74,6 +74,13 @@ target Sui network. In this mode the key signs only as gas sponsor. The same
 variable is reused as a legacy/test-only server signer only when operator-owned
 commits are disabled and the server itself is the mapped facility operator.
 
+When `ROBOMATA_SUI_COMMIT_ENABLED=true`, `ROBOMATA_SUI_PACKAGE_ID`, and
+`ROBOMATA_SUI_PRIVATE_KEY` are configured with Sui wallet binding enabled,
+Robomata creates a Sui facility during submission creation or compute and
+persists `facilityObjectId` plus `facilityOperatorAddress` on the submission.
+The facility operator is the bound Privy Sui wallet address; per-submission Sui
+facility env maps are no longer used.
+
 ## Recommended Production Topology
 
 For Roboshare, the recommended setup is:

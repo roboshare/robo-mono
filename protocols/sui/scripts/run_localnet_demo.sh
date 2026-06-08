@@ -107,7 +107,7 @@ COMMIT_JSON=""
 PACKAGE_ID="$(printf '%s' "$PUBLISH_JSON" | node -e 'const fs = require("fs"); const data = JSON.parse(fs.readFileSync(0, "utf8")); const published = data.objectChanges.find(change => change.type === "published"); if (!published) process.exit(1); process.stdout.write(published.packageId);')"
 PUBLISH_DIGEST="$(printf '%s' "$PUBLISH_JSON" | node -e 'const fs = require("fs"); const data = JSON.parse(fs.readFileSync(0, "utf8")); process.stdout.write(data.digest);')"
 
-CREATE_JSON="$(sui client --client.config "$CLIENT_CONFIG" call --package "$PACKAGE_ID" --module facility --function create_facility --args 124010000 69530000 8200 36155600 0x65766964656e63652d726f6f742d7631 0x6 --gas-budget 100000000 --json)"
+CREATE_JSON="$(sui client --client.config "$CLIENT_CONFIG" call --package "$PACKAGE_ID" --module facility --function create_facility --args "$ACTIVE_ADDRESS" 124010000 69530000 8200 36155600 0x65766964656e63652d726f6f742d7631 0x6 --gas-budget 100000000 --json)"
 FACILITY_ID="$(printf '%s' "$CREATE_JSON" | node -e 'const fs = require("fs"); const data = JSON.parse(fs.readFileSync(0, "utf8")); const event = data.events.find(item => item.type.endsWith("::FacilityCreated")); if (!event) process.exit(1); process.stdout.write(event.parsedJson.facility_id);')"
 
 UPDATE_JSON="$(sui client --client.config "$CLIENT_CONFIG" call --package "$PACKAGE_ID" --module facility --function update_borrowing_base --args "$FACILITY_ID" 71200000 40200400 0x757064617465642d65766964656e63652d726f6f742d7632 0x6 --gas-budget 100000000 --json)"

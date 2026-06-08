@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isRobomataWorkflowMutationEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
-import { requirePartnerAddress } from "~~/lib/robomata/server/submissionAccess";
+import { getPrivyUserFromRequest, requirePartnerAddress } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
+import { ensureSubmissionSuiFacility } from "~~/lib/robomata/server/suiFacilityAssignment";
 
 export const runtime = "nodejs";
 
@@ -63,14 +64,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const submission = await getSubmissionStore().create({
+    const store = getSubmissionStore();
+    const submission = await store.create({
       partnerAddress,
       operatorName,
       facilityName,
       asOfDate,
     });
+    const privyUser = await getPrivyUserFromRequest(request).catch(() => null);
+    const assignment = await ensureSubmissionSuiFacility({
+      partnerAddress,
+      privyUserId: privyUser?.id ?? null,
+      store,
+      submission,
+    });
 
-    return NextResponse.json({ submission }, { status: 201 });
+    return NextResponse.json({ submission: assignment.submission }, { status: 201 });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to create submission." },
