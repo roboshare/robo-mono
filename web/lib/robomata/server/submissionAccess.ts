@@ -190,6 +190,27 @@ function isPartnerAuthorizedByLocalAllowlist(partnerAddress: string): boolean {
   return authorizedPartners.has(partnerAddress.toLowerCase());
 }
 
+function canExposePartnerAuthorizationDiagnostics() {
+  return process.env.VERCEL_ENV === "preview" || process.env.NODE_ENV !== "production";
+}
+
+function buildPartnerAuthorizationDiagnostics(request: NextRequest, partnerAddress: string, chainId: string | null) {
+  if (!canExposePartnerAuthorizationDiagnostics()) return undefined;
+
+  const chain = getConfiguredChain(chainId);
+  const partnerManager = chain ? getDeployedContract(chain.id, "PartnerManager") : undefined;
+  const signerAddress = request.headers.get(ROBOMATA_AUTH_HEADERS.signerAddress)?.trim() ?? partnerAddress;
+
+  return {
+    chainId,
+    configuredChainId: chain?.id,
+    configuredChainName: chain?.name,
+    partnerAddress,
+    signerAddress,
+    partnerManagerAddress: partnerManager?.address,
+  };
+}
+
 async function verifyPartnerSignature({
   chainId,
   message,
@@ -276,6 +297,7 @@ export async function requirePartnerAddress(request: NextRequest): Promise<strin
 
   const chainId = request.headers.get(ROBOMATA_AUTH_HEADERS.chainId)?.trim() ?? null;
   const isAuthorizedPartner = await isPartnerAuthorizedOnchain(chainId, partnerAddress);
+  const diagnostics = buildPartnerAuthorizationDiagnostics(request, partnerAddress, chainId);
 
   if (isAuthorizedPartner === true) return partnerAddress;
 
@@ -283,12 +305,21 @@ export async function requirePartnerAddress(request: NextRequest): Promise<strin
     if (isPartnerAuthorizedByLocalAllowlist(partnerAddress)) return partnerAddress;
 
     return NextResponse.json(
-      { error: "Unable to verify partner authorization against PartnerManager." },
+      {
+        error: "Unable to verify partner authorization against PartnerManager.",
+        ...(diagnostics ? { diagnostics } : {}),
+      },
       { status: 403 },
     );
   }
 
-  return NextResponse.json({ error: "Wallet is not authorized for Robomata submissions." }, { status: 403 });
+  return NextResponse.json(
+    {
+      error: "Wallet is not authorized for Robomata submissions.",
+      ...(diagnostics ? { diagnostics } : {}),
+    },
+    { status: 403 },
+  );
 }
 
 export function requireSubmissionAccess(submission: FacilitySubmission, partnerAddress: string): NextResponse | null {
