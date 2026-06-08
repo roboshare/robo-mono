@@ -222,16 +222,12 @@ export function touchSubmission(submission: FacilitySubmission): FacilitySubmiss
 }
 
 export function invalidateSubmissionArtifacts(submission: FacilitySubmission): FacilitySubmission {
-  const facilityObjectId = resolveSubmissionFacilityObjectId(submission);
-  const facilityOperatorAddress = resolveSubmissionFacilityOperatorAddress(submission);
   submission.computation = null;
   submission.exceptions = [];
   submission.evidenceCommit = {
     status: "not_started",
     modulePath: SUI_COMMIT_MODULE_PATH,
     commitMode: "prepared",
-    facilityObjectId,
-    facilityOperatorAddress,
   };
   return touchSubmission(submission);
 }

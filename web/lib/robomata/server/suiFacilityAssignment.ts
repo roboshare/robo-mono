@@ -20,6 +20,8 @@ type AssignmentStore = {
     input: {
       facilityObjectId: string;
       facilityOperatorAddress: string;
+      expectedRootDigest: string;
+      expectedUpdatedAt: string;
       txDigest?: string;
     },
   ) => Promise<FacilitySubmission | null>;
@@ -193,6 +195,8 @@ export async function ensureSubmissionSuiFacility(input: {
   const saved = await input.store.assignSuiFacility(input.submission.id, {
     facilityObjectId: created.facilityObjectId,
     facilityOperatorAddress: binding.suiAddress,
+    expectedRootDigest: input.submission.evidenceCommit.rootDigest ?? "",
+    expectedUpdatedAt: input.submission.updatedAt,
     txDigest: created.txDigest,
   });
 

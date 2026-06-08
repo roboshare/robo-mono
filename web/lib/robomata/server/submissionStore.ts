@@ -51,6 +51,8 @@ type SubmissionStore = {
 type AssignSuiFacilityInput = {
   facilityObjectId: string;
   facilityOperatorAddress: string;
+  expectedRootDigest: string;
+  expectedUpdatedAt: string;
   txDigest?: string;
 };
 
@@ -328,6 +330,19 @@ function createFileStore(): SubmissionStore {
         const submissions = await readFileStore(filePath);
         const submission = submissions.find(candidate => candidate.id === id);
         if (!submission) return null;
+        if (
+          submission.evidenceCommit.facilityObjectId &&
+          submission.evidenceCommit.facilityOperatorAddress &&
+          submission.evidenceCommit.rootDigest === input.expectedRootDigest
+        ) {
+          return submission;
+        }
+        if (
+          submission.updatedAt !== input.expectedUpdatedAt ||
+          submission.evidenceCommit.rootDigest !== input.expectedRootDigest
+        ) {
+          return null;
+        }
         const nextSubmission = applySuiFacilityAssignment(submission, input);
         const next = submissions.filter(candidate => candidate.id !== nextSubmission.id);
         next.unshift(nextSubmission);
@@ -443,9 +458,20 @@ function createPostgresStore(): SubmissionStore {
       await ensurePostgresTable();
       const current = await this.get(id);
       if (!current) return null;
-      if (current.evidenceCommit.facilityObjectId && current.evidenceCommit.facilityOperatorAddress) return current;
+      if (
+        current.evidenceCommit.facilityObjectId &&
+        current.evidenceCommit.facilityOperatorAddress &&
+        current.evidenceCommit.rootDigest === input.expectedRootDigest
+      ) {
+        return current;
+      }
+      if (
+        current.updatedAt !== input.expectedUpdatedAt ||
+        current.evidenceCommit.rootDigest !== input.expectedRootDigest
+      ) {
+        return null;
+      }
 
-      const previousUpdatedAt = expectedUpdatedAt(current);
       const nextSubmission = applySuiFacilityAssignment(current, input);
       const result = await sql<{ payload: FacilitySubmission }>`
         UPDATE robomata_facility_submissions
@@ -455,7 +481,8 @@ function createPostgresStore(): SubmissionStore {
           updated_at = ${nextSubmission.updatedAt}::timestamptz
         WHERE
           id = ${id}
-          AND updated_at = ${previousUpdatedAt}::timestamptz
+          AND updated_at = ${input.expectedUpdatedAt}::timestamptz
+          AND payload->'evidenceCommit'->>'rootDigest' = ${input.expectedRootDigest}
           AND COALESCE(payload->'evidenceCommit'->>'facilityObjectId', '') = ''
           AND COALESCE(payload->'evidenceCommit'->>'facilityOperatorAddress', '') = ''
         RETURNING payload;
