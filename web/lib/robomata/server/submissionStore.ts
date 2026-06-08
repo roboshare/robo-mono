@@ -570,9 +570,6 @@ function createPostgresStore(): SubmissionStore {
           id = ${id}
           AND updated_at = ${input.expectedUpdatedAt}::timestamptz
           AND payload->'evidenceCommit'->>'rootDigest' = ${input.expectedRootDigest}
-          AND payload->'evidenceCommit'->>'facilityAssignmentRootDigest' = ${input.expectedRootDigest}
-          AND payload->'evidenceCommit'->>'facilityAssignmentOperatorAddress' = ${input.facilityOperatorAddress}
-          AND COALESCE(payload->'evidenceCommit'->>'facilityAssignmentStartedAt', '') <> ''
           AND COALESCE(payload->'evidenceCommit'->>'facilityObjectId', '') = ''
           AND COALESCE(payload->'evidenceCommit'->>'facilityOperatorAddress', '') = ''
           AND (
