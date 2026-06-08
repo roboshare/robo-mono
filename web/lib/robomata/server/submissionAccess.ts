@@ -16,6 +16,7 @@ import { getDeployedContract } from "~~/utils/contracts";
 import { getAlchemyHttpUrl, getInfuraHttpUrl } from "~~/utils/scaffold-eth";
 
 const PARTNER_AUTH_CACHE_MS = 60_000;
+const FACILITY_ASSIGNMENT_LOCK_STALE_MS = 5 * 60 * 1000;
 const partnerAuthorizationCache = new Map<string, { authorized: boolean; expiresAt: number }>();
 let privyClient: PrivyClient | null | undefined;
 
@@ -313,7 +314,13 @@ export function requireSubmissionMutable(submission: FacilitySubmission): NextRe
     );
   }
 
-  if (submission.evidenceCommit.facilityAssignmentStartedAt) {
+  const assignmentStartedAt = submission.evidenceCommit.facilityAssignmentStartedAt;
+  const assignmentStartedAtMs = assignmentStartedAt ? Date.parse(assignmentStartedAt) : Number.NaN;
+  const assignmentLockIsActive =
+    assignmentStartedAt &&
+    Number.isFinite(assignmentStartedAtMs) &&
+    Date.now() - assignmentStartedAtMs <= FACILITY_ASSIGNMENT_LOCK_STALE_MS;
+  if (assignmentLockIsActive) {
     return NextResponse.json(
       { error: "Sui facility assignment is in progress for this submission. Try again after it completes." },
       { status: 409 },

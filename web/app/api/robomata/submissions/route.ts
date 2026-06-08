@@ -72,15 +72,21 @@ export async function POST(request: NextRequest) {
       asOfDate,
     });
     const privyUser = await getPrivyUserFromRequest(request).catch(() => null);
-    const assignment = await ensureSubmissionSuiFacility({
-      allowDraftFacility: true,
-      partnerAddress,
-      privyUserId: privyUser?.id ?? null,
-      store,
-      submission,
-    });
+    let createdSubmission = submission;
+    try {
+      const assignment = await ensureSubmissionSuiFacility({
+        allowDraftFacility: true,
+        partnerAddress,
+        privyUserId: privyUser?.id ?? null,
+        store,
+        submission,
+      });
+      createdSubmission = assignment.submission;
+    } catch {
+      createdSubmission = (await store.get(submission.id)) ?? submission;
+    }
 
-    return NextResponse.json({ submission: assignment.submission }, { status: 201 });
+    return NextResponse.json({ submission: createdSubmission }, { status: 201 });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to create submission." },

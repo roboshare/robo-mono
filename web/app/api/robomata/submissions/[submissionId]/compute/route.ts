@@ -9,7 +9,7 @@ import {
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
 import { ensureSubmissionSuiFacility } from "~~/lib/robomata/server/suiFacilityAssignment";
 import { computeSubmissionArtifacts } from "~~/lib/robomata/submissionAdapters";
-import { addAuditEvent } from "~~/lib/robomata/submissions";
+import { createAuditEvent } from "~~/lib/robomata/submissions";
 
 export const runtime = "nodejs";
 
@@ -55,12 +55,35 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     }
 
     submission.computation = await computeSubmissionArtifacts(submission);
-    addAuditEvent(submission, "borrowing_base_computed", `Computed borrowing base for ${submission.facilityName}.`, {
-      exceptionCount: submission.computation.borrowingBase.exceptionCount,
-    });
+    submission.auditEvents.unshift(
+      createAuditEvent("borrowing_base_computed", `Computed borrowing base for ${submission.facilityName}.`, {
+        exceptionCount: submission.computation.borrowingBase.exceptionCount,
+      }),
+    );
+
+    const privyUser = await getPrivyUserFromRequest(request).catch(() => null);
+    if (submission.evidenceCommit.facilityObjectId && submission.evidenceCommit.facilityOperatorAddress) {
+      const assignment = await ensureSubmissionSuiFacility({
+        partnerAddress,
+        privyUserId: privyUser?.id ?? null,
+        store,
+        submission,
+      });
+      if (!assignment.assigned && assignment.reason === "assignment_in_progress_or_changed") {
+        return NextResponse.json(
+          { error: "Sui facility assignment is in progress for this submission. Try again after it completes." },
+          { status: 409 },
+        );
+      }
+      if (!assignment.assigned && assignment.reason === "updated") {
+        return NextResponse.json({ submission: assignment.submission });
+      }
+
+      const saved = await store.save(submission);
+      return NextResponse.json({ submission: saved });
+    }
 
     const saved = await store.save(submission);
-    const privyUser = await getPrivyUserFromRequest(request).catch(() => null);
     const assignment = await ensureSubmissionSuiFacility({
       partnerAddress,
       privyUserId: privyUser?.id ?? null,

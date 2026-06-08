@@ -24,6 +24,14 @@ type AssignmentStore = {
       facilityOperatorAddress: string;
     },
   ) => Promise<FacilitySubmission | null>;
+  beginSuiFacilityUpdate: (
+    id: string,
+    input: {
+      expectedRootDigest: string;
+      expectedUpdatedAt: string;
+      facilityOperatorAddress: string;
+    },
+  ) => Promise<FacilitySubmission | null>;
   assignSuiFacility: (
     id: string,
     input: {
@@ -33,6 +41,15 @@ type AssignmentStore = {
       expectedRootDigest: string;
       expectedUpdatedAt: string;
       txDigest?: string;
+    },
+  ) => Promise<FacilitySubmission | null>;
+  completeSuiFacilityUpdate: (
+    id: string,
+    submission: FacilitySubmission,
+    input: {
+      expectedFacilityOperatorAddress: string;
+      expectedRootDigest: string;
+      expectedStartedAt: string;
     },
   ) => Promise<FacilitySubmission | null>;
   failSuiFacilityAssignment: (
@@ -270,12 +287,47 @@ export async function ensureSubmissionSuiFacility(input: {
   }
   const isReady = isSubmissionReadyForFacilityAssignment(input.submission);
   if (hasAssignedFacility(input.submission)) {
-    if (isReady && input.submission.evidenceCommit.facilityObjectId) {
-      await updateSuiFacilityBorrowingBase({
-        facilityObjectId: input.submission.evidenceCommit.facilityObjectId,
-        submission: input.submission,
+    const facilityObjectId = input.submission.evidenceCommit.facilityObjectId;
+    const facilityOperatorAddress = input.submission.evidenceCommit.facilityOperatorAddress;
+    if (isReady && facilityObjectId && facilityOperatorAddress) {
+      const rootDigest = input.submission.evidenceCommit.rootDigest ?? "";
+      const claimed = await input.store.beginSuiFacilityUpdate(input.submission.id, {
+        expectedRootDigest: rootDigest,
+        expectedUpdatedAt: input.submission.updatedAt,
+        facilityOperatorAddress,
       });
-      return { assigned: false, submission: input.submission, reason: "updated" };
+      if (!claimed) {
+        return { assigned: false, submission: input.submission, reason: "assignment_in_progress_or_changed" };
+      }
+      const assignmentStartedAt = claimed.evidenceCommit.facilityAssignmentStartedAt;
+      if (!assignmentStartedAt) throw new Error("Sui facility update reservation did not include a start token.");
+
+      try {
+        await updateSuiFacilityBorrowingBase({
+          facilityObjectId,
+          submission: input.submission,
+        });
+      } catch (error) {
+        const uncertain = isUncertainSuiExecutionError(error);
+        await input.store.failSuiFacilityAssignment(claimed.id, {
+          errorMessage: `${uncertain ? "uncertain: " : ""}${
+            error instanceof Error ? error.message : "Sui facility borrowing-base update failed."
+          }`,
+          expectedFacilityOperatorAddress: facilityOperatorAddress,
+          expectedRootDigest: rootDigest,
+          expectedStartedAt: assignmentStartedAt,
+          releaseReservation: !uncertain,
+        });
+        throw error;
+      }
+
+      const saved = await input.store.completeSuiFacilityUpdate(claimed.id, input.submission, {
+        expectedFacilityOperatorAddress: facilityOperatorAddress,
+        expectedRootDigest: rootDigest,
+        expectedStartedAt: assignmentStartedAt,
+      });
+      if (!saved) throw new Error("Sui facility was updated, but submission persistence did not confirm the update.");
+      return { assigned: false, submission: saved, reason: "updated" };
     }
     return { assigned: false, submission: input.submission, reason: "exists" };
   }

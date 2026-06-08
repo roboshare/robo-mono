@@ -41,7 +41,13 @@ type SubmissionStore = {
     id: string,
     input: BeginSuiFacilityAssignmentInput,
   ) => Promise<FacilitySubmission | null>;
+  beginSuiFacilityUpdate: (id: string, input: BeginSuiFacilityUpdateInput) => Promise<FacilitySubmission | null>;
   assignSuiFacility: (id: string, input: AssignSuiFacilityInput) => Promise<FacilitySubmission | null>;
+  completeSuiFacilityUpdate: (
+    id: string,
+    submission: FacilitySubmission,
+    input: CompleteSuiFacilityUpdateInput,
+  ) => Promise<FacilitySubmission | null>;
   failSuiFacilityAssignment: (id: string, input: FailSuiFacilityAssignmentInput) => Promise<FacilitySubmission | null>;
   beginEvidenceCommit: (id: string, rootDigest: string, commitStartedAt: string) => Promise<FacilitySubmission | null>;
   completeEvidenceCommit: (
@@ -65,6 +71,14 @@ type BeginSuiFacilityAssignmentInput = {
   expectedRootDigest: string;
   expectedUpdatedAt: string;
   facilityOperatorAddress: string;
+};
+
+type BeginSuiFacilityUpdateInput = BeginSuiFacilityAssignmentInput;
+
+type CompleteSuiFacilityUpdateInput = {
+  expectedFacilityOperatorAddress: string;
+  expectedRootDigest: string;
+  expectedStartedAt: string;
 };
 
 type FailSuiFacilityAssignmentInput = {
@@ -137,7 +151,16 @@ function canBeginSuiFacilityAssignment(
   if (submission.evidenceCommit.facilityObjectId || submission.evidenceCommit.facilityOperatorAddress) return false;
   if (expectedUpdatedAt(submission) !== input.expectedUpdatedAt) return false;
   if ((submission.evidenceCommit.rootDigest ?? "") !== input.expectedRootDigest) return false;
-  if (submission.evidenceCommit.facilityAssignmentErrorMessage?.startsWith("uncertain:")) return false;
+  if (submission.evidenceCommit.facilityAssignmentStartedAt && !isStaleFacilityAssignmentLock(submission)) {
+    return false;
+  }
+  return true;
+}
+
+function canBeginSuiFacilityUpdate(submission: FacilitySubmission, input: BeginSuiFacilityUpdateInput): boolean {
+  if (!submission.evidenceCommit.facilityObjectId || !submission.evidenceCommit.facilityOperatorAddress) return false;
+  if (expectedUpdatedAt(submission) !== input.expectedUpdatedAt) return false;
+  if (submission.evidenceCommit.facilityOperatorAddress !== input.facilityOperatorAddress) return false;
   if (submission.evidenceCommit.facilityAssignmentStartedAt && !isStaleFacilityAssignmentLock(submission)) {
     return false;
   }
@@ -149,6 +172,22 @@ function applyBeginSuiFacilityAssignment(
   input: BeginSuiFacilityAssignmentInput,
 ): FacilitySubmission | null {
   if (!canBeginSuiFacilityAssignment(submission, input)) return null;
+
+  submission.evidenceCommit = {
+    ...submission.evidenceCommit,
+    facilityAssignmentStartedAt: new Date().toISOString(),
+    facilityAssignmentRootDigest: input.expectedRootDigest,
+    facilityAssignmentOperatorAddress: input.facilityOperatorAddress,
+    facilityAssignmentErrorMessage: undefined,
+  };
+  return touchSubmission(submission);
+}
+
+function applyBeginSuiFacilityUpdate(
+  submission: FacilitySubmission,
+  input: BeginSuiFacilityUpdateInput,
+): FacilitySubmission | null {
+  if (!canBeginSuiFacilityUpdate(submission, input)) return null;
 
   submission.evidenceCommit = {
     ...submission.evidenceCommit,
@@ -183,6 +222,34 @@ function applyFailSuiFacilityAssignment(
       : submission.evidenceCommit.facilityAssignmentOperatorAddress,
     facilityAssignmentErrorMessage: input.errorMessage,
   };
+  return touchSubmission(submission);
+}
+
+function canCompleteSuiFacilityUpdate(current: FacilitySubmission, input: CompleteSuiFacilityUpdateInput): boolean {
+  return (
+    current.evidenceCommit.facilityAssignmentRootDigest === input.expectedRootDigest &&
+    current.evidenceCommit.facilityAssignmentOperatorAddress === input.expectedFacilityOperatorAddress &&
+    current.evidenceCommit.facilityAssignmentStartedAt === input.expectedStartedAt
+  );
+}
+
+function applyCompleteSuiFacilityUpdate(
+  submission: FacilitySubmission,
+  input: CompleteSuiFacilityUpdateInput,
+): FacilitySubmission {
+  submission.evidenceCommit = {
+    ...submission.evidenceCommit,
+    facilityAssignmentStartedAt: undefined,
+    facilityAssignmentRootDigest: undefined,
+    facilityAssignmentOperatorAddress: undefined,
+    facilityAssignmentErrorMessage: undefined,
+  };
+  submission.auditEvents.unshift(
+    createAuditEvent("sui_facility_assigned", `Updated Sui facility borrowing base for ${submission.facilityName}.`, {
+      facilityOperatorAddress: input.expectedFacilityOperatorAddress,
+      rootDigest: input.expectedRootDigest,
+    }),
+  );
   return touchSubmission(submission);
 }
 
@@ -424,6 +491,19 @@ function createFileStore(): SubmissionStore {
         return markLoadedSubmission(nextSubmission);
       });
     },
+    async beginSuiFacilityUpdate(id, input) {
+      return withWriteLock(async () => {
+        const submissions = await readFileStore(filePath);
+        const submission = submissions.find(candidate => candidate.id === id);
+        if (!submission) return null;
+        const nextSubmission = applyBeginSuiFacilityUpdate(submission, input);
+        if (!nextSubmission) return null;
+        const next = submissions.filter(candidate => candidate.id !== nextSubmission.id);
+        next.unshift(nextSubmission);
+        await writeAll(next);
+        return markLoadedSubmission(nextSubmission);
+      });
+    },
     async assignSuiFacility(id, input) {
       return withWriteLock(async () => {
         const submissions = await readFileStore(filePath);
@@ -446,6 +526,18 @@ function createFileStore(): SubmissionStore {
           return null;
         }
         const nextSubmission = applySuiFacilityAssignment(submission, input);
+        const next = submissions.filter(candidate => candidate.id !== nextSubmission.id);
+        next.unshift(nextSubmission);
+        await writeAll(next);
+        return markLoadedSubmission(nextSubmission);
+      });
+    },
+    async completeSuiFacilityUpdate(id, submission, input) {
+      return withWriteLock(async () => {
+        const submissions = await readFileStore(filePath);
+        const current = submissions.find(candidate => candidate.id === id);
+        if (!current || !canCompleteSuiFacilityUpdate(current, input)) return null;
+        const nextSubmission = applyCompleteSuiFacilityUpdate(submission, input);
         const next = submissions.filter(candidate => candidate.id !== nextSubmission.id);
         next.unshift(nextSubmission);
         await writeAll(next);
@@ -598,6 +690,35 @@ function createPostgresStore(): SubmissionStore {
       const row = result.rows[0];
       return row ? markLoadedSubmission(row.payload) : null;
     },
+    async beginSuiFacilityUpdate(id, input) {
+      await ensurePostgresTable();
+      const current = await this.get(id);
+      if (!current) return null;
+      const nextSubmission = applyBeginSuiFacilityUpdate(current, input);
+      if (!nextSubmission) return null;
+      const result = await sql<{ payload: FacilitySubmission }>`
+        UPDATE robomata_facility_submissions
+        SET
+          status = ${nextSubmission.status},
+          payload = ${JSON.stringify(nextSubmission)}::jsonb,
+          updated_at = ${nextSubmission.updatedAt}::timestamptz
+        WHERE
+          id = ${id}
+          AND updated_at = ${input.expectedUpdatedAt}::timestamptz
+          AND payload->'evidenceCommit'->>'facilityOperatorAddress' = ${input.facilityOperatorAddress}
+          AND COALESCE(payload->'evidenceCommit'->>'facilityObjectId', '') <> ''
+          AND COALESCE(payload->'evidenceCommit'->>'facilityOperatorAddress', '') <> ''
+          AND (
+            COALESCE(payload->'evidenceCommit'->>'facilityAssignmentStartedAt', '') = ''
+            OR (payload->'evidenceCommit'->>'facilityAssignmentStartedAt')::timestamptz
+              < now() - interval '5 minutes'
+          )
+        RETURNING payload;
+      `;
+
+      const row = result.rows[0];
+      return row ? markLoadedSubmission(row.payload) : null;
+    },
     async assignSuiFacility(id, input) {
       await ensurePostgresTable();
       const current = await this.get(id);
@@ -640,6 +761,28 @@ function createPostgresStore(): SubmissionStore {
       const latest = await this.get(id);
       if (latest?.evidenceCommit.facilityObjectId && latest.evidenceCommit.facilityOperatorAddress) return latest;
       return null;
+    },
+    async completeSuiFacilityUpdate(id, submission, input) {
+      await ensurePostgresTable();
+      const current = await this.get(id);
+      if (!current || !canCompleteSuiFacilityUpdate(current, input)) return null;
+      const nextSubmission = applyCompleteSuiFacilityUpdate(submission, input);
+      const result = await sql<{ payload: FacilitySubmission }>`
+        UPDATE robomata_facility_submissions
+        SET
+          status = ${nextSubmission.status},
+          payload = ${JSON.stringify(nextSubmission)}::jsonb,
+          updated_at = ${nextSubmission.updatedAt}::timestamptz
+        WHERE
+          id = ${id}
+          AND payload->'evidenceCommit'->>'facilityAssignmentRootDigest' = ${input.expectedRootDigest}
+          AND payload->'evidenceCommit'->>'facilityAssignmentOperatorAddress' = ${input.expectedFacilityOperatorAddress}
+          AND payload->'evidenceCommit'->>'facilityAssignmentStartedAt' = ${input.expectedStartedAt}
+        RETURNING payload;
+      `;
+
+      const row = result.rows[0];
+      return row ? markLoadedSubmission(row.payload) : null;
     },
     async failSuiFacilityAssignment(id, input) {
       await ensurePostgresTable();
