@@ -8,6 +8,11 @@ import path from "node:path";
 import "server-only";
 import { isRobomataWorkflowMutationEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
 import {
+  isRobomataSuiCommitRuntimeConfigured,
+  isRobomataSuiOperatorCommitRuntimeConfigured,
+  isRobomataSuiSponsorshipRuntimeConfigured,
+} from "~~/lib/robomata/server/suiCommitConfig";
+import {
   type CreateSubmissionInput,
   type FacilitySubmission,
   createAuditEvent,
@@ -158,6 +163,17 @@ function applyFailEvidenceCommit(
   return touchSubmission(submission);
 }
 
+function deriveEvidenceCommitMode(input: {
+  facilityObjectId: string;
+  facilityOperatorAddress: string;
+}): FacilitySubmission["evidenceCommit"]["commitMode"] {
+  if (isRobomataSuiSponsorshipRuntimeConfigured(input) || isRobomataSuiOperatorCommitRuntimeConfigured(input)) {
+    return "operator_configured";
+  }
+
+  return isRobomataSuiCommitRuntimeConfigured(input) ? "configured" : "prepared";
+}
+
 function applySuiFacilityAssignment(submission: FacilitySubmission, input: AssignSuiFacilityInput): FacilitySubmission {
   if (submission.evidenceCommit.facilityObjectId && submission.evidenceCommit.facilityOperatorAddress) {
     return submission;
@@ -167,6 +183,10 @@ function applySuiFacilityAssignment(submission: FacilitySubmission, input: Assig
     ...submission.evidenceCommit,
     facilityObjectId: input.facilityObjectId,
     facilityOperatorAddress: input.facilityOperatorAddress,
+    commitMode: deriveEvidenceCommitMode({
+      facilityObjectId: input.facilityObjectId,
+      facilityOperatorAddress: input.facilityOperatorAddress,
+    }),
   };
   submission.auditEvents.unshift(
     createAuditEvent("sui_facility_assigned", `Assigned Sui facility for ${submission.facilityName}.`, {
@@ -425,6 +445,7 @@ function createPostgresStore(): SubmissionStore {
       if (!current) return null;
       if (current.evidenceCommit.facilityObjectId && current.evidenceCommit.facilityOperatorAddress) return current;
 
+      const previousUpdatedAt = expectedUpdatedAt(current);
       const nextSubmission = applySuiFacilityAssignment(current, input);
       const result = await sql<{ payload: FacilitySubmission }>`
         UPDATE robomata_facility_submissions
@@ -434,6 +455,7 @@ function createPostgresStore(): SubmissionStore {
           updated_at = ${nextSubmission.updatedAt}::timestamptz
         WHERE
           id = ${id}
+          AND updated_at = ${previousUpdatedAt}::timestamptz
           AND COALESCE(payload->'evidenceCommit'->>'facilityObjectId', '') = ''
           AND COALESCE(payload->'evidenceCommit'->>'facilityOperatorAddress', '') = ''
         RETURNING payload;
@@ -441,7 +463,9 @@ function createPostgresStore(): SubmissionStore {
 
       const row = result.rows[0];
       if (row) return markLoadedSubmission(row.payload);
-      return this.get(id);
+      const latest = await this.get(id);
+      if (latest?.evidenceCommit.facilityObjectId && latest.evidenceCommit.facilityOperatorAddress) return latest;
+      return null;
     },
     async beginEvidenceCommit(id, rootDigest, commitStartedAt) {
       await ensurePostgresTable();

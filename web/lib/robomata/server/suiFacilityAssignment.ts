@@ -1,6 +1,10 @@
 import { Transaction } from "@mysten/sui/transactions";
 import "server-only";
-import { isRobomataPrivySuiWalletBindingEnabled, isRobomataSuiCommitEnabled } from "~~/lib/featureFlags";
+import {
+  isRobomataPrivySuiWalletBindingEnabled,
+  isRobomataSuiCommitEnabled,
+  isRobomataSuiOperatorCommitEnabled,
+} from "~~/lib/featureFlags";
 import { ensurePrivySuiWalletBinding } from "~~/lib/robomata/server/privySuiWallets";
 import {
   getRobomataSuiClient,
@@ -64,10 +68,15 @@ function withTimeout<T>(operation: (signal: AbortSignal) => Promise<T>, timeoutM
 function isSuiFacilityAssignmentRuntimeConfigured(): boolean {
   return Boolean(
     isRobomataSuiCommitEnabled() &&
+      isRobomataSuiOperatorCommitEnabled() &&
       isRobomataPrivySuiWalletBindingEnabled() &&
       trimmedEnv("ROBOMATA_SUI_PACKAGE_ID") &&
       getRobomataSuiServerSigner(),
   );
+}
+
+function isSubmissionReadyForFacilityAssignment(submission: FacilitySubmission): boolean {
+  return Boolean(submission.computation?.borrowingBase && normalizeHex(submission.evidenceCommit.rootDigest));
 }
 
 function buildCreateFacilityTransaction(input: {
@@ -97,7 +106,8 @@ function buildCreateFacilityTransaction(input: {
 function getFacilityCreatedPayload(result: unknown): { facility_id?: unknown; operator?: unknown } | null {
   const transaction = (result as { Transaction?: { events?: unknown[] } }).Transaction;
   const event = transaction?.events?.find(candidate => {
-    const type = (candidate as { type?: unknown }).type;
+    const type =
+      (candidate as { eventType?: unknown; type?: unknown }).eventType ?? (candidate as { type?: unknown }).type;
     return typeof type === "string" && type.endsWith("::FacilityCreated");
   });
 
@@ -166,6 +176,9 @@ export async function ensureSubmissionSuiFacility(input: {
   if (hasAssignedFacility(input.submission)) return { assigned: false, submission: input.submission, reason: "exists" };
   if (!isSuiFacilityAssignmentRuntimeConfigured()) {
     return { assigned: false, submission: input.submission, reason: "runtime_not_configured" };
+  }
+  if (!isSubmissionReadyForFacilityAssignment(input.submission)) {
+    return { assigned: false, submission: input.submission, reason: "compute_not_ready" };
   }
   if (!input.privyUserId) return { assigned: false, submission: input.submission, reason: "privy_user_missing" };
 
