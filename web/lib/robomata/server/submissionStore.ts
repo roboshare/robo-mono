@@ -126,7 +126,8 @@ function expectedUpdatedAt(submission: FacilitySubmission): string {
 function canBeginEvidenceCommit(submission: FacilitySubmission, rootDigest: string): boolean {
   return (
     ["ready", "failed"].includes(submission.evidenceCommit.status) &&
-    submission.evidenceCommit.rootDigest === rootDigest
+    submission.evidenceCommit.rootDigest === rootDigest &&
+    !submission.evidenceCommit.facilityAssignmentStartedAt
   );
 }
 
@@ -828,6 +829,7 @@ function createPostgresStore(): SubmissionStore {
           id = ${id}
           AND payload->'evidenceCommit'->>'status' IN ('ready', 'failed')
           AND payload->'evidenceCommit'->>'rootDigest' = ${rootDigest}
+          AND COALESCE(payload->'evidenceCommit'->>'facilityAssignmentStartedAt', '') = ''
         RETURNING payload;
       `;
 

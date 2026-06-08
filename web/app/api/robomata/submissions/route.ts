@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isRobomataWorkflowMutationEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
+import {
+  isRobomataWalrusUploadsEnabled,
+  isRobomataWorkflowMutationEnabled,
+  isRobomataWorkflowServerEnabled,
+} from "~~/lib/featureFlags";
 import { getPrivyUserFromRequest, requirePartnerAddress } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
 import { ensureSubmissionSuiFacility } from "~~/lib/robomata/server/suiFacilityAssignment";
@@ -73,6 +77,7 @@ export async function POST(request: NextRequest) {
     });
     const privyUser = await getPrivyUserFromRequest(request).catch(() => null);
     let createdSubmission = submission;
+    let assignmentError: unknown;
     try {
       const assignment = await ensureSubmissionSuiFacility({
         allowDraftFacility: true,
@@ -82,8 +87,22 @@ export async function POST(request: NextRequest) {
         submission,
       });
       createdSubmission = assignment.submission;
-    } catch {
+    } catch (error) {
+      assignmentError = error;
       createdSubmission = (await store.get(submission.id)) ?? submission;
+    }
+
+    if (isRobomataWalrusUploadsEnabled() && !createdSubmission.evidenceCommit.facilityObjectId) {
+      return NextResponse.json(
+        {
+          submission: createdSubmission,
+          error:
+            assignmentError instanceof Error
+              ? `Sui facility assignment is required before real evidence uploads: ${assignmentError.message}`
+              : "Sui facility assignment is required before real evidence uploads.",
+        },
+        { status: assignmentError ? 503 : 409 },
+      );
     }
 
     return NextResponse.json({ submission: createdSubmission }, { status: 201 });
