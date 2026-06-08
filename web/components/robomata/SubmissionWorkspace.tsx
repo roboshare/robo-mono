@@ -60,6 +60,19 @@ function sectionTitle(readOnly: boolean) {
   return readOnly ? "Lender-ready review surface" : "Operator submission workspace";
 }
 
+async function readJsonResponse<T>(response: Response): Promise<T & { error?: string }> {
+  const text = await response.text();
+  if (!text.trim()) return {} as T & { error?: string };
+
+  try {
+    return JSON.parse(text) as T & { error?: string };
+  } catch {
+    return {
+      error: `Unexpected ${response.status} response from ${new URL(response.url).pathname}.`,
+    } as T & { error?: string };
+  }
+}
+
 function centsToDollarInput(cents: number | undefined): string {
   return ((cents ?? 0) / 100).toFixed(2);
 }
@@ -137,7 +150,7 @@ export const SubmissionWorkspace = ({
         const response = await fetch(path, {
           headers: await getAuthHeaders({ chainId: selectedNetwork.id, method: "GET", path, signerAddress }),
         });
-        const payload = (await response.json()) as { submission?: FacilitySubmission; error?: string };
+        const payload = await readJsonResponse<{ submission?: FacilitySubmission }>(response);
         if (!response.ok || !payload.submission) throw new Error(payload.error ?? "Failed to load submission.");
         setSubmission(payload.submission);
         setIsLoading(false);
@@ -149,7 +162,7 @@ export const SubmissionWorkspace = ({
         const response = await fetch(path, {
           headers: await getAuthHeaders({ chainId: selectedNetwork.id, method: "GET", path, signerAddress }),
         });
-        const payload = (await response.json()) as { submissions?: FacilitySubmission[]; error?: string };
+        const payload = await readJsonResponse<{ submissions?: FacilitySubmission[] }>(response);
         if (!response.ok) throw new Error(payload.error ?? "Failed to load submissions.");
         setSubmission(payload.submissions?.[0] ?? null);
       }
