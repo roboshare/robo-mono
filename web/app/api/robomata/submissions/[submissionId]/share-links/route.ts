@@ -168,9 +168,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     );
     await submissionStore.save(submission).catch(() => undefined);
 
+    const url = new URL(`/lender/packet/${token}`, request.nextUrl.origin);
     const apiUrl = new URL(`/api/robomata/share/${token}`, request.nextUrl.origin);
     return NextResponse.json(
-      { shareLink: toShareLinkResponse(shareLink), token, url: apiUrl.toString(), apiUrl: apiUrl.toString() },
+      { shareLink: toShareLinkResponse(shareLink), token, url: url.toString(), apiUrl: apiUrl.toString() },
       { status: 201 },
     );
   } catch (error) {
