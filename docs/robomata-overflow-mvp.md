@@ -119,7 +119,8 @@ This is the public Robomata product surface. The target behavior is:
 `/robomata` must not fetch submission APIs, render private submission state, or
 accept a submission query parameter as an access mechanism. Future lender packet
 sharing should use a protected share-link route with opaque tokens, expiry,
-revocation, and audit state.
+revocation, and audit state. The detailed controlled-sharing design is captured
+in [Robomata Protected Lender Packet Sharing](./robomata-protected-lender-sharing.md).
 
 ## Core Product Object
 

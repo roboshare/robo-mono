@@ -448,6 +448,6 @@ Reason:
 - automated web checks, production web build, Sui build/lint/test, and
   Robomata testnet smoke passed on the final implementation commit
 - browser QA covered partner submission list, CSV import, evidence upload,
-  compute, exception-free lender packet, Sui commit, read-only `/robomata`
-  projection, `/markets`, and existing `/partner` vehicle/offering entrypoints
+  compute, exception-free lender packet, Sui commit, public `/robomata`
+  product surface, `/markets`, and existing `/partner` vehicle/offering entrypoints
 - known limitations remain explicit and do not block the Overflow MVP release
