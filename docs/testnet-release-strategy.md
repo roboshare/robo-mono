@@ -121,8 +121,9 @@ Public launch is ready only when:
   - `v0.2.0-testnet.1`
 - Use patch bumps for launch fixes.
 - Use minor bumps for meaningful user-facing capability changes before mainnet.
-- Treat `release/robomata-overflow-v0.1.0` as a separate Robomata MVP line, not
-  a continuation of the historical Roboshare testnet `v0.2.0` line.
+- Treat the `release/robomata-overflow-v0.1.x` series as a separate Robomata
+  MVP line, not a continuation of the historical Roboshare testnet `v0.2.0`
+  line.
 
 ### Release Truth
 

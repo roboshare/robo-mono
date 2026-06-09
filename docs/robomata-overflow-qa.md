@@ -19,7 +19,8 @@ flow is now a partner-owned `FacilitySubmission` workflow:
    private submissions
 
 This runbook should be executed after the implementation PR stack lands on a
-green `dev` commit and before cutting `release/robomata-overflow-v0.1.0`.
+green `dev` commit and before cutting the next Robomata Overflow release
+branch, currently `release/robomata-overflow-v0.1.7`.
 
 ## Branch And Release Gate
 
@@ -28,7 +29,8 @@ Current release path for this tranche:
 - short-lived child branches are cut from `dev`
 - stacked PRs are used only when a slice depends on another open child PR
 - child PRs merge back into `dev` in dependency order
-- release branch is cut as `release/robomata-overflow-v0.1.0`
+- release branch is cut as the next patch in the active Robomata Overflow
+  release line, currently `release/robomata-overflow-v0.1.7`
 - validated release merges into `main`
 
 Do not recommend a release cut until all required gates below have a concrete
@@ -520,7 +522,7 @@ recovery phrase, private key, or local store artifact was committed.
 
 ## Release Recommendation
 
-Current recommendation: clear to cut `release/robomata-overflow-v0.1.0` after
+Current recommendation: clear to cut `release/robomata-overflow-v0.1.7` after
 this QA evidence update is merged to a green `dev`.
 
 Reason:
@@ -532,4 +534,6 @@ Reason:
   compute, exception-free lender packet, protected share-link create/view/list
   metadata/revoke/expiry states, public `/robomata` product surface,
   `/markets`, and existing `/partner` vehicle/offering entrypoints
+- release notes for this tranche are captured in
+  `docs/releases/robomata-overflow-v0.1.7.md`
 - known limitations remain explicit and do not block the Overflow MVP release
