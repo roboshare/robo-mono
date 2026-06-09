@@ -19,6 +19,7 @@ dataSources:
         - Vehicle
         - Listing
         - PrimaryPool
+        - EarningsDistribution
       abis:
         - name: VehicleRegistry
           file: ./abis/VehicleRegistry.json
@@ -63,6 +64,25 @@ dataSources:
           handler: handlePrimaryPoolUnpaused
         - event: PrimaryPoolClosed(indexed uint256)
           handler: handlePrimaryPoolClosed
+      file: ./src/mapping.ts
+  - kind: ethereum/contract
+    name: EarningsManager
+    network: {{network}}
+    source:
+      abi: EarningsManager
+      address: "{{EarningsManager.address}}"
+      startBlock: {{EarningsManager.startBlock}}
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.6
+      language: wasm/assemblyscript
+      entities: *entities
+      abis:
+        - name: EarningsManager
+          file: ./abis/EarningsManager.json
+      eventHandlers:
+        - event: EarningsDistributed(indexed uint256,indexed address,uint256,uint256,uint256)
+          handler: handleEarningsDistributed
       file: ./src/mapping.ts
 features:
   - fullTextSearch

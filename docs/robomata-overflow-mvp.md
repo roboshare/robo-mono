@@ -171,25 +171,57 @@ Use the flags as a matrix:
 - `ROBOMATA_SUI_OPERATOR_COMMIT_ENABLED=true` enables the operator-owned wallet
   path. In this mode the server prepares the exact
   `robomata_overflow::facility::commit_evidence` transaction for the mapped
-  facility, the browser asks a Sui wallet that exposes
-  `sui:signAndExecuteTransaction` to execute it, and the server marks the
+  facility, the browser asks a Sui wallet to sign it, and the server marks the
   submission committed only after reconciling the matching Sui
-  `EvidenceCommitted` event. This path still requires `ROBOMATA_SUI_PACKAGE_ID`,
-  per-submission facility mapping, and per-submission operator mapping, but it
-  does not require `ROBOMATA_SUI_PRIVATE_KEY` or `ROBOMATA_SUI_SIGNER_ADDRESS`.
-- `ROBOMATA_SUI_FACILITY_IDS_JSON={"sub_...":"0x..."}` maps each submission id
-  to its own Sui facility object. Do not use facility names as keys; names are
-  mutable operator input and are not safe authorization boundaries.
-- `ROBOMATA_SUI_FACILITY_OPERATORS_JSON={"sub_...":"0x..."}` maps each
-  submission id to the Sui address that created and controls the mapped facility
-  object.
-- `ROBOMATA_SUI_PRIVATE_KEY=suiprivkey...` is the sensitive server-side Sui
-  testnet signer used by Vercel to submit evidence commit transactions when the
-  operator-owned wallet path is disabled or unavailable. It must belong to the
-  mapped facility operator and must never be exposed to the browser.
+  `EvidenceCommitted` event. Operator-owned commits are native sponsored
+  commits: they require `ROBOMATA_SUI_SPONSORSHIP_ENABLED=true`,
+  `ROBOMATA_SUI_PRIVATE_KEY`, and `sui:signTransaction` so the server can
+  execute the transaction with both the operator signature and sponsor
+  signature. This path requires `ROBOMATA_SUI_PACKAGE_ID` and the Sui facility
+  assignment persisted on the submission; it does not require
+  `ROBOMATA_SUI_SIGNER_ADDRESS`.
+- `ROBOMATA_SUI_SPONSORSHIP_ENABLED=true` enables native Sui gas sponsorship for
+  operator-owned commits. The server builds transaction-kind bytes for the
+  allowlisted `commit_evidence` call, sets the mapped facility operator as the
+  sender, sets the sponsor as gas owner, selects a sponsor-owned SUI gas coin,
+  signs the final transaction bytes with `ROBOMATA_SUI_PRIVATE_KEY`, and asks
+  the operator wallet to sign the same bytes. The server executes only after
+  both signatures are available and still reconciles the `EvidenceCommitted`
+  event before persisting `committed`.
+- `ROBOMATA_SUI_PRIVATE_KEY=suiprivkey...` is the single sensitive server-held
+  Sui key. In the intended operator-owned native sponsorship path it signs only
+  as the gas sponsor; it must not be the mapped facility operator and must never
+  be exposed to the browser. The same variable is reused as the legacy
+  server-side signer only when `ROBOMATA_SUI_OPERATOR_COMMIT_ENABLED` is false,
+  `ROBOMATA_SUI_SIGNER_ADDRESS` matches the derived address, and that address is
+  the mapped facility operator.
+- `ROBOMATA_SUI_SPONSOR_ADDRESS=0x...` optionally hardens runtime startup by
+  requiring `ROBOMATA_SUI_PRIVATE_KEY` to derive to the expected gas sponsor
+  address when native sponsorship is enabled.
+- `ROBOMATA_SUI_SPONSOR_GAS_BUDGET` and
+  `ROBOMATA_SUI_SPONSOR_MIN_COIN_BALANCE` optionally tune native sponsorship
+  budgets in MIST. The sponsor selector scans paginated SUI coins, reserves the
+  selected gas object id before sponsor-signing, and releases the reservation if
+  the operator cancels before a digest is returned. Reservation release is
+  scoped to the submission id, evidence root, and sponsor address so a caller
+  cannot release another submission's in-flight sponsor coin by passing a public
+  gas object id.
+- `ROBOMATA_SUI_SPONSOR_COIN_QUERY_MAX_PAGES` optionally controls how many pages
+  of sponsor SUI coins are scanned before reporting no available unreserved gas
+  coin.
+- `ROBOMATA_SUI_SPONSOR_RESERVATION_TTL_MS` optionally controls how long a
+  prepared sponsor gas reservation can remain idle before the next prepare
+  attempt expires it. It defaults to the commit stale window so abandoned tabs or
+  interrupted network requests cannot permanently strand sponsor gas coins.
+- When `ROBOMATA_SUI_COMMIT_ENABLED=true`,
+  `ROBOMATA_PRIVY_SUI_WALLET_BINDING_ENABLED=true`, `ROBOMATA_SUI_PACKAGE_ID`,
+  and `ROBOMATA_SUI_PRIVATE_KEY` are configured, submission creation or compute
+  creates a Sui facility and persists `facilityObjectId` plus
+  `facilityOperatorAddress` on the submission. The facility operator is the
+  bound Privy Sui wallet address; no per-submission env maps are required.
 - `ROBOMATA_SUI_SIGNER_ADDRESS=0x...` must match both the server signer's
-  derived Sui address and the mapped facility operator before the runtime
-  exposes the server-side Sui commit path.
+  derived Sui address and the persisted facility operator before the runtime
+  exposes the legacy server-side Sui commit path.
 - `ROBOMATA_PRIVY_SUI_WALLET_BINDING_ENABLED=true` and
   `NEXT_PUBLIC_ROBOMATA_PRIVY_SUI_WALLET_BINDING_ENABLED=true` let Robomata
   automatically provision and bind a Privy-managed Sui wallet for an authorized

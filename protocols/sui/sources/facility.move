@@ -9,6 +9,7 @@ module robomata_overflow::facility {
     public struct Facility has key, store {
         id: sui::object::UID,
         operator: address,
+        update_authority: address,
         gross_receivables_cents: u64,
         eligible_receivables_cents: u64,
         advance_rate_bps: u64,
@@ -19,6 +20,7 @@ module robomata_overflow::facility {
 
     public struct FacilityCreated has copy, drop {
         facility_id: address,
+        operator: address,
         available_cents: u64,
     }
 
@@ -40,6 +42,7 @@ module robomata_overflow::facility {
     }
 
     entry fun create_facility(
+        operator: address,
         gross_receivables_cents: u64,
         eligible_receivables_cents: u64,
         advance_rate_bps: u64,
@@ -52,7 +55,8 @@ module robomata_overflow::facility {
         let facility_id = sui::object::uid_to_address(&id);
         let facility = Facility {
             id,
-            operator: tx_context::sender(ctx),
+            operator,
+            update_authority: tx_context::sender(ctx),
             gross_receivables_cents,
             eligible_receivables_cents,
             advance_rate_bps,
@@ -63,6 +67,7 @@ module robomata_overflow::facility {
 
         sui::event::emit(FacilityCreated {
             facility_id,
+            operator,
             available_cents,
         });
 
@@ -71,14 +76,18 @@ module robomata_overflow::facility {
 
     entry fun update_borrowing_base(
         facility: &mut Facility,
+        gross_receivables_cents: u64,
         eligible_receivables_cents: u64,
+        advance_rate_bps: u64,
         available_cents: u64,
         evidence_root: vector<u8>,
         clock: &Clock,
         ctx: &TxContext,
     ) {
-        assert_operator(facility, tx_context::sender(ctx));
+        assert_update_authority(facility, tx_context::sender(ctx));
+        facility.gross_receivables_cents = gross_receivables_cents;
         facility.eligible_receivables_cents = eligible_receivables_cents;
+        facility.advance_rate_bps = advance_rate_bps;
         facility.available_cents = available_cents;
         facility.evidence_root = evidence_root;
         facility.updated_ms = clock::timestamp_ms(clock);
@@ -123,13 +132,37 @@ module robomata_overflow::facility {
         assert_operator_address(facility.operator, caller);
     }
 
+    fun assert_update_authority(facility: &Facility, caller: address) {
+        assert!(facility.update_authority == caller, E_NOT_AUTHORIZED_OPERATOR);
+    }
+
     fun assert_operator_address(operator: address, caller: address) {
         assert!(operator == caller, E_NOT_AUTHORIZED_OPERATOR);
+    }
+
+    #[test_only]
+    fun assert_update_authority_address(update_authority: address, caller: address) {
+        assert!(update_authority == caller, E_NOT_AUTHORIZED_OPERATOR);
     }
 
     #[test]
     fun authorized_operator_passes() {
         assert_operator_address(@0xA, @0xA);
+    }
+
+    #[test]
+    fun authorized_update_authority_passes() {
+        assert_update_authority_address(@0xB, @0xB);
+    }
+
+    #[test, expected_failure(abort_code = E_NOT_AUTHORIZED_OPERATOR)]
+    fun operator_cannot_update_borrowing_base() {
+        assert_update_authority_address(@0xB, @0xA);
+    }
+
+    #[test, expected_failure(abort_code = E_NOT_AUTHORIZED_OPERATOR)]
+    fun unauthorized_update_authority_fails() {
+        assert_update_authority_address(@0xB, @0xC);
     }
 
     #[test, expected_failure(abort_code = E_NOT_AUTHORIZED_OPERATOR)]

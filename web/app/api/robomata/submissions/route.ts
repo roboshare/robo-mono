@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isRobomataWorkflowMutationEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
-import { requirePartnerAddress } from "~~/lib/robomata/server/submissionAccess";
+import {
+  isRobomataWalrusUploadsEnabled,
+  isRobomataWorkflowMutationEnabled,
+  isRobomataWorkflowServerEnabled,
+} from "~~/lib/featureFlags";
+import { getPrivyUserFromRequest, requirePartnerAddress } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
+import { ensureSubmissionSuiFacility } from "~~/lib/robomata/server/suiFacilityAssignment";
 
 export const runtime = "nodejs";
 
@@ -63,14 +68,44 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const submission = await getSubmissionStore().create({
+    const store = getSubmissionStore();
+    const submission = await store.create({
       partnerAddress,
       operatorName,
       facilityName,
       asOfDate,
     });
+    const privyUser = await getPrivyUserFromRequest(request).catch(() => null);
+    let createdSubmission = submission;
+    let assignmentError: unknown;
+    try {
+      const assignment = await ensureSubmissionSuiFacility({
+        allowDraftFacility: true,
+        partnerAddress,
+        privyUserId: privyUser?.id ?? null,
+        store,
+        submission,
+      });
+      createdSubmission = assignment.submission;
+    } catch (error) {
+      assignmentError = error;
+      createdSubmission = (await store.get(submission.id)) ?? submission;
+    }
 
-    return NextResponse.json({ submission }, { status: 201 });
+    if (isRobomataWalrusUploadsEnabled() && !createdSubmission.evidenceCommit.facilityObjectId) {
+      return NextResponse.json(
+        {
+          submission: createdSubmission,
+          error:
+            assignmentError instanceof Error
+              ? `Sui facility assignment is required before real evidence uploads: ${assignmentError.message}`
+              : "Sui facility assignment is required before real evidence uploads.",
+        },
+        { status: assignmentError ? 503 : 409 },
+      );
+    }
+
+    return NextResponse.json({ submission: createdSubmission }, { status: 201 });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to create submission." },

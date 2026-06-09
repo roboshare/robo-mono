@@ -111,13 +111,18 @@ Required environment:
 - `ROBOMATA_REQUIRE_REAL_EVIDENCE_STORAGE=true`
 - `ROBOMATA_SUI_COMMIT_ENABLED=true`
 - `ROBOMATA_SUI_PACKAGE_ID`
-- For server-signed smoke: `ROBOMATA_SUI_PRIVATE_KEY` and
-  `ROBOMATA_SUI_SIGNER_ADDRESS`
+- For legacy server-signed smoke only: `ROBOMATA_SUI_PRIVATE_KEY` and
+  `ROBOMATA_SUI_SIGNER_ADDRESS`. Do not use this as the normal production
+  fallback once operator-owned native sponsorship is enabled.
 - For operator-signed browser QA: `ROBOMATA_SUI_OPERATOR_COMMIT_ENABLED=true`
-  and a Sui wallet exposing `sui:signAndExecuteTransaction` for the mapped
-  facility operator address
-- `ROBOMATA_SUI_FACILITY_IDS_JSON`
-- `ROBOMATA_SUI_FACILITY_OPERATORS_JSON`
+  and a Sui wallet for the persisted facility operator address. Product-path QA
+  is native sponsored and requires `ROBOMATA_SUI_SPONSORSHIP_ENABLED=true`,
+  `ROBOMATA_SUI_PRIVATE_KEY`, funded sponsor SUI coins, and a wallet exposing
+  `sui:signTransaction`.
+- Submission creation or compute assigns the Sui facility automatically when the
+  Privy Sui wallet binding and Sui package/signing runtime are configured. QA
+  should confirm `facilityObjectId` and `facilityOperatorAddress` are persisted
+  in Postgres on the submission payload.
 - `ROBOMATA_SEAL_PACKAGE_ID`, `ROBOMATA_SEAL_IDENTITY`,
   `ROBOMATA_SEAL_KEY_SERVER_OBJECT_ID`,
   `ROBOMATA_SEAL_KEY_SERVER_AGGREGATOR_URL`, and `ROBOMATA_SEAL_THRESHOLD`

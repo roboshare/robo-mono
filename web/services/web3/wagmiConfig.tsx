@@ -9,6 +9,8 @@ import { getRuntimeLocalChain } from "~~/utils/localServiceUrls";
 import { getAlchemyHttpUrl, getInfuraHttpUrl } from "~~/utils/scaffold-eth";
 
 const { targetNetworks } = scaffoldConfig;
+const shouldUsePublicRpcFallback =
+  process.env.NODE_ENV === "development" || process.env.NEXT_PUBLIC_ENABLE_PUBLIC_RPC_FALLBACK === "true";
 
 // We always want to have mainnet enabled (ENS resolution, ETH price, etc). But only once.
 export const enabledChains = targetNetworks.find((network: Chain) => network.id === 1)
@@ -47,7 +49,9 @@ export const getWagmiConfig = () => {
       if (rpcOverrideUrl) {
         rpcFallbacks.push(http(rpcOverrideUrl));
       }
-      rpcFallbacks.push(http());
+      if (shouldUsePublicRpcFallback || rpcFallbacks.length === 0) {
+        rpcFallbacks.push(http());
+      }
 
       return createClient({
         chain,

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Transaction } from "@mysten/sui/transactions";
+import { fromBase64, toBase64 } from "@mysten/sui/utils";
 import { isRobomataWorkflowMutationEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
+import { getRobomataPostgresSql } from "~~/lib/robomata/server/postgres";
 import { requirePartnerAddress, requireSubmissionAccess } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
 import {
@@ -8,9 +10,13 @@ import {
   getRobomataSuiGasBudget,
   getRobomataSuiNetwork,
   getRobomataSuiServerSigner,
+  getRobomataSuiSponsorGasBudget,
+  getRobomataSuiSponsorMinCoinBalance,
+  getRobomataSuiSponsorSigner,
   getRobomataSuiTimeoutMs,
   isRobomataSuiCommitRuntimeConfigured,
   isRobomataSuiOperatorCommitRuntimeConfigured,
+  isRobomataSuiSponsorshipRuntimeConfigured,
   parsePositiveInteger,
 } from "~~/lib/robomata/server/suiCommitConfig";
 import {
@@ -22,6 +28,18 @@ import {
 const DEFAULT_COMMIT_STALE_MS = 10 * 60 * 1000;
 const DEFAULT_EVENT_QUERY_LIMIT = 100;
 const DEFAULT_EVENT_QUERY_MAX_PAGES = 10;
+const DEFAULT_SPONSOR_COIN_QUERY_MAX_PAGES = 10;
+const DEFAULT_SPONSOR_GAS_RESERVATION_TTL_MS = DEFAULT_COMMIT_STALE_MS;
+
+type SponsorGasReservation = {
+  reservedAt: number;
+  rootDigest: string;
+  sponsorAddress: string;
+  submissionId: string;
+};
+
+const localSponsorGasReservations = new Map<string, SponsorGasReservation>();
+let sponsorGasReservationTableReady = false;
 
 export const runtime = "nodejs";
 
@@ -197,7 +215,17 @@ type SuiCommitResult = {
 };
 
 type CommitEvidenceRequest = {
-  mode?: "server" | "operator_prepare" | "operator_complete" | "operator_release";
+  mode?:
+    | "server"
+    | "operator_prepare"
+    | "operator_prepare_sponsored"
+    | "operator_complete"
+    | "operator_complete_sponsored"
+    | "operator_release";
+  operatorSignature?: string;
+  sponsorGasObjectId?: string;
+  sponsorSignature?: string;
+  transactionBytes?: string;
   txDigest?: string;
   walletAddress?: string;
 };
@@ -210,6 +238,13 @@ type OperatorCommitPayload = {
   label: string;
   rootDigest: string;
   packageId: string;
+  sponsorship?: {
+    gasBudget: number;
+    gasObjectId: string;
+    sponsorAddress: string;
+    sponsorSignature: string;
+    transactionBytes: string;
+  };
 };
 
 async function parseCommitEvidenceRequest(request: NextRequest): Promise<CommitEvidenceRequest> {
@@ -220,9 +255,18 @@ async function parseCommitEvidenceRequest(request: NextRequest): Promise<CommitE
     const mode = input.mode;
     return {
       mode:
-        mode === "operator_prepare" || mode === "operator_complete" || mode === "operator_release" || mode === "server"
+        mode === "operator_prepare" ||
+        mode === "operator_prepare_sponsored" ||
+        mode === "operator_complete" ||
+        mode === "operator_complete_sponsored" ||
+        mode === "operator_release" ||
+        mode === "server"
           ? mode
           : undefined,
+      operatorSignature: typeof input.operatorSignature === "string" ? input.operatorSignature.trim() : undefined,
+      sponsorGasObjectId: typeof input.sponsorGasObjectId === "string" ? input.sponsorGasObjectId.trim() : undefined,
+      sponsorSignature: typeof input.sponsorSignature === "string" ? input.sponsorSignature.trim() : undefined,
+      transactionBytes: typeof input.transactionBytes === "string" ? input.transactionBytes.trim() : undefined,
       txDigest: typeof input.txDigest === "string" ? input.txDigest.trim() : undefined,
       walletAddress: typeof input.walletAddress === "string" ? input.walletAddress.trim() : undefined,
     };
@@ -235,6 +279,121 @@ function hexToBytes(value: string): number[] {
   const hex = normalizeHex(value);
   if (hex.length % 2 !== 0) throw new Error("Expected an even-length hex digest.");
   return Array.from(Buffer.from(hex, "hex"));
+}
+
+function hasPostgresConfig() {
+  return Boolean(process.env.POSTGRES_URL);
+}
+
+function getSponsorGasReservationTtlMs() {
+  return parsePositiveInteger(
+    process.env.ROBOMATA_SUI_SPONSOR_RESERVATION_TTL_MS,
+    DEFAULT_SPONSOR_GAS_RESERVATION_TTL_MS,
+  );
+}
+
+async function ensureSponsorGasReservationTable() {
+  if (sponsorGasReservationTableReady || !hasPostgresConfig()) return;
+  const sql = getRobomataPostgresSql();
+  await sql`
+    CREATE TABLE IF NOT EXISTS robomata_sui_sponsor_gas_reservations (
+      gas_object_id text PRIMARY KEY,
+      submission_id text NOT NULL,
+      root_digest text NOT NULL,
+      sponsor_address text NOT NULL,
+      reserved_at timestamptz NOT NULL DEFAULT now()
+    )
+  `;
+  sponsorGasReservationTableReady = true;
+}
+
+function isMatchingSponsorGasReservation(
+  reservation: SponsorGasReservation | undefined,
+  input: { rootDigest: string; sponsorAddress: string; submissionId: string },
+) {
+  return (
+    reservation?.rootDigest === input.rootDigest &&
+    reservation.sponsorAddress === input.sponsorAddress &&
+    reservation.submissionId === input.submissionId
+  );
+}
+
+async function expireSponsorGasReservations() {
+  const ttlMs = getSponsorGasReservationTtlMs();
+  const staleBefore = Date.now() - ttlMs;
+  for (const [gasObjectId, reservation] of localSponsorGasReservations.entries()) {
+    if (reservation.reservedAt < staleBefore) localSponsorGasReservations.delete(gasObjectId);
+  }
+
+  if (!hasPostgresConfig()) return;
+  const sql = getRobomataPostgresSql();
+  await ensureSponsorGasReservationTable();
+  await sql`
+    DELETE FROM robomata_sui_sponsor_gas_reservations
+    WHERE reserved_at < now() - (${ttlMs} * interval '1 millisecond')
+  `;
+}
+
+async function reserveSponsorGasObject(input: {
+  gasObjectId: string;
+  rootDigest: string;
+  sponsorAddress: string;
+  submissionId: string;
+}): Promise<boolean> {
+  if (!hasPostgresConfig()) {
+    if (localSponsorGasReservations.has(input.gasObjectId)) return false;
+    localSponsorGasReservations.set(input.gasObjectId, {
+      reservedAt: Date.now(),
+      rootDigest: input.rootDigest,
+      sponsorAddress: input.sponsorAddress,
+      submissionId: input.submissionId,
+    });
+    return true;
+  }
+
+  await ensureSponsorGasReservationTable();
+  const sql = getRobomataPostgresSql();
+  const result = await sql`
+    INSERT INTO robomata_sui_sponsor_gas_reservations (
+      gas_object_id,
+      submission_id,
+      root_digest,
+      sponsor_address
+    )
+    VALUES (
+      ${input.gasObjectId},
+      ${input.submissionId},
+      ${input.rootDigest},
+      ${input.sponsorAddress}
+    )
+    ON CONFLICT (gas_object_id) DO NOTHING
+    RETURNING gas_object_id
+  `;
+  return result.length === 1;
+}
+
+async function releaseSponsorGasReservation(input: {
+  gasObjectId: string | undefined;
+  rootDigest: string;
+  sponsorAddress: string;
+  submissionId: string;
+}) {
+  if (!input.gasObjectId) return;
+  const localReservation = localSponsorGasReservations.get(input.gasObjectId);
+  if (isMatchingSponsorGasReservation(localReservation, input)) {
+    localSponsorGasReservations.delete(input.gasObjectId);
+  }
+  if (!hasPostgresConfig()) return;
+
+  await ensureSponsorGasReservationTable();
+  const sql = getRobomataPostgresSql();
+  await sql`
+    DELETE FROM robomata_sui_sponsor_gas_reservations
+    WHERE gas_object_id = ${input.gasObjectId}
+      AND submission_id = ${input.submissionId}
+      AND root_digest = ${input.rootDigest}
+      AND sponsor_address = ${input.sponsorAddress}
+  `;
 }
 
 async function withTimeout<T>(operation: (signal: AbortSignal) => Promise<T>, timeoutMs: number): Promise<T> {
@@ -274,25 +433,118 @@ function buildSuiCommitTransaction(input: {
   return tx;
 }
 
-async function prepareOperatorSuiCommit(input: {
+async function selectSponsorGasPayment(input: {
+  rootDigest: string;
+  sponsorAddress: string;
+  gasBudget: number;
+  submissionId: string;
+}) {
+  const client = getRobomataSuiClient();
+  const minBalance = Math.max(input.gasBudget, getRobomataSuiSponsorMinCoinBalance());
+  const maxPages = parsePositiveInteger(
+    process.env.ROBOMATA_SUI_SPONSOR_COIN_QUERY_MAX_PAGES,
+    DEFAULT_SPONSOR_COIN_QUERY_MAX_PAGES,
+  );
+  let cursor: string | null | undefined;
+
+  await expireSponsorGasReservations();
+
+  for (let page = 0; page < maxPages; page++) {
+    const coins = await withTimeout(
+      signal =>
+        client.getCoins({
+          owner: input.sponsorAddress,
+          cursor,
+          limit: 50,
+          signal,
+        }),
+      getRobomataSuiTimeoutMs(),
+    );
+
+    for (const gasCoin of coins.data) {
+      if (BigInt(gasCoin.balance) < BigInt(minBalance)) continue;
+      const reserved = await reserveSponsorGasObject({
+        gasObjectId: gasCoin.coinObjectId,
+        rootDigest: input.rootDigest,
+        sponsorAddress: input.sponsorAddress,
+        submissionId: input.submissionId,
+      });
+      if (!reserved) continue;
+
+      return {
+        digest: gasCoin.digest,
+        objectId: gasCoin.coinObjectId,
+        version: gasCoin.version,
+      };
+    }
+
+    if (!coins.hasNextPage || !coins.nextCursor) break;
+    cursor = coins.nextCursor;
+  }
+
+  throw new Error(
+    `No unreserved sponsor SUI gas coin with at least ${minBalance} MIST is available for ${input.sponsorAddress}.`,
+  );
+}
+
+async function prepareSponsoredOperatorSuiCommit(input: {
   facilityObjectId: string;
   facilityOperatorAddress: string;
   label: string;
   rootDigest: string;
+  submissionId: string;
 }): Promise<OperatorCommitPayload> {
-  const tx = buildSuiCommitTransaction({ ...input, senderAddress: input.facilityOperatorAddress });
-  const client = getRobomataSuiClient();
-  const transactionJson = await withTimeout(() => tx.toJSON({ client }), getRobomataSuiTimeoutMs());
+  const sponsor = getRobomataSuiSponsorSigner();
+  if (!sponsor) throw new Error("ROBOMATA_SUI_PRIVATE_KEY is missing, invalid, or sponsor address-mismatched.");
 
-  return {
-    chain: `sui:${getRobomataSuiNetwork()}`,
-    transactionJson,
-    facilityObjectId: input.facilityObjectId,
-    facilityOperatorAddress: input.facilityOperatorAddress,
-    label: input.label,
-    rootDigest: input.rootDigest,
-    packageId: process.env.ROBOMATA_SUI_PACKAGE_ID ?? "",
-  };
+  const client = getRobomataSuiClient();
+  const gasBudget = getRobomataSuiSponsorGasBudget();
+  const tx = buildSuiCommitTransaction(input);
+  const kindBytes = await withTimeout(() => tx.build({ client, onlyTransactionKind: true }), getRobomataSuiTimeoutMs());
+  const sponsoredTx = Transaction.fromKind(kindBytes);
+  let gasPayment: Awaited<ReturnType<typeof selectSponsorGasPayment>> | undefined;
+
+  try {
+    gasPayment = await selectSponsorGasPayment({
+      rootDigest: input.rootDigest,
+      sponsorAddress: sponsor.address,
+      gasBudget,
+      submissionId: input.submissionId,
+    });
+
+    sponsoredTx.setSender(input.facilityOperatorAddress);
+    sponsoredTx.setGasOwner(sponsor.address);
+    sponsoredTx.setGasBudget(gasBudget);
+    sponsoredTx.setGasPayment([gasPayment]);
+
+    const transactionBytes = await withTimeout(() => sponsoredTx.build({ client }), getRobomataSuiTimeoutMs());
+    const { signature: sponsorSignature } = await sponsor.keypair.signTransaction(transactionBytes);
+
+    return {
+      chain: `sui:${getRobomataSuiNetwork()}`,
+      transactionJson: await sponsoredTx.toJSON(),
+      facilityObjectId: input.facilityObjectId,
+      facilityOperatorAddress: input.facilityOperatorAddress,
+      label: input.label,
+      rootDigest: input.rootDigest,
+      packageId: process.env.ROBOMATA_SUI_PACKAGE_ID ?? "",
+      sponsorship: {
+        gasBudget,
+        gasObjectId: gasPayment.objectId,
+        sponsorAddress: sponsor.address,
+        sponsorSignature,
+        transactionBytes: toBase64(transactionBytes),
+      },
+    };
+  } catch (error) {
+    await releaseSponsorGasReservation({
+      gasObjectId: gasPayment?.objectId,
+      rootDigest: input.rootDigest,
+      sponsorAddress: sponsor.address,
+      submissionId: input.submissionId,
+    });
+    throw error;
+  }
 }
 
 async function executeSuiCommit(input: {
@@ -344,6 +596,50 @@ async function executeSuiCommit(input: {
         error instanceof Error
           ? `Sui commit response was not confirmed and must be reconciled before retry: ${error.message}`
           : "Sui commit response was not confirmed and must be reconciled before retry.",
+      uncertain: true,
+    };
+  }
+}
+
+async function executeSponsoredOperatorSuiCommit(input: {
+  operatorSignature: string;
+  sponsorSignature: string;
+  transactionBytes: string;
+}): Promise<SuiCommitResult> {
+  try {
+    const client = getRobomataSuiClient();
+    const result = await withTimeout(
+      signal =>
+        client.core.executeTransaction({
+          transaction: fromBase64(input.transactionBytes),
+          signatures: [input.operatorSignature, input.sponsorSignature],
+          include: { effects: true },
+          signal,
+        }),
+      getRobomataSuiTimeoutMs(),
+    );
+
+    if (result.Transaction) return { txDigest: result.Transaction.digest, uncertain: false };
+    if (result.FailedTransaction) {
+      return {
+        txDigest: result.FailedTransaction.digest,
+        errorMessage:
+          result.FailedTransaction.status.error?.message ??
+          String(result.FailedTransaction.status.error ?? "Sui sponsored transaction failed."),
+        uncertain: false,
+      };
+    }
+
+    return {
+      errorMessage: "Sponsored Sui transaction status was missing from SDK output.",
+      uncertain: true,
+    };
+  } catch (error) {
+    return {
+      errorMessage:
+        error instanceof Error
+          ? `Sponsored Sui commit response was not confirmed and must be reconciled before retry: ${error.message}`
+          : "Sponsored Sui commit response was not confirmed and must be reconciled before retry.",
       uncertain: true,
     };
   }
@@ -432,6 +728,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     facilityObjectId,
     facilityOperatorAddress,
   });
+  const sponsoredOperatorCommitConfigured = isRobomataSuiSponsorshipRuntimeConfigured({
+    facilityObjectId,
+    facilityOperatorAddress,
+  });
 
   if (commitMode === "server" && operatorCommitConfigured) {
     return NextResponse.json(
@@ -447,19 +747,49 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     );
   }
 
-  if (["operator_prepare", "operator_complete", "operator_release"].includes(commitMode) && !operatorCommitConfigured) {
+  if (
+    [
+      "operator_prepare",
+      "operator_prepare_sponsored",
+      "operator_complete",
+      "operator_complete_sponsored",
+      "operator_release",
+    ].includes(commitMode) &&
+    !sponsoredOperatorCommitConfigured
+  ) {
     return NextResponse.json(
-      { error: "Operator-owned Sui commit is not configured for this app runtime." },
+      { error: "Native Sui sponsored operator commit is not configured for this app runtime." },
+      { status: 400 },
+    );
+  }
+
+  if (
+    ["operator_prepare_sponsored", "operator_complete_sponsored"].includes(commitMode) &&
+    !sponsoredOperatorCommitConfigured
+  ) {
+    return NextResponse.json(
+      { error: "Native Sui sponsorship is not configured for this app runtime." },
       { status: 400 },
     );
   }
 
   const rootDigest = submission.evidenceCommit.rootDigest;
+  const reservationSubmissionId = submission.id;
   const label = `submission_${submission.id}`;
+  const releaseCurrentSponsorGasReservation = async (gasObjectId: string | undefined) => {
+    const sponsorAddress = getRobomataSuiSponsorSigner()?.address;
+    if (!sponsorAddress) return;
+    await releaseSponsorGasReservation({
+      gasObjectId,
+      rootDigest,
+      sponsorAddress,
+      submissionId: reservationSubmissionId,
+    });
+  };
   let operatorWalletAddress: string | undefined;
-  if (commitMode === "operator_complete") {
+  if (commitMode === "operator_complete" || commitMode === "operator_complete_sponsored") {
     operatorWalletAddress = requestBody.walletAddress?.toLowerCase();
-    if (requestBody.txDigest && !operatorWalletAddress) {
+    if ((requestBody.txDigest || requestBody.operatorSignature) && !operatorWalletAddress) {
       return NextResponse.json({ error: "Operator Sui wallet address is required." }, { status: 400 });
     }
     if (operatorWalletAddress && operatorWalletAddress !== facilityOperatorAddress.toLowerCase()) {
@@ -472,7 +802,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
 
   if (
     submission.evidenceCommit.status === "committing" &&
-    (!(commitMode === "operator_complete" || commitMode === "operator_release") || isStaleCommit(submission))
+    (!["operator_complete", "operator_complete_sponsored", "operator_release"].includes(commitMode) ||
+      isStaleCommit(submission))
   ) {
     if (!isStaleCommit(submission)) {
       return NextResponse.json(
@@ -515,10 +846,16 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
         committedAt: new Date().toISOString(),
         facilityObjectId,
         facilityOperatorAddress,
-        ...(commitMode === "operator_complete"
+        ...(commitMode === "operator_complete" || commitMode === "operator_complete_sponsored"
           ? {
               commitAuthority: "operator" as const,
               operatorWalletAddress: operatorWalletAddress ?? facilityOperatorAddress,
+              ...(commitMode === "operator_complete_sponsored"
+                ? {
+                    sponsorshipMode: "native_sui" as const,
+                    sponsorAddress: getRobomataSuiSponsorSigner()?.address,
+                  }
+                : {}),
             }
           : {}),
       });
@@ -556,6 +893,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
   }
 
   if (commitMode === "operator_release") {
+    await releaseCurrentSponsorGasReservation(requestBody.sponsorGasObjectId);
     if (submission.evidenceCommit.status !== "committing") return NextResponse.json({ submission });
     const released = await store.failEvidenceCommit(
       submission.id,
@@ -565,7 +903,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     return NextResponse.json({ submission: released ?? submission });
   }
 
-  if (commitMode === "operator_prepare") {
+  if (commitMode === "operator_prepare" || commitMode === "operator_prepare_sponsored") {
     const committingSubmission = await store.beginEvidenceCommit(submission.id, rootDigest, new Date().toISOString());
     if (!committingSubmission) {
       const latest = await store.get(submission.id);
@@ -577,11 +915,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     }
 
     try {
-      const operatorCommit = await prepareOperatorSuiCommit({
+      const operatorCommit = await prepareSponsoredOperatorSuiCommit({
         facilityObjectId,
         facilityOperatorAddress,
         label,
         rootDigest,
+        submissionId: submission.id,
       });
       return NextResponse.json({ submission: committingSubmission, operatorCommit });
     } catch (error) {
@@ -598,6 +937,121 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
         { status: 500 },
       );
     }
+  }
+
+  if (commitMode === "operator_complete_sponsored") {
+    const sponsor = getRobomataSuiSponsorSigner();
+    if (!sponsor) {
+      return NextResponse.json(
+        { error: "ROBOMATA_SUI_PRIVATE_KEY is missing, invalid, or sponsor address-mismatched." },
+        { status: 400 },
+      );
+    }
+    if (
+      !requestBody.txDigest &&
+      (!requestBody.operatorSignature || !requestBody.sponsorSignature || !requestBody.transactionBytes)
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Sponsored operator completion requires a transaction digest or transaction bytes plus operator and sponsor signatures.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const result = requestBody.txDigest
+      ? ({ txDigest: requestBody.txDigest, uncertain: false } satisfies SuiCommitResult)
+      : await executeSponsoredOperatorSuiCommit({
+          operatorSignature: requestBody.operatorSignature ?? "",
+          sponsorSignature: requestBody.sponsorSignature ?? "",
+          transactionBytes: requestBody.transactionBytes ?? "",
+        });
+
+    if (result.errorMessage) {
+      if (result.uncertain) {
+        return keepCommitInReconciliationState({
+          submission,
+          error: `${result.errorMessage} Reconcile Sui events before retrying.`,
+        });
+      }
+
+      await releaseCurrentSponsorGasReservation(requestBody.sponsorGasObjectId);
+      return markCommitFailed({
+        store,
+        submission,
+        rootDigest,
+        error: result.errorMessage,
+      });
+    }
+
+    let txDigest: string | undefined;
+    try {
+      txDigest = result.txDigest
+        ? await findCommittedEvidenceEventInTransaction({
+            txDigest: result.txDigest,
+            facilityObjectId,
+            label,
+            rootDigest,
+          })
+        : undefined;
+      txDigest ??= await findCommittedEvidenceEvent({ facilityObjectId, label, rootDigest });
+    } catch (error) {
+      if (isFailedSuiTransactionError(error)) {
+        await releaseCurrentSponsorGasReservation(requestBody.sponsorGasObjectId);
+        const released = await store.failEvidenceCommit(submission.id, rootDigest, error.message);
+        return NextResponse.json({ submission: released ?? submission, error: error.message }, { status: 409 });
+      }
+
+      return NextResponse.json(
+        {
+          error:
+            error instanceof Error
+              ? "Sponsored operator Sui commit requires event reconciliation, but event lookup failed: " + error.message
+              : "Sponsored operator Sui commit requires event reconciliation, but event lookup failed.",
+        },
+        { status: 409 },
+      );
+    }
+
+    if (!txDigest) {
+      return NextResponse.json(
+        {
+          submission,
+          txDigest: result.txDigest,
+          error: result.txDigest
+            ? `Sponsored Sui transaction ${result.txDigest} was submitted, but the matching EvidenceCommitted event is not indexed yet. Retry completion shortly.`
+            : "The matching EvidenceCommitted event is not indexed yet. Retry completion shortly.",
+        },
+        { status: 202 },
+      );
+    }
+
+    const saved = await store.completeEvidenceCommit(submission.id, rootDigest, {
+      txDigest,
+      committedAt: new Date().toISOString(),
+      facilityObjectId,
+      facilityOperatorAddress,
+      commitAuthority: "operator",
+      operatorWalletAddress: operatorWalletAddress ?? facilityOperatorAddress,
+      sponsorshipMode: "native_sui",
+      sponsorAddress: sponsor.address,
+    });
+
+    if (saved) {
+      await releaseCurrentSponsorGasReservation(requestBody.sponsorGasObjectId);
+      return NextResponse.json({ submission: saved });
+    }
+    const latest = await store.get(submission.id);
+    if (latest?.evidenceCommit.status === "committed") {
+      await releaseCurrentSponsorGasReservation(requestBody.sponsorGasObjectId);
+      return NextResponse.json({ submission: latest });
+    }
+    await releaseCurrentSponsorGasReservation(requestBody.sponsorGasObjectId);
+    return NextResponse.json(
+      { error: "Sponsored operator Sui commit was found, but local commit state changed before it could be saved." },
+      { status: 409 },
+    );
   }
 
   if (commitMode === "operator_complete") {

@@ -47,6 +47,7 @@ export const INFURA_RPC_CHAIN_NAMES: Record<number, string> = {
   [chains.polygonAmoy.id]: "polygon-amoy",
   [chains.base.id]: "base-mainnet",
   [chains.baseSepolia.id]: "base-sepolia",
+  [chains.monad.id]: "monad-mainnet",
   [chains.monadTestnet.id]: "monad-testnet",
 };
 

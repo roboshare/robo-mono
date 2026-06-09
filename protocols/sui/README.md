@@ -117,9 +117,9 @@ ROBOMATA_SUI_SIGNER_ADDRESS=0x...
 ```
 
 `ROBOMATA_SUI_SIGNER_ADDRESS` must be the address derived from
-`ROBOMATA_SUI_PRIVATE_KEY` and must match the facility operator address stored
-in `ROBOMATA_SUI_FACILITY_OPERATORS_JSON`. Do not commit the private key or add
-it to any `NEXT_PUBLIC_` variable.
+`ROBOMATA_SUI_PRIVATE_KEY` and must match the facility operator address persisted
+on the submission. Do not commit the private key or add it to any
+`NEXT_PUBLIC_` variable.
 
 For real evidence upload, also configure a Walrus publisher endpoint in the app
 runtime:

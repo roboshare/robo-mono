@@ -56,7 +56,7 @@ const data = JSON.parse(fs.readFileSync(0, "utf8"));
 process.stdout.write(data.digest);
 ')"
 
-CREATE_JSON="$(sui client --client.config "$CLIENT_CONFIG" call --package "$PACKAGE_ID" --module facility --function create_facility --args "$GROSS_RECEIVABLES_CENTS" "$ELIGIBLE_RECEIVABLES_CENTS" "$ADVANCE_RATE_BPS" "$AVAILABLE_CENTS" "$EVIDENCE_ROOT_HEX" 0x6 --gas-budget "$CALL_GAS_BUDGET" --json)"
+CREATE_JSON="$(sui client --client.config "$CLIENT_CONFIG" call --package "$PACKAGE_ID" --module facility --function create_facility --args "$ACTIVE_ADDRESS" "$GROSS_RECEIVABLES_CENTS" "$ELIGIBLE_RECEIVABLES_CENTS" "$ADVANCE_RATE_BPS" "$AVAILABLE_CENTS" "$EVIDENCE_ROOT_HEX" 0x6 --gas-budget "$CALL_GAS_BUDGET" --json)"
 FACILITY_ID="$(printf '%s' "$CREATE_JSON" | node -e '
 const fs = require("fs");
 const data = JSON.parse(fs.readFileSync(0, "utf8"));

@@ -44,3 +44,15 @@ type PrimaryPool @entity(immutable: false) {
   isClosed: Boolean!
   createdAt: BigInt!
 }
+
+type EarningsDistribution @entity(immutable: true) {
+  id: ID! # transaction hash + log index
+  assetId: BigInt!
+  partner: Bytes!
+  totalRevenue: BigInt!
+  investorEarnings: BigInt!
+  period: BigInt!
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}

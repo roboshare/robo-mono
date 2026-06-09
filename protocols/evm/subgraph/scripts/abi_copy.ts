@@ -246,11 +246,12 @@ async function main() {
       continue;
     }
     const latestAbi = loadAbiFromForgeArtifact(contractName);
+    const abi = chainId === DEFAULT_CHAIN_ID ? latestAbi ?? contractObject.abi : contractObject.abi;
     publishContract(
       contractName,
       {
         ...contractObject,
-        abi: latestAbi ?? contractObject.abi,
+        abi,
         startBlock: startBlockByAddress[contractObject.address.toLowerCase()],
       },
       networkName
