@@ -520,7 +520,6 @@ function createFileStore(): SubmissionStore {
           return submission;
         }
         if (
-          submission.updatedAt !== input.expectedUpdatedAt ||
           (submission.evidenceCommit.rootDigest ?? "") !== input.expectedRootDigest ||
           submission.evidenceCommit.facilityAssignmentRootDigest !== input.expectedRootDigest ||
           submission.evidenceCommit.facilityAssignmentOperatorAddress !== input.facilityOperatorAddress ||
@@ -735,22 +734,55 @@ function createPostgresStore(): SubmissionStore {
         return current;
       }
       if (
-        current.updatedAt !== input.expectedUpdatedAt ||
-        (current.evidenceCommit.rootDigest ?? "") !== input.expectedRootDigest
+        (current.evidenceCommit.rootDigest ?? "") !== input.expectedRootDigest ||
+        current.evidenceCommit.facilityAssignmentRootDigest !== input.expectedRootDigest ||
+        current.evidenceCommit.facilityAssignmentOperatorAddress !== input.facilityOperatorAddress ||
+        current.evidenceCommit.facilityAssignmentStartedAt !== input.expectedAssignmentStartedAt
       ) {
         return null;
       }
 
-      const nextSubmission = applySuiFacilityAssignment(current, input);
+      const assignedAt = new Date().toISOString();
+      const evidenceCommitPatch = {
+        commitMode: deriveEvidenceCommitMode({
+          facilityObjectId: input.facilityObjectId,
+          facilityOperatorAddress: input.facilityOperatorAddress,
+        }),
+        facilityObjectId: input.facilityObjectId,
+        facilityOperatorAddress: input.facilityOperatorAddress,
+      };
+      const auditEvent = createAuditEvent(
+        "sui_facility_assigned",
+        `Assigned Sui facility for ${current.facilityName}.`,
+        {
+          facilityObjectId: input.facilityObjectId,
+          facilityOperatorAddress: input.facilityOperatorAddress,
+          txDigest: input.txDigest ?? null,
+        },
+      );
       const result = (await sql`
         UPDATE robomata_facility_submissions
         SET
-          status = ${nextSubmission.status},
-          payload = ${JSON.stringify(nextSubmission)}::jsonb,
-          updated_at = ${nextSubmission.updatedAt}::timestamptz
+          payload = jsonb_set(
+            jsonb_set(
+              jsonb_set(
+                payload,
+                '{evidenceCommit}',
+                ((((payload->'evidenceCommit') #- '{facilityAssignmentStartedAt}')
+                  #- '{facilityAssignmentRootDigest}')
+                  #- '{facilityAssignmentOperatorAddress}')
+                  #- '{facilityAssignmentErrorMessage}'
+                  || ${JSON.stringify(evidenceCommitPatch)}::jsonb
+              ),
+              '{auditEvents}',
+              ${JSON.stringify([auditEvent])}::jsonb || COALESCE(payload->'auditEvents', '[]'::jsonb)
+            ),
+            '{updatedAt}',
+            to_jsonb(${assignedAt}::text)
+          ),
+          updated_at = ${assignedAt}::timestamptz
         WHERE
           id = ${id}
-          AND updated_at = ${input.expectedUpdatedAt}::timestamptz
           AND COALESCE(payload->'evidenceCommit'->>'rootDigest', '') = ${input.expectedRootDigest}
           AND payload->'evidenceCommit'->>'facilityAssignmentRootDigest' = ${input.expectedRootDigest}
           AND payload->'evidenceCommit'->>'facilityAssignmentOperatorAddress' = ${input.facilityOperatorAddress}
