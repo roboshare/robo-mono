@@ -266,6 +266,10 @@ Recommended environments:
   `PartnerManager`, configure Privy server auth with `NEXT_PUBLIC_PRIVY_APP_ID`
   and `PRIVY_APP_SECRET`, and enable Walrus/Sui side-effect flags only for
   testnet runs that should write to external infrastructure
+- protected lender sharing preview: set `ROBOMATA_SHARE_LINKS_ENABLED=true`,
+  `NEXT_PUBLIC_ROBOMATA_SHARE_LINKS_ENABLED=true`, and
+  `ROBOMATA_SHARE_LINK_TOKEN_SECRET` after the share-link QA gate passes; share
+  APIs remain server-gated even if the client-visible flag is set
 - local QA: use `ROBOMATA_SUBMISSIONS_FILE` only for single-developer local
   runs when Postgres is not configured
 - public marketing mode: `/robomata` remains visible as a public product page;
