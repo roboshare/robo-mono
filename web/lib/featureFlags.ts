@@ -43,3 +43,11 @@ export function isRobomataPrivySuiWalletBindingEnabled(): boolean {
 export function isRobomataPrivySuiWalletBindingClientEnabled(): boolean {
   return isEnabled(process.env.NEXT_PUBLIC_ROBOMATA_PRIVY_SUI_WALLET_BINDING_ENABLED);
 }
+
+export function isRobomataShareLinksEnabled(): boolean {
+  return isEnabled(process.env.ROBOMATA_SHARE_LINKS_ENABLED);
+}
+
+export function isRobomataShareLinksClientEnabled(): boolean {
+  return isEnabled(process.env.NEXT_PUBLIC_ROBOMATA_SHARE_LINKS_ENABLED);
+}
