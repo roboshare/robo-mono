@@ -1,231 +1,223 @@
 import Link from "next/link";
 import {
+  ArrowRightIcon,
   BanknotesIcon,
-  BuildingOffice2Icon,
   ClipboardDocumentCheckIcon,
+  DocumentArrowUpIcon,
   ExclamationTriangleIcon,
+  LockClosedIcon,
   ShieldCheckIcon,
-  TruckIcon,
+  SparklesIcon,
 } from "@heroicons/react/24/outline";
-import { RobomataSubmissionRoute } from "~~/components/robomata/RobomataSubmissionRoute";
 import { isRobomataWorkflowEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
-import { buildAgentReviewInput, reviewBorrowingBase } from "~~/lib/robomata/agentProviders";
-import { calculateBorrowingBase, demoPortfolio, formatUsd } from "~~/lib/robomata/borrowingBase";
-import { buildEvidenceAnchor } from "~~/lib/robomata/evidence";
-import { buildLenderPacket } from "~~/lib/robomata/lenderPacket";
 
-export const dynamic = "force-dynamic";
+const workflowSteps = [
+  {
+    title: "Create a facility submission",
+    description: "Start with operator, facility, and as-of date so the borrowing base has a clear reporting boundary.",
+  },
+  {
+    title: "Import receivables",
+    description: "Upload the receivables CSV that lenders already ask operators to normalize by hand.",
+  },
+  {
+    title: "Attach evidence",
+    description:
+      "Add receivables, insurance, collateral, servicing, utilization, and lockbox evidence with source metadata.",
+  },
+  {
+    title: "Compute availability",
+    description:
+      "Apply deterministic eligibility, concentration, and advance-rate rules to produce lender-ready capacity.",
+  },
+  {
+    title: "Resolve exceptions",
+    description:
+      "Separate clean collateral from missing, stale, or policy-breaking evidence before the packet is sent.",
+  },
+  {
+    title: "Commit the evidence root",
+    description: "Use Sui, Walrus, and Seal to anchor a controlled evidence trail after the packet is ready.",
+  },
+];
 
-const RobomataDemoPage = async () => {
-  const borrowingBase = calculateBorrowingBase(demoPortfolio);
-  const evidenceAnchor = buildEvidenceAnchor(demoPortfolio.facilityName, demoPortfolio.evidence);
-  const agentReview = await reviewBorrowingBase(buildAgentReviewInput(borrowingBase));
-  const lenderPacket = buildLenderPacket(borrowingBase, agentReview, evidenceAnchor);
-  const totalVehicles = demoPortfolio.receivables.reduce((sum, receivable) => sum + receivable.vehicleCount, 0);
+const valueProps = [
+  {
+    label: "For operators",
+    icon: DocumentArrowUpIcon,
+    copy: "Turn lender diligence from an email-and-spreadsheet scramble into a repeatable submission workflow.",
+  },
+  {
+    label: "For lenders",
+    icon: ClipboardDocumentCheckIcon,
+    copy: "Receive a cleaner borrowing-base packet with eligibility cuts, exception trails, and evidence status already organized.",
+  },
+  {
+    label: "For evidence",
+    icon: ShieldCheckIcon,
+    copy: "Keep sensitive files controlled while preserving verifiable commitments for audit and monitoring.",
+  },
+];
+
+const railCards = [
+  {
+    label: "Borrowing-base engine",
+    icon: BanknotesIcon,
+    copy: "Calculates gross receivables, eligibility, reserves, advance rates, availability, and exception counts from persisted submissions.",
+  },
+  {
+    label: "Exception workflow",
+    icon: ExclamationTriangleIcon,
+    copy: "Turns policy breaks into operator actions: exclude a receivable, add evidence, fix an allowed field, and recompute.",
+  },
+  {
+    label: "Controlled evidence",
+    icon: LockClosedIcon,
+    copy: "Stores encrypted evidence through Walrus and Seal when configured, with technical details kept behind advanced disclosures.",
+  },
+  {
+    label: "Programmable commit trail",
+    icon: SparklesIcon,
+    copy: "Anchors the evidence root through the Sui facility path so future lenders can monitor the same financial object over time.",
+  },
+];
+
+const RobomataPage = () => {
+  const isSubmissionWorkflowAvailable = isRobomataWorkflowEnabled() && isRobomataWorkflowServerEnabled();
 
   return (
     <div className="flex flex-1 justify-center px-4 py-8 sm:px-6 sm:py-10">
       <div className="w-full max-w-7xl space-y-8">
         <section className="overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 shadow-xl shadow-base-300/40">
-          <div className="grid gap-8 px-6 py-8 sm:px-8 sm:py-10 lg:grid-cols-[1.15fr_0.85fr] lg:px-10">
-            <div className="space-y-6">
-              <div className="space-y-3">
+          <div className="grid gap-8 px-6 py-8 sm:px-8 sm:py-10 lg:grid-cols-[1.08fr_0.92fr] lg:px-10">
+            <div className="space-y-7">
+              <div className="space-y-4">
                 <p className="text-sm font-semibold uppercase tracking-[0.3em] text-base-content/50">Robomata</p>
-                <h1 className="max-w-3xl text-4xl font-black tracking-tight text-base-content sm:text-5xl">
-                  Turn fleet receivables into a lender-ready borrowing base.
+                <h1 className="max-w-4xl text-4xl font-black tracking-tight text-base-content sm:text-5xl lg:text-6xl">
+                  Make fleet receivables financeable before the lender asks twice.
                 </h1>
-                <p className="max-w-2xl text-lg leading-relaxed text-base-content/70">
-                  Public demo mode shows the verified borrowing-base narrative while the working submission workflow
-                  remains behind its release flag.
+                <p className="max-w-3xl text-lg leading-relaxed text-base-content/70">
+                  Robomata helps fleet operators package receivables, evidence, exceptions, and borrowing-base output
+                  into a lender-ready workflow. The operator workspace lives in Partner Submissions; this page explains
+                  the product surface and why the evidence rail matters.
                 </p>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-3xl border border-base-300 bg-base-200/60 p-4">
-                  <TruckIcon className="h-6 w-6 text-primary" />
-                  <div className="mt-3 text-sm font-semibold text-base-content">Operator packet</div>
-                  <p className="mt-1 text-sm text-base-content/70">
-                    {demoPortfolio.operator} submits {demoPortfolio.receivables.length} receivables backed by{" "}
-                    {totalVehicles} active vehicles.
-                  </p>
-                </div>
-                <div className="rounded-3xl border border-base-300 bg-base-200/60 p-4">
-                  <BanknotesIcon className="h-6 w-6 text-primary" />
-                  <div className="mt-3 text-sm font-semibold text-base-content">Borrowing-base output</div>
-                  <p className="mt-1 text-sm text-base-content/70">
-                    Eligibility, reserves, and borrowing capacity are computed from deterministic demo inputs.
-                  </p>
-                </div>
-                <div className="rounded-3xl border border-base-300 bg-base-200/60 p-4">
-                  <ShieldCheckIcon className="h-6 w-6 text-primary" />
-                  <div className="mt-3 text-sm font-semibold text-base-content">Evidence rail</div>
-                  <p className="mt-1 text-sm text-base-content/70">
-                    Evidence commitments remain visible without exposing the editable submission workflow.
-                  </p>
-                </div>
+              <div className="flex flex-wrap gap-3">
+                <Link
+                  href={isSubmissionWorkflowAvailable ? "/partner/submissions" : "/partner"}
+                  className="btn btn-primary rounded-full"
+                >
+                  {isSubmissionWorkflowAvailable ? "Start a borrowing-base submission" : "Request partner access"}
+                  <ArrowRightIcon className="h-4 w-4" />
+                </Link>
+                {isSubmissionWorkflowAvailable ? (
+                  <Link href="/partner" className="btn btn-outline rounded-full">
+                    Open partner dashboard
+                  </Link>
+                ) : null}
               </div>
 
-              <div className="rounded-2xl border border-dashed border-base-300 bg-base-200/50 p-4 text-sm text-base-content/70">
-                Enable <code>NEXT_PUBLIC_ENABLE_ROBOMATA_WORKFLOW=true</code> and{" "}
-                <code>ROBOMATA_WORKFLOW_ENABLED=true</code> in controlled previews to replace this demo with a real
-                read-only submission projection.
+              <div className="rounded-2xl border border-dashed border-base-300 bg-base-200/50 p-4 text-sm leading-relaxed text-base-content/70">
+                Partner access is required to create or view private submissions. Protected lender packet links are a
+                separate controlled-sharing surface and are not public facility browsing.
               </div>
             </div>
 
             <div className="rounded-[1.75rem] border border-base-300 bg-base-200/70 p-5 sm:p-6">
-              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">Demo Facility</p>
-              <div className="mt-4 space-y-4">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Operator</div>
-                  <div className="mt-1 text-2xl font-bold text-base-content">{demoPortfolio.operator}</div>
+              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
+                Product Architecture
+              </p>
+              <div className="mt-5 space-y-4">
+                <div className="rounded-2xl border border-base-300 bg-base-100/80 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Public</div>
+                  <div className="mt-2 text-lg font-bold text-base-content">/robomata</div>
+                  <p className="mt-2 text-sm leading-relaxed text-base-content/70">
+                    Product positioning, workflow explanation, and operator entry points.
+                  </p>
                 </div>
                 <div className="rounded-2xl border border-base-300 bg-base-100/80 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Facility</div>
-                  <div className="mt-2 text-base font-semibold text-base-content">{demoPortfolio.facilityName}</div>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    <div>
-                      <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">As Of</div>
-                      <div className="mt-1 text-sm font-medium text-base-content">{demoPortfolio.asOfDate}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">Exceptions</div>
-                      <div className="mt-1 text-sm font-medium text-base-content">{borrowingBase.exceptionCount}</div>
-                    </div>
-                  </div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Operator</div>
+                  <div className="mt-2 text-lg font-bold text-base-content">/partner/submissions</div>
+                  <p className="mt-2 text-sm leading-relaxed text-base-content/70">
+                    Authenticated submission list, workspace, receivables import, evidence upload, compute, and commit.
+                  </p>
                 </div>
-                <Link href="/partner" className="btn btn-outline w-full rounded-full">
-                  Open partner workspace
-                </Link>
+                <div className="rounded-2xl border border-base-300 bg-base-100/80 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Lender</div>
+                  <div className="mt-2 text-lg font-bold text-base-content">Protected packet links</div>
+                  <p className="mt-2 text-sm leading-relaxed text-base-content/70">
+                    Controlled links for one lender-ready packet with expiry, revocation, and audit state.
+                  </p>
+                </div>
               </div>
             </div>
           </div>
         </section>
 
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {[
-            {
-              label: "Gross Receivables",
-              value: formatUsd(borrowingBase.grossReceivablesCents),
-              icon: <BuildingOffice2Icon className="h-5 w-5 text-primary" />,
-            },
-            {
-              label: "Eligible Receivables",
-              value: formatUsd(borrowingBase.eligibleReceivablesCents),
-              icon: <ClipboardDocumentCheckIcon className="h-5 w-5 text-primary" />,
-            },
-            {
-              label: "Available Borrowing Base",
-              value: formatUsd(borrowingBase.availableBorrowingBaseCents),
-              icon: <BanknotesIcon className="h-5 w-5 text-primary" />,
-            },
-            {
-              label: "Open Exceptions",
-              value: borrowingBase.exceptionCount.toString(),
-              icon: <ExclamationTriangleIcon className="h-5 w-5 text-primary" />,
-            },
-          ].map(stat => (
-            <div key={stat.label} className="rounded-[1.5rem] border border-base-300 bg-base-100 p-5 shadow-md">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-semibold text-base-content/60">{stat.label}</div>
-                {stat.icon}
+        <section className="grid gap-4 md:grid-cols-3">
+          {valueProps.map(item => {
+            const Icon = item.icon;
+
+            return (
+              <div key={item.label} className="rounded-[1.5rem] border border-base-300 bg-base-100 p-5 shadow-md">
+                <Icon className="h-6 w-6 text-primary" />
+                <h2 className="mt-4 text-xl font-black tracking-tight text-base-content">{item.label}</h2>
+                <p className="mt-2 text-sm leading-relaxed text-base-content/70">{item.copy}</p>
               </div>
-              <div className="mt-4 text-3xl font-black tracking-tight text-base-content">{stat.value}</div>
-            </div>
-          ))}
+            );
+          })}
         </section>
 
-        <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-          <div className="overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 shadow-lg shadow-base-300/30">
-            <div className="border-b border-base-300 px-6 py-5">
-              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">Portfolio Inputs</p>
-              <h2 className="mt-2 text-2xl font-black tracking-tight text-base-content">
-                Fleet receivables under review
-              </h2>
-            </div>
+        <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+          <div className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30 sm:p-8">
+            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">Working Flow</p>
+            <h2 className="mt-2 text-3xl font-black tracking-tight text-base-content">
+              From receivables export to lender-ready packet.
+            </h2>
+            <p className="mt-4 text-base leading-relaxed text-base-content/70">
+              The MVP is centered on one product object: a partner-owned facility submission. It is not a public market,
+              not a public facility directory, and not a generic tokenization demo.
+            </p>
 
-            <div className="overflow-x-auto">
-              <table className="table">
-                <thead>
-                  <tr className="text-xs uppercase tracking-[0.18em] text-base-content/50">
-                    <th>Receivable</th>
-                    <th>Obligor</th>
-                    <th>Outstanding</th>
-                    <th>DPD</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {borrowingBase.receivableResults.map(receivable => (
-                    <tr key={receivable.id}>
-                      <td className="font-semibold text-base-content">{receivable.id}</td>
-                      <td>{receivable.obligor}</td>
-                      <td>{formatUsd(receivable.outstandingCents)}</td>
-                      <td>{receivable.daysPastDue}</td>
-                      <td>
-                        <span className={`badge ${receivable.eligible ? "badge-success" : "badge-error"}`}>
-                          {receivable.eligible ? "Eligible" : "Exception"}
-                        </span>
-                        {!receivable.eligible ? (
-                          <div className="mt-2 text-xs leading-relaxed text-base-content/70">
-                            {receivable.ineligibleReasons.join("; ")}
-                          </div>
-                        ) : null}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="mt-6 space-y-3">
+              {workflowSteps.map((step, index) => (
+                <div key={step.title} className="flex gap-4 rounded-2xl border border-base-300 bg-base-200/50 p-4">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-black text-primary-content">
+                    {index + 1}
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-base-content">{step.title}</h3>
+                    <p className="mt-1 text-sm leading-relaxed text-base-content/70">{step.description}</p>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
-          <div className="space-y-6">
-            <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
-              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
-                Borrowing-Base Certificate
-              </p>
-              <h2 className="mt-2 text-2xl font-black tracking-tight text-base-content">Lender-ready certificate</h2>
-              <div className="mt-5 grid gap-3">
-                <div className="rounded-2xl bg-base-200/60 px-4 py-3">
-                  <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">Certificate</div>
-                  <div className="mt-1 text-sm font-semibold text-base-content">{lenderPacket.certificateId}</div>
-                </div>
-                <div className="rounded-2xl bg-base-200/60 px-4 py-3">
-                  <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">Availability</div>
-                  <div className="mt-1 text-sm font-semibold text-base-content">
-                    {formatUsd(borrowingBase.availableBorrowingBaseCents)}
-                  </div>
-                </div>
-                <p className="rounded-2xl border border-base-300 bg-base-100/70 p-4 text-sm leading-relaxed text-base-content/70">
-                  {lenderPacket.certificationStatement}
-                </p>
-              </div>
-            </section>
+          <div className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30 sm:p-8">
+            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">Rails</p>
+            <h2 className="mt-2 text-3xl font-black tracking-tight text-base-content">
+              Financeability first, programmable evidence underneath.
+            </h2>
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
+              {railCards.map(item => {
+                const Icon = item.icon;
 
-            <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
-              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">Evidence</p>
-              <h2 className="mt-2 text-2xl font-black tracking-tight text-base-content">Controlled evidence summary</h2>
-              <div className="mt-5 space-y-3">
-                {evidenceAnchor.commitments.map(commitment => (
-                  <div key={commitment.id} className="rounded-2xl border border-base-300 bg-base-200/50 p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="font-semibold text-base-content">{commitment.label}</div>
-                        <div className="mt-1 text-sm text-base-content/60">{commitment.source}</div>
-                      </div>
-                      <span className="badge capitalize">{commitment.status}</span>
-                    </div>
+                return (
+                  <div key={item.label} className="rounded-2xl border border-base-300 bg-base-200/50 p-5">
+                    <Icon className="h-6 w-6 text-primary" />
+                    <h3 className="mt-4 font-bold text-base-content">{item.label}</h3>
+                    <p className="mt-2 text-sm leading-relaxed text-base-content/70">{item.copy}</p>
                   </div>
-                ))}
-              </div>
-            </section>
+                );
+              })}
+            </div>
           </div>
         </section>
       </div>
     </div>
   );
 };
-
-const RobomataPage = () =>
-  isRobomataWorkflowEnabled() && isRobomataWorkflowServerEnabled() ? <RobomataSubmissionRoute /> : <RobomataDemoPage />;
 
 export default RobomataPage;

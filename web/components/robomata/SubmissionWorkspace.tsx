@@ -4,13 +4,13 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ArrowPathIcon,
-  ArrowTopRightOnSquareIcon,
   CheckCircleIcon,
   CloudArrowUpIcon,
   DocumentArrowUpIcon,
   ExclamationTriangleIcon,
   ShieldCheckIcon,
 } from "@heroicons/react/24/outline";
+import { PacketSharePanel } from "~~/components/robomata/PacketSharePanel";
 import { useSelectedNetwork } from "~~/hooks/scaffold-eth";
 import { usePrivySuiWalletBinding } from "~~/hooks/usePrivySuiWalletBinding";
 import { useRobomataApiAuth } from "~~/hooks/useRobomataApiAuth";
@@ -492,10 +492,6 @@ export const SubmissionWorkspace = ({
                     <ArrowPathIcon className="h-4 w-4" />
                     Compute borrowing base
                   </button>
-                  <Link href={`/robomata?submission=${submission.id}`} className="btn btn-outline rounded-full">
-                    <ArrowTopRightOnSquareIcon className="h-4 w-4" />
-                    Open read-only Robomata view
-                  </Link>
                 </>
               )}
             </div>
@@ -993,6 +989,16 @@ export const SubmissionWorkspace = ({
                     ))}
                   </ul>
                 </div>
+                {!readOnly ? (
+                  <PacketSharePanel
+                    chainId={selectedNetwork.id}
+                    getAuthHeaders={getAuthHeaders}
+                    isBusy={isBusy}
+                    setIsBusy={setIsBusy}
+                    signerAddress={signerAddress}
+                    submission={submission}
+                  />
+                ) : null}
                 <div className="rounded-[1.5rem] border border-base-300 bg-base-200/50 p-4">
                   <div className="text-sm font-semibold text-base-content">Evidence commit status</div>
                   <div className="mt-2 text-sm text-base-content/70">

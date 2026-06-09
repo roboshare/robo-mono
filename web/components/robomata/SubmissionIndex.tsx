@@ -181,9 +181,6 @@ const AuthorizedSubmissionIndex = () => {
             <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">Submission List</p>
             <h2 className="mt-2 text-2xl font-black tracking-tight text-base-content">Open facility runs</h2>
           </div>
-          <Link href="/robomata" className="btn btn-outline rounded-full">
-            Open Robomata read-only view
-          </Link>
         </div>
 
         {isLoading ? (

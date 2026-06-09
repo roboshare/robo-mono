@@ -76,6 +76,8 @@ export type SubmissionAuditEvent = {
     | "receivable_excluded"
     | "receivable_updated"
     | "evidence_updated"
+    | "packet_share_created"
+    | "packet_share_revoked"
     | "sui_facility_assigned"
     | "sui_commit_prepared"
     | "sui_commit_completed";

@@ -12,9 +12,11 @@ creates a persisted `FacilitySubmission`, uploads receivables and evidence,
 computes eligibility and availability, resolves exceptions, generates a lender
 packet, and optionally commits the evidence root through the Sui path.
 
-`/robomata` remains in the product as a secondary projection surface. In the
-working tranche it must become read-only and submission-backed; until the web
-implementation PR lands, the current `dev` route remains demo-backed.
+`/robomata` is now the public Robomata marketing and product-positioning
+surface. It must not load private submissions or act as a public facility
+browser. The editable operator workflow remains under `/partner/submissions`,
+and protected lender packet sharing is a separate future controlled-sharing
+surface.
 
 ## First Customer
 
@@ -105,18 +107,20 @@ This operator workspace owns:
 
 ### `/robomata`
 
-This is the projection surface for an existing submission. The target behavior
-for the working tranche is:
+This is the public Robomata product surface. The target behavior is:
 
-- render real submission state, not demo-only placeholders
-- explain lender readiness in plain operational terms
-- hide raw technical metadata behind `Advanced details`
-- link the user back to the corresponding `/partner` submission workspace for
-  edits
+- explain the fleet receivables financeability wedge
+- show the operator workflow at a high level
+- describe Sui, Walrus, and Seal as evidence rails without exposing raw
+  technical identifiers as the product UI
+- send operators to `/partner/submissions` to start or continue private
+  submissions
 
-Until the implementation PR that rewires `/robomata` lands, the existing route
-still renders the fixed demo portfolio and must not be used as proof that real
-submissions are projected.
+`/robomata` must not fetch submission APIs, render private submission state, or
+accept a submission query parameter as an access mechanism. Future lender packet
+sharing should use a protected share-link route with opaque tokens, expiry,
+revocation, and audit state. The detailed controlled-sharing design is captured
+in [Robomata Protected Lender Packet Sharing](./robomata-protected-lender-sharing.md).
 
 ## Core Product Object
 
@@ -147,8 +151,8 @@ dark unless a controlled preview is explicitly configured.
 Use the flags as a matrix:
 
 - `NEXT_PUBLIC_ENABLE_ROBOMATA_WORKFLOW=true` exposes the `/partner` borrowing
-  base entry point and lets `/robomata` attempt the real read-only submission
-  projection.
+  base entry point. `/robomata` remains a public product page and does not
+  become a private submission projection when workflow flags are enabled.
 - `ROBOMATA_WORKFLOW_ENABLED=true` enables the server-side submission APIs.
   Without this flag, the APIs fail closed with `404`.
 - `ROBOMATA_WORKFLOW_MUTATIONS_ENABLED=true` enables write actions such as
@@ -262,10 +266,15 @@ Recommended environments:
   `PartnerManager`, configure Privy server auth with `NEXT_PUBLIC_PRIVY_APP_ID`
   and `PRIVY_APP_SECRET`, and enable Walrus/Sui side-effect flags only for
   testnet runs that should write to external infrastructure
+- protected lender sharing preview: set `ROBOMATA_SHARE_LINKS_ENABLED=true`,
+  `NEXT_PUBLIC_ROBOMATA_SHARE_LINKS_ENABLED=true`, and
+  `ROBOMATA_SHARE_LINK_TOKEN_SECRET` after the share-link QA gate passes; share
+  APIs remain server-gated even if the client-visible flag is set
 - local QA: use `ROBOMATA_SUBMISSIONS_FILE` only for single-developer local
   runs when Postgres is not configured
-- public demo mode: leave the server flags unset so `/robomata` remains a
-  read-only demo narrative and `/partner/submissions` stays hidden
+- public marketing mode: `/robomata` remains visible as a public product page;
+  leave the server flags unset when `/partner/submissions` should stay hidden
+  or non-operational in a release environment
 
 ## Sui, Walrus, Seal, And Nautilus Role
 
@@ -358,8 +367,10 @@ The working submission flow is successful when:
 - The lender packet is generated from persisted submission state.
 - Evidence-root commit state is visible and can be persisted after a Sui call
   when configured.
-- `/robomata` reads from a real submission after the web implementation PR lands
-  and does not act as a narrative-only mock surface in the final tranche.
+- `/robomata` renders as a public marketing/product page without requiring
+  partner auth or reading private submission APIs.
+- Protected lender packet sharing, when implemented, uses controlled share links
+  instead of making `/robomata` a facility projection route.
 
 ## Current Verification Snapshot
 
