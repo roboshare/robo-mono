@@ -85,6 +85,9 @@ const targetNetworks = sortNetworks(configuredNetworks.length > 0 ? configuredNe
 const localRpcUrl = getLocalRpcUrl();
 const configuredInfuraApiKey = process.env.NEXT_PUBLIC_INFURA_API_KEY?.trim();
 const configuredAlchemyApiKey = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY?.trim();
+const shouldUseDefaultAlchemyApiKey =
+  process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DISABLE_DEFAULT_ALCHEMY_API_KEY !== "true";
+const alchemyApiKey = configuredAlchemyApiKey || (shouldUseDefaultAlchemyApiKey ? DEFAULT_ALCHEMY_API_KEY : "");
 const rpcOverrideNetworks = [...targetNetworks, chains.mainnet].filter(
   (network, index, networks) => networks.findIndex(candidate => candidate.id === network.id) === index,
 );
@@ -106,13 +109,14 @@ const scaffoldConfig = {
   // it has no effect if you only target the local network (default is 4000)
   pollingInterval: 30000,
 
-  // Infura is the preferred release RPC provider. Alchemy remains the first managed fallback.
+  // Infura is the preferred release RPC provider. Alchemy is used only when explicitly configured,
+  // except for local development where the Scaffold-ETH default key remains available.
   // You can get provider API keys from https://developer.metamask.io/ and https://dashboard.alchemyapi.io.
   // It's recommended to store it in an env variable:
   // .env.local for local testing, and in the Vercel/system env config for live apps.
   infuraApiKey: configuredInfuraApiKey || "",
-  alchemyApiKey: configuredAlchemyApiKey || DEFAULT_ALCHEMY_API_KEY,
-  isUsingDefaultAlchemyApiKey: !configuredAlchemyApiKey,
+  alchemyApiKey,
+  isUsingDefaultAlchemyApiKey: !configuredAlchemyApiKey && !!alchemyApiKey,
 
   // If you want to add another per-chain RPC fallback, configure it here.
   // The key is the chain ID, and the value is the HTTP RPC URL

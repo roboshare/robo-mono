@@ -6,9 +6,11 @@ import { mainnet } from "viem/chains";
 
 const infuraHttpUrl = getInfuraHttpUrl(mainnet.id);
 const alchemyHttpUrl = getAlchemyHttpUrl(mainnet.id);
+const shouldUsePublicRpcFallback =
+  process.env.NODE_ENV === "development" || process.env.NEXT_PUBLIC_ENABLE_PUBLIC_RPC_FALLBACK === "true";
 const mainnetTransports = [
   ...[infuraHttpUrl, alchemyHttpUrl].flatMap(rpcUrl => (rpcUrl ? [http(rpcUrl)] : [])),
-  http(),
+  ...(shouldUsePublicRpcFallback || (!infuraHttpUrl && !alchemyHttpUrl) ? [http()] : []),
 ];
 const publicClient = createPublicClient({
   chain: mainnet,
