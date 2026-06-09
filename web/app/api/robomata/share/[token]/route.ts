@@ -80,6 +80,10 @@ export async function GET(request: NextRequest, context: { params: Promise<{ tok
     }
 
     const accessedShareLink = await shareLinkStore.recordAccess(shareLink, buildAccessMetadata(request));
+    if (!accessedShareLink) {
+      return noStoreResponse({ error: "Share link is no longer active." }, { status: 410 });
+    }
+
     return noStoreResponse({ packet: buildSharedLenderPacketView({ shareLink: accessedShareLink, submission }) });
   } catch (error) {
     return noStoreResponse(

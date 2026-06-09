@@ -35,7 +35,10 @@ type SubmissionShareLinkStore = {
   create: (input: CreateSubmissionShareLinkInput) => Promise<CreateSubmissionShareLinkResult>;
   listForSubmission: (submissionId: string, partnerAddress: string) => Promise<SubmissionShareLink[]>;
   getByToken: (token: string) => Promise<SubmissionShareLink | null>;
-  recordAccess: (shareLink: SubmissionShareLink, metadata?: ShareLinkAccessMetadata) => Promise<SubmissionShareLink>;
+  recordAccess: (
+    shareLink: SubmissionShareLink,
+    metadata?: ShareLinkAccessMetadata,
+  ) => Promise<SubmissionShareLink | null>;
   revoke: (input: {
     shareLinkId: string;
     submissionId: string;
@@ -118,6 +121,10 @@ function deriveShareLinkStatus(shareLink: SubmissionShareLink, now = new Date())
 
 function withDerivedStatus(shareLink: SubmissionShareLink): SubmissionShareLink {
   return { ...shareLink, status: deriveShareLinkStatus(shareLink) };
+}
+
+function canRecordAccess(shareLink: SubmissionShareLink): boolean {
+  return deriveShareLinkStatus(shareLink) === "active";
 }
 
 function hasPostgresConfig() {
@@ -281,6 +288,7 @@ function createFileStore(): SubmissionShareLinkStore {
         let updatedShareLink: SubmissionShareLink | null = null;
         fileStore.links = fileStore.links.map(link => {
           if (link.id !== shareLink.id) return link;
+          if (!canRecordAccess(link)) return link;
           updatedShareLink = {
             ...link,
             lastAccessedAt: accessedAt,
@@ -289,7 +297,7 @@ function createFileStore(): SubmissionShareLinkStore {
           };
           return updatedShareLink;
         });
-        if (!updatedShareLink) throw new Error("Share link not found.");
+        if (!updatedShareLink) return null;
         fileStore.events.unshift(createShareLinkEvent("packet_share_viewed", updatedShareLink, metadata));
         await writeFileStore(filePath, fileStore);
         return withDerivedStatus(updatedShareLink);
@@ -417,25 +425,38 @@ function createPostgresStore(): SubmissionShareLinkStore {
     async recordAccess(shareLink, metadata) {
       await ensurePostgresTables();
       const accessedAt = nowIsoString();
-      const nextShareLink: SubmissionShareLink = {
-        ...shareLink,
-        lastAccessedAt: accessedAt,
-        accessCount: shareLink.accessCount + 1,
-        updatedAt: accessedAt,
-      };
-      const event = createShareLinkEvent("packet_share_viewed", nextShareLink, metadata);
-
-      await sql.begin(async tx => {
-        await tx`
+      const rows = (await sql`
           UPDATE robomata_submission_share_links
           SET
             last_accessed_at = ${accessedAt}::timestamptz,
             access_count = access_count + 1,
-            payload = ${JSON.stringify(nextShareLink)}::jsonb,
+            payload = jsonb_set(
+              jsonb_set(
+                jsonb_set(
+                  payload,
+                  '{lastAccessedAt}',
+                  to_jsonb(${accessedAt}::text)
+                ),
+                '{accessCount}',
+                to_jsonb(access_count + 1)
+              ),
+              '{updatedAt}',
+              to_jsonb(${accessedAt}::text)
+            ),
             updated_at = ${accessedAt}::timestamptz
-          WHERE id = ${shareLink.id};
-        `;
-        await tx`
+          WHERE id = ${shareLink.id}
+            AND status = 'active'
+            AND expires_at > now()
+          RETURNING payload;
+        `) as Array<{ payload: SubmissionShareLink }>;
+
+      const row = rows[0];
+      if (!row) return null;
+
+      const nextShareLink = withDerivedStatus(row.payload);
+      const event = createShareLinkEvent("packet_share_viewed", nextShareLink, metadata);
+
+      await sql`
           INSERT INTO robomata_submission_share_link_events (id, share_link_id, submission_id, type, metadata, created_at)
           VALUES (
             ${event.id},
@@ -446,9 +467,8 @@ function createPostgresStore(): SubmissionShareLinkStore {
             ${event.createdAt}::timestamptz
           );
         `;
-      });
 
-      return withDerivedStatus(nextShareLink);
+      return nextShareLink;
     },
     async revoke(input) {
       await ensurePostgresTables();

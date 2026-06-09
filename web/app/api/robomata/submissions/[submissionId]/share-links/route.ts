@@ -65,6 +65,25 @@ function normalizeOptionalString(value: unknown, field: string): string | undefi
   return normalized || undefined;
 }
 
+async function readCreateShareLinkBody(request: NextRequest) {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    throw new Error("Request body must be a valid JSON object. Use {} for default share-link settings.");
+  }
+
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new Error("Request body must be a JSON object.");
+  }
+
+  return body as {
+    expiresAt?: unknown;
+    recipientLabel?: unknown;
+    recipientEmail?: unknown;
+  };
+}
+
 export async function GET(request: NextRequest, context: { params: Promise<{ submissionId: string }> }) {
   const featureError = requireRobomataShareLinks();
   if (featureError) return featureError;
@@ -111,16 +130,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       return NextResponse.json({ error: "Compute the lender packet before creating a share link." }, { status: 409 });
     }
 
-    const body = (await request.json().catch(() => ({}))) as {
-      expiresAt?: unknown;
-      recipientLabel?: unknown;
-      recipientEmail?: unknown;
-    };
-
+    let body: Awaited<ReturnType<typeof readCreateShareLinkBody>>;
     let expiresAt: string;
     let recipientLabel: string | undefined;
     let recipientEmail: string | undefined;
     try {
+      body = await readCreateShareLinkBody(request);
       expiresAt = normalizeExpiry(body.expiresAt);
       recipientLabel = normalizeOptionalString(body.recipientLabel, "recipientLabel");
       recipientEmail = normalizeOptionalString(body.recipientEmail, "recipientEmail");
@@ -155,7 +170,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
 
     const apiUrl = new URL(`/api/robomata/share/${token}`, request.nextUrl.origin);
     return NextResponse.json(
-      { shareLink: toShareLinkResponse(shareLink), token, apiUrl: apiUrl.toString() },
+      { shareLink: toShareLinkResponse(shareLink), token, url: apiUrl.toString(), apiUrl: apiUrl.toString() },
       { status: 201 },
     );
   } catch (error) {
