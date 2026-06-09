@@ -9,7 +9,7 @@ import {
   ShieldCheckIcon,
   SparklesIcon,
 } from "@heroicons/react/24/outline";
-import { isRobomataWorkflowEnabled } from "~~/lib/featureFlags";
+import { isRobomataWorkflowEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
 
 const workflowSteps = [
   {
@@ -83,7 +83,7 @@ const railCards = [
 ];
 
 const RobomataPage = () => {
-  const isWorkflowEnabled = isRobomataWorkflowEnabled();
+  const isSubmissionWorkflowAvailable = isRobomataWorkflowEnabled() && isRobomataWorkflowServerEnabled();
 
   return (
     <div className="flex flex-1 justify-center px-4 py-8 sm:px-6 sm:py-10">
@@ -105,13 +105,13 @@ const RobomataPage = () => {
 
               <div className="flex flex-wrap gap-3">
                 <Link
-                  href={isWorkflowEnabled ? "/partner/submissions" : "/partner"}
+                  href={isSubmissionWorkflowAvailable ? "/partner/submissions" : "/partner"}
                   className="btn btn-primary rounded-full"
                 >
-                  {isWorkflowEnabled ? "Start a borrowing-base submission" : "Request partner access"}
+                  {isSubmissionWorkflowAvailable ? "Start a borrowing-base submission" : "Request partner access"}
                   <ArrowRightIcon className="h-4 w-4" />
                 </Link>
-                {isWorkflowEnabled ? (
+                {isSubmissionWorkflowAvailable ? (
                   <Link href="/partner" className="btn btn-outline rounded-full">
                     Open partner dashboard
                   </Link>
