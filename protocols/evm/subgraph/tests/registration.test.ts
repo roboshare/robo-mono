@@ -101,7 +101,13 @@ describe("Launch offering registration flow", () => {
       new ethereum.EventParam("vehicleId", ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1)))
     )
     metadataUpdated.parameters.push(
-      new ethereum.EventParam("newMetadataURI", ethereum.Value.fromString("ipfs://updated-asset"))
+      new ethereum.EventParam("assetMetadataURI", ethereum.Value.fromString("ipfs://updated-asset"))
+    )
+    metadataUpdated.parameters.push(
+      new ethereum.EventParam(
+        "revenueTokenMetadataURI",
+        ethereum.Value.fromString("ipfs://updated-revenue")
+      )
     )
     handleVehicleMetadataUpdated(metadataUpdated)
 

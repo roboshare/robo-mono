@@ -47,7 +47,7 @@ export function handleVehicleMetadataUpdated(event: VehicleMetadataUpdatedEvent)
   let vehicle = Vehicle.load(event.params.vehicleId.toString())
   if (!vehicle) return
 
-  vehicle.metadataURI = event.params.newMetadataURI
+  vehicle.metadataURI = event.params.assetMetadataURI
   vehicle.blockNumber = event.block.number
   vehicle.blockTimestamp = event.block.timestamp
   vehicle.transactionHash = event.transaction.hash

@@ -434,10 +434,12 @@ const MarketsPage: NextPage = () => {
           console.warn("Subgraph query warnings:", errors);
         }
 
+        const incomingListings = (data?.listings || []) as SubgraphListing[];
+        const incomingPrimaryPools = (data?.primaryPools || []) as SubgraphPrimaryPool[];
+
         setListings(prev => {
-          const incoming = (data?.listings || []) as SubgraphListing[];
           const prevById = new Map(prev.map(l => [l.id, l]));
-          return incoming.map(listing => {
+          return incomingListings.map(listing => {
             const prevListing = prevById.get(listing.id);
             if (!prevListing) return listing;
 
@@ -455,35 +457,73 @@ const MarketsPage: NextPage = () => {
           });
         });
         setVehicles(data?.vehicles || []);
-        setPrimaryPools(data?.primaryPools || []);
+        setPrimaryPools(incomingPrimaryPools);
 
         try {
-          const earningsResponse = await fetch(subgraphUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              query: `
-                query GetLatestEarningsDistributions {
-                  earningsDistributions(first: 100, orderBy: blockTimestamp, orderDirection: desc) {
-                    id
-                    assetId
-                    blockTimestamp
-                  }
+          const visibleAssetIds = Array.from(
+            new Set([
+              ...incomingListings.map(listing => listing.assetId),
+              ...incomingPrimaryPools.map(pool => pool.assetId),
+            ]),
+          ).filter(Boolean);
+
+          if (visibleAssetIds.length === 0) {
+            setEarningsDistributions([]);
+          } else {
+            const pageSize = 1000;
+            let skip = 0;
+            const latestByAssetId = new Map<string, SubgraphEarningsDistribution>();
+
+            while (latestByAssetId.size < visibleAssetIds.length) {
+              const earningsResponse = await fetch(subgraphUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  query: `
+                    query GetLatestEarningsDistributions($assetIds: [BigInt!], $first: Int!, $skip: Int!) {
+                      earningsDistributions(
+                        first: $first
+                        skip: $skip
+                        orderBy: blockTimestamp
+                        orderDirection: desc
+                        where: { assetId_in: $assetIds }
+                      ) {
+                        id
+                        assetId
+                        blockTimestamp
+                      }
+                    }
+                  `,
+                  variables: { assetIds: visibleAssetIds, first: pageSize, skip },
+                }),
+              });
+
+              if (!earningsResponse.ok) {
+                throw new Error(`Subgraph earnings fetch failed: ${earningsResponse.statusText}`);
+              }
+
+              const earningsResult = await earningsResponse.json();
+              if (earningsResult.errors) {
+                throw new Error("Subgraph earnings distribution entity is not available yet.");
+              }
+
+              const distributions = (earningsResult.data?.earningsDistributions ||
+                []) as SubgraphEarningsDistribution[];
+              for (const distribution of distributions) {
+                if (!latestByAssetId.has(distribution.assetId)) {
+                  latestByAssetId.set(distribution.assetId, distribution);
                 }
-              `,
-            }),
-          });
+              }
 
-          if (!earningsResponse.ok) {
-            throw new Error(`Subgraph earnings fetch failed: ${earningsResponse.statusText}`);
+              if (distributions.length < pageSize) {
+                break;
+              }
+
+              skip += pageSize;
+            }
+
+            setEarningsDistributions(Array.from(latestByAssetId.values()));
           }
-
-          const earningsResult = await earningsResponse.json();
-          if (earningsResult.errors) {
-            throw new Error("Subgraph earnings distribution entity is not available yet.");
-          }
-
-          setEarningsDistributions(earningsResult.data?.earningsDistributions || []);
         } catch (earningsError) {
           console.warn("Earnings distribution subgraph data is unavailable:", earningsError);
           setEarningsDistributions([]);
