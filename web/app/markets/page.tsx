@@ -24,9 +24,8 @@ import { EndSecondaryListingModal } from "~~/components/partner/EndSecondaryList
 import { WithdrawProceedsModal } from "~~/components/partner/WithdrawProceedsModal";
 import { ASSET_REGISTRIES, AssetType } from "~~/config/assetTypes";
 import { PROTOCOL_BENCHMARK_YIELD_BP } from "~~/config/protocol";
-import { getProtocolContractStartBlock } from "~~/config/protocolDeployments";
 import { BP_PRECISION, SECONDS_PER_YEAR } from "~~/config/units";
-import { useScaffoldEventHistory, useScaffoldWriteContract, useSelectedNetwork } from "~~/hooks/scaffold-eth";
+import { useScaffoldWriteContract, useSelectedNetwork } from "~~/hooks/scaffold-eth";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
 import { isSettledAssetStatus } from "~~/utils/assetStatus";
@@ -84,6 +83,12 @@ interface SubgraphVehicle {
   imageUrl?: string;
 }
 
+interface SubgraphEarningsDistribution {
+  id: string;
+  assetId: string;
+  blockTimestamp: string;
+}
+
 interface MarketToken {
   id: string;
   revenueTokenId: string;
@@ -122,6 +127,7 @@ const MarketsPage: NextPage = () => {
   const [listings, setListings] = useState<SubgraphListing[]>([]);
   const [primaryPools, setPrimaryPools] = useState<SubgraphPrimaryPool[]>([]);
   const [vehicles, setVehicles] = useState<SubgraphVehicle[]>([]);
+  const [earningsDistributions, setEarningsDistributions] = useState<SubgraphEarningsDistribution[]>([]);
   const [recentPrimaryPoolPurchases, setRecentPrimaryPoolPurchases] = useState<Set<string>>(new Set());
   const [soldOutAtByListing, setSoldOutAtByListing] = useState<Record<string, string>>({});
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
@@ -231,7 +237,6 @@ const MarketsPage: NextPage = () => {
   const registryRouterContract = getDeployedContract(chainId, "RegistryRouter");
   const vehicleRegistryContract = getDeployedContract(chainId, "VehicleRegistry");
   const earningsManagerContract = getDeployedContract(chainId, "EarningsManager");
-  const earningsManagerEventStartBlock = getProtocolContractStartBlock(chainId, "EarningsManager") ?? 0n;
   const { symbol, decimals } = usePaymentToken();
   const { writeContractAsync: writeTreasury } = useScaffoldWriteContract({ contractName: "Treasury" });
   const { writeContractAsync: writeEarningsManager } = useScaffoldWriteContract({ contractName: "EarningsManager" });
@@ -451,6 +456,38 @@ const MarketsPage: NextPage = () => {
         });
         setVehicles(data?.vehicles || []);
         setPrimaryPools(data?.primaryPools || []);
+
+        try {
+          const earningsResponse = await fetch(subgraphUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              query: `
+                query GetLatestEarningsDistributions {
+                  earningsDistributions(first: 100, orderBy: blockTimestamp, orderDirection: desc) {
+                    id
+                    assetId
+                    blockTimestamp
+                  }
+                }
+              `,
+            }),
+          });
+
+          if (!earningsResponse.ok) {
+            throw new Error(`Subgraph earnings fetch failed: ${earningsResponse.statusText}`);
+          }
+
+          const earningsResult = await earningsResponse.json();
+          if (earningsResult.errors) {
+            throw new Error("Subgraph earnings distribution entity is not available yet.");
+          }
+
+          setEarningsDistributions(earningsResult.data?.earningsDistributions || []);
+        } catch (earningsError) {
+          console.warn("Earnings distribution subgraph data is unavailable:", earningsError);
+          setEarningsDistributions([]);
+        }
       } catch (e: any) {
         console.error("Error fetching market data:", e);
         setError(e.message || "Failed to fetch market data");
@@ -562,15 +599,6 @@ const MarketsPage: NextPage = () => {
         }))
       : ([] as any),
     query: { enabled: !!earningsManagerContract && uniqueAssetIds.length > 0 },
-  });
-  const { data: earningsDistributedEvents } = useScaffoldEventHistory({
-    contractName: "EarningsManager",
-    eventName: "EarningsDistributed",
-    fromBlock: earningsManagerEventStartBlock,
-    chainId,
-    blockData: true as const,
-    watch: false,
-    enabled: !!earningsManagerContract,
   });
 
   const { data: actionPreviewData, refetch: refetchActionPreviewData } = useReadContracts({
@@ -715,19 +743,15 @@ const MarketsPage: NextPage = () => {
   const latestDistributionTimestampByAssetId = useMemo(() => {
     const byAssetId = new Map<string, string>();
 
-    for (const event of earningsDistributedEvents || []) {
-      if (!event?.args) continue;
-      const eventWithBlockData = event as typeof event & { blockData?: { timestamp?: bigint } | null };
-      const assetId = event.args.assetId;
-      if (assetId === undefined) continue;
-      const assetIdKey = String(assetId);
+    for (const distribution of earningsDistributions) {
+      const assetIdKey = String(distribution.assetId);
       if (!byAssetId.has(assetIdKey)) {
-        byAssetId.set(assetIdKey, eventWithBlockData.blockData?.timestamp?.toString() || "0");
+        byAssetId.set(assetIdKey, distribution.blockTimestamp || "0");
       }
     }
 
     return byAssetId;
-  }, [earningsDistributedEvents]);
+  }, [earningsDistributions]);
 
   const assetEarnings = useMemo<MarketAssetEarnings[]>(() => {
     const results = assetEarningsData as Array<{ result?: readonly unknown[]; status: string }> | undefined;

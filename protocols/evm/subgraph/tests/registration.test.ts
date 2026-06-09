@@ -5,12 +5,14 @@ import {
   VehicleMetadataUpdated
 } from "../generated/VehicleRegistry/VehicleRegistry"
 import { PrimaryPoolCreated } from "../generated/Marketplace/Marketplace"
+import { EarningsDistributed } from "../generated/EarningsManager/EarningsManager"
 import {
   handleAssetRegistered,
+  handleEarningsDistributed,
   handlePrimaryPoolCreated,
   handleVehicleMetadataUpdated
 } from "../src/mapping"
-import { PrimaryPool, Vehicle } from "../generated/schema"
+import { EarningsDistribution, PrimaryPool, Vehicle } from "../generated/schema"
 
 const PARTNER = Address.fromString("0x8166E0fd513B1231DC77D98380F4a22024342347")
 const REGISTRY = Address.fromString("0xB41bBD6F6dEb64E3A2C19e5Ee0d1e71427d43903")
@@ -99,18 +101,44 @@ describe("Launch offering registration flow", () => {
       new ethereum.EventParam("vehicleId", ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1)))
     )
     metadataUpdated.parameters.push(
-      new ethereum.EventParam("assetMetadataURI", ethereum.Value.fromString("ipfs://updated-asset"))
-    )
-    metadataUpdated.parameters.push(
-      new ethereum.EventParam(
-        "revenueTokenMetadataURI",
-        ethereum.Value.fromString("ipfs://updated-revenue")
-      )
+      new ethereum.EventParam("newMetadataURI", ethereum.Value.fromString("ipfs://updated-asset"))
     )
     handleVehicleMetadataUpdated(metadataUpdated)
 
     assert.entityCount("Vehicle", 1)
     assert.fieldEquals("Vehicle", "1", "metadataURI", "ipfs://updated-asset")
     assert.assertNotNull(Vehicle.load("1"))
+  })
+
+  test("indexes earnings distribution timestamps", () => {
+    clearStore()
+
+    let distributed = changetype<EarningsDistributed>(mockEvent<EarningsDistributed>(MARKETPLACE, 21))
+    distributed.parameters = new Array()
+    distributed.parameters.push(
+      new ethereum.EventParam("assetId", ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1)))
+    )
+    distributed.parameters.push(new ethereum.EventParam("partner", ethereum.Value.fromAddress(PARTNER)))
+    distributed.parameters.push(
+      new ethereum.EventParam("totalRevenue", ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(5000)))
+    )
+    distributed.parameters.push(
+      new ethereum.EventParam("investorEarnings", ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(4500)))
+    )
+    distributed.parameters.push(
+      new ethereum.EventParam("period", ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(2)))
+    )
+    handleEarningsDistributed(distributed)
+
+    let id = TX.toHexString().concat("-21")
+
+    assert.entityCount("EarningsDistribution", 1)
+    assert.fieldEquals("EarningsDistribution", id, "assetId", "1")
+    assert.fieldEquals("EarningsDistribution", id, "partner", PARTNER.toHexString())
+    assert.fieldEquals("EarningsDistribution", id, "totalRevenue", "5000")
+    assert.fieldEquals("EarningsDistribution", id, "investorEarnings", "4500")
+    assert.fieldEquals("EarningsDistribution", id, "period", "2")
+    assert.fieldEquals("EarningsDistribution", id, "blockTimestamp", "1710000000")
+    assert.assertNotNull(EarningsDistribution.load(id))
   })
 })

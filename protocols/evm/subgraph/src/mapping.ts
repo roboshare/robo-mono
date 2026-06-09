@@ -13,8 +13,10 @@ import {
   PrimaryPoolUnpaused as PrimaryPoolUnpausedEvent,
   PrimaryPoolClosed as PrimaryPoolClosedEvent
 } from "../generated/Marketplace/Marketplace"
+import { EarningsDistributed as EarningsDistributedEvent } from "../generated/EarningsManager/EarningsManager"
 
 import {
+  EarningsDistribution,
   Vehicle,
   Listing,
   PrimaryPool
@@ -45,7 +47,7 @@ export function handleVehicleMetadataUpdated(event: VehicleMetadataUpdatedEvent)
   let vehicle = Vehicle.load(event.params.vehicleId.toString())
   if (!vehicle) return
 
-  vehicle.metadataURI = event.params.assetMetadataURI
+  vehicle.metadataURI = event.params.newMetadataURI
   vehicle.blockNumber = event.block.number
   vehicle.blockTimestamp = event.block.timestamp
   vehicle.transactionHash = event.transaction.hash
@@ -149,4 +151,20 @@ export function handlePrimaryPoolClosed(event: PrimaryPoolClosedEvent): void {
   if (!pool) return
   pool.isClosed = true
   pool.save()
+}
+
+export function handleEarningsDistributed(event: EarningsDistributedEvent): void {
+  let distribution = new EarningsDistribution(
+    event.transaction.hash.toHexString().concat("-").concat(event.logIndex.toString())
+  )
+
+  distribution.assetId = event.params.assetId
+  distribution.partner = event.params.partner
+  distribution.totalRevenue = event.params.totalRevenue
+  distribution.investorEarnings = event.params.investorEarnings
+  distribution.period = event.params.period
+  distribution.blockNumber = event.block.number
+  distribution.blockTimestamp = event.block.timestamp
+  distribution.transactionHash = event.transaction.hash
+  distribution.save()
 }
