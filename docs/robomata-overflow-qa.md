@@ -15,7 +15,8 @@ flow is now a partner-owned `FacilitySubmission` workflow:
 5. review and act on exceptions
 6. generate a lender packet
 7. commit the evidence root through the Sui path
-8. verify `/robomata` renders the resulting submission read-only
+8. verify `/robomata` renders publicly as product marketing without loading
+   private submissions
 
 This runbook should be executed after the implementation PR stack lands on a
 green `dev` commit and before cutting `release/robomata-overflow-v0.1.0`.
@@ -289,19 +290,23 @@ Verify:
   operator-readable configuration error
 - commit status and reference metadata persist on the submission
 
-### 9. Read-Only `/robomata` Projection
+### 9. Public `/robomata` Product Surface
 
 Status: passed.
 
 Verify:
 
-- `/robomata` loads a real submission projection
-- no editable submission actions are exposed on `/robomata`
-- CTA sends the operator back to `/partner` for actions
-- page no longer presents demo-only controls such as `Keep Markets Live`,
+- `/robomata` renders without connected wallet, Privy auth, or partner
+  privileges
+- `/robomata` does not call private submission APIs or accept
+  `?submission=<id>` as an access mechanism
+- primary CTA sends operators to `/partner/submissions`
+- page presents product positioning, workflow steps, and evidence rails in
+  customer-facing terms
+- page does not present demo-only controls such as `Keep Markets Live`,
   `Keep Partner Flows Live`, or `First Customer`
-- technical evidence and commit details remain secondary to lender/operator
-  summary information
+- protected lender packet sharing remains separate from `/robomata` until the
+  controlled share-link flow is implemented
 
 ### 10. Legacy Surface Regression Check
 
@@ -381,10 +386,11 @@ Browser QA result:
 - UI commit submitted the evidence root to Sui testnet and persisted committed
   status plus tx metadata.
 - After commit, mutation controls were hidden in the operator workspace.
-- `/robomata?submission=sub_9ead6912-257e-4858-b632-efa4e0d84658` rendered the
-  real committed submission as a read-only lender-ready projection.
-- The read-only projection did not expose demo-only controls such as
-  `Keep Markets Live`, `Keep Partner Flows Live`, or `First Customer`.
+- Historical note: the original Overflow MVP used
+  `/robomata?submission=sub_9ead6912-257e-4858-b632-efa4e0d84658` as an
+  authenticated read-only lender-ready projection. That behavior has been
+  superseded by the public `/robomata` product surface. Future lender packet
+  sharing should use protected share links, not `/robomata` query params.
 
 Additional committed browser QA submission:
 
@@ -403,8 +409,8 @@ Known browser QA observation:
 - On cold route loads, Privy wallet/auth hydration can briefly show a no-wallet
   or unauthorized fallback before the authorized smart-wallet state loads. The
   route recovers to the authorized state without user action after hydration.
-- `/robomata` is still an authenticated partner-owned read-only projection in
-  this MVP. It is not yet a public lender-share link.
+- `/robomata` is a public marketing/product surface. It is not a private
+  submission projection and not a public lender-share link.
 
 ## ROB-134 Testnet Evidence Verification
 

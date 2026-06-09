@@ -4,7 +4,6 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ArrowPathIcon,
-  ArrowTopRightOnSquareIcon,
   CheckCircleIcon,
   CloudArrowUpIcon,
   DocumentArrowUpIcon,
@@ -492,10 +491,6 @@ export const SubmissionWorkspace = ({
                     <ArrowPathIcon className="h-4 w-4" />
                     Compute borrowing base
                   </button>
-                  <Link href={`/robomata?submission=${submission.id}`} className="btn btn-outline rounded-full">
-                    <ArrowTopRightOnSquareIcon className="h-4 w-4" />
-                    Open read-only Robomata view
-                  </Link>
                 </>
               )}
             </div>
