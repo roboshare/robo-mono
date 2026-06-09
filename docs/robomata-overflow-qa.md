@@ -520,7 +520,7 @@ recovery phrase, private key, or local store artifact was committed.
 
 ## Release Recommendation
 
-Current recommendation: clear to cut `release/robomata-overflow-v0.1.0` after
+Current recommendation: clear to cut `release/robomata-overflow-v0.1.7` after
 this QA evidence update is merged to a green `dev`.
 
 Reason:
@@ -532,4 +532,6 @@ Reason:
   compute, exception-free lender packet, protected share-link create/view/list
   metadata/revoke/expiry states, public `/robomata` product surface,
   `/markets`, and existing `/partner` vehicle/offering entrypoints
+- release notes for this tranche are captured in
+  `docs/releases/robomata-overflow-v0.1.7.md`
 - known limitations remain explicit and do not block the Overflow MVP release
