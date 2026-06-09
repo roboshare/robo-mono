@@ -15,7 +15,6 @@ import {
 } from "~~/utils/scaffold-eth/contract";
 
 const DEFAULT_EVENT_HISTORY_BLOCK_RANGE = 50_000n;
-const DEFAULT_EVENT_HISTORY_MAX_BLOCKS = 250_000n;
 
 const parsePositiveBigInt = (value: string | undefined, fallback: bigint) => {
   if (!value) return fallback;
@@ -31,12 +30,7 @@ const eventHistoryBlockRange = parsePositiveBigInt(
   process.env.NEXT_PUBLIC_EVENT_HISTORY_BLOCK_RANGE,
   DEFAULT_EVENT_HISTORY_BLOCK_RANGE,
 );
-const eventHistoryMaxBlocks = parsePositiveBigInt(
-  process.env.NEXT_PUBLIC_EVENT_HISTORY_MAX_BLOCKS,
-  DEFAULT_EVENT_HISTORY_MAX_BLOCKS,
-);
 
-const maxBigInt = (left: bigint, right: bigint) => (left > right ? left : right);
 const minBigInt = (left: bigint, right: bigint) => (left < right ? left : right);
 
 const getEvents = async (
@@ -159,14 +153,8 @@ export const useScaffoldEventHistory = <
     queryFn: async ({ pageParam }) => {
       if (!isContractAddressAndClientReady) return [];
       const latestBlock = blockNumber ?? (await publicClient?.getBlockNumber());
-      const boundedFromBlock = latestBlock
-        ? maxBigInt(
-            pageParam,
-            latestBlock > eventHistoryMaxBlocks ? latestBlock - eventHistoryMaxBlocks + 1n : pageParam,
-          )
-        : pageParam;
       const data = await getEvents(
-        { address: deployedContractData?.address, event, fromBlock: boundedFromBlock, args: filters },
+        { address: deployedContractData?.address, event, fromBlock: pageParam, args: filters },
         publicClient,
         { blockData, transactionData, receiptData, toBlock: latestBlock },
       );
