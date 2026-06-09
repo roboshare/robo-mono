@@ -14,6 +14,25 @@ import {
   UseScaffoldEventHistoryData,
 } from "~~/utils/scaffold-eth/contract";
 
+const DEFAULT_EVENT_HISTORY_BLOCK_RANGE = 50_000n;
+
+const parsePositiveBigInt = (value: string | undefined, fallback: bigint) => {
+  if (!value) return fallback;
+  try {
+    const parsed = BigInt(value);
+    return parsed > 0n ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const eventHistoryBlockRange = parsePositiveBigInt(
+  process.env.NEXT_PUBLIC_EVENT_HISTORY_BLOCK_RANGE,
+  DEFAULT_EVENT_HISTORY_BLOCK_RANGE,
+);
+
+const minBigInt = (left: bigint, right: bigint) => (left < right ? left : right);
+
 const getEvents = async (
   getLogsParams: GetLogsParameters<AbiEvent | undefined, AbiEvent[] | undefined, boolean, BlockNumber, BlockNumber>,
   publicClient?: UsePublicClientReturnType<Config, number>,
@@ -21,15 +40,30 @@ const getEvents = async (
     blockData?: boolean;
     transactionData?: boolean;
     receiptData?: boolean;
+    toBlock?: bigint;
   },
 ) => {
-  const logs = await publicClient?.getLogs({
-    address: getLogsParams.address,
-    fromBlock: getLogsParams.fromBlock,
-    args: getLogsParams.args,
-    event: getLogsParams.event,
-  });
-  if (!logs) return undefined;
+  if (!publicClient) return undefined;
+
+  const fromBlock = typeof getLogsParams.fromBlock === "bigint" ? getLogsParams.fromBlock : 0n;
+  const toBlock = Options?.toBlock;
+  const logs = [];
+  let cursor = fromBlock;
+
+  do {
+    const chunkToBlock = toBlock ? minBigInt(cursor + eventHistoryBlockRange - 1n, toBlock) : undefined;
+    const chunkLogs = await publicClient.getLogs({
+      address: getLogsParams.address,
+      fromBlock: cursor,
+      ...(chunkToBlock ? { toBlock: chunkToBlock } : {}),
+      args: getLogsParams.args,
+      event: getLogsParams.event,
+    });
+    logs.push(...chunkLogs);
+
+    if (!toBlock || chunkToBlock === undefined || chunkToBlock >= toBlock) break;
+    cursor = chunkToBlock + 1n;
+  } while (cursor <= toBlock);
 
   const finalEvents = await Promise.all(
     logs.map(async log => {
@@ -118,10 +152,11 @@ export const useScaffoldEventHistory = <
     ],
     queryFn: async ({ pageParam }) => {
       if (!isContractAddressAndClientReady) return [];
+      const latestBlock = blockNumber ?? (await publicClient?.getBlockNumber());
       const data = await getEvents(
         { address: deployedContractData?.address, event, fromBlock: pageParam, args: filters },
         publicClient,
-        { blockData, transactionData, receiptData },
+        { blockData, transactionData, receiptData, toBlock: latestBlock },
       );
 
       return data ?? [];
