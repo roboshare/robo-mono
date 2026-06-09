@@ -305,8 +305,8 @@ Verify:
   customer-facing terms
 - page does not present demo-only controls such as `Keep Markets Live`,
   `Keep Partner Flows Live`, or `First Customer`
-- protected lender packet sharing remains separate from `/robomata` until the
-  controlled share-link flow is implemented
+- protected lender packet sharing remains separate from `/robomata` and uses
+  controlled `/lender/packet/[token]` links instead of public facility discovery
 
 ### 10. Legacy Surface Regression Check
 
@@ -412,6 +412,87 @@ Known browser QA observation:
 - `/robomata` is a public marketing/product surface. It is not a private
   submission projection and not a public lender-share link.
 
+## ROB-148 Public Surface And Controlled Sharing QA Evidence
+
+Status: passed local API/browser-route smoke on 2026-06-09 against the current
+QA branch after PRs #173 through #176 were merged to `dev`.
+
+Commands:
+
+- `yarn web:check-types`
+- `yarn web:lint`
+- `yarn web:build`
+- `yarn robomata:local-smoke`
+
+Result:
+
+- `yarn web:check-types` passed.
+- `yarn web:lint` passed with no ESLint warnings or errors.
+- `yarn web:build` passed and built `/robomata`,
+  `/partner/submissions`, `/partner/submissions/[submissionId]`,
+  `/lender/packet/[token]`, and the protected share-link API routes.
+- `yarn robomata:local-smoke` passed using an isolated local Next runtime,
+  temporary file-backed submission store, temporary file-backed share-link
+  store, mock Walrus evidence, and disabled Sui commit.
+
+Non-secret local smoke result:
+
+```json
+{
+  "smokeProfile": "local",
+  "publicRoutes": {
+    "publicRobomataRoute": "passed",
+    "partnerSubmissionsRoute": "passed"
+  },
+  "submissionId": "sub_28b0e81f-f592-42bf-b295-bf126cc66bd7",
+  "storageBackend": "walrus-mock",
+  "encryptionBackend": "none",
+  "walrusBlobId": "50733354648c914b5b42d402196da072885231d002b8",
+  "plaintextDigest": "0x50733354648c914b5b42d402196da072885231d002b8bc717f689b0b0ca131bd",
+  "commitStatus": "skipped",
+  "shareLinks": {
+    "activeShareLinkId": "share_50e39e3d-decc-4c9e-ad19-bb0fe3104bd9",
+    "activeShareLinkStatus": "revoked",
+    "activeShareLinkAccessCount": 2,
+    "expiredShareLinkId": "share_9990fea3-2d7a-470d-96ae-6a14c8ee8ba4",
+    "expiredShareLinkStatus": "expired",
+    "lenderPacketPageRendered": true
+  }
+}
+```
+
+Covered behavior:
+
+- `/robomata` renders publicly with the partner submission CTA and without old
+  demo/read-only projection copy.
+- `/partner/submissions` returns the operator submission app shell with the
+  workflow flags enabled.
+- A temporary partner signer can create a submission, import receivables,
+  attach evidence, compute a zero-exception borrowing base, and generate a
+  lender packet.
+- Protected share-link creation returns both the human packet URL and API URL.
+- `GET /api/robomata/share/[token]` returns a packet projection and records
+  access metadata.
+- `/lender/packet/[token]` renders the protected lender packet page.
+- Listing share links shows access count and last-access metadata.
+- Revocation persists `revoked` status and the API rejects the revoked link
+  with `410`.
+- A short-lived link derives `expired` status and the API rejects the expired
+  link with `410`.
+- Walrus, Seal, Sui, digest, and transaction metadata remain outside the public
+  `/robomata` surface and are scoped to the packet/evidence surfaces.
+
+Live testnet note:
+
+- `yarn robomata:testnet-smoke` was not rerun successfully in this QA branch
+  because the local shell did not have the Sui testnet fixture file and
+  `vercel env run -e preview|production` did not expose
+  `ROBOMATA_SUI_NETWORK` to the local process, even though Vercel lists the
+  Robomata/Sui/Walrus/Seal variable names for Preview and Production.
+- This branch does not change Sui, Seal encryption, Walrus upload, or Sui
+  commit code. The live testnet evidence remains the ROB-134 result above until
+  the sensitive Sui variables are made available to the local smoke runner.
+
 ## ROB-134 Testnet Evidence Verification
 
 Status: passed API-level smoke on 2026-06-05 and again on 2026-06-06 against
@@ -447,7 +528,8 @@ Reason:
 - implementation PRs are merged to `dev`
 - automated web checks, production web build, Sui build/lint/test, and
   Robomata testnet smoke passed on the final implementation commit
-- browser QA covered partner submission list, CSV import, evidence upload,
-  compute, exception-free lender packet, Sui commit, public `/robomata`
-  product surface, `/markets`, and existing `/partner` vehicle/offering entrypoints
+- browser/API QA covered partner submission list, CSV import, evidence upload,
+  compute, exception-free lender packet, protected share-link create/view/list
+  metadata/revoke/expiry states, public `/robomata` product surface,
+  `/markets`, and existing `/partner` vehicle/offering entrypoints
 - known limitations remain explicit and do not block the Overflow MVP release
