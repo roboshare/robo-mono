@@ -153,6 +153,7 @@ export type SubmissionTokenizationEvmResult = {
   txHash?: string;
   assetMetadataUri?: string;
   revenueTokenMetadataUri?: string;
+  preparedCallArgs?: [string, string, string, string, string, string, string, boolean, boolean];
 };
 
 export type SubmissionTokenization = {

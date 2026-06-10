@@ -92,6 +92,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
         registryAddress: prepared.evmCall.contractAddress,
         assetMetadataUri: prepared.assetMetadataUri,
         revenueTokenMetadataUri: prepared.revenueTokenMetadataUri,
+        preparedCallArgs: prepared.evmCall.args,
       },
       preparedAt: new Date().toISOString(),
       errorMessage: undefined,

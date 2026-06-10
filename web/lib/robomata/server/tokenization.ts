@@ -72,6 +72,70 @@ const RECEIPT_VALIDATION_ABI = [
       { name: "supply", type: "uint256", indexed: false },
     ],
   },
+  {
+    type: "event",
+    name: "RevenueTokenInfoSet",
+    inputs: [
+      { name: "revenueTokenId", type: "uint256", indexed: true },
+      { name: "price", type: "uint256", indexed: false },
+      { name: "supply", type: "uint256", indexed: false },
+      { name: "maxSupply", type: "uint256", indexed: false },
+      { name: "maturityDate", type: "uint256", indexed: false },
+      { name: "immediateProceeds", type: "bool", indexed: false },
+      { name: "protectionEnabled", type: "bool", indexed: false },
+    ],
+  },
+] as const;
+const REVENUE_TOKEN_POLICY_ABI = [
+  {
+    type: "function",
+    name: "getTokenPrice",
+    stateMutability: "view",
+    inputs: [{ name: "revenueTokenId", type: "uint256" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "getTokenMaturityDate",
+    stateMutability: "view",
+    inputs: [{ name: "revenueTokenId", type: "uint256" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "getRevenueShareBP",
+    stateMutability: "view",
+    inputs: [{ name: "revenueTokenId", type: "uint256" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "getTargetYieldBP",
+    stateMutability: "view",
+    inputs: [{ name: "revenueTokenId", type: "uint256" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "getRevenueTokenMaxSupply",
+    stateMutability: "view",
+    inputs: [{ name: "revenueTokenId", type: "uint256" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "getRevenueTokenImmediateProceedsEnabled",
+    stateMutability: "view",
+    inputs: [{ name: "revenueTokenId", type: "uint256" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "getRevenueTokenProtectionEnabled",
+    stateMutability: "view",
+    inputs: [{ name: "revenueTokenId", type: "uint256" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
 ] as const;
 
 type TokenizationTermsInput = Partial<{
@@ -281,6 +345,12 @@ function getConfiguredFacilityRegistryAddress(chainId: number | undefined): stri
   throw new Error("FacilityRegistry is not deployed for the selected EVM network.");
 }
 
+function getConfiguredContractAddress(chainId: number | undefined, contractName: string): `0x${string}` {
+  const deployedAddress = getDeployedContract(chainId, contractName)?.address;
+  if (!deployedAddress) throw new Error(`${contractName} is not deployed for the selected EVM network.`);
+  return normalizeAddress(deployedAddress, contractName);
+}
+
 function canUseMockCompletionVerification() {
   return (
     process.env.NODE_ENV !== "production" &&
@@ -343,16 +413,41 @@ export async function verifyTokenizationCompletion({
   }
 
   const expectedAssetId = BigInt(assetId);
-  const expectedRevenueTokenId = revenueTokenId ? BigInt(revenueTokenId) : undefined;
+  if (!revenueTokenId) throw new Error("revenueTokenId is required for prepared offering completion.");
+  const expectedRevenueTokenId = BigInt(revenueTokenId);
   const expectedPartnerAddress = normalizeAddress(submission.partnerAddress, "partnerAddress");
   const expectedCommitment = deriveFacilityCommitment(submission).toLowerCase();
   const expectedAssetMetadataUri = assetMetadataUri ?? submission.tokenization.evm.assetMetadataUri;
   const expectedRevenueTokenMetadataUri =
     revenueTokenMetadataUri ?? submission.tokenization.evm.revenueTokenMetadataUri;
+  const preparedCallArgs = submission.tokenization.evm.preparedCallArgs;
+  if (!preparedCallArgs) {
+    throw new Error("Prepared tokenization call args are missing; prepare tokenization again.");
+  }
+  const [
+    ,
+    expectedAssetValue,
+    expectedTokenPrice,
+    expectedMaturityDate,
+    expectedRevenueShareBps,
+    expectedTargetYieldBps,
+    expectedMaxSupply,
+    expectedImmediateProceeds,
+    expectedProtectionEnabled,
+  ] = preparedCallArgs;
+  const expectedAssetValueUnits = BigInt(expectedAssetValue);
+  const expectedTokenPriceUnits = BigInt(expectedTokenPrice);
+  const expectedMaturityTimestamp = BigInt(expectedMaturityDate);
+  const expectedRevenueShare = BigInt(expectedRevenueShareBps);
+  const expectedTargetYield = BigInt(expectedTargetYieldBps);
+  const expectedSupply = BigInt(expectedMaxSupply);
+  const expectedPoolAssetValue = expectedSupply * expectedTokenPriceUnits;
+  const roboshareTokensAddress = getConfiguredContractAddress(parsedChainId, "RoboshareTokens");
   let sawAssetRegistered = false;
   let sawFacilityRegistered = false;
   let sawFacilityMetadata = false;
-  let sawRevenueTokenPool = expectedRevenueTokenId === undefined;
+  let sawRevenueTokenPool = false;
+  let sawRevenueTokenInfo = false;
 
   for (const log of receipt.logs) {
     let event: { eventName: string; args: Record<string, unknown> };
@@ -377,7 +472,8 @@ export async function verifyTokenizationCompletion({
     if (event.eventName === "AssetRegistered") {
       sawAssetRegistered =
         event.args.assetId === expectedAssetId &&
-        normalizeAddress(String(event.args.owner), "AssetRegistered.owner") === expectedPartnerAddress;
+        normalizeAddress(String(event.args.owner), "AssetRegistered.owner") === expectedPartnerAddress &&
+        event.args.assetValue === expectedAssetValueUnits;
     }
     if (event.eventName === "FacilityRegistered") {
       sawFacilityRegistered =
@@ -392,11 +488,23 @@ export async function verifyTokenizationCompletion({
         event.args.assetMetadataURI === expectedAssetMetadataUri &&
         event.args.revenueTokenMetadataURI === expectedRevenueTokenMetadataUri;
     }
-    if (event.eventName === "RevenueTokenPoolCreated" && expectedRevenueTokenId !== undefined) {
+    if (event.eventName === "RevenueTokenPoolCreated") {
       sawRevenueTokenPool =
         event.args.assetId === expectedAssetId &&
         event.args.revenueTokenId === expectedRevenueTokenId &&
-        normalizeAddress(String(event.args.partner), "RevenueTokenPoolCreated.partner") === expectedPartnerAddress;
+        normalizeAddress(String(event.args.partner), "RevenueTokenPoolCreated.partner") === expectedPartnerAddress &&
+        event.args.assetValue === expectedPoolAssetValue &&
+        event.args.supply === expectedSupply;
+    }
+    if (event.eventName === "RevenueTokenInfoSet" && logAddress === roboshareTokensAddress) {
+      sawRevenueTokenInfo =
+        event.args.revenueTokenId === expectedRevenueTokenId &&
+        event.args.price === expectedTokenPriceUnits &&
+        event.args.supply === expectedSupply &&
+        event.args.maxSupply === expectedSupply &&
+        event.args.maturityDate === expectedMaturityTimestamp &&
+        event.args.immediateProceeds === expectedImmediateProceeds &&
+        event.args.protectionEnabled === expectedProtectionEnabled;
     }
   }
 
@@ -404,6 +512,67 @@ export async function verifyTokenizationCompletion({
   if (!sawFacilityRegistered) throw new Error("Tokenization receipt is missing the expected FacilityRegistered event.");
   if (!sawFacilityMetadata) throw new Error("Tokenization receipt is missing the expected facility metadata event.");
   if (!sawRevenueTokenPool) throw new Error("Tokenization receipt is missing the expected revenue-token pool event.");
+  if (!sawRevenueTokenInfo) {
+    throw new Error("Tokenization receipt is missing the expected revenue-token policy event.");
+  }
+
+  const [tokenPrice, maturityDate, revenueShareBps, targetYieldBps, maxSupply, immediateProceeds, protectionEnabled] =
+    await Promise.all([
+      publicClient.readContract({
+        address: roboshareTokensAddress,
+        abi: REVENUE_TOKEN_POLICY_ABI,
+        functionName: "getTokenPrice",
+        args: [expectedRevenueTokenId],
+      }),
+      publicClient.readContract({
+        address: roboshareTokensAddress,
+        abi: REVENUE_TOKEN_POLICY_ABI,
+        functionName: "getTokenMaturityDate",
+        args: [expectedRevenueTokenId],
+      }),
+      publicClient.readContract({
+        address: roboshareTokensAddress,
+        abi: REVENUE_TOKEN_POLICY_ABI,
+        functionName: "getRevenueShareBP",
+        args: [expectedRevenueTokenId],
+      }),
+      publicClient.readContract({
+        address: roboshareTokensAddress,
+        abi: REVENUE_TOKEN_POLICY_ABI,
+        functionName: "getTargetYieldBP",
+        args: [expectedRevenueTokenId],
+      }),
+      publicClient.readContract({
+        address: roboshareTokensAddress,
+        abi: REVENUE_TOKEN_POLICY_ABI,
+        functionName: "getRevenueTokenMaxSupply",
+        args: [expectedRevenueTokenId],
+      }),
+      publicClient.readContract({
+        address: roboshareTokensAddress,
+        abi: REVENUE_TOKEN_POLICY_ABI,
+        functionName: "getRevenueTokenImmediateProceedsEnabled",
+        args: [expectedRevenueTokenId],
+      }),
+      publicClient.readContract({
+        address: roboshareTokensAddress,
+        abi: REVENUE_TOKEN_POLICY_ABI,
+        functionName: "getRevenueTokenProtectionEnabled",
+        args: [expectedRevenueTokenId],
+      }),
+    ]);
+
+  if (
+    tokenPrice !== expectedTokenPriceUnits ||
+    maturityDate !== expectedMaturityTimestamp ||
+    revenueShareBps !== expectedRevenueShare ||
+    targetYieldBps !== expectedTargetYield ||
+    maxSupply !== expectedSupply ||
+    immediateProceeds !== expectedImmediateProceeds ||
+    protectionEnabled !== expectedProtectionEnabled
+  ) {
+    throw new Error("Revenue token economics do not match the prepared tokenization call.");
+  }
 }
 
 async function uploadJsonToIpfs(data: Record<string, unknown>, filename: string): Promise<string> {

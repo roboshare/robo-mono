@@ -345,6 +345,20 @@ async function runTokenizationApiAssertions({ authHeaders, otherAuthHeaders }) {
   assert(!publicMetadata.includes("private-evidence.pdf"), "Prepared metadata leaked private evidence filename.");
   assert(prepared.evmCall.functionName === "registerAssetAndCreateRevenueTokenPool", "Prepare returned wrong EVM call.");
 
+  await expectPostJsonError({
+    authHeaders,
+    requestPath: "/api/robomata/submissions/sub_tokenization_eligible/tokenization/complete",
+    status: 500,
+    message: "revenueTokenId",
+    body: {
+      registryAddress: fakeRegistryAddress,
+      assetId: "41",
+      txHash: fakeTxHash,
+      assetMetadataUri: prepared.assetMetadataUri,
+      revenueTokenMetadataUri: prepared.revenueTokenMetadataUri,
+    },
+  });
+
   const completed = await postJson({
     authHeaders,
     requestPath: "/api/robomata/submissions/sub_tokenization_eligible/tokenization/complete",

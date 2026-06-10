@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { type Hex, decodeEventLog } from "viem";
+import { type Hex, decodeEventLog, encodeFunctionData } from "viem";
 import { usePublicClient, useWriteContract } from "wagmi";
 import {
   ArrowPathIcon,
@@ -13,9 +13,10 @@ import {
   ShieldCheckIcon,
 } from "@heroicons/react/24/outline";
 import { PacketSharePanel } from "~~/components/robomata/PacketSharePanel";
-import { useSelectedNetwork } from "~~/hooks/scaffold-eth";
+import { useSelectedNetwork, useTransactor } from "~~/hooks/scaffold-eth";
 import { usePrivySuiWalletBinding } from "~~/hooks/usePrivySuiWalletBinding";
 import { useRobomataApiAuth } from "~~/hooks/useRobomataApiAuth";
+import { sendSmartWalletCalls } from "~~/hooks/useSmartWalletTransaction";
 import {
   type OperatorSuiCommitRequest,
   shouldReleaseOperatorCommitReservation,
@@ -175,10 +176,17 @@ export const SubmissionWorkspace = ({
     immediateProceeds: false,
     protectionEnabled: false,
   });
-  const { address: accountAddress, chainId: accountChainId, connectedAddress } = useTransactingAccount();
+  const {
+    address: accountAddress,
+    chainId: accountChainId,
+    connectedAddress,
+    getSmartWalletClientForChain,
+    isSmartWallet,
+  } = useTransactingAccount();
   const selectedNetwork = useSelectedNetwork(accountChainId);
   const publicClient = usePublicClient({ chainId: selectedNetwork.id });
   const { writeContractAsync: writeFacilityRegistry } = useWriteContract();
+  const writeTokenizationTransaction = useTransactor();
   const partnerAuthAddress = accountAddress;
   const signerAddress = connectedAddress ?? accountAddress;
   const getAuthHeaders = useRobomataApiAuth(partnerAuthAddress);
@@ -409,6 +417,7 @@ export const SubmissionWorkspace = ({
     }
 
     if (!assetId) throw new Error("EVM transaction receipt did not include AssetRegistered.");
+    if (!revenueTokenId) throw new Error("EVM transaction receipt did not include RevenueTokenPoolCreated.");
     return { assetId, revenueTokenId };
   };
 
@@ -439,22 +448,40 @@ export const SubmissionWorkspace = ({
       if (!prepareResponse.ok || !prepared.evmCall?.contractAddress) {
         throw new Error(prepared.error ?? "Facility registry is not deployed for the selected network.");
       }
+      const evmCall = prepared.evmCall;
 
-      const txHash = await writeFacilityRegistry({
-        address: prepared.evmCall.contractAddress as `0x${string}`,
-        abi: facilityRegistryWriteAbi,
-        functionName: "registerAssetAndCreateRevenueTokenPool",
-        args: [
-          prepared.evmCall.args[0] as `0x${string}`,
-          BigInt(prepared.evmCall.args[1]),
-          BigInt(prepared.evmCall.args[2]),
-          BigInt(prepared.evmCall.args[3]),
-          BigInt(prepared.evmCall.args[4]),
-          BigInt(prepared.evmCall.args[5]),
-          BigInt(prepared.evmCall.args[6]),
-          prepared.evmCall.args[7],
-          prepared.evmCall.args[8],
-        ],
+      const txArgs = [
+        evmCall.args[0] as `0x${string}`,
+        BigInt(evmCall.args[1]),
+        BigInt(evmCall.args[2]),
+        BigInt(evmCall.args[3]),
+        BigInt(evmCall.args[4]),
+        BigInt(evmCall.args[5]),
+        BigInt(evmCall.args[6]),
+        evmCall.args[7],
+        evmCall.args[8],
+      ] as const;
+      const txHash = await writeTokenizationTransaction(async () => {
+        if (isSmartWallet) {
+          if (!getSmartWalletClientForChain) throw new Error("Smart wallet client is not available.");
+          return sendSmartWalletCalls(getSmartWalletClientForChain, selectedNetwork.id, [
+            {
+              to: evmCall.contractAddress as `0x${string}`,
+              data: encodeFunctionData({
+                abi: facilityRegistryWriteAbi,
+                functionName: "registerAssetAndCreateRevenueTokenPool",
+                args: txArgs,
+              }),
+            },
+          ]);
+        }
+
+        return writeFacilityRegistry({
+          address: evmCall.contractAddress as `0x${string}`,
+          abi: facilityRegistryWriteAbi,
+          functionName: "registerAssetAndCreateRevenueTokenPool",
+          args: txArgs,
+        });
       });
       if (!txHash) throw new Error("Facility tokenization transaction was not submitted.");
 

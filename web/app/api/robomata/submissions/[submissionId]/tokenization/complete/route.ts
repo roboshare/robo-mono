@@ -48,13 +48,6 @@ function normalizeDecimalId(value: unknown, field: string): string {
   return normalized;
 }
 
-function normalizeOptionalDecimalId(value: unknown, field: string): string | undefined {
-  const normalized = normalizeOptionalString(value, field);
-  if (normalized === undefined) return undefined;
-  if (!/^\d+$/.test(normalized)) throw new Error(`${field} must be a decimal id string.`);
-  return normalized;
-}
-
 function normalizeTxHash(value: unknown): string {
   const normalized = normalizeRequiredString(value, "txHash");
   if (!/^0x[a-fA-F0-9]{64}$/.test(normalized)) throw new Error("txHash must be a 32-byte hex string.");
@@ -92,7 +85,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     const registryAddress = normalizeRequiredString(body.registryAddress, "registryAddress");
     if (!isAddress(registryAddress)) throw new Error("registryAddress must be a valid EVM address.");
     const assetId = normalizeDecimalId(body.assetId, "assetId");
-    const revenueTokenId = normalizeOptionalDecimalId(body.revenueTokenId, "revenueTokenId");
+    const revenueTokenId = normalizeDecimalId(body.revenueTokenId, "revenueTokenId");
     const txHash = normalizeTxHash(body.txHash);
     const assetMetadataUri =
       normalizeOptionalString(body.assetMetadataUri, "assetMetadataUri") ??
@@ -114,7 +107,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
 
     submission.tokenization = {
       ...submission.tokenization,
-      status: revenueTokenId ? "offering_created" : "registered",
+      status: "offering_created",
       evm: {
         registryAddress,
         assetId,
@@ -130,9 +123,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     submission.auditEvents.unshift(
       createAuditEvent(
         "tokenization_completed",
-        revenueTokenId
-          ? `Created Robomata tokenized offering for ${submission.facilityName}.`
-          : `Registered Robomata facility asset for ${submission.facilityName}.`,
+        `Created Robomata tokenized offering for ${submission.facilityName}.`,
         {
           registryAddress,
           assetId,
