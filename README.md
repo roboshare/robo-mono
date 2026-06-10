@@ -138,6 +138,7 @@ Key paths:
 
 Launch sequencing and release-management policy are tracked in [docs/testnet-release-strategy.md](docs/testnet-release-strategy.md).
 Embedded-wallet setup notes are tracked in [docs/privy-wallet-setup.md](docs/privy-wallet-setup.md).
+Marketing/app route ownership and persona language are tracked in [docs/roboshare-marketing-app-ia.md](docs/roboshare-marketing-app-ia.md).
 
 ## Indexing and Subgraph Development
 
