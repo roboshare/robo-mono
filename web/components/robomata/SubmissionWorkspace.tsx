@@ -2,6 +2,8 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { type Hex, decodeEventLog } from "viem";
+import { usePublicClient, useWriteContract } from "wagmi";
 import {
   ArrowPathIcon,
   CheckCircleIcon,
@@ -19,6 +21,7 @@ import {
   useSuiOperatorWallet,
 } from "~~/hooks/useSuiOperatorWallet";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
+import { isRobomataTokenizationClientEnabled } from "~~/lib/featureFlags";
 import { formatPercentFromBps, formatUsd } from "~~/lib/robomata/borrowingBase";
 import type { FacilitySubmission, SubmissionComputation, SubmissionReceivable } from "~~/lib/robomata/submissions";
 import { notification } from "~~/utils/scaffold-eth";
@@ -35,6 +38,64 @@ type CommitEvidenceResponse = {
   txDigest?: string;
   error?: string;
 };
+
+type TokenizationPrepareResponse = {
+  submission?: FacilitySubmission;
+  evmCall?: {
+    contractAddress?: string;
+    contractName: "FacilityRegistry";
+    functionName: "registerAssetAndCreateRevenueTokenPool";
+    args: [string, string, string, string, string, string, string, boolean, boolean];
+  };
+  assetMetadataUri?: string;
+  revenueTokenMetadataUri?: string;
+  error?: string;
+};
+
+const facilityRegistryWriteAbi = [
+  {
+    type: "function",
+    name: "registerAssetAndCreateRevenueTokenPool",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "data", type: "bytes" },
+      { name: "assetValue", type: "uint256" },
+      { name: "tokenPrice", type: "uint256" },
+      { name: "maturityDate", type: "uint256" },
+      { name: "revenueShareBP", type: "uint256" },
+      { name: "targetYieldBP", type: "uint256" },
+      { name: "maxSupply", type: "uint256" },
+      { name: "immediateProceeds", type: "bool" },
+      { name: "protectionEnabled", type: "bool" },
+    ],
+    outputs: [
+      { name: "assetId", type: "uint256" },
+      { name: "tokenId", type: "uint256" },
+      { name: "supply", type: "uint256" },
+    ],
+  },
+  {
+    type: "event",
+    name: "AssetRegistered",
+    inputs: [
+      { name: "assetId", type: "uint256", indexed: true },
+      { name: "owner", type: "address", indexed: true },
+      { name: "assetValue", type: "uint256", indexed: false },
+      { name: "status", type: "uint8", indexed: false },
+    ],
+  },
+  {
+    type: "event",
+    name: "RevenueTokenPoolCreated",
+    inputs: [
+      { name: "assetId", type: "uint256", indexed: true },
+      { name: "revenueTokenId", type: "uint256", indexed: true },
+      { name: "partner", type: "address", indexed: true },
+      { name: "assetValue", type: "uint256", indexed: false },
+      { name: "supply", type: "uint256", indexed: false },
+    ],
+  },
+] as const;
 
 type PendingOperatorCommit = {
   operatorSignature?: string;
@@ -104,8 +165,19 @@ export const SubmissionWorkspace = ({
   const [receivablesCsvText, setReceivablesCsvText] = useState("");
   const [evidenceText, setEvidenceText] = useState("");
   const [pendingOperatorCommit, setPendingOperatorCommit] = useState<PendingOperatorCommit | null>(null);
+  const [tokenizationForm, setTokenizationForm] = useState({
+    offeringLimit: "",
+    tokenPrice: "1.00",
+    maturityMonths: "36",
+    revenueSharePct: "50",
+    targetYieldPct: "10",
+    immediateProceeds: false,
+    protectionEnabled: false,
+  });
   const { address: accountAddress, chainId: accountChainId, connectedAddress } = useTransactingAccount();
   const selectedNetwork = useSelectedNetwork(accountChainId);
+  const publicClient = usePublicClient({ chainId: selectedNetwork.id });
+  const { writeContractAsync: writeFacilityRegistry } = useWriteContract();
   const partnerAuthAddress = accountAddress;
   const signerAddress = connectedAddress ?? accountAddress;
   const getAuthHeaders = useRobomataApiAuth(partnerAuthAddress);
@@ -134,6 +206,11 @@ export const SubmissionWorkspace = ({
       pendingOperatorCommit?.submissionId === submission.id &&
       pendingOperatorCommit.rootDigest === submission.evidenceCommit.rootDigest,
   );
+  const tokenization = submission?.tokenization;
+  const canShowTokenization = Boolean(
+    isRobomataTokenizationClientEnabled() && !readOnly && submission?.evidenceCommit.status === "committed",
+  );
+  const isTokenized = tokenization?.status === "registered" || tokenization?.status === "offering_created";
 
   const loadSubmission = useCallback(async () => {
     setIsLoading(true);
@@ -175,6 +252,23 @@ export const SubmissionWorkspace = ({
   useEffect(() => {
     void loadSubmission();
   }, [loadSubmission]);
+
+  useEffect(() => {
+    if (!submission?.tokenization?.terms) return;
+    const terms = submission.tokenization.terms;
+    setTokenizationForm(current => ({
+      offeringLimit:
+        terms.offeringLimitCents === undefined ? current.offeringLimit : centsToDollarInput(terms.offeringLimitCents),
+      tokenPrice: terms.tokenPrice === undefined ? current.tokenPrice : terms.tokenPrice.toFixed(2),
+      maturityMonths: terms.maturityMonths === undefined ? current.maturityMonths : String(terms.maturityMonths),
+      revenueSharePct:
+        terms.revenueShareBps === undefined ? current.revenueSharePct : (terms.revenueShareBps / 100).toString(),
+      targetYieldPct:
+        terms.targetYieldBps === undefined ? current.targetYieldPct : (terms.targetYieldBps / 100).toString(),
+      immediateProceeds: terms.immediateProceeds ?? current.immediateProceeds,
+      protectionEnabled: terms.protectionEnabled ?? current.protectionEnabled,
+    }));
+  }, [submission?.id, submission?.tokenization?.terms]);
 
   const updateSubmission = async (url: string, init?: RequestInit) => {
     if (!partnerAuthAddress) {
@@ -264,6 +358,142 @@ export const SubmissionWorkspace = ({
   const recompute = async () => {
     if (!submission) return;
     await updateSubmission(`/api/robomata/submissions/${submission.id}/compute`, { method: "POST" });
+  };
+
+  const tokenizationTermsBody = () => ({
+    offeringLimitCents: dollarsToCents(tokenizationForm.offeringLimit),
+    tokenPrice: Number(tokenizationForm.tokenPrice),
+    maturityMonths: Number.parseInt(tokenizationForm.maturityMonths, 10),
+    revenueShareBps: Math.round(Number(tokenizationForm.revenueSharePct) * 100),
+    targetYieldBps: Math.round(Number(tokenizationForm.targetYieldPct) * 100),
+    immediateProceeds: tokenizationForm.immediateProceeds,
+    protectionEnabled: tokenizationForm.protectionEnabled,
+  });
+
+  const startTokenizationDraft = async () => {
+    if (!submission) return;
+    await updateSubmission(`/api/robomata/submissions/${submission.id}/tokenization/draft`, { method: "POST" });
+  };
+
+  const saveTokenizationTerms = async () => {
+    if (!submission) return false;
+    return await updateSubmission(`/api/robomata/submissions/${submission.id}/tokenization/terms`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(tokenizationTermsBody()),
+    });
+  };
+
+  const extractTokenizationIds = (logs: { data: Hex; topics: readonly Hex[] }[]) => {
+    let assetId: string | undefined;
+    let revenueTokenId: string | undefined;
+
+    for (const log of logs) {
+      try {
+        const event = decodeEventLog({
+          abi: facilityRegistryWriteAbi,
+          data: log.data,
+          topics: [...log.topics] as [Hex, ...Hex[]],
+        });
+        if (event.eventName === "AssetRegistered") {
+          assetId = event.args.assetId.toString();
+        }
+        if (event.eventName === "RevenueTokenPoolCreated") {
+          assetId = event.args.assetId.toString();
+          revenueTokenId = event.args.revenueTokenId.toString();
+        }
+      } catch {
+        // Ignore unrelated logs in the same receipt.
+      }
+    }
+
+    if (!assetId) throw new Error("EVM transaction receipt did not include AssetRegistered.");
+    return { assetId, revenueTokenId };
+  };
+
+  const prepareAndSignTokenization = async () => {
+    if (!submission) return;
+    if (!publicClient) {
+      notification.error("Connect to a supported EVM network before tokenizing this facility.");
+      return;
+    }
+
+    const didSaveTerms = await saveTokenizationTerms();
+    if (!didSaveTerms) return;
+
+    setIsBusy(true);
+    try {
+      const path = `/api/robomata/submissions/${submission.id}/tokenization/prepare`;
+      const headers = new Headers({ "content-type": "application/json" });
+      const authHeaders = await getAuthHeaders({
+        chainId: selectedNetwork.id,
+        method: "POST",
+        path,
+        signerAddress,
+      });
+      Object.entries(authHeaders).forEach(([key, value]) => headers.set(key, value));
+      const prepareResponse = await fetch(path, { method: "POST", headers });
+      const prepared = (await prepareResponse.json().catch(() => ({}))) as TokenizationPrepareResponse;
+      if (prepared.submission) setSubmission(prepared.submission);
+      if (!prepareResponse.ok || !prepared.evmCall?.contractAddress) {
+        throw new Error(prepared.error ?? "Facility registry is not deployed for the selected network.");
+      }
+
+      const txHash = await writeFacilityRegistry({
+        address: prepared.evmCall.contractAddress as `0x${string}`,
+        abi: facilityRegistryWriteAbi,
+        functionName: "registerAssetAndCreateRevenueTokenPool",
+        args: [
+          prepared.evmCall.args[0] as `0x${string}`,
+          BigInt(prepared.evmCall.args[1]),
+          BigInt(prepared.evmCall.args[2]),
+          BigInt(prepared.evmCall.args[3]),
+          BigInt(prepared.evmCall.args[4]),
+          BigInt(prepared.evmCall.args[5]),
+          BigInt(prepared.evmCall.args[6]),
+          prepared.evmCall.args[7],
+          prepared.evmCall.args[8],
+        ],
+      });
+      if (!txHash) throw new Error("Facility tokenization transaction was not submitted.");
+
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+      const ids = extractTokenizationIds(receipt.logs);
+      const completePath = `/api/robomata/submissions/${submission.id}/tokenization/complete`;
+      const completeHeaders = new Headers({ "content-type": "application/json" });
+      const completeAuthHeaders = await getAuthHeaders({
+        chainId: selectedNetwork.id,
+        method: "POST",
+        path: completePath,
+        signerAddress,
+      });
+      Object.entries(completeAuthHeaders).forEach(([key, value]) => completeHeaders.set(key, value));
+      const completeResponse = await fetch(completePath, {
+        method: "POST",
+        headers: completeHeaders,
+        body: JSON.stringify({
+          registryAddress: prepared.evmCall.contractAddress,
+          assetId: ids.assetId,
+          revenueTokenId: ids.revenueTokenId,
+          txHash,
+          assetMetadataUri: prepared.assetMetadataUri,
+          revenueTokenMetadataUri: prepared.revenueTokenMetadataUri,
+        }),
+      });
+      const completePayload = (await completeResponse.json().catch(() => ({}))) as {
+        submission?: FacilitySubmission;
+        error?: string;
+      };
+      if (!completeResponse.ok || !completePayload.submission) {
+        throw new Error(completePayload.error ?? "Failed to persist tokenization result.");
+      }
+      setSubmission(completePayload.submission);
+      notification.success("Facility tokenization completed.");
+    } catch (error) {
+      notification.error(error instanceof Error ? error.message : "Facility tokenization failed.");
+    } finally {
+      setIsBusy(false);
+    }
   };
 
   const commitEvidence = async () => {
@@ -1077,6 +1307,178 @@ export const SubmissionWorkspace = ({
               </div>
             )}
           </section>
+
+          {canShowTokenization ? (
+            <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
+              <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
+                <ShieldCheckIcon className="h-4 w-4" />
+                Tokenize facility
+              </div>
+              <div className="mt-4 rounded-[1.5rem] border border-base-300 bg-base-200/50 p-4">
+                <div className="text-sm font-semibold text-base-content">
+                  {isTokenized ? "Facility offering created" : "Committed borrowing base is ready for tokenization"}
+                </div>
+                <div className="mt-2 text-sm text-base-content/70">
+                  {isTokenized
+                    ? `Asset ${tokenization?.evm.assetId} ${
+                        tokenization?.evm.revenueTokenId ? `· revenue token ${tokenization.evm.revenueTokenId}` : ""
+                      }`
+                    : "Create a facility-level asset and paired revenue-token offering from this committed submission."}
+                </div>
+                {tokenization?.anchors.rootDigest ? (
+                  <div className="mt-3 space-y-1 text-xs text-base-content/60">
+                    <div className="break-all">Root digest: {tokenization.anchors.rootDigest}</div>
+                    {tokenization.anchors.facilityCommitment ? (
+                      <div className="break-all">Facility commitment: {tokenization.anchors.facilityCommitment}</div>
+                    ) : null}
+                    {tokenization.anchors.suiTxDigest ? (
+                      <div className="break-all">Sui tx: {tokenization.anchors.suiTxDigest}</div>
+                    ) : null}
+                  </div>
+                ) : null}
+                {isTokenized ? (
+                  <div className="mt-4 space-y-1 text-xs text-base-content/60">
+                    {tokenization?.evm.registryAddress ? (
+                      <div className="break-all">Registry: {tokenization.evm.registryAddress}</div>
+                    ) : null}
+                    {tokenization?.evm.txHash ? (
+                      <div className="break-all">EVM tx: {tokenization.evm.txHash}</div>
+                    ) : null}
+                    {tokenization?.evm.assetMetadataUri ? (
+                      <div className="break-all">Asset metadata: {tokenization.evm.assetMetadataUri}</div>
+                    ) : null}
+                  </div>
+                ) : tokenization?.status === "not_started" ? (
+                  <button
+                    className="btn btn-primary mt-4 rounded-full"
+                    onClick={startTokenizationDraft}
+                    disabled={isBusy}
+                  >
+                    Start tokenization draft
+                  </button>
+                ) : (
+                  <div className="mt-5 grid gap-4 md:grid-cols-2">
+                    <label className="form-control">
+                      <span className="label-text mb-1 text-sm font-medium">Offering limit</span>
+                      <input
+                        className="input input-bordered rounded-full"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={tokenizationForm.offeringLimit}
+                        onChange={event =>
+                          setTokenizationForm(current => ({ ...current, offeringLimit: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text mb-1 text-sm font-medium">Token price</span>
+                      <input
+                        className="input input-bordered rounded-full"
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={tokenizationForm.tokenPrice}
+                        onChange={event =>
+                          setTokenizationForm(current => ({ ...current, tokenPrice: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text mb-1 text-sm font-medium">Maturity months</span>
+                      <input
+                        className="input input-bordered rounded-full"
+                        type="number"
+                        min="1"
+                        max="120"
+                        value={tokenizationForm.maturityMonths}
+                        onChange={event =>
+                          setTokenizationForm(current => ({ ...current, maturityMonths: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text mb-1 text-sm font-medium">Revenue share cap (%)</span>
+                      <input
+                        className="input input-bordered rounded-full"
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        value={tokenizationForm.revenueSharePct}
+                        onChange={event =>
+                          setTokenizationForm(current => ({ ...current, revenueSharePct: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text mb-1 text-sm font-medium">Target yield (%)</span>
+                      <input
+                        className="input input-bordered rounded-full"
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        value={tokenizationForm.targetYieldPct}
+                        onChange={event =>
+                          setTokenizationForm(current => ({ ...current, targetYieldPct: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <div className="flex flex-col justify-end gap-2">
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          className="toggle toggle-primary"
+                          type="checkbox"
+                          checked={tokenizationForm.immediateProceeds}
+                          onChange={event =>
+                            setTokenizationForm(current => ({
+                              ...current,
+                              immediateProceeds: event.target.checked,
+                            }))
+                          }
+                        />
+                        Earlier proceeds access
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          className="toggle toggle-primary"
+                          type="checkbox"
+                          checked={tokenizationForm.protectionEnabled}
+                          onChange={event =>
+                            setTokenizationForm(current => ({
+                              ...current,
+                              protectionEnabled: event.target.checked,
+                            }))
+                          }
+                        />
+                        Protection buffer
+                      </label>
+                    </div>
+                    <div className="md:col-span-2 flex flex-wrap gap-3">
+                      <button
+                        className="btn btn-outline rounded-full"
+                        onClick={saveTokenizationTerms}
+                        disabled={isBusy}
+                      >
+                        Save terms
+                      </button>
+                      <button
+                        className="btn btn-primary rounded-full"
+                        onClick={prepareAndSignTokenization}
+                        disabled={isBusy}
+                      >
+                        Prepare and sign offering
+                      </button>
+                    </div>
+                    {tokenization?.errorMessage ? (
+                      <div className="md:col-span-2 text-sm text-error">{tokenization.errorMessage}</div>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            </section>
+          ) : null}
         </div>
       </section>
     </div>

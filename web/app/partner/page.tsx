@@ -21,8 +21,11 @@ import { PROTOCOL_DEPRECIATION_RATE_BP } from "~~/config/protocol";
 import { BP_PRECISION, SECONDS_PER_YEAR } from "~~/config/units";
 import { useScaffoldWriteContract, useSelectedNetwork } from "~~/hooks/scaffold-eth";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
+import { useRobomataApiAuth } from "~~/hooks/useRobomataApiAuth";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
-import { isRobomataWorkflowEnabled } from "~~/lib/featureFlags";
+import { isRobomataTokenizationClientEnabled, isRobomataWorkflowEnabled } from "~~/lib/featureFlags";
+import { formatUsd } from "~~/lib/robomata/borrowingBase";
+import type { FacilitySubmission } from "~~/lib/robomata/submissions";
 import { getDeployedContract } from "~~/utils/contracts";
 import { fetchIpfsMetadata, mergeVehicleMetadata } from "~~/utils/ipfsGateway";
 import { normalizeVehicleMetadata } from "~~/utils/protocolState";
@@ -136,6 +139,10 @@ type AssetAction = {
 };
 
 const SUBGRAPH_REFRESH_DELAYS_MS = [1500, 5000, 12000, 25000];
+const TOKENIZED_FACILITY_STATUSES: ReadonlySet<FacilitySubmission["tokenization"]["status"]> = new Set([
+  "registered",
+  "offering_created",
+]);
 
 const payoutGhostActionClass =
   "btn btn-primary border-0 bg-primary/15 text-primary hover:bg-primary/25 dark:bg-primary/25 dark:text-primary-content dark:hover:bg-primary/35";
@@ -168,7 +175,7 @@ const calculateResidualSettlementTopUp = ({
 };
 
 const PartnerDashboard: NextPage = () => {
-  const { address: accountAddress, chainId: accountChainId } = useTransactingAccount();
+  const { address: accountAddress, chainId: accountChainId, connectedAddress } = useTransactingAccount();
   const { data: latestBlock } = useBlock({ watch: true });
   const selectedNetwork = useSelectedNetwork(accountChainId);
   const chainId = selectedNetwork.id;
@@ -187,8 +194,12 @@ const PartnerDashboard: NextPage = () => {
   const treasuryContract = getDeployedContract(chainId, "Treasury");
   const [allAssets, setAllAssets] = useState<DashboardAsset[]>([]);
   const [listings, setListings] = useState<SubgraphListing[]>([]);
+  const [tokenizedFacilitySubmissions, setTokenizedFacilitySubmissions] = useState<FacilitySubmission[]>([]);
   const [filterType, setFilterType] = useState<AssetType | "ALL">("ALL");
   const [filterState, setFilterState] = useState<AssetState | "ALL">("ALL");
+  const signerAddress = connectedAddress ?? accountAddress;
+  const getRobomataAuthHeaders = useRobomataApiAuth(accountAddress);
+  const isRobomataTokenizationVisible = isRobomataWorkflowEnabled() && isRobomataTokenizationClientEnabled();
 
   const { data: isAuthorizedPartner, isLoading: isCheckingPartner } = useReadContract({
     address: partnerManagerContract?.address,
@@ -338,6 +349,43 @@ const PartnerDashboard: NextPage = () => {
     };
     fetchData();
   }, [accountAddress, chainId, refreshCounter, subgraphUrl]);
+
+  useEffect(() => {
+    const fetchTokenizedFacilitySubmissions = async () => {
+      if (!isRobomataTokenizationVisible || !accountAddress || !signerAddress || isAuthorizedPartner !== true) {
+        setTokenizedFacilitySubmissions([]);
+        return;
+      }
+
+      try {
+        const path = "/api/robomata/submissions";
+        const headers = await getRobomataAuthHeaders({ chainId, method: "GET", path, signerAddress });
+        const response = await fetch(path, { headers });
+        if (!response.ok) {
+          throw new Error(`Robomata submission fetch failed: ${response.status}`);
+        }
+
+        const payload = (await response.json()) as { submissions?: FacilitySubmission[] };
+        const nextSubmissions = (payload.submissions ?? []).filter(submission =>
+          TOKENIZED_FACILITY_STATUSES.has(submission.tokenization.status),
+        );
+        setTokenizedFacilitySubmissions(nextSubmissions);
+      } catch (error) {
+        console.error("Error fetching tokenized facility submissions:", error);
+        setTokenizedFacilitySubmissions([]);
+      }
+    };
+
+    void fetchTokenizedFacilitySubmissions();
+  }, [
+    accountAddress,
+    chainId,
+    getRobomataAuthHeaders,
+    isAuthorizedPartner,
+    isRobomataTokenizationVisible,
+    refreshCounter,
+    signerAddress,
+  ]);
 
   const { data: assetMetadataData, refetch: refetchAssetMetadata } = useReadContracts({
     allowFailure: true,
@@ -819,7 +867,14 @@ const PartnerDashboard: NextPage = () => {
   };
 
   const { activeFleet, activeListings: activeListingsAssets, pendingListings, settledAssets } = categorizeAssets();
-  const totalAssets = activeFleet.length + activeListingsAssets.length + pendingListings.length + settledAssets.length;
+  const visibleTokenizedFacilitySubmissions =
+    isRobomataTokenizationVisible && filterType === "ALL" ? tokenizedFacilitySubmissions : [];
+  const totalAssets =
+    activeFleet.length +
+    activeListingsAssets.length +
+    pendingListings.length +
+    settledAssets.length +
+    visibleTokenizedFacilitySubmissions.length;
 
   // Helper functions
   const getAssetDisplayName = (asset: DashboardAsset) => {
@@ -855,6 +910,24 @@ const PartnerDashboard: NextPage = () => {
       refreshPartnerAfterSuccess();
     } catch (error) {
       notification.error(error instanceof Error ? error.message : "Pool update failed");
+    }
+  };
+
+  const getTokenizationStatusLabel = (status: FacilitySubmission["tokenization"]["status"]) => {
+    switch (status) {
+      case "offering_created":
+        return "Offering created";
+      case "registered":
+        return "Registered";
+      case "ready_to_sign":
+        return "Ready to sign";
+      case "draft":
+        return "Draft";
+      case "failed":
+        return "Failed";
+      case "not_started":
+      default:
+        return "Not started";
     }
   };
 
@@ -1128,6 +1201,55 @@ const PartnerDashboard: NextPage = () => {
     </section>
   );
 
+  const TokenizedFacilityCard = ({ submission }: { submission: FacilitySubmission }) => {
+    const tokenization = submission.tokenization;
+    const offeringLimitCents =
+      tokenization.terms.offeringLimitCents ?? submission.computation?.borrowingBase.availableBorrowingBaseCents ?? 0;
+    const hasOffering = tokenization.status === "offering_created";
+
+    return (
+      <div className="card bg-base-100 shadow-sm border-l-4 border-primary p-4 sm:p-5 hover:shadow-md transition-shadow">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0 space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="text-xs sm:text-sm opacity-50 uppercase tracking-widest font-semibold">Facility</div>
+              <span className={`badge badge-sm ${hasOffering ? "badge-success" : "badge-info"}`}>
+                {getTokenizationStatusLabel(tokenization.status)}
+              </span>
+            </div>
+            <div className="font-bold text-lg sm:text-xl truncate">{submission.facilityName}</div>
+            <div className="text-xs sm:text-sm opacity-60 truncate">
+              {submission.operatorName} • {submission.asOfDate}
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <div className="rounded-lg bg-base-200 px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wide opacity-60">Offering Limit</div>
+                <div className="text-sm font-semibold">{formatUsd(offeringLimitCents)}</div>
+              </div>
+              <div className="rounded-lg bg-base-200 px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wide opacity-60">Asset ID</div>
+                <div className="text-sm font-semibold truncate">{tokenization.evm.assetId ?? "—"}</div>
+              </div>
+              <div className="rounded-lg bg-base-200 px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wide opacity-60">Revenue Token</div>
+                <div className="text-sm font-semibold truncate">{tokenization.evm.revenueTokenId ?? "—"}</div>
+              </div>
+            </div>
+            <div className="space-y-1 text-[11px] sm:text-xs opacity-60">
+              {tokenization.anchors.rootDigest && (
+                <div className="break-all">Evidence root: {tokenization.anchors.rootDigest}</div>
+              )}
+              {tokenization.evm.txHash && <div className="break-all">Transaction: {tokenization.evm.txHash}</div>}
+            </div>
+          </div>
+          <Link href={`/partner/submissions/${submission.id}`} className="btn btn-primary w-full sm:w-auto">
+            Open Submission
+          </Link>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="flex flex-col gap-8 py-8 px-4 sm:px-6 lg:px-8 w-full max-w-full lg:max-w-[75%] 2xl:max-w-[80%] mx-auto">
       {/* Header & Global Actions */}
@@ -1387,6 +1509,21 @@ const PartnerDashboard: NextPage = () => {
         </div>
       ) : (
         <div className="flex flex-col gap-8 sm:gap-12">
+          {visibleTokenizedFacilitySubmissions.length > 0 &&
+            (filterState === "ALL" || filterState === "ACTIVE_FLEET") && (
+              <Section
+                title="Tokenized Facilities"
+                count={visibleTokenizedFacilitySubmissions.length}
+                badgeClass="badge-primary"
+                borderClass="border-primary/30"
+                viewMode={viewMode}
+              >
+                {visibleTokenizedFacilitySubmissions.map(submission => (
+                  <TokenizedFacilityCard key={submission.id} submission={submission} />
+                ))}
+              </Section>
+            )}
+
           {/* LIVE OFFERINGS - Assets with a primary pool */}
           {activeFleet.length > 0 && (filterState === "ALL" || filterState === "ACTIVE_FLEET") && (
             <Section
