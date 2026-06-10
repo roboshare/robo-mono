@@ -13,9 +13,15 @@ const parseHosts = (value: string | undefined, fallback: string[]) => {
   return hosts && hosts.length > 0 ? hosts : fallback;
 };
 
+const parseHost = (value: string | undefined, fallback: string) => {
+  const host = value?.trim().toLowerCase();
+
+  return host || fallback;
+};
+
 const marketingHosts = parseHosts(process.env.ROBOSHARE_MARKETING_HOSTS, DEFAULT_MARKETING_HOSTS);
-const primaryMarketingHost = process.env.ROBOSHARE_PRIMARY_MARKETING_HOST ?? DEFAULT_PRIMARY_MARKETING_HOST;
-const appHost = process.env.ROBOSHARE_APP_HOST ?? DEFAULT_APP_HOST;
+const primaryMarketingHost = parseHost(process.env.ROBOSHARE_PRIMARY_MARKETING_HOST, DEFAULT_PRIMARY_MARKETING_HOST);
+const appHost = parseHost(process.env.ROBOSHARE_APP_HOST, DEFAULT_APP_HOST);
 
 const isAppOnlyPath = (pathname: string) =>
   pathname === "/operator" ||
