@@ -86,6 +86,8 @@ Tracking issue: `ROB-134`.
 Command:
 
 - `yarn robomata:testnet-smoke`
+- `yarn robomata:tokenization-api-test`, for local API-level validation of the
+  submission-to-tokenization transition without a live EVM wallet signature
 
 The smoke command starts the local app on an isolated port, creates a temporary
 partner API signer, uses an ignored temporary submission file, uploads evidence
@@ -102,6 +104,9 @@ Required environment:
   borrowing-base-to-tokenization path
 - `NEXT_PUBLIC_ROBOMATA_TOKENIZATION_ENABLED=true`, when validating the
   tokenization controls or tokenized facility dashboard assets
+- `ROBOMATA_TOKENIZATION_MOCK_METADATA_ENABLED=true`, only for local API smoke
+  tests that should avoid live IPFS/Pinata uploads while still producing stable
+  metadata URIs
 - `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES`, set by the smoke script to the
   temporary randomly generated local partner signer because this command runs
   `next dev` and intentionally exercises the development-only API allowlist

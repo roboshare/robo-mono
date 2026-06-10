@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import "server-only";
 import { encodeAbiParameters, keccak256, parseAbiParameters, parseUnits } from "viem";
 import type {
@@ -14,6 +15,7 @@ const DEFAULT_REVENUE_SHARE_BPS = 5_000;
 const DEFAULT_TARGET_YIELD_BPS = 1_000;
 const DEFAULT_MATURITY_MONTHS = 36;
 const DEFAULT_TOKEN_PRICE = 1;
+const MOCK_IPFS_CID_PREFIX = "mock-tokenization-";
 
 type TokenizationTermsInput = Partial<{
   offeringLimitCents: unknown;
@@ -189,6 +191,11 @@ export function deriveFacilityCommitment(submission: FacilitySubmission): `0x${s
 }
 
 async function uploadJsonToIpfs(data: Record<string, unknown>, filename: string): Promise<string> {
+  if (process.env.ROBOMATA_TOKENIZATION_MOCK_METADATA_ENABLED === "true" && process.env.NODE_ENV !== "production") {
+    const digest = createHash("sha256").update(JSON.stringify({ filename, data })).digest("hex");
+    return `ipfs://${MOCK_IPFS_CID_PREFIX}${digest.slice(0, 32)}`;
+  }
+
   const file = new File([JSON.stringify(data, null, 2)], filename, { type: "application/json" });
   const formData = new FormData();
   formData.append("file", file, filename);

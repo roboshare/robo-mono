@@ -205,6 +205,9 @@ Use the flags as a matrix:
   closed with `404` even when the core submission workflow is enabled.
 - `NEXT_PUBLIC_ROBOMATA_TOKENIZATION_ENABLED=true` exposes the partner-facing
   tokenization controls and tokenized facility assets in the dashboard.
+- `ROBOMATA_TOKENIZATION_MOCK_METADATA_ENABLED=true` is a local-only test helper
+  for deterministic tokenization metadata URIs. It is ignored in production and
+  should not be used for shared previews or release candidates.
 - `POSTGRES_URL` is required when the server workflow is enabled outside local
   development. `ROBOMATA_SUBMISSIONS_FILE=/local/path/submissions.json` is only
   a local-development fallback and must not be used for shared previews or

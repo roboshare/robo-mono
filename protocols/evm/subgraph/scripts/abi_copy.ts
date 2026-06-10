@@ -222,16 +222,15 @@ async function main() {
 
   // Parse the JSON string
   const deployedContracts = parseAndCorrectJSON(jsonString);
-  const targetContracts = deployedContracts[chainId];
+  const targetContracts = deployedContracts[chainId] ?? {};
 
-  if (!targetContracts) {
+  if (Object.keys(targetContracts).length === 0) {
     const availableChainIds = Object.keys(deployedContracts)
       .filter(key => Number.isInteger(Number.parseInt(key, 10)))
       .join(", ");
     console.error(
       `No contracts found for chain ${chainId}. Available chain ids in deployedContracts.ts: ${availableChainIds || "none"}`
     );
-    return;
   }
 
   for (const contractName in targetContracts) {
@@ -253,6 +252,32 @@ async function main() {
         ...contractObject,
         abi,
         startBlock: startBlockByAddress[contractObject.address.toLowerCase()],
+      },
+      networkName
+    );
+  }
+
+  const graphConfig = JSON.parse(fs.readFileSync(`${GRAPH_DIR}/networks.json`, "utf8")) as Record<
+    string,
+    Record<string, { address?: string; startBlock?: number }>
+  >;
+  const networkConfig = graphConfig[networkName] ?? {};
+  for (const [contractName, contractConfig] of Object.entries(networkConfig)) {
+    if (targetContracts[contractName] || !contractConfig.address) {
+      continue;
+    }
+
+    const abi = loadAbiFromForgeArtifact(contractName);
+    if (!abi) {
+      continue;
+    }
+
+    publishContract(
+      contractName,
+      {
+        address: contractConfig.address,
+        abi,
+        startBlock: contractConfig.startBlock,
       },
       networkName
     );
