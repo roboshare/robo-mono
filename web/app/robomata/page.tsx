@@ -106,15 +106,15 @@ const RobomataPage = () => {
 
               <div className="flex flex-wrap gap-3">
                 <Link
-                  href={isSubmissionWorkflowAvailable ? "/partner/submissions" : "/partner"}
+                  href={isSubmissionWorkflowAvailable ? "/operator/submissions" : "/operator"}
                   className="btn btn-primary rounded-full"
                 >
-                  {isSubmissionWorkflowAvailable ? "Start a borrowing-base submission" : "Request partner access"}
+                  {isSubmissionWorkflowAvailable ? "Start a borrowing-base submission" : "Launch operator workflow"}
                   <ArrowRightIcon className="h-4 w-4" />
                 </Link>
                 {isSubmissionWorkflowAvailable ? (
-                  <Link href="/partner" className="btn btn-outline rounded-full">
-                    Open partner dashboard
+                  <Link href="/operator" className="btn btn-outline rounded-full">
+                    Open operator dashboard
                   </Link>
                 ) : null}
               </div>

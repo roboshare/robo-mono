@@ -1,154 +1,165 @@
-"use client";
-
-import { useEffect, useMemo } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { foundry } from "viem/chains";
-import { useChainId, useChains, useSwitchChain } from "wagmi";
 import {
   ArrowRightIcon,
-  ArrowsRightLeftIcon,
-  BuildingStorefrontIcon,
-  CurrencyDollarIcon,
-  UserGroupIcon,
+  BanknotesIcon,
+  BuildingLibraryIcon,
+  ChartBarSquareIcon,
+  ClipboardDocumentCheckIcon,
+  CubeTransparentIcon,
+  ShieldCheckIcon,
 } from "@heroicons/react/24/outline";
-import { useSelectedNetwork } from "~~/hooks/scaffold-eth";
-import { getSubgraphQueryUrl } from "~~/utils/subgraph";
 
-const HomePage = () => {
-  const router = useRouter();
-  const walletChainId = useChainId();
-  const selectedNetwork = useSelectedNetwork(walletChainId);
-  const chains = useChains();
-  const { switchChain } = useSwitchChain();
+const productFlow = [
+  {
+    label: "Robomata",
+    title: "Operators become financeable",
+    copy: "Fleet operators turn receivables, evidence, exceptions, and borrowing-base output into lender-ready packets.",
+    href: "/products/robomata",
+  },
+  {
+    label: "Robolend",
+    title: "Capital providers review and monitor",
+    copy: "Credit teams get a cleaner path to packet review, freshness monitoring, and portfolio oversight. Coming soon.",
+    href: "/products/robolend",
+  },
+  {
+    label: "Markets",
+    title: "Standardized exposure can distribute",
+    copy: "Committed facilities can move downstream into tokenized exposure and market distribution when ready.",
+    href: "/markets",
+  },
+];
 
-  const activeChain = chains.find(chain => chain.id === selectedNetwork.id) ?? selectedNetwork;
-  const hasMarketsSupport = !!getSubgraphQueryUrl(selectedNetwork.id);
-  const supportedChains = useMemo(
-    () =>
-      chains
-        .filter(chain => chain.id !== foundry.id && !!getSubgraphQueryUrl(chain.id))
-        .sort((left, right) => {
-          if (left.id === selectedNetwork.id) return -1;
-          if (right.id === selectedNetwork.id) return 1;
-          return 0;
-        }),
-    [chains, selectedNetwork.id],
-  );
+const proofPoints = [
+  {
+    icon: ClipboardDocumentCheckIcon,
+    title: "Borrowing-base packets",
+    copy: "Eligibility, reserves, advance rates, and exceptions are prepared from operator-controlled submissions.",
+  },
+  {
+    icon: ShieldCheckIcon,
+    title: "Controlled evidence rails",
+    copy: "Sensitive source files stay permissioned while commitments can support audit, monitoring, and packet freshness.",
+  },
+  {
+    icon: CubeTransparentIcon,
+    title: "Programmable asset state",
+    copy: "Financeable facilities can become standardized primitives for tokenization and downstream capital access.",
+  },
+];
 
-  useEffect(() => {
-    if (hasMarketsSupport) {
-      router.replace("/markets");
-    }
-  }, [hasMarketsSupport, router]);
-
-  return (
-    <div className="flex flex-1 justify-center px-6 py-10 sm:py-14">
-      <div className="w-full max-w-6xl space-y-8">
-        <section className="overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 shadow-xl shadow-base-300/40">
-          <div className="grid gap-8 px-6 py-8 sm:px-8 sm:py-10 lg:grid-cols-[1.3fr_0.9fr] lg:px-10">
-            <div className="space-y-6">
-              <div className="space-y-3">
-                <p className="text-sm font-semibold uppercase tracking-[0.3em] text-base-content/50">Roboshare</p>
-                <h1 className="max-w-3xl text-4xl font-black tracking-tight text-base-content sm:text-5xl">
-                  Revenue-stream markets for investors and partners.
-                </h1>
-                <p className="max-w-2xl text-lg leading-relaxed text-base-content/70">
-                  Browse live offerings, acquire claim units tied to asset revenue streams, collect payouts, and manage
-                  partner inventory from one app. Sign in from the header to use an embedded wallet, or continue with
-                  your existing wallet.
-                </p>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-3xl border border-base-300 bg-base-200/60 p-4">
-                  <BuildingStorefrontIcon className="h-6 w-6 text-primary" />
-                  <div className="mt-3 text-sm font-semibold text-base-content">Explore offerings</div>
-                  <p className="mt-1 text-sm text-base-content/70">
-                    Primary pools and secondary listings are available from the Markets view.
-                  </p>
-                </div>
-                <div className="rounded-3xl border border-base-300 bg-base-200/60 p-4">
-                  <CurrencyDollarIcon className="h-6 w-6 text-primary" />
-                  <div className="mt-3 text-sm font-semibold text-base-content">Claim payouts</div>
-                  <p className="mt-1 text-sm text-base-content/70">
-                    Holdings surface claimable earnings, settlement proceeds, and batch payout actions.
-                  </p>
-                </div>
-                <div className="rounded-3xl border border-base-300 bg-base-200/60 p-4">
-                  <UserGroupIcon className="h-6 w-6 text-primary" />
-                  <div className="mt-3 text-sm font-semibold text-base-content">Run partner flows</div>
-                  <p className="mt-1 text-sm text-base-content/70">
-                    Authorized partners can register assets, launch pools, distribute earnings, and settle assets.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <Link href="/markets" className="btn btn-primary rounded-full sm:min-w-44">
-                  Open Markets
-                  <ArrowRightIcon className="h-4 w-4" />
-                </Link>
-                <Link href="/partner" className="btn btn-outline rounded-full sm:min-w-44">
-                  Partner Dashboard
-                </Link>
-              </div>
+const HomePage = () => (
+  <div className="flex flex-1 justify-center px-4 py-8 sm:px-6 sm:py-12">
+    <div className="w-full max-w-7xl space-y-10">
+      <section className="overflow-hidden rounded-[2.25rem] border border-base-300 bg-base-100 shadow-xl shadow-base-300/40">
+        <div className="grid gap-8 px-6 py-9 sm:px-9 sm:py-12 lg:grid-cols-[1.12fr_0.88fr] lg:px-12">
+          <div className="space-y-7">
+            <div className="space-y-4">
+              <p className="text-sm font-semibold uppercase tracking-[0.32em] text-base-content/50">Roboshare</p>
+              <h1 className="max-w-4xl text-4xl font-black tracking-tight text-base-content sm:text-6xl">
+                Credit rails for productive assets.
+              </h1>
+              <p className="max-w-3xl text-lg leading-relaxed text-base-content/70">
+                Roboshare starts where private credit still breaks down: operators need cleaner evidence, lenders need
+                better packets, and markets need standardized financial objects before exposure can distribute.
+              </p>
             </div>
 
-            <div className="rounded-[1.75rem] border border-base-300 bg-base-200/70 p-5 sm:p-6">
-              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">Environment</p>
-              <div className="mt-4 space-y-4">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">
-                    Selected Network
-                  </div>
-                  <div className="mt-1 text-2xl font-bold text-base-content">{activeChain.name}</div>
-                  <p className="mt-2 text-sm text-base-content/70">
-                    {hasMarketsSupport
-                      ? "Roboshare is configured on this network. The app should forward you to Markets automatically."
-                      : "This network does not have a configured Roboshare subgraph yet. Switch to a supported network to continue."}
-                  </p>
-                </div>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Link href="/products/robomata" className="btn btn-primary rounded-full sm:min-w-48">
+                Explore Robomata
+                <ArrowRightIcon className="h-4 w-4" />
+              </Link>
+              <Link href="/operator/submissions" className="btn btn-outline rounded-full sm:min-w-48">
+                Launch App
+              </Link>
+            </div>
 
-                <div className="rounded-2xl border border-base-300 bg-base-100/80 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">
-                    Current Focus
-                  </div>
-                  <p className="mt-2 text-sm leading-relaxed text-base-content/70">
-                    The app is currently centered on testnet investor and partner flows. Mainnet routing and mainnet
-                    subgraphs can be added later without changing the current navigation model.
-                  </p>
-                </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {proofPoints.map(item => {
+                const Icon = item.icon;
 
-                {supportedChains.length > 0 ? (
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">
-                      Supported Networks
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-3">
-                      {supportedChains.map(chain => (
-                        <button
-                          key={chain.id}
-                          type="button"
-                          className={`btn rounded-full ${
-                            chain.id === selectedNetwork.id ? "btn-primary" : "btn-outline"
-                          }`}
-                          onClick={() => switchChain({ chainId: chain.id })}
-                        >
-                          <ArrowsRightLeftIcon className="h-4 w-4" />
-                          {chain.name}
-                        </button>
-                      ))}
-                    </div>
+                return (
+                  <div key={item.title} className="rounded-3xl border border-base-300 bg-base-200/60 p-4">
+                    <Icon className="h-6 w-6 text-primary" />
+                    <h2 className="mt-3 text-sm font-bold text-base-content">{item.title}</h2>
+                    <p className="mt-2 text-sm leading-relaxed text-base-content/70">{item.copy}</p>
                   </div>
-                ) : null}
-              </div>
+                );
+              })}
             </div>
           </div>
-        </section>
-      </div>
+
+          <div className="rounded-[1.75rem] border border-base-300 bg-base-200/70 p-5 sm:p-6">
+            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">System Flow</p>
+            <div className="mt-5 space-y-4">
+              {productFlow.map((item, index) => (
+                <Link
+                  key={item.label}
+                  href={item.href}
+                  className="group block rounded-2xl border border-base-300 bg-base-100/85 p-4 transition hover:border-primary/40 hover:bg-base-100"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-black text-primary">
+                      {index + 1}
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">
+                        {item.label}
+                      </div>
+                      <h3 className="mt-1 text-lg font-black tracking-tight text-base-content">{item.title}</h3>
+                      <p className="mt-2 text-sm leading-relaxed text-base-content/70">{item.copy}</p>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-5 lg:grid-cols-3">
+        <div className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
+          <BanknotesIcon className="h-7 w-7 text-primary" />
+          <h2 className="mt-4 text-2xl font-black tracking-tight text-base-content">For Operators</h2>
+          <p className="mt-3 text-sm leading-relaxed text-base-content/70">
+            Create a repeatable financing workflow around receivables, asset evidence, exception handling, lender
+            packets, and facility monitoring.
+          </p>
+          <Link href="/products/robomata" className="btn btn-ghost mt-5 rounded-full px-0 text-primary">
+            See Robomata
+            <ArrowRightIcon className="h-4 w-4" />
+          </Link>
+        </div>
+
+        <div className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
+          <BuildingLibraryIcon className="h-7 w-7 text-primary" />
+          <h2 className="mt-4 text-2xl font-black tracking-tight text-base-content">For Capital Providers</h2>
+          <p className="mt-3 text-sm leading-relaxed text-base-content/70">
+            Robolend will focus on reviewing lender-ready packets, monitoring evidence freshness, and organizing credit
+            exposure. It is not live yet.
+          </p>
+          <Link href="/products/robolend" className="btn btn-ghost mt-5 rounded-full px-0 text-primary">
+            Preview Robolend
+            <ArrowRightIcon className="h-4 w-4" />
+          </Link>
+        </div>
+
+        <div className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
+          <ChartBarSquareIcon className="h-7 w-7 text-primary" />
+          <h2 className="mt-4 text-2xl font-black tracking-tight text-base-content">For Markets</h2>
+          <p className="mt-3 text-sm leading-relaxed text-base-content/70">
+            Markets are the distribution layer after a facility is structured, committed, and tokenized. The public
+            marketplace remains downstream from financeability.
+          </p>
+          <Link href="/markets" className="btn btn-ghost mt-5 rounded-full px-0 text-primary">
+            View markets
+            <ArrowRightIcon className="h-4 w-4" />
+          </Link>
+        </div>
+      </section>
     </div>
-  );
-};
+  </div>
+);
 
 export default HomePage;

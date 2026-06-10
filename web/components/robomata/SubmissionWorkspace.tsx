@@ -697,16 +697,16 @@ export const SubmissionWorkspace = ({
           <h1 className="text-3xl font-black tracking-tight text-base-content">No submission available</h1>
           <p className="mt-4 text-base-content/70">
             {readOnly
-              ? "Create a borrowing-base submission from the partner workflow first."
+              ? "Create a borrowing-base submission from the operator workflow first."
               : "Create a submission from the submissions index first."}
           </p>
           <div className="mt-6 flex justify-center gap-3">
-            <Link href="/partner/submissions" className="btn btn-primary rounded-full">
-              Open partner submissions
+            <Link href="/operator/submissions" className="btn btn-primary rounded-full">
+              Open operator submissions
             </Link>
             {!readOnly ? null : (
-              <Link href="/partner" className="btn btn-outline rounded-full">
-                Return to partner dashboard
+              <Link href="/operator" className="btn btn-outline rounded-full">
+                Return to operator dashboard
               </Link>
             )}
           </div>
@@ -737,8 +737,8 @@ export const SubmissionWorkspace = ({
             </p>
             <div className="mt-5 flex flex-wrap gap-3">
               {readOnly ? (
-                <Link href={`/partner/submissions/${submission.id}`} className="btn btn-primary rounded-full">
-                  Manage in partner workflow
+                <Link href={`/operator/submissions/${submission.id}`} className="btn btn-primary rounded-full">
+                  Manage in operator workflow
                 </Link>
               ) : isCommitted ? (
                 <div className="rounded-2xl border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
