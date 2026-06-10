@@ -100,10 +100,14 @@ export type SharedLenderPacketView = {
   };
 };
 
-function linkedExceptionIdsForEvidence(submission: FacilitySubmission, evidenceId: string): string[] {
-  return submission.exceptions
+function linkedExceptionIdsForEvidence(exceptions: SubmissionException[], evidenceId: string): string[] {
+  return exceptions
     .filter(exception => exception.kind === "evidence" && exception.itemId === evidenceId)
     .map(exception => exception.id);
+}
+
+function observationIdForEvidence(evidenceId: string): string {
+  return `obs_${evidenceId}`;
 }
 
 export function buildSharedLenderPacketView({
@@ -123,6 +127,13 @@ export function buildSharedLenderPacketView({
     throw new Error("Submission does not have lender packet output.");
   }
 
+  const exceptions = run?.exceptions ?? submission.exceptions;
+  const evidence = packetManifest
+    ? submission.evidence.filter(entry =>
+        packetManifest.evidenceObservationIds.includes(observationIdForEvidence(entry.id)),
+      )
+    : submission.evidence;
+
   return {
     shareLink: {
       id: shareLink.id,
@@ -141,14 +152,14 @@ export function buildSharedLenderPacketView({
     },
     borrowingBase: run?.borrowingBase ?? submission.computation.borrowingBase,
     lenderPacket: packetManifest?.lenderPacket ?? submission.computation.lenderPacket,
-    exceptions: (run?.exceptions ?? submission.exceptions).map(exception => ({
+    exceptions: exceptions.map(exception => ({
       id: exception.id,
       severity: exception.severity,
       title: exception.title,
       message: exception.message,
       actionStatus: exception.actionStatus,
     })),
-    evidence: submission.evidence.map(evidence => ({
+    evidence: evidence.map(evidence => ({
       id: evidence.id,
       filename: evidence.filename,
       scope: evidence.scope,
@@ -156,7 +167,7 @@ export function buildSharedLenderPacketView({
       storageBackend: evidence.storageBackend,
       encryptionBackend: evidence.encryptionBackend,
       status: evidence.status,
-      linkedExceptionIds: linkedExceptionIdsForEvidence(submission, evidence.id),
+      linkedExceptionIds: linkedExceptionIdsForEvidence(exceptions, evidence.id),
       advanced: {
         walrusBlobId: evidence.walrusBlobId,
         walrusEventId: evidence.walrusEventId,

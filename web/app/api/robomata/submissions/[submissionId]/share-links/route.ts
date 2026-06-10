@@ -148,7 +148,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     }
 
     const privyUser = await getPrivyUserFromRequest(request).catch(() => null);
-    const metadata = await buildShareLinkMonitoringMetadata(submission).catch(() => undefined);
+    const metadata = await buildShareLinkMonitoringMetadata(submission);
     const { shareLink, token } = await getSubmissionShareLinkStore().create({
       submission,
       creatorPartnerAddress: partnerAddress,

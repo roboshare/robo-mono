@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Transaction } from "@mysten/sui/transactions";
-import { isRobomataFacilityMonitoringEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
+import {
+  isRobomataFacilityMonitoringEnabled,
+  isRobomataWorkflowMutationEnabled,
+  isRobomataWorkflowServerEnabled,
+} from "~~/lib/featureFlags";
 import { getFacilityMonitoringStore } from "~~/lib/robomata/server/facilityMonitoringStore";
 import { requirePartnerAddress, requireSubmissionAccess } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
@@ -32,6 +36,11 @@ function requireRobomataMonitoring() {
   }
 
   return null;
+}
+
+function requireRobomataMonitoringMutation() {
+  if (isRobomataWorkflowMutationEnabled()) return null;
+  return NextResponse.json({ error: "Robomata submission writes are not enabled." }, { status: 403 });
 }
 
 async function readVerifyBody(request: NextRequest) {
@@ -140,6 +149,8 @@ export async function GET(request: NextRequest, context: { params: Promise<{ sub
 export async function POST(request: NextRequest, context: { params: Promise<{ submissionId: string }> }) {
   const featureError = requireRobomataMonitoring();
   if (featureError) return featureError;
+  const mutationError = requireRobomataMonitoringMutation();
+  if (mutationError) return mutationError;
 
   const partnerAddress = await requirePartnerAddress(request);
   if (partnerAddress instanceof NextResponse) return partnerAddress;
@@ -170,6 +181,9 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
   const rootCommit = projection.suiRootCommits.find(root => root.id === rootCommitId);
   if (!rootCommit) {
     return NextResponse.json({ error: "Sui root commit was not found for this submission." }, { status: 404 });
+  }
+  if (rootCommit.status === "verified") {
+    return NextResponse.json({ suiRootCommit: rootCommit, suiRootStatus: "verified" });
   }
 
   if (mode === "server_commit") {
@@ -204,16 +218,22 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       });
     } catch (error) {
       const updated = await store.updateSuiRootCommit(rootCommit.id, {
-        errorMessage: error instanceof Error ? error.message : "Sui monitoring root commit failed.",
-        status: "failed",
+        errorMessage:
+          error instanceof Error
+            ? `${error.message} Reconcile Sui events before retrying.`
+            : "Sui monitoring root commit needs Sui event reconciliation before retrying.",
+        status: "retryable",
       });
       return NextResponse.json(
         {
-          error: error instanceof Error ? error.message : "Sui monitoring root commit failed.",
+          error:
+            error instanceof Error
+              ? `${error.message} Reconcile Sui events before retrying.`
+              : "Sui monitoring root commit needs Sui event reconciliation before retrying.",
           suiRootCommit: updated ?? committing,
-          suiRootStatus: "failed",
+          suiRootStatus: "retryable",
         },
-        { status: 500 },
+        { status: 202 },
       );
     }
   }
@@ -243,17 +263,17 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
 
     const updated = await store.updateSuiRootCommit(rootCommit.id, {
       errorMessage: txDigest
-        ? `Transaction ${txDigest} did not include a matching EvidenceCommitted event for ${rootCommit.label}.`
+        ? `Sui transaction ${txDigest} is not indexed with a matching EvidenceCommitted event yet. Retry verification shortly.`
         : `No matching EvidenceCommitted event is indexed yet for ${rootCommit.label}.`,
-      status: txDigest ? "mismatch" : "retryable",
+      status: "retryable",
       txDigest,
     });
     return NextResponse.json(
       {
         suiRootCommit: updated,
-        suiRootStatus: txDigest ? "mismatch" : "retryable",
+        suiRootStatus: "retryable",
       },
-      { status: txDigest ? 409 : 202 },
+      { status: 202 },
     );
   } catch (error) {
     const failed = isFailedSuiTransactionError(error);

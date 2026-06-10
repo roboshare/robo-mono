@@ -99,7 +99,7 @@ export async function buildResolvedSharedLenderPacketView(input: {
     run,
     monitoring: {
       ...binding,
-      currentPacketFreshnessStatus: projection.latestPacket?.freshnessStatus,
+      currentPacketFreshnessStatus: packetManifest.freshnessStatus,
       pinnedAtShare: true,
     },
   });

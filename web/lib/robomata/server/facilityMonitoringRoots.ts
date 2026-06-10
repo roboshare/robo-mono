@@ -48,6 +48,12 @@ function normalizeObservationDigest(observation: FacilityObservation): Canonical
   };
 }
 
+function canonicalPacketMetadata(packet: PacketManifest): CanonicalJson {
+  return Object.fromEntries(
+    Object.entries(packet.publicMetadata).filter(([key]) => key !== "packetRootDigest"),
+  ) as CanonicalJson;
+}
+
 export function buildEvidenceBatchRootPayload(input: {
   facilityId: string;
   generatedAt: string;
@@ -108,7 +114,7 @@ export function buildPacketManifestRootPayload(packet: PacketManifest): SuiRootP
     freshnessStatus: packet.freshnessStatus,
     kind: "packet_manifest",
     packetManifestId: packet.id,
-    publicMetadata: packet.publicMetadata as CanonicalJson,
+    publicMetadata: canonicalPacketMetadata(packet),
     runDigest: packet.runDigest,
     runId: packet.runId,
     version: ROBOMATA_MONITORING_ROOT_VERSION,
