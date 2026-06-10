@@ -777,7 +777,11 @@ function createPostgresStore(): FacilityMonitoringStore {
         WHERE facility_id = ${facility.id}
         ORDER BY created_at DESC;
       `) as Array<{ payload: SuiRootCommit }>;
-      const useStoredArtifacts = Boolean(submission.computation);
+      const useStoredArtifacts = Boolean(
+        submission.computation ||
+          submission.facilityMonitoring?.latestRunId ||
+          submission.facilityMonitoring?.latestPacketId,
+      );
 
       return buildStoredProjection({
         fallback,

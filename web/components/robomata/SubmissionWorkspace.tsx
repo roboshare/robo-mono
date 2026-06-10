@@ -220,7 +220,15 @@ export const SubmissionWorkspace = ({
   const canShowTokenization = Boolean(
     isRobomataTokenizationClientEnabled() && !readOnly && submission?.evidenceCommit.status === "committed",
   );
-  const isTokenized = tokenization?.status === "registered" || tokenization?.status === "offering_created";
+  const isTokenizationVerificationPending = tokenization?.status === "registered";
+  const isTokenized = tokenization?.status === "offering_created";
+  const canRetryTokenizationVerification = Boolean(
+    isTokenizationVerificationPending &&
+      tokenization?.evm.registryAddress &&
+      tokenization.evm.assetId &&
+      tokenization.evm.revenueTokenId &&
+      tokenization.evm.txHash,
+  );
 
   const loadSubmission = useCallback(async () => {
     setIsLoading(true);
@@ -524,6 +532,52 @@ export const SubmissionWorkspace = ({
       notification.success("Facility tokenization completed.");
     } catch (error) {
       notification.error(error instanceof Error ? error.message : "Facility tokenization failed.");
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const retryTokenizationVerification = async () => {
+    if (!submission || !canRetryTokenizationVerification || !tokenization) return;
+
+    setIsBusy(true);
+    try {
+      const completePath = `/api/robomata/submissions/${submission.id}/tokenization/complete`;
+      const completeHeaders = new Headers({ "content-type": "application/json" });
+      const completeAuthHeaders = await getAuthHeaders({
+        chainId: selectedNetwork.id,
+        method: "POST",
+        path: completePath,
+        signerAddress,
+      });
+      Object.entries(completeAuthHeaders).forEach(([key, value]) => completeHeaders.set(key, value));
+      const completeResponse = await fetch(completePath, {
+        method: "POST",
+        headers: completeHeaders,
+        body: JSON.stringify({
+          registryAddress: tokenization.evm.registryAddress,
+          assetId: tokenization.evm.assetId,
+          revenueTokenId: tokenization.evm.revenueTokenId,
+          txHash: tokenization.evm.txHash,
+          assetMetadataUri: tokenization.evm.assetMetadataUri,
+          revenueTokenMetadataUri: tokenization.evm.revenueTokenMetadataUri,
+        }),
+      });
+      const completePayload = (await completeResponse.json().catch(() => ({}))) as {
+        submission?: FacilitySubmission;
+        error?: string;
+      };
+      if (!completeResponse.ok || !completePayload.submission) {
+        throw new Error(completePayload.error ?? "Failed to verify tokenization result.");
+      }
+      setSubmission(completePayload.submission);
+      if (completePayload.submission.tokenization.status === "registered") {
+        notification.info("Facility registration is still pending server verification.");
+        return;
+      }
+      notification.success("Facility tokenization completed.");
+    } catch (error) {
+      notification.error(error instanceof Error ? error.message : "Facility tokenization verification failed.");
     } finally {
       setIsBusy(false);
     }
@@ -1368,14 +1422,20 @@ export const SubmissionWorkspace = ({
               </div>
               <div className="mt-4 rounded-[1.5rem] border border-base-300 bg-base-200/50 p-4">
                 <div className="text-sm font-semibold text-base-content">
-                  {isTokenized ? "Facility offering created" : "Committed borrowing base is ready for tokenization"}
+                  {isTokenized
+                    ? "Facility offering created"
+                    : isTokenizationVerificationPending
+                      ? "Facility registration is pending verification"
+                      : "Committed borrowing base is ready for tokenization"}
                 </div>
                 <div className="mt-2 text-sm text-base-content/70">
                   {isTokenized
                     ? `Asset ${tokenization?.evm.assetId} ${
                         tokenization?.evm.revenueTokenId ? `· revenue token ${tokenization.evm.revenueTokenId}` : ""
                       }`
-                    : "Create a facility-level asset and paired revenue-token offering from this committed submission."}
+                    : isTokenizationVerificationPending
+                      ? "The EVM transaction was submitted, but the server has not verified the registry events yet. Retry verification before submitting another registration."
+                      : "Create a facility-level asset and paired revenue-token offering from this committed submission."}
                 </div>
                 {tokenization?.anchors.rootDigest ? (
                   <div className="mt-3 space-y-1 text-xs text-base-content/60">
@@ -1388,7 +1448,7 @@ export const SubmissionWorkspace = ({
                     ) : null}
                   </div>
                 ) : null}
-                {isTokenized ? (
+                {isTokenized || isTokenizationVerificationPending ? (
                   <div className="mt-4 space-y-1 text-xs text-base-content/60">
                     {tokenization?.evm.registryAddress ? (
                       <div className="break-all">Registry: {tokenization.evm.registryAddress}</div>
@@ -1398,6 +1458,17 @@ export const SubmissionWorkspace = ({
                     ) : null}
                     {tokenization?.evm.assetMetadataUri ? (
                       <div className="break-all">Asset metadata: {tokenization.evm.assetMetadataUri}</div>
+                    ) : null}
+                    {isTokenizationVerificationPending ? (
+                      <div className="pt-3">
+                        <button
+                          className="btn btn-outline btn-sm rounded-full"
+                          onClick={retryTokenizationVerification}
+                          disabled={isBusy || !canRetryTokenizationVerification}
+                        >
+                          Retry server verification
+                        </button>
+                      </div>
                     ) : null}
                   </div>
                 ) : tokenization?.status === "not_started" ? (
