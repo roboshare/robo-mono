@@ -314,6 +314,24 @@ function getConfiguredChain(chainId: number | undefined): Chain | undefined {
   return scaffoldConfig.targetNetworks.find(targetNetwork => targetNetwork.id === chainId) as Chain | undefined;
 }
 
+function getEnvFacilityRegistryAddress(chainId: number | undefined): string | undefined {
+  if (!chainId) return undefined;
+
+  const directAddress = process.env[`ROBOMATA_FACILITY_REGISTRY_ADDRESS_${chainId}`]?.trim();
+  if (directAddress && isAddress(directAddress)) return directAddress;
+
+  const rawAddressMap = process.env.ROBOMATA_FACILITY_REGISTRY_ADDRESSES_JSON?.trim();
+  if (!rawAddressMap) return undefined;
+
+  try {
+    const addressMap = JSON.parse(rawAddressMap) as Record<string, unknown>;
+    const mappedAddress = addressMap[String(chainId)];
+    return typeof mappedAddress === "string" && isAddress(mappedAddress) ? mappedAddress : undefined;
+  } catch {
+    throw new Error("ROBOMATA_FACILITY_REGISTRY_ADDRESSES_JSON must be valid JSON.");
+  }
+}
+
 function getTokenizationPublicClient(chainId: number | undefined) {
   const chain = getConfiguredChain(chainId);
   if (!chain) return undefined;
@@ -336,6 +354,9 @@ function getTokenizationPublicClient(chainId: number | undefined) {
 function getConfiguredFacilityRegistryAddress(chainId: number | undefined): string {
   const deployedRegistryAddress = getDeployedContract(chainId, "FacilityRegistry")?.address;
   if (deployedRegistryAddress) return deployedRegistryAddress;
+
+  const envRegistryAddress = getEnvFacilityRegistryAddress(chainId);
+  if (envRegistryAddress) return envRegistryAddress;
 
   const localMockRegistryAddress = process.env.ROBOMATA_TOKENIZATION_MOCK_REGISTRY_ADDRESS?.trim();
   if (process.env.NODE_ENV !== "production" && localMockRegistryAddress && isAddress(localMockRegistryAddress)) {
@@ -661,6 +682,12 @@ export async function prepareTokenization(input: {
     },
   };
 
+  const assetValueUnits = centsToUnits(terms.offeringLimitCents);
+  const tokenPriceUnits = tokenPriceToUnits(terms.tokenPrice);
+  if (tokenPriceUnits <= 0n) throw new Error("tokenPrice must produce a positive payment-token amount.");
+  const requestedSupply = assetValueUnits / tokenPriceUnits;
+  if (requestedSupply <= 0n) throw new Error("offeringLimitCents must be at least one token at the configured price.");
+  const maturityTimestamp = BigInt(Math.floor(Date.now() / 1000) + terms.maturityMonths * 30 * 24 * 60 * 60);
   const [assetMetadataUri, revenueTokenMetadataUri] = await Promise.all([
     uploadJsonToIpfs(assetMetadata, `${input.submission.id}-asset-metadata.json`),
     uploadJsonToIpfs(revenueTokenMetadata, `${input.submission.id}-revenue-token-metadata.json`),
@@ -669,12 +696,6 @@ export async function prepareTokenization(input: {
     parseAbiParameters("bytes32 facilityCommitment, string assetMetadataURI, string revenueTokenMetadataURI"),
     [deriveFacilityCommitment(input.submission), assetMetadataUri, revenueTokenMetadataUri],
   );
-  const assetValueUnits = centsToUnits(terms.offeringLimitCents);
-  const tokenPriceUnits = tokenPriceToUnits(terms.tokenPrice);
-  if (tokenPriceUnits <= 0n) throw new Error("tokenPrice must produce a positive payment-token amount.");
-  const requestedSupply = assetValueUnits / tokenPriceUnits;
-  if (requestedSupply <= 0n) throw new Error("offeringLimitCents must be at least one token at the configured price.");
-  const maturityTimestamp = BigInt(Math.floor(Date.now() / 1000) + terms.maturityMonths * 30 * 24 * 60 * 60);
 
   return {
     assetMetadata,

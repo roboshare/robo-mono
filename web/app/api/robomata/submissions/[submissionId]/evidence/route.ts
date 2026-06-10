@@ -304,7 +304,11 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
 
     const saved = await saveEvidenceRecord({ evidence, partnerAddress, submissionId, store });
     if (isRobomataFacilityMonitoringEnabled()) {
-      await getFacilityMonitoringStore().syncEvidenceObservations(saved);
+      try {
+        await getFacilityMonitoringStore().syncEvidenceObservations(saved);
+      } catch (error) {
+        console.error("Failed to sync facility monitoring evidence observations.", error);
+      }
     }
     return NextResponse.json({ submission: saved, evidence });
   } catch (error) {

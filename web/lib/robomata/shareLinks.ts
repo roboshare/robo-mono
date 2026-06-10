@@ -123,7 +123,7 @@ export function buildSharedLenderPacketView({
   shareLink: SubmissionShareLink;
   submission: FacilitySubmission;
 }): SharedLenderPacketView {
-  if (!submission.computation) {
+  if (!submission.computation && (!packetManifest || !run)) {
     throw new Error("Submission does not have lender packet output.");
   }
 
@@ -150,8 +150,8 @@ export function buildSharedLenderPacketView({
       status: submission.status,
       updatedAt: submission.updatedAt,
     },
-    borrowingBase: run?.borrowingBase ?? submission.computation.borrowingBase,
-    lenderPacket: packetManifest?.lenderPacket ?? submission.computation.lenderPacket,
+    borrowingBase: run?.borrowingBase ?? submission.computation!.borrowingBase,
+    lenderPacket: packetManifest?.lenderPacket ?? submission.computation!.lenderPacket,
     exceptions: exceptions.map(exception => ({
       id: exception.id,
       severity: exception.severity,

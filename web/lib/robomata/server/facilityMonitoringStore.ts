@@ -174,8 +174,8 @@ function buildRunAndPacket(
     .replace(/^0x/, "")
     .replace(/[^0-9a-z]/gi, "")
     .slice(0, 12)}`;
-  const runId = submission.facilityMonitoring?.latestRunId ?? `run_${submission.id}_${artifactSuffix}`;
-  const packetId = submission.facilityMonitoring?.latestPacketId ?? `packet_${submission.id}_${artifactSuffix}`;
+  const runId = `run_${submission.id}_${artifactSuffix}`;
+  const packetId = `packet_${submission.id}_${artifactSuffix}`;
   const runWithoutMonitoringRoot: BorrowingBaseRun = {
     ...projection.latestRun,
     id: runId,
@@ -777,7 +777,11 @@ function createPostgresStore(): FacilityMonitoringStore {
         WHERE facility_id = ${facility.id}
         ORDER BY created_at DESC;
       `) as Array<{ payload: SuiRootCommit }>;
-      const useStoredArtifacts = Boolean(submission.computation);
+      const useStoredArtifacts = Boolean(
+        submission.computation ||
+          submission.facilityMonitoring?.latestRunId ||
+          submission.facilityMonitoring?.latestPacketId,
+      );
 
       return buildStoredProjection({
         fallback,

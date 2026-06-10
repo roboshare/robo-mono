@@ -93,13 +93,20 @@ export async function buildResolvedSharedLenderPacketView(input: {
   const run = projection.runHistory.find(candidate => candidate.id === binding.runId);
   if (!packetManifest || !run) return buildSharedLenderPacketView(input);
 
+  const currentPacketFreshnessStatus =
+    projection.latestPacket &&
+    projection.latestPacket.id !== packetManifest.id &&
+    projection.latestPacket.generatedAt > packetManifest.generatedAt
+      ? "superseded"
+      : packetManifest.freshnessStatus;
+
   return buildSharedLenderPacketView({
     ...input,
     packetManifest,
     run,
     monitoring: {
       ...binding,
-      currentPacketFreshnessStatus: packetManifest.freshnessStatus,
+      currentPacketFreshnessStatus,
       pinnedAtShare: true,
     },
   });
