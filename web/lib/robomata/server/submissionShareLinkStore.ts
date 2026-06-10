@@ -16,6 +16,7 @@ export type CreateSubmissionShareLinkInput = {
   submission: FacilitySubmission;
   creatorPartnerAddress: string;
   creatorPrivyUserId?: string;
+  metadata?: Record<string, string | number | boolean | null>;
   recipientLabel?: string;
   recipientEmail?: string;
   expiresAt: string;
@@ -194,6 +195,7 @@ function createShareLink(input: CreateSubmissionShareLinkInput, token: string): 
     createdAt,
     updatedAt: createdAt,
     accessCount: 0,
+    metadata: input.metadata,
   };
 }
 
@@ -254,6 +256,7 @@ function createFileStore(): SubmissionShareLinkStore {
       const event = createShareLinkEvent("packet_share_created", shareLink, {
         recipientLabel: shareLink.recipientLabel ?? null,
         expiresAt: shareLink.expiresAt,
+        ...(shareLink.metadata ?? {}),
       });
 
       await withFileStoreWriteLock(filePath, async () => {
@@ -345,6 +348,7 @@ function createPostgresStore(): SubmissionShareLinkStore {
       const event = createShareLinkEvent("packet_share_created", shareLink, {
         recipientLabel: shareLink.recipientLabel ?? null,
         expiresAt: shareLink.expiresAt,
+        ...(shareLink.metadata ?? {}),
       });
 
       await sql.begin(async tx => {

@@ -1,16 +1,15 @@
 #!/usr/bin/env node
-
-import { createHash, randomBytes } from "node:crypto";
+import { decodeSuiPrivateKey } from "@mysten/sui/cryptography";
+import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
+import { Secp256k1Keypair } from "@mysten/sui/keypairs/secp256k1";
+import { Secp256r1Keypair } from "@mysten/sui/keypairs/secp256r1";
 import { spawn } from "node:child_process";
+import { createHash, randomBytes } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { decodeSuiPrivateKey } from "@mysten/sui/cryptography";
-import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
-import { Secp256k1Keypair } from "@mysten/sui/keypairs/secp256k1";
-import { Secp256r1Keypair } from "@mysten/sui/keypairs/secp256r1";
 import { privateKeyToAccount } from "viem/accounts";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -34,10 +33,7 @@ function parseExportLine(line) {
 
   const [, key, rawValue] = match;
   let value = rawValue.trim();
-  if (
-    (value.startsWith('"') && value.endsWith('"')) ||
-    (value.startsWith("'") && value.endsWith("'"))
-  ) {
+  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
     value = value.slice(1, -1);
   }
 
@@ -210,7 +206,9 @@ async function fetchJsonExpectStatus(url, options, expectedStatus) {
     const response = await fetch(url, { ...options, signal: controller.signal });
     const payload = await response.json();
     if (response.status !== expectedStatus) {
-      throw new Error(`Expected ${url} to return ${expectedStatus}, got ${response.status}: ${JSON.stringify(payload)}`);
+      throw new Error(
+        `Expected ${url} to return ${expectedStatus}, got ${response.status}: ${JSON.stringify(payload)}`,
+      );
     }
     return payload;
   } finally {
@@ -288,9 +286,7 @@ async function verifyWalrusCiphertext({ evidence, plaintext }) {
     throw new Error("Expected Walrus aggregator URL on uploaded evidence.");
   }
 
-  const ciphertextBytes = await fetchBytes(
-    `${aggregatorUrl.replace(/\/$/, "")}/v1/blobs/${evidence.walrusBlobId}`,
-  );
+  const ciphertextBytes = await fetchBytes(`${aggregatorUrl.replace(/\/$/, "")}/v1/blobs/${evidence.walrusBlobId}`);
   const fetchedDigest = `0x${sha256Hex(ciphertextBytes)}`;
 
   if (fetchedDigest !== evidence.ciphertextDigest) {
@@ -375,7 +371,389 @@ async function getShareLinks({ authHeaders, submissionId }) {
   });
 }
 
-async function runShareLinkFlow({ authHeaders, submissionId, facilityName }) {
+async function getFacilityMonitoring({ authHeaders, submissionId }) {
+  const requestPath = `/api/robomata/submissions/${submissionId}/facility-monitoring`;
+  return fetchJson(`${baseUrl}${requestPath}`, {
+    method: "GET",
+    headers: await authHeaders("GET", requestPath),
+  });
+}
+
+async function getFacilityMonitoringSuiRoots({ authHeaders, submissionId }) {
+  const requestPath = `/api/robomata/submissions/${submissionId}/facility-monitoring/sui-roots`;
+  return fetchJson(`${baseUrl}${requestPath}`, {
+    method: "GET",
+    headers: await authHeaders("GET", requestPath),
+  });
+}
+
+async function verifyFacilityMonitoringDisabled({ authHeaders, submissionId }) {
+  const requestPath = `/api/robomata/submissions/${submissionId}/facility-monitoring`;
+  await fetchJsonExpectStatus(
+    `${baseUrl}${requestPath}`,
+    {
+      method: "GET",
+      headers: await authHeaders("GET", requestPath),
+    },
+    404,
+  );
+  return "closed";
+}
+
+async function verifyFacilityMonitoringEnabled({
+  authHeaders,
+  expectedFacilityStatus,
+  expectedObservationCount = 1,
+  expectedObservationStatuses,
+  expectedPacketManifestCount,
+  expectedPacketFreshness,
+  expectedRunHistoryCount,
+  expectedSuiRootCommitCount,
+  otherAuthHeaders,
+  submissionId,
+}) {
+  const payload = await getFacilityMonitoring({ authHeaders, submissionId });
+  const monitoring = payload.monitoring;
+  if (!monitoring?.facility?.id || !monitoring.facility.id.startsWith("fac_")) {
+    throw new Error("Expected facility monitoring projection to include a stable facility id.");
+  }
+  if (monitoring.facility.latestRunId !== monitoring.latestRun?.id) {
+    throw new Error("Expected facility monitoring projection to link facility and latest run ids.");
+  }
+  if (monitoring.latestPacket?.runId !== monitoring.latestRun?.id) {
+    throw new Error("Expected facility monitoring projection to pin the lender packet to the latest run.");
+  }
+  const expectedRuns = expectedRunHistoryCount ?? 1;
+  if (monitoring.runHistory.length !== expectedRuns) {
+    throw new Error(
+      `Expected smoke monitoring projection to retain ${expectedRuns} runs, got ${monitoring.runHistory.length}.`,
+    );
+  }
+  const expectedPackets = expectedPacketManifestCount ?? 1;
+  if (monitoring.packetManifests.length !== expectedPackets) {
+    throw new Error(
+      `Expected smoke monitoring projection to retain ${expectedPackets} packet manifests, got ${monitoring.packetManifests.length}.`,
+    );
+  }
+  if (expectedSuiRootCommitCount !== undefined && monitoring.suiRootCommits.length !== expectedSuiRootCommitCount) {
+    throw new Error(
+      `Expected smoke monitoring projection to retain ${expectedSuiRootCommitCount} Sui root commits, got ${monitoring.suiRootCommits.length}.`,
+    );
+  }
+  const expectedFreshness = expectedPacketFreshness ?? "fresh";
+  if (monitoring.freshnessStatus !== expectedFreshness) {
+    throw new Error(
+      `Expected smoke monitoring packet freshness to be ${expectedFreshness}, got ${monitoring.freshnessStatus}.`,
+    );
+  }
+  if (monitoring.observations.length !== expectedObservationCount) {
+    throw new Error(
+      `Expected smoke monitoring projection to include ${expectedObservationCount} observations, got ${monitoring.observations.length}.`,
+    );
+  }
+  if (monitoring.latestRun.inputObservationIds.length !== expectedObservationCount) {
+    throw new Error(
+      `Expected smoke monitoring run to include ${expectedObservationCount} observation inputs, got ${monitoring.latestRun.inputObservationIds.length}.`,
+    );
+  }
+  const statuses = monitoring.observations.map(observation => observation.status).sort();
+  if (expectedObservationStatuses) {
+    const expectedStatuses = [...expectedObservationStatuses].sort();
+    if (JSON.stringify(statuses) !== JSON.stringify(expectedStatuses)) {
+      throw new Error(
+        `Expected smoke monitoring observation statuses ${expectedStatuses.join(",")}, got ${statuses.join(",")}.`,
+      );
+    }
+  }
+  if (expectedFacilityStatus && monitoring.facility.status !== expectedFacilityStatus) {
+    throw new Error(
+      `Expected smoke monitoring facility status ${expectedFacilityStatus}, got ${monitoring.facility.status}.`,
+    );
+  }
+  for (const observation of monitoring.observations) {
+    if (observation.notes?.includes(smokeEvidencePlaintext) || observation.source.includes(smokeEvidencePlaintext)) {
+      throw new Error("Expected monitoring projection not to expose raw evidence plaintext.");
+    }
+  }
+
+  const requestPath = `/api/robomata/submissions/${submissionId}/facility-monitoring`;
+  await fetchJsonExpectStatus(
+    `${baseUrl}${requestPath}`,
+    {
+      method: "GET",
+      headers: await otherAuthHeaders("GET", requestPath),
+    },
+    404,
+  );
+  if (expectedSuiRootCommitCount !== undefined) {
+    const rootPayload = await getFacilityMonitoringSuiRoots({ authHeaders, submissionId });
+    if (rootPayload.suiRootCommits?.length !== expectedSuiRootCommitCount) {
+      throw new Error(
+        `Expected Sui root endpoint to return ${expectedSuiRootCommitCount} roots, got ${rootPayload.suiRootCommits?.length}.`,
+      );
+    }
+  }
+
+  return {
+    routeEnabled: true,
+    facilityId: monitoring.facility.id,
+    latestRunId: monitoring.latestRun.id,
+    latestPacketId: monitoring.latestPacket.id,
+    observationCount: monitoring.observations.length,
+    observationStatuses: statuses,
+    runInputObservationCount: monitoring.latestRun.inputObservationIds.length,
+    runHistoryCount: monitoring.runHistory.length,
+    packetManifestCount: monitoring.packetManifests.length,
+    suiRootCommitCount: monitoring.suiRootCommits.length,
+    suiRootStatus: monitoring.suiRootStatus,
+    freshnessStatus: monitoring.freshnessStatus,
+    facilityStatus: monitoring.facility.status,
+    unauthorizedPartnerHidden: true,
+  };
+}
+
+async function seedPriorMonitoringRun({ monitoringFile, submissionId }) {
+  const monitoringStore = JSON.parse(await readFile(monitoringFile, "utf8"));
+  const facilityId = `fac_${submissionId.replace(/^sub_/, "")}`;
+  const latestRun = monitoringStore.runs.find(run => run.facilityId === facilityId);
+  const latestPacket = latestRun
+    ? monitoringStore.packetManifests.find(packet => packet.runId === latestRun.id)
+    : undefined;
+  if (!latestRun || !latestPacket) {
+    throw new Error("Expected durable monitoring run and packet before seeding prior run history.");
+  }
+
+  const createdAt = new Date(Date.parse(latestRun.createdAt) - 86_400_000).toISOString();
+  const priorRunId = `run_${submissionId}_previous`;
+  const priorPacketId = `packet_${submissionId}_previous`;
+  const priorRun = {
+    ...latestRun,
+    id: priorRunId,
+    runNumber: Math.max(1, (latestRun.runNumber ?? 1) - 1),
+    status: "stale",
+    packetId: priorPacketId,
+    rootDigest: `${latestRun.rootDigest}:previous`,
+    createdAt,
+    lockedAt: createdAt,
+    committedAt: undefined,
+  };
+  const priorPacket = {
+    ...latestPacket,
+    id: priorPacketId,
+    runId: priorRunId,
+    runDigest: priorRun.rootDigest || priorRun.inputDigest,
+    freshnessStatus: "superseded",
+    generatedAt: createdAt,
+  };
+
+  monitoringStore.runs.unshift(priorRun);
+  monitoringStore.packetManifests.unshift(priorPacket);
+  await writeFile(monitoringFile, JSON.stringify(monitoringStore, null, 2), "utf8");
+  return { priorPacketId, priorRunId };
+}
+
+async function seedMonitoringFreshnessFixtures({ baseSubmissionId, monitoringFile, partnerAddress, storeFile }) {
+  const submissions = JSON.parse(await readFile(storeFile, "utf8"));
+  const baseSubmission = submissions.find(submission => submission.id === baseSubmissionId);
+  if (!baseSubmission?.computation) {
+    throw new Error(`Base monitoring submission ${baseSubmissionId} was not found or has no computation.`);
+  }
+
+  const monitoringStore = JSON.parse(await readFile(monitoringFile, "utf8"));
+  const baseFacilityId =
+    baseSubmission.facilityMonitoring?.facilityId ?? `fac_${baseSubmissionId.replace(/^sub_/, "")}`;
+  const baseRun = monitoringStore.runs.find(run => run.facilityId === baseFacilityId);
+  const basePacket = baseRun ? monitoringStore.packetManifests.find(packet => packet.runId === baseRun.id) : undefined;
+  if (!baseRun || !basePacket) {
+    throw new Error("Expected base durable monitoring run and packet before seeding freshness fixtures.");
+  }
+
+  const fixtureCases = [
+    {
+      key: "stale_observation",
+      expectedFacilityStatus: "packet_stale",
+      expectedFreshness: "stale",
+      observations: [
+        {
+          kind: "insurance",
+          status: "stale",
+          source: "Seeded insurance policy monitor",
+        },
+      ],
+    },
+    {
+      key: "expired_observation",
+      expectedFacilityStatus: "needs_review",
+      expectedFreshness: "invalid",
+      observations: [
+        {
+          expiresAt: "2026-01-01T00:00:00.000Z",
+          kind: "insurance",
+          status: "expired",
+          source: "Seeded expired insurance policy monitor",
+        },
+      ],
+    },
+    {
+      key: "superseded_observation",
+      expectedFacilityStatus: "packet_stale",
+      expectedFreshness: "stale",
+      observations: [
+        {
+          id: "old",
+          kind: "maintenance",
+          observedAtOffsetMs: -60_000,
+          status: "superseded",
+          source: "Seeded superseded maintenance monitor",
+        },
+        {
+          id: "replacement",
+          kind: "maintenance",
+          status: "fresh",
+          supersedesObservationId: "old",
+          source: "Seeded replacement maintenance monitor",
+        },
+      ],
+    },
+    {
+      key: "stale_packet",
+      expectedFacilityStatus: "packet_stale",
+      expectedFreshness: "stale",
+      packetFreshnessStatus: "stale",
+      observations: [
+        {
+          kind: "receivables_aging",
+          status: "fresh",
+          source: "Seeded fresh receivables monitor",
+        },
+      ],
+    },
+    {
+      key: "superseded_packet",
+      expectedFacilityStatus: "packet_stale",
+      expectedFreshness: "superseded",
+      packetFreshnessStatus: "superseded",
+      observations: [
+        {
+          kind: "receivables_aging",
+          status: "fresh",
+          source: "Seeded fresh receivables monitor for superseded packet",
+        },
+      ],
+    },
+    {
+      key: "refresh_available",
+      expectedFacilityStatus: "needs_review",
+      expectedFreshness: "refresh_available",
+      observations: [
+        {
+          kind: "utilization",
+          status: "warning",
+          source: "Seeded utilization monitor warning",
+        },
+      ],
+    },
+  ];
+
+  const seededSubmissionIds = [];
+  for (const fixtureCase of fixtureCases) {
+    const submissionId = `sub_seed_${fixtureCase.key}`;
+    const facilityId = `fac_seed_${fixtureCase.key}`;
+    const runId = `run_${submissionId}`;
+    const packetId = `packet_${submissionId}`;
+    const createdAt = new Date(Date.parse(baseRun.createdAt) + seededSubmissionIds.length * 1_000).toISOString();
+    const seededSubmission = {
+      ...baseSubmission,
+      id: submissionId,
+      facilityName: `${baseSubmission.facilityName} ${fixtureCase.key}`,
+      facilityMonitoring: {
+        facilityId,
+        latestPacketId: packetId,
+        latestRunId: runId,
+        packetFreshnessStatus: fixtureCase.packetFreshnessStatus ?? fixtureCase.expectedFreshness,
+        status: fixtureCase.expectedFacilityStatus,
+      },
+      evidenceCommit: {
+        ...baseSubmission.evidenceCommit,
+        facilityObjectId: `0xseed${fixtureCase.key.replace(/_/g, "")}`,
+        facilityOperatorAddress: partnerAddress,
+      },
+      createdAt,
+      updatedAt: createdAt,
+    };
+    seededSubmissionIds.push({
+      expectedFacilityStatus: fixtureCase.expectedFacilityStatus,
+      expectedFreshness: fixtureCase.expectedFreshness,
+      expectedObservationStatuses: fixtureCase.observations.map(observation => observation.status),
+      submissionId,
+    });
+    submissions.unshift(seededSubmission);
+
+    const seededObservations = fixtureCase.observations.map((observation, index) => {
+      const observationId = `obs_${submissionId}_${observation.id ?? index + 1}`;
+      const observedAt = new Date(Date.parse(createdAt) + (observation.observedAtOffsetMs ?? 0)).toISOString();
+      const supersedesObservationId =
+        observation.supersedesObservationId === "old" ? `obs_${submissionId}_old` : observation.supersedesObservationId;
+      return {
+        id: observationId,
+        facilityId,
+        kind: observation.kind,
+        source: observation.source,
+        observedAt,
+        expiresAt: observation.expiresAt,
+        supersedesObservationId,
+        status: observation.status,
+        confidence: "operator_attested",
+        linkedAssetIds: [],
+        linkedReceivableIds: seededSubmission.receivables.map(receivable => receivable.id),
+        digest: `seed:${fixtureCase.key}:${observationId}`,
+        storageRef: `seed://${fixtureCase.key}/${observationId}`,
+        notes: `Seeded ${observation.status} ${observation.kind} observation.`,
+      };
+    });
+    const seededRun = {
+      ...baseRun,
+      id: runId,
+      facilityId,
+      inputObservationIds: seededObservations.map(observation => observation.id),
+      packetId,
+      createdAt,
+      lockedAt: createdAt,
+    };
+    const seededPacket = {
+      ...basePacket,
+      id: packetId,
+      facilityId,
+      runId,
+      evidenceObservationIds: seededRun.inputObservationIds,
+      freshnessStatus: fixtureCase.packetFreshnessStatus ?? "fresh",
+      generatedAt: createdAt,
+    };
+
+    monitoringStore.facilities.unshift({
+      id: facilityId,
+      partnerAddress,
+      operatorName: seededSubmission.operatorName,
+      facilityName: seededSubmission.facilityName,
+      status: fixtureCase.expectedFacilityStatus,
+      latestRunId: runId,
+      latestPacketId: packetId,
+      suiFacilityObjectId: seededSubmission.evidenceCommit.facilityObjectId,
+      facilityOperatorAddress: seededSubmission.evidenceCommit.facilityOperatorAddress,
+      createdAt,
+      updatedAt: createdAt,
+    });
+    monitoringStore.observations.unshift(...seededObservations);
+    monitoringStore.runs.unshift(seededRun);
+    monitoringStore.packetManifests.unshift(seededPacket);
+  }
+
+  await writeFile(storeFile, JSON.stringify(submissions, null, 2), "utf8");
+  await writeFile(monitoringFile, JSON.stringify(monitoringStore, null, 2), "utf8");
+  return seededSubmissionIds;
+}
+
+async function runShareLinkFlow({ authHeaders, expectMonitoring = false, submissionId, facilityName }) {
   const activePayload = await createShareLink({
     authHeaders,
     submissionId,
@@ -387,10 +765,27 @@ async function runShareLinkFlow({ authHeaders, submissionId, facilityName }) {
   if (!activePayload.url.includes(`/lender/packet/${activePayload.token}`)) {
     throw new Error(`Expected share-link url to target the lender packet page, got ${activePayload.url}.`);
   }
+  if (expectMonitoring) {
+    if (!activePayload.shareLink.metadata?.runId || !activePayload.shareLink.metadata?.packetManifestId) {
+      throw new Error("Expected monitoring-enabled share link to include run and packet manifest metadata.");
+    }
+  } else if (activePayload.shareLink.metadata?.runId || activePayload.shareLink.metadata?.packetManifestId) {
+    throw new Error("Expected legacy share link not to include monitoring run metadata.");
+  }
 
   const packetPayload = await fetchJson(activePayload.apiUrl);
   if (packetPayload.packet?.submission?.facilityName !== facilityName) {
     throw new Error("Expected protected share API to return the lender packet for the smoke submission.");
+  }
+  if (expectMonitoring) {
+    if (packetPayload.packet?.monitoring?.runId !== activePayload.shareLink.metadata.runId) {
+      throw new Error("Expected protected share API to return the run-pinned monitoring packet.");
+    }
+    if (packetPayload.packet?.monitoring?.packetFreshnessStatus !== "fresh") {
+      throw new Error("Expected monitoring share packet freshness to be fresh.");
+    }
+  } else if (packetPayload.packet?.monitoring) {
+    throw new Error("Expected legacy protected share API response not to include monitoring details.");
   }
 
   const lenderPacketHtml = await fetchText(activePayload.url);
@@ -436,11 +831,13 @@ async function runShareLinkFlow({ authHeaders, submissionId, facilityName }) {
     activeShareLinkAccessCount: accessedLink.accessCount,
     expiredShareLinkId: expiringPayload.shareLink.id,
     expiredShareLinkStatus: expiredLink.status,
+    monitoringPacketManifestId: activePayload.shareLink.metadata?.packetManifestId,
+    monitoringRunId: activePayload.shareLink.metadata?.runId,
     lenderPacketPageRendered: true,
   };
 }
 
-async function runSubmissionFlow({ authHeaders, submissionId, requireTestnetEvidence }) {
+async function runSubmissionFlow({ authHeaders, includeShareLinks = true, submissionId, requireTestnetEvidence }) {
   const csv = [
     "id,obligor,vehicles,outstanding,dpd,utilization,insured,title,lockbox",
     "AR-SMOKE-1,North Smoke Logistics,10,100000,5,91,true,true,true",
@@ -514,14 +911,17 @@ async function runSubmissionFlow({ authHeaders, submissionId, requireTestnetEvid
       throw new Error(`Expected local smoke encryptionBackend=none, got ${evidence.encryptionBackend}.`);
     }
   }
-  const shareLinkProof = await runShareLinkFlow({
-    authHeaders,
-    submissionId,
-    facilityName: computePayload.submission.facilityName,
-  });
+  const shareLinkProof = includeShareLinks
+    ? await runShareLinkFlow({
+        authHeaders,
+        submissionId,
+        facilityName: computePayload.submission.facilityName,
+      })
+    : undefined;
 
   return {
     submissionId,
+    facilityName: computePayload.submission.facilityName,
     storageBackend: evidence.storageBackend,
     encryptionBackend: evidence.encryptionBackend,
     walrusBlobId: evidence.walrusBlobId,
@@ -532,7 +932,7 @@ async function runSubmissionFlow({ authHeaders, submissionId, requireTestnetEvid
     sealIdentity: evidence.sealIdentity,
     commitStatus: commit.status,
     txDigest: commit.txDigest,
-    shareLinks: shareLinkProof,
+    ...(shareLinkProof ? { shareLinks: shareLinkProof } : {}),
   };
 }
 
@@ -546,11 +946,14 @@ async function main() {
   const privateKey = `0x${randomBytes(32).toString("hex")}`;
   const account = privateKeyToAccount(privateKey);
   const partnerAddress = account.address;
+  const otherAccount = privateKeyToAccount(`0x${randomBytes(32).toString("hex")}`);
+  const otherPartnerAddress = otherAccount.address;
   if (!isLocalSmoke) requiredEnv(mergedEnv, "ROBOMATA_SUI_NETWORK");
   const activeSuiSignerAddress = isLocalSmoke ? undefined : suiSignerAddress(mergedEnv);
   tempDir = await mkdtemp(path.join(tmpdir(), "robomata-smoke-"));
   const storeFile = path.join(tempDir, "submissions.json");
   const shareLinksFile = path.join(tempDir, "share-links.json");
+  const monitoringFile = path.join(tempDir, "facility-monitoring.json");
   await writeFile(storeFile, "", "utf8");
 
   const baseEnv = {
@@ -562,22 +965,22 @@ async function main() {
     NEXT_PUBLIC_ENABLE_ROBOMATA_WORKFLOW: "true",
     ROBOMATA_WORKFLOW_ENABLED: "true",
     ROBOMATA_WORKFLOW_MUTATIONS_ENABLED: "true",
-    ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES: partnerAddress,
+    ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES: `${partnerAddress},${otherPartnerAddress}`,
     ROBOMATA_SUBMISSIONS_FILE: storeFile,
     ROBOMATA_SHARE_LINKS_FILE: shareLinksFile,
+    ROBOMATA_FACILITY_MONITORING_FILE: monitoringFile,
     ROBOMATA_SHARE_LINKS_ENABLED: "true",
     NEXT_PUBLIC_ROBOMATA_SHARE_LINKS_ENABLED: "true",
     ROBOMATA_WALRUS_UPLOADS_ENABLED: isLocalSmoke ? "false" : "true",
     ROBOMATA_REQUIRE_REAL_EVIDENCE_STORAGE: isLocalSmoke ? "false" : "true",
-    WALRUS_PUBLISHER_URL:
-      mergedEnv.WALRUS_PUBLISHER_URL ?? "https://publisher.walrus-testnet.walrus.space",
-    WALRUS_AGGREGATOR_URL:
-      mergedEnv.WALRUS_AGGREGATOR_URL ?? "https://aggregator.walrus-testnet.walrus.space",
+    WALRUS_PUBLISHER_URL: mergedEnv.WALRUS_PUBLISHER_URL ?? "https://publisher.walrus-testnet.walrus.space",
+    WALRUS_AGGREGATOR_URL: mergedEnv.WALRUS_AGGREGATOR_URL ?? "https://aggregator.walrus-testnet.walrus.space",
     ROBOMATA_SUI_COMMIT_ENABLED: isLocalSmoke ? "false" : "true",
     ...(activeSuiSignerAddress ? { ROBOMATA_SUI_SIGNER_ADDRESS: activeSuiSignerAddress } : {}),
   };
 
   const authHeaders = authHeaderBuilder({ account, partnerAddress });
+  const otherAuthHeaders = authHeaderBuilder({ account: otherAccount, partnerAddress: otherPartnerAddress });
   await startServer(baseEnv);
   const publicRoutes = await verifyPublicRoutes();
   const submissionId = await createSubmission({ authHeaders });
@@ -591,12 +994,88 @@ async function main() {
     });
   }
   const result = await runSubmissionFlow({ authHeaders, submissionId, requireTestnetEvidence: !isLocalSmoke });
+  const monitoringFlagOff = await verifyFacilityMonitoringDisabled({ authHeaders, submissionId });
+
+  await stopServer();
+  await startServer({
+    ...baseEnv,
+    ROBOMATA_FACILITY_MONITORING_ENABLED: "true",
+    ROBOMATA_LENDER_MONITORING_SHARE_ENABLED: "true",
+    NEXT_PUBLIC_ROBOMATA_FACILITY_MONITORING_ENABLED: "true",
+    NEXT_PUBLIC_ROBOMATA_LENDER_MONITORING_SHARE_ENABLED: "true",
+  });
+  const monitoring = await verifyFacilityMonitoringEnabled({ authHeaders, otherAuthHeaders, submissionId });
+  let durableMonitoring;
+  if (isLocalSmoke) {
+    const monitoredSubmissionId = await createSubmission({ authHeaders });
+    const monitoredResult = await runSubmissionFlow({
+      authHeaders,
+      includeShareLinks: false,
+      submissionId: monitoredSubmissionId,
+      requireTestnetEvidence: false,
+    });
+    durableMonitoring = await verifyFacilityMonitoringEnabled({
+      authHeaders,
+      expectedObservationCount: 2,
+      expectedSuiRootCommitCount: 2,
+      otherAuthHeaders,
+      submissionId: monitoredSubmissionId,
+    });
+    durableMonitoring.seededPriorRun = await seedPriorMonitoringRun({
+      monitoringFile,
+      submissionId: monitoredSubmissionId,
+    });
+    durableMonitoring = {
+      ...durableMonitoring,
+      ...(await verifyFacilityMonitoringEnabled({
+        authHeaders,
+        expectedObservationCount: 2,
+        expectedPacketManifestCount: 2,
+        expectedRunHistoryCount: 2,
+        expectedSuiRootCommitCount: 2,
+        otherAuthHeaders,
+        submissionId: monitoredSubmissionId,
+      })),
+      seededPriorRun: durableMonitoring.seededPriorRun,
+    };
+    durableMonitoring.monitoringShareLinks = await runShareLinkFlow({
+      authHeaders,
+      expectMonitoring: true,
+      facilityName: monitoredResult.facilityName,
+      submissionId: monitoredSubmissionId,
+    });
+    const seededMonitoringCases = await seedMonitoringFreshnessFixtures({
+      baseSubmissionId: monitoredSubmissionId,
+      monitoringFile,
+      partnerAddress,
+      storeFile,
+    });
+    durableMonitoring.seededFreshnessCases = [];
+    for (const seededCase of seededMonitoringCases) {
+      durableMonitoring.seededFreshnessCases.push(
+        await verifyFacilityMonitoringEnabled({
+          authHeaders,
+          expectedFacilityStatus: seededCase.expectedFacilityStatus,
+          expectedObservationCount: seededCase.expectedObservationStatuses.length,
+          expectedObservationStatuses: seededCase.expectedObservationStatuses,
+          expectedPacketFreshness: seededCase.expectedFreshness,
+          otherAuthHeaders,
+          submissionId: seededCase.submissionId,
+        }),
+      );
+    }
+  }
 
   console.log(
     JSON.stringify(
       {
         smokeProfile,
         publicRoutes,
+        facilityMonitoring: {
+          flagOff: monitoringFlagOff,
+          ...monitoring,
+          ...(durableMonitoring ? { durableLocalStore: durableMonitoring } : {}),
+        },
         ...result,
         ...(isLocalSmoke ? {} : { envPath }),
       },

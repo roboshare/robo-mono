@@ -16,6 +16,7 @@ type ShareLinkResponse = {
   revokedAt?: string;
   lastAccessedAt?: string;
   accessCount: number;
+  metadata?: Record<string, string | number | boolean | null>;
 };
 
 type CreateShareLinkResponse = {
@@ -45,6 +46,11 @@ function statusBadgeClass(status: ShareLinkResponse["status"]) {
   if (status === "revoked") return "badge-error";
   if (status === "expired") return "badge-warning";
   return "badge-ghost";
+}
+
+function monitoringRunId(link: ShareLinkResponse) {
+  const runId = link.metadata?.runId;
+  return typeof runId === "string" && runId.trim() ? runId : undefined;
 }
 
 async function readJsonResponse<T>(response: Response): Promise<T & { error?: string }> {
@@ -235,6 +241,11 @@ export const PacketSharePanel = ({
                     Expires {link.expiresAt} · {link.accessCount} views
                     {link.lastAccessedAt ? ` · last accessed ${link.lastAccessedAt}` : ""}
                   </div>
+                  {monitoringRunId(link) ? (
+                    <div className="mt-1 break-all text-xs text-base-content/60">
+                      Pinned run: {monitoringRunId(link)}
+                    </div>
+                  ) : null}
                 </div>
                 <div className={`badge ${statusBadgeClass(link.status)} capitalize`}>{link.status}</div>
               </div>

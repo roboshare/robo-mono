@@ -1,4 +1,5 @@
 import type { EvidenceCommitment } from "~~/lib/robomata/evidence";
+import type { BorrowingBaseRun, PacketFreshnessStatus, PacketManifest } from "~~/lib/robomata/facilityMonitoring";
 import type {
   FacilitySubmission,
   FacilitySubmissionStatus,
@@ -37,6 +38,17 @@ export type SubmissionShareLinkAuditEvent = {
   type: "packet_share_created" | "packet_share_viewed" | "packet_share_revoked" | "packet_share_expired";
   createdAt: string;
   metadata?: Record<string, string | number | boolean | null>;
+};
+
+export type SubmissionShareLinkMonitoringBinding = {
+  facilityId: string;
+  runId: string;
+  packetManifestId: string;
+  packetGeneratedAt: string;
+  packetFreshnessStatus: PacketFreshnessStatus;
+  runRootDigest?: string;
+  packetRootDigest?: string;
+  monitoringRootVersion?: string;
 };
 
 export type SharedLenderPacketEvidence = {
@@ -82,6 +94,10 @@ export type SharedLenderPacketView = {
   lenderPacket: SubmissionComputation["lenderPacket"];
   exceptions: Array<Pick<SubmissionException, "id" | "severity" | "title" | "message" | "actionStatus">>;
   evidence: SharedLenderPacketEvidence[];
+  monitoring?: SubmissionShareLinkMonitoringBinding & {
+    currentPacketFreshnessStatus?: PacketFreshnessStatus;
+    pinnedAtShare: boolean;
+  };
 };
 
 function linkedExceptionIdsForEvidence(submission: FacilitySubmission, evidenceId: string): string[] {
@@ -91,9 +107,15 @@ function linkedExceptionIdsForEvidence(submission: FacilitySubmission, evidenceI
 }
 
 export function buildSharedLenderPacketView({
+  monitoring,
+  packetManifest,
+  run,
   shareLink,
   submission,
 }: {
+  monitoring?: SharedLenderPacketView["monitoring"];
+  packetManifest?: PacketManifest;
+  run?: BorrowingBaseRun;
   shareLink: SubmissionShareLink;
   submission: FacilitySubmission;
 }): SharedLenderPacketView {
@@ -117,9 +139,9 @@ export function buildSharedLenderPacketView({
       status: submission.status,
       updatedAt: submission.updatedAt,
     },
-    borrowingBase: submission.computation.borrowingBase,
-    lenderPacket: submission.computation.lenderPacket,
-    exceptions: submission.exceptions.map(exception => ({
+    borrowingBase: run?.borrowingBase ?? submission.computation.borrowingBase,
+    lenderPacket: packetManifest?.lenderPacket ?? submission.computation.lenderPacket,
+    exceptions: (run?.exceptions ?? submission.exceptions).map(exception => ({
       id: exception.id,
       severity: exception.severity,
       title: exception.title,
@@ -148,5 +170,6 @@ export function buildSharedLenderPacketView({
         evidenceRoot: submission.evidenceCommit.evidenceRoot,
       },
     })),
+    monitoring,
   };
 }

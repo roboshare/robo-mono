@@ -5,6 +5,7 @@ import {
   isRobomataWorkflowServerEnabled,
 } from "~~/lib/featureFlags";
 import { toShareLinkResponse } from "~~/lib/robomata/server/shareLinkResponses";
+import { buildShareLinkMonitoringMetadata } from "~~/lib/robomata/server/sharedLenderPacket";
 import {
   getPrivyUserFromRequest,
   requirePartnerAddress,
@@ -147,10 +148,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     }
 
     const privyUser = await getPrivyUserFromRequest(request).catch(() => null);
+    const metadata = await buildShareLinkMonitoringMetadata(submission).catch(() => undefined);
     const { shareLink, token } = await getSubmissionShareLinkStore().create({
       submission,
       creatorPartnerAddress: partnerAddress,
       creatorPrivyUserId: privyUser?.id,
+      metadata,
       recipientLabel,
       recipientEmail,
       expiresAt,
@@ -163,7 +166,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       {
         shareLinkId: shareLink.id,
         expiresAt: shareLink.expiresAt,
+        packetManifestId:
+          typeof shareLink.metadata?.packetManifestId === "string" ? shareLink.metadata.packetManifestId : null,
         recipientLabel: shareLink.recipientLabel ?? null,
+        runId: typeof shareLink.metadata?.runId === "string" ? shareLink.metadata.runId : null,
       },
     );
     await submissionStore.save(submission).catch(() => undefined);

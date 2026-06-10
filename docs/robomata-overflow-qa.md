@@ -306,6 +306,43 @@ Verify:
   operator-readable configuration error
 - commit status and reference metadata persist on the submission
 
+### 8a. Live Facility Monitoring Preview
+
+Status: preview behind `ROBOMATA_FACILITY_MONITORING_ENABLED` and
+`NEXT_PUBLIC_ROBOMATA_FACILITY_MONITORING_ENABLED`.
+
+Verify:
+
+- flag-off local smoke keeps current submission, packet sharing, and public
+  `/robomata` behavior unchanged
+- server monitoring API returns `404` unless both the Robomata workflow server
+  flag and monitoring server flag are enabled
+- authorized partner can load a facility monitoring projection for their own
+  submission
+- unauthorized partner cannot load another partner's monitoring projection
+- projection summarizes facility identity, Sui facility assignment, latest run,
+  run history, packet manifest history, packet freshness, observation
+  freshness, exceptions, and warnings without exposing raw evidence contents
+- with monitoring enabled, local smoke persists facility, receivables
+  observation, evidence observation, borrowing-base run, and packet manifest in
+  `ROBOMATA_FACILITY_MONITORING_FILE`
+- durable local monitoring projection reports two observation inputs for the
+  monitored smoke run: one CSV receivables observation and one evidence
+  observation
+- durable local monitoring projection retains a seeded prior immutable run and
+  prior packet manifest while keeping the latest run pinned as current
+- durable local monitoring projection creates pending Sui root records for the
+  locked run and packet manifest, and the authenticated Sui root endpoint
+  returns those records
+- monitoring-enabled share links pin lender packet access to the latest run and
+  packet manifest while legacy share links remain submission-backed
+- local seeded monitoring cases cover stale observation, expired observation,
+  superseded observation, stale packet, superseded packet, and refresh-available
+  packet states through the same authenticated monitoring API
+- seeded cases verify packet freshness outcomes: `fresh`, `stale`, and
+  `invalid`, `superseded`, and `refresh_available`, plus facility statuses
+  `packet_fresh`, `packet_stale`, and `needs_review`
+
 ### 9. Public `/robomata` Product Surface
 
 Status: passed.

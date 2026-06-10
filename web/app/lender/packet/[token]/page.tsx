@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import Link from "next/link";
 import { LenderPacketView } from "~~/components/robomata/LenderPacketView";
 import { isRobomataShareLinksEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
+import { buildResolvedSharedLenderPacketView } from "~~/lib/robomata/server/sharedLenderPacket";
 import {
   getSubmissionShareLinkStore,
   hashShareLinkMetadataValue,
@@ -76,7 +77,7 @@ async function loadPacket(token: string): Promise<PacketLoadState> {
 
     return {
       status: "ready",
-      packet: buildSharedLenderPacketView({ shareLink: accessedShareLink, submission }),
+      packet: await buildResolvedSharedLenderPacketView({ shareLink: accessedShareLink, submission }),
     };
   } catch (error) {
     return {
