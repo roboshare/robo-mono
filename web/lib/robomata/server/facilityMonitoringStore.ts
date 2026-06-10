@@ -174,8 +174,8 @@ function buildRunAndPacket(
     .replace(/^0x/, "")
     .replace(/[^0-9a-z]/gi, "")
     .slice(0, 12)}`;
-  const runId = submission.facilityMonitoring?.latestRunId ?? `run_${submission.id}_${artifactSuffix}`;
-  const packetId = submission.facilityMonitoring?.latestPacketId ?? `packet_${submission.id}_${artifactSuffix}`;
+  const runId = `run_${submission.id}_${artifactSuffix}`;
+  const packetId = `packet_${submission.id}_${artifactSuffix}`;
   const runWithoutMonitoringRoot: BorrowingBaseRun = {
     ...projection.latestRun,
     id: runId,

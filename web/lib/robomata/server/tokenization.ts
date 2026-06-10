@@ -314,6 +314,24 @@ function getConfiguredChain(chainId: number | undefined): Chain | undefined {
   return scaffoldConfig.targetNetworks.find(targetNetwork => targetNetwork.id === chainId) as Chain | undefined;
 }
 
+function getEnvFacilityRegistryAddress(chainId: number | undefined): string | undefined {
+  if (!chainId) return undefined;
+
+  const directAddress = process.env[`ROBOMATA_FACILITY_REGISTRY_ADDRESS_${chainId}`]?.trim();
+  if (directAddress && isAddress(directAddress)) return directAddress;
+
+  const rawAddressMap = process.env.ROBOMATA_FACILITY_REGISTRY_ADDRESSES_JSON?.trim();
+  if (!rawAddressMap) return undefined;
+
+  try {
+    const addressMap = JSON.parse(rawAddressMap) as Record<string, unknown>;
+    const mappedAddress = addressMap[String(chainId)];
+    return typeof mappedAddress === "string" && isAddress(mappedAddress) ? mappedAddress : undefined;
+  } catch {
+    throw new Error("ROBOMATA_FACILITY_REGISTRY_ADDRESSES_JSON must be valid JSON.");
+  }
+}
+
 function getTokenizationPublicClient(chainId: number | undefined) {
   const chain = getConfiguredChain(chainId);
   if (!chain) return undefined;
@@ -336,6 +354,9 @@ function getTokenizationPublicClient(chainId: number | undefined) {
 function getConfiguredFacilityRegistryAddress(chainId: number | undefined): string {
   const deployedRegistryAddress = getDeployedContract(chainId, "FacilityRegistry")?.address;
   if (deployedRegistryAddress) return deployedRegistryAddress;
+
+  const envRegistryAddress = getEnvFacilityRegistryAddress(chainId);
+  if (envRegistryAddress) return envRegistryAddress;
 
   const localMockRegistryAddress = process.env.ROBOMATA_TOKENIZATION_MOCK_REGISTRY_ADDRESS?.trim();
   if (process.env.NODE_ENV !== "production" && localMockRegistryAddress && isAddress(localMockRegistryAddress)) {
