@@ -59,3 +59,23 @@ export function isRobomataTokenizationEnabled(): boolean {
 export function isRobomataTokenizationClientEnabled(): boolean {
   return isEnabled(process.env.NEXT_PUBLIC_ROBOMATA_TOKENIZATION_ENABLED);
 }
+
+export function isRobomataFacilityMonitoringEnabled(): boolean {
+  return isEnabled(process.env.ROBOMATA_FACILITY_MONITORING_ENABLED);
+}
+
+export function isRobomataFacilityMonitoringClientEnabled(): boolean {
+  return isEnabled(process.env.NEXT_PUBLIC_ROBOMATA_FACILITY_MONITORING_ENABLED);
+}
+
+export function isRobomataFacilityMonitoringRefreshEnabled(): boolean {
+  return isEnabled(process.env.ROBOMATA_FACILITY_MONITORING_REFRESH_ENABLED);
+}
+
+export function isRobomataLenderMonitoringShareEnabled(): boolean {
+  return isEnabled(process.env.ROBOMATA_LENDER_MONITORING_SHARE_ENABLED);
+}
+
+export function isRobomataLenderMonitoringShareClientEnabled(): boolean {
+  return isEnabled(process.env.NEXT_PUBLIC_ROBOMATA_LENDER_MONITORING_SHARE_ENABLED);
+}

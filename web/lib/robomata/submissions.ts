@@ -1,6 +1,7 @@
 import type { AgentReview } from "~~/lib/robomata/agentProviders";
 import type { BorrowingBaseResult } from "~~/lib/robomata/borrowingBase";
 import type { EvidenceAnchor, EvidenceCommitment, EvidenceRail } from "~~/lib/robomata/evidence";
+import type { FacilityMonitoringStatus, PacketFreshnessStatus } from "~~/lib/robomata/facilityMonitoring";
 import type { LenderPacket } from "~~/lib/robomata/lenderPacket";
 
 export type FacilitySubmissionStatus =
@@ -112,6 +113,14 @@ export type SubmissionEvidenceCommit = {
   errorMessage?: string;
 };
 
+export type SubmissionFacilityMonitoringRef = {
+  facilityId: string;
+  latestRunId?: string;
+  latestPacketId?: string;
+  status: FacilityMonitoringStatus;
+  packetFreshnessStatus?: PacketFreshnessStatus;
+};
+
 export type SubmissionComputation = {
   computedAt: string;
   borrowingBase: BorrowingBaseResult;
@@ -180,6 +189,7 @@ export type FacilitySubmission = {
   computation: SubmissionComputation | null;
   evidenceCommit: SubmissionEvidenceCommit;
   tokenization: SubmissionTokenization;
+  facilityMonitoring?: SubmissionFacilityMonitoringRef;
   auditEvents: SubmissionAuditEvent[];
   createdAt: string;
   updatedAt: string;
@@ -285,6 +295,7 @@ export function createSubmissionShell(input: CreateSubmissionInput): FacilitySub
       commitMode: "prepared",
     },
     tokenization: createDefaultSubmissionTokenization(),
+    facilityMonitoring: undefined,
     auditEvents: [],
     createdAt,
     updatedAt: createdAt,
