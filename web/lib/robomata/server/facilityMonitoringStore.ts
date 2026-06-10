@@ -514,15 +514,28 @@ function createFileStore(): FacilityMonitoringStore {
       });
     },
     async getProjectionForSubmission(submission) {
-      const fileStore = await readFileStore(filePath);
-      const fallback = buildFacilityMonitoringProjection(submission);
-      const facility =
-        fileStore.facilities.find(candidate => candidate.id === fallback.facility.id) ?? fallback.facility;
-      const observations = fileStore.observations.filter(observation => observation.facilityId === facility.id);
-      const runHistory = runHistoryForFacility(fileStore.runs, facility.id);
-      const packetManifests = packetManifestsForFacility(fileStore.packetManifests, facility.id);
-      const suiRootCommits = suiRootCommitsForFacility(fileStore.suiRootCommits, facility.id);
-      return buildStoredProjection({ fallback, facility, observations, packetManifests, runHistory, suiRootCommits });
+      return withFileStoreWriteLock(filePath, async () => {
+        const fileStore = await readFileStore(filePath);
+        const fallback = buildFacilityMonitoringProjection(submission);
+        const facility = buildFacility(submission);
+        const evidenceObservations = buildEvidenceObservations(submission);
+        fileStore.facilities = upsertById(fileStore.facilities, facility);
+        for (const observation of evidenceObservations) {
+          fileStore.observations = upsertById(fileStore.observations, observation);
+        }
+        await writeFileStore(filePath, fileStore);
+
+        const observations = fileStore.observations.filter(observation => observation.facilityId === facility.id);
+        const useStoredArtifacts = Boolean(submission.computation);
+        const runHistory = useStoredArtifacts ? runHistoryForFacility(fileStore.runs, facility.id) : [];
+        const packetManifests = useStoredArtifacts
+          ? packetManifestsForFacility(fileStore.packetManifests, facility.id)
+          : [];
+        const suiRootCommits = useStoredArtifacts
+          ? suiRootCommitsForFacility(fileStore.suiRootCommits, facility.id)
+          : [];
+        return buildStoredProjection({ fallback, facility, observations, packetManifests, runHistory, suiRootCommits });
+      });
     },
     async updateSuiRootCommit(id, input) {
       return withFileStoreWriteLock(filePath, async () => {
@@ -709,6 +722,8 @@ function createPostgresStore(): FacilityMonitoringStore {
     },
     async getProjectionForSubmission(submission) {
       await ensurePostgresTables();
+      await this.syncFacility(submission);
+      await this.syncEvidenceObservations(submission);
       const fallback = buildFacilityMonitoringProjection(submission);
       const facilityRows = (await sql`
         SELECT payload
@@ -741,14 +756,15 @@ function createPostgresStore(): FacilityMonitoringStore {
         WHERE facility_id = ${facility.id}
         ORDER BY created_at DESC;
       `) as Array<{ payload: SuiRootCommit }>;
+      const useStoredArtifacts = Boolean(submission.computation);
 
       return buildStoredProjection({
         fallback,
         facility,
         observations: observationRows.map(row => row.payload),
-        packetManifests: packetRows.map(row => row.payload),
-        runHistory: runRows.map(row => row.payload),
-        suiRootCommits: rootRows.map(row => row.payload),
+        packetManifests: useStoredArtifacts ? packetRows.map(row => row.payload) : [],
+        runHistory: useStoredArtifacts ? runRows.map(row => row.payload) : [],
+        suiRootCommits: useStoredArtifacts ? rootRows.map(row => row.payload) : [],
       });
     },
     async updateSuiRootCommit(id, input) {
