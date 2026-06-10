@@ -54,6 +54,17 @@ function normalizeTxHash(value: unknown): string {
   return normalized;
 }
 
+function isRetryableCompletionVerificationError(error: unknown) {
+  const message = error instanceof Error ? error.message.toLowerCase() : "";
+  return (
+    message.includes("receipt") ||
+    message.includes("not found") ||
+    message.includes("unable to verify") ||
+    message.includes("timeout") ||
+    message.includes("timed out")
+  );
+}
+
 export async function POST(request: NextRequest, context: { params: Promise<{ submissionId: string }> }) {
   try {
     const featureError = requireRobomataWorkflow();
@@ -94,16 +105,48 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       normalizeOptionalString(body.revenueTokenMetadataUri, "revenueTokenMetadataUri") ??
       submission.tokenization.evm.revenueTokenMetadataUri;
 
-    await verifyTokenizationCompletion({
-      assetId,
-      assetMetadataUri,
-      chainId: request.headers.get("x-robomata-chain-id")?.trim() ?? null,
-      registryAddress,
-      revenueTokenId,
-      revenueTokenMetadataUri,
-      submission,
-      txHash,
-    });
+    try {
+      await verifyTokenizationCompletion({
+        assetId,
+        assetMetadataUri,
+        chainId: request.headers.get("x-robomata-chain-id")?.trim() ?? null,
+        registryAddress,
+        revenueTokenId,
+        revenueTokenMetadataUri,
+        submission,
+        txHash,
+      });
+    } catch (error) {
+      if (!isRetryableCompletionVerificationError(error)) throw error;
+
+      submission.tokenization = {
+        ...submission.tokenization,
+        status: "registered",
+        evm: {
+          ...submission.tokenization.evm,
+          registryAddress,
+          assetId,
+          revenueTokenId,
+          txHash,
+          assetMetadataUri,
+          revenueTokenMetadataUri,
+        },
+        errorMessage:
+          error instanceof Error
+            ? `Tokenization transaction submitted; server verification is retryable: ${error.message}`
+            : "Tokenization transaction submitted; server verification is retryable.",
+        failedAt: undefined,
+      };
+
+      const saved = await store.save(submission);
+      return NextResponse.json(
+        {
+          submission: saved,
+          error: "Tokenization transaction was submitted, but server-side receipt verification is still pending.",
+        },
+        { status: 202 },
+      );
+    }
 
     submission.tokenization = {
       ...submission.tokenization,

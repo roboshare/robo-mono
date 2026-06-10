@@ -682,6 +682,12 @@ export async function prepareTokenization(input: {
     },
   };
 
+  const assetValueUnits = centsToUnits(terms.offeringLimitCents);
+  const tokenPriceUnits = tokenPriceToUnits(terms.tokenPrice);
+  if (tokenPriceUnits <= 0n) throw new Error("tokenPrice must produce a positive payment-token amount.");
+  const requestedSupply = assetValueUnits / tokenPriceUnits;
+  if (requestedSupply <= 0n) throw new Error("offeringLimitCents must be at least one token at the configured price.");
+  const maturityTimestamp = BigInt(Math.floor(Date.now() / 1000) + terms.maturityMonths * 30 * 24 * 60 * 60);
   const [assetMetadataUri, revenueTokenMetadataUri] = await Promise.all([
     uploadJsonToIpfs(assetMetadata, `${input.submission.id}-asset-metadata.json`),
     uploadJsonToIpfs(revenueTokenMetadata, `${input.submission.id}-revenue-token-metadata.json`),
@@ -690,12 +696,6 @@ export async function prepareTokenization(input: {
     parseAbiParameters("bytes32 facilityCommitment, string assetMetadataURI, string revenueTokenMetadataURI"),
     [deriveFacilityCommitment(input.submission), assetMetadataUri, revenueTokenMetadataUri],
   );
-  const assetValueUnits = centsToUnits(terms.offeringLimitCents);
-  const tokenPriceUnits = tokenPriceToUnits(terms.tokenPrice);
-  if (tokenPriceUnits <= 0n) throw new Error("tokenPrice must produce a positive payment-token amount.");
-  const requestedSupply = assetValueUnits / tokenPriceUnits;
-  if (requestedSupply <= 0n) throw new Error("offeringLimitCents must be at least one token at the configured price.");
-  const maturityTimestamp = BigInt(Math.floor(Date.now() / 1000) + terms.maturityMonths * 30 * 24 * 60 * 60);
 
   return {
     assetMetadata,

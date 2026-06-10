@@ -517,6 +517,10 @@ export const SubmissionWorkspace = ({
         throw new Error(completePayload.error ?? "Failed to persist tokenization result.");
       }
       setSubmission(completePayload.submission);
+      if (completePayload.submission.tokenization.status === "registered") {
+        notification.success("Facility registration submitted; server verification is pending.");
+        return;
+      }
       notification.success("Facility tokenization completed.");
     } catch (error) {
       notification.error(error instanceof Error ? error.message : "Facility tokenization failed.");
