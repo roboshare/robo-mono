@@ -12,6 +12,7 @@ import {
   ExclamationTriangleIcon,
   ShieldCheckIcon,
 } from "@heroicons/react/24/outline";
+import { PacketSharePanel } from "~~/components/robomata/PacketSharePanel";
 import { useSelectedNetwork } from "~~/hooks/scaffold-eth";
 import { usePrivySuiWalletBinding } from "~~/hooks/usePrivySuiWalletBinding";
 import { useRobomataApiAuth } from "~~/hooks/useRobomataApiAuth";
@@ -1218,6 +1219,16 @@ export const SubmissionWorkspace = ({
                     ))}
                   </ul>
                 </div>
+                {!readOnly ? (
+                  <PacketSharePanel
+                    chainId={selectedNetwork.id}
+                    getAuthHeaders={getAuthHeaders}
+                    isBusy={isBusy}
+                    setIsBusy={setIsBusy}
+                    signerAddress={signerAddress}
+                    submission={submission}
+                  />
+                ) : null}
                 <div className="rounded-[1.5rem] border border-base-300 bg-base-200/50 p-4">
                   <div className="text-sm font-semibold text-base-content">Evidence commit status</div>
                   <div className="mt-2 text-sm text-base-content/70">

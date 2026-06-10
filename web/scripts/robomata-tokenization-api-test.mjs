@@ -365,6 +365,13 @@ async function runTokenizationApiAssertions({ authHeaders, otherAuthHeaders }) {
   assert(completed.submission.tokenization.evm.revenueTokenId === "42", "Complete did not persist revenue token id.");
   assert(completed.submission.tokenization.evm.txHash === fakeTxHash, "Complete did not persist tx hash.");
 
+  await expectPostJsonError({
+    authHeaders,
+    requestPath: "/api/robomata/submissions/sub_tokenization_eligible/tokenization/draft",
+    status: 409,
+    message: "already completed",
+  });
+
   return {
     draftStatus: draft.submission.tokenization.status,
     preparedStatus: prepared.submission.tokenization.status,
@@ -392,7 +399,9 @@ async function main() {
     ROBOMATA_WORKFLOW_MUTATIONS_ENABLED: "true",
     ROBOMATA_TOKENIZATION_ENABLED: "true",
     NEXT_PUBLIC_ROBOMATA_TOKENIZATION_ENABLED: "true",
+    ROBOMATA_TOKENIZATION_MOCK_COMPLETION_VERIFICATION_ENABLED: "true",
     ROBOMATA_TOKENIZATION_MOCK_METADATA_ENABLED: "true",
+    ROBOMATA_TOKENIZATION_MOCK_REGISTRY_ADDRESS: fakeRegistryAddress,
     ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES: `${partnerAccount.address},${otherAccount.address}`,
     ROBOMATA_SUBMISSIONS_FILE: storeFile,
   };

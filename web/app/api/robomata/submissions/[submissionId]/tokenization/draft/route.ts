@@ -54,6 +54,9 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     const accessError = requireSubmissionAccess(submission, partnerAddress);
     if (accessError) return accessError;
 
+    if (["registered", "offering_created"].includes(submission.tokenization.status)) {
+      return NextResponse.json({ error: "Tokenization is already completed for this submission." }, { status: 409 });
+    }
     if (submission.evidenceCommit.status !== "committed") {
       return NextResponse.json({ error: "Commit evidence before drafting tokenization." }, { status: 409 });
     }

@@ -7,6 +7,7 @@ import {
 } from "~~/lib/featureFlags";
 import { requirePartnerAddress, requireSubmissionAccess } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
+import { verifyTokenizationCompletion } from "~~/lib/robomata/server/tokenization";
 import { createAuditEvent } from "~~/lib/robomata/submissions";
 
 export const runtime = "nodejs";
@@ -99,6 +100,17 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     const revenueTokenMetadataUri =
       normalizeOptionalString(body.revenueTokenMetadataUri, "revenueTokenMetadataUri") ??
       submission.tokenization.evm.revenueTokenMetadataUri;
+
+    await verifyTokenizationCompletion({
+      assetId,
+      assetMetadataUri,
+      chainId: request.headers.get("x-robomata-chain-id")?.trim() ?? null,
+      registryAddress,
+      revenueTokenId,
+      revenueTokenMetadataUri,
+      submission,
+      txHash,
+    });
 
     submission.tokenization = {
       ...submission.tokenization,

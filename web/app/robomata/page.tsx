@@ -147,7 +147,7 @@ const RobomataPage = () => {
                   <div className="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Lender</div>
                   <div className="mt-2 text-lg font-bold text-base-content">Protected packet links</div>
                   <p className="mt-2 text-sm leading-relaxed text-base-content/70">
-                    Planned controlled links for one lender-ready packet with expiry, revocation, and audit state.
+                    Controlled links for one lender-ready packet with expiry, revocation, and audit state.
                   </p>
                 </div>
               </div>

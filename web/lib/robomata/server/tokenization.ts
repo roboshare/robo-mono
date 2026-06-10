@@ -1,12 +1,27 @@
 import { createHash } from "node:crypto";
 import "server-only";
-import { encodeAbiParameters, keccak256, parseAbiParameters, parseUnits } from "viem";
+import {
+  type Chain,
+  type Hex,
+  createPublicClient,
+  decodeEventLog,
+  encodeAbiParameters,
+  fallback,
+  getAddress,
+  http,
+  isAddress,
+  keccak256,
+  parseAbiParameters,
+  parseUnits,
+} from "viem";
 import type {
   FacilitySubmission,
   SubmissionTokenizationAnchors,
   SubmissionTokenizationTerms,
 } from "~~/lib/robomata/submissions";
+import scaffoldConfig, { type ScaffoldConfig } from "~~/scaffold.config";
 import { getDeployedContract } from "~~/utils/contracts";
+import { getAlchemyHttpUrl, getInfuraHttpUrl } from "~~/utils/scaffold-eth";
 
 const LOCAL_IPFS_UPLOAD_URL = "http://127.0.0.1:5001/api/v0/add";
 const PINATA_UPLOAD_URL = "https://uploads.pinata.cloud/v3/files";
@@ -16,6 +31,48 @@ const DEFAULT_TARGET_YIELD_BPS = 1_000;
 const DEFAULT_MATURITY_MONTHS = 36;
 const DEFAULT_TOKEN_PRICE = 1;
 const MOCK_IPFS_CID_PREFIX = "mock-tokenization-";
+const RECEIPT_VALIDATION_ABI = [
+  {
+    type: "event",
+    name: "AssetRegistered",
+    inputs: [
+      { name: "assetId", type: "uint256", indexed: true },
+      { name: "owner", type: "address", indexed: true },
+      { name: "assetValue", type: "uint256", indexed: false },
+      { name: "status", type: "uint8", indexed: false },
+    ],
+  },
+  {
+    type: "event",
+    name: "FacilityRegistered",
+    inputs: [
+      { name: "facilityId", type: "uint256", indexed: true },
+      { name: "partner", type: "address", indexed: true },
+      { name: "facilityCommitment", type: "bytes32", indexed: true },
+    ],
+  },
+  {
+    type: "event",
+    name: "FacilityMetadataUpdated",
+    inputs: [
+      { name: "facilityId", type: "uint256", indexed: true },
+      { name: "facilityCommitment", type: "bytes32", indexed: true },
+      { name: "assetMetadataURI", type: "string", indexed: false },
+      { name: "revenueTokenMetadataURI", type: "string", indexed: false },
+    ],
+  },
+  {
+    type: "event",
+    name: "RevenueTokenPoolCreated",
+    inputs: [
+      { name: "assetId", type: "uint256", indexed: true },
+      { name: "revenueTokenId", type: "uint256", indexed: true },
+      { name: "partner", type: "address", indexed: true },
+      { name: "assetValue", type: "uint256", indexed: false },
+      { name: "supply", type: "uint256", indexed: false },
+    ],
+  },
+] as const;
 
 type TokenizationTermsInput = Partial<{
   offeringLimitCents: unknown;
@@ -31,11 +88,22 @@ export type PreparedTokenization = {
   assetMetadata: Record<string, unknown>;
   revenueTokenMetadata: Record<string, unknown>;
   evmCall: {
-    contractAddress?: string;
+    contractAddress: string;
     contractName: "FacilityRegistry";
     functionName: "registerAssetAndCreateRevenueTokenPool";
     args: [string, string, string, string, string, string, string, boolean, boolean];
   };
+};
+
+type CompletionValidationInput = {
+  assetId: string;
+  assetMetadataUri?: string;
+  chainId: string | null;
+  registryAddress: string;
+  revenueTokenId?: string;
+  revenueTokenMetadataUri?: string;
+  submission: FacilitySubmission;
+  txHash: string;
 };
 
 function committedBorrowingBaseCents(submission: FacilitySubmission): number {
@@ -172,6 +240,54 @@ function chainIdFromHeader(chainId: string | null): number | undefined {
   return Number.isInteger(parsed) ? parsed : undefined;
 }
 
+function normalizeAddress(address: string, field: string): `0x${string}` {
+  if (!isAddress(address)) throw new Error(`${field} must be a valid EVM address.`);
+  return getAddress(address) as `0x${string}`;
+}
+
+function getConfiguredChain(chainId: number | undefined): Chain | undefined {
+  if (!chainId) return undefined;
+  return scaffoldConfig.targetNetworks.find(targetNetwork => targetNetwork.id === chainId) as Chain | undefined;
+}
+
+function getTokenizationPublicClient(chainId: number | undefined) {
+  const chain = getConfiguredChain(chainId);
+  if (!chain) return undefined;
+
+  const rpcFallbacks = [];
+  const infuraHttpUrl = getInfuraHttpUrl(chain.id);
+  const alchemyHttpUrl = getAlchemyHttpUrl(chain.id);
+  const rpcOverrideUrl = (scaffoldConfig.rpcOverrides as ScaffoldConfig["rpcOverrides"])?.[chain.id];
+  if (infuraHttpUrl) rpcFallbacks.push(http(infuraHttpUrl));
+  if (alchemyHttpUrl) rpcFallbacks.push(http(alchemyHttpUrl));
+  if (rpcOverrideUrl) rpcFallbacks.push(http(rpcOverrideUrl));
+  rpcFallbacks.push(http());
+
+  return createPublicClient({
+    chain,
+    transport: fallback(rpcFallbacks),
+  });
+}
+
+function getConfiguredFacilityRegistryAddress(chainId: number | undefined): string {
+  const deployedRegistryAddress = getDeployedContract(chainId, "FacilityRegistry")?.address;
+  if (deployedRegistryAddress) return deployedRegistryAddress;
+
+  const localMockRegistryAddress = process.env.ROBOMATA_TOKENIZATION_MOCK_REGISTRY_ADDRESS?.trim();
+  if (process.env.NODE_ENV !== "production" && localMockRegistryAddress && isAddress(localMockRegistryAddress)) {
+    return localMockRegistryAddress;
+  }
+
+  throw new Error("FacilityRegistry is not deployed for the selected EVM network.");
+}
+
+function canUseMockCompletionVerification() {
+  return (
+    process.env.NODE_ENV !== "production" &&
+    process.env.ROBOMATA_TOKENIZATION_MOCK_COMPLETION_VERIFICATION_ENABLED === "true"
+  );
+}
+
 function assertBytes32(value: string | undefined, field: string): `0x${string}` {
   if (!value || !/^0x[a-fA-F0-9]{64}$/.test(value)) {
     throw new Error(`${field} must be a bytes32 hex string.`);
@@ -188,6 +304,106 @@ export function deriveFacilityCommitment(submission: FacilitySubmission): `0x${s
       [submission.id, submission.partnerAddress as `0x${string}`, rootDigest, submission.asOfDate],
     ),
   );
+}
+
+export async function verifyTokenizationCompletion({
+  assetId,
+  assetMetadataUri,
+  chainId,
+  registryAddress,
+  revenueTokenId,
+  revenueTokenMetadataUri,
+  submission,
+  txHash,
+}: CompletionValidationInput) {
+  const parsedChainId = chainIdFromHeader(chainId);
+  const expectedRegistryAddress = normalizeAddress(
+    getConfiguredFacilityRegistryAddress(parsedChainId),
+    "registryAddress",
+  );
+  const normalizedRegistryAddress = normalizeAddress(registryAddress, "registryAddress");
+  const preparedRegistryAddress = submission.tokenization.evm.registryAddress
+    ? normalizeAddress(submission.tokenization.evm.registryAddress, "prepared registryAddress")
+    : expectedRegistryAddress;
+
+  if (normalizedRegistryAddress !== expectedRegistryAddress || normalizedRegistryAddress !== preparedRegistryAddress) {
+    throw new Error("registryAddress does not match the prepared FacilityRegistry for this chain.");
+  }
+
+  if (!/^0x[a-fA-F0-9]{64}$/.test(txHash)) throw new Error("txHash must be a 32-byte hex string.");
+  if (canUseMockCompletionVerification()) return;
+
+  const publicClient = getTokenizationPublicClient(parsedChainId);
+  if (!publicClient) throw new Error("Unable to verify tokenization transaction for the selected EVM network.");
+
+  const receipt = await publicClient.getTransactionReceipt({ hash: txHash as Hex });
+  if (receipt.status !== "success") throw new Error("Tokenization transaction did not succeed on-chain.");
+  if (!receipt.to || normalizeAddress(receipt.to, "receipt.to") !== normalizedRegistryAddress) {
+    throw new Error("Tokenization transaction was not sent to the prepared FacilityRegistry.");
+  }
+
+  const expectedAssetId = BigInt(assetId);
+  const expectedRevenueTokenId = revenueTokenId ? BigInt(revenueTokenId) : undefined;
+  const expectedPartnerAddress = normalizeAddress(submission.partnerAddress, "partnerAddress");
+  const expectedCommitment = deriveFacilityCommitment(submission).toLowerCase();
+  const expectedAssetMetadataUri = assetMetadataUri ?? submission.tokenization.evm.assetMetadataUri;
+  const expectedRevenueTokenMetadataUri =
+    revenueTokenMetadataUri ?? submission.tokenization.evm.revenueTokenMetadataUri;
+  let sawAssetRegistered = false;
+  let sawFacilityRegistered = false;
+  let sawFacilityMetadata = false;
+  let sawRevenueTokenPool = expectedRevenueTokenId === undefined;
+
+  for (const log of receipt.logs) {
+    let event: { eventName: string; args: Record<string, unknown> };
+    try {
+      event = decodeEventLog({
+        abi: RECEIPT_VALIDATION_ABI,
+        data: log.data,
+        topics: log.topics,
+      }) as { eventName: string; args: Record<string, unknown> };
+    } catch {
+      continue;
+    }
+
+    const logAddress = normalizeAddress(log.address, "log.address");
+    if (
+      ["AssetRegistered", "FacilityRegistered", "FacilityMetadataUpdated"].includes(event.eventName) &&
+      logAddress !== normalizedRegistryAddress
+    ) {
+      continue;
+    }
+
+    if (event.eventName === "AssetRegistered") {
+      sawAssetRegistered =
+        event.args.assetId === expectedAssetId &&
+        normalizeAddress(String(event.args.owner), "AssetRegistered.owner") === expectedPartnerAddress;
+    }
+    if (event.eventName === "FacilityRegistered") {
+      sawFacilityRegistered =
+        event.args.facilityId === expectedAssetId &&
+        normalizeAddress(String(event.args.partner), "FacilityRegistered.partner") === expectedPartnerAddress &&
+        String(event.args.facilityCommitment).toLowerCase() === expectedCommitment;
+    }
+    if (event.eventName === "FacilityMetadataUpdated") {
+      sawFacilityMetadata =
+        event.args.facilityId === expectedAssetId &&
+        String(event.args.facilityCommitment).toLowerCase() === expectedCommitment &&
+        event.args.assetMetadataURI === expectedAssetMetadataUri &&
+        event.args.revenueTokenMetadataURI === expectedRevenueTokenMetadataUri;
+    }
+    if (event.eventName === "RevenueTokenPoolCreated" && expectedRevenueTokenId !== undefined) {
+      sawRevenueTokenPool =
+        event.args.assetId === expectedAssetId &&
+        event.args.revenueTokenId === expectedRevenueTokenId &&
+        normalizeAddress(String(event.args.partner), "RevenueTokenPoolCreated.partner") === expectedPartnerAddress;
+    }
+  }
+
+  if (!sawAssetRegistered) throw new Error("Tokenization receipt is missing the expected AssetRegistered event.");
+  if (!sawFacilityRegistered) throw new Error("Tokenization receipt is missing the expected FacilityRegistered event.");
+  if (!sawFacilityMetadata) throw new Error("Tokenization receipt is missing the expected facility metadata event.");
+  if (!sawRevenueTokenPool) throw new Error("Tokenization receipt is missing the expected revenue-token pool event.");
 }
 
 async function uploadJsonToIpfs(data: Record<string, unknown>, filename: string): Promise<string> {
@@ -240,6 +456,7 @@ export async function prepareTokenization(input: {
 }): Promise<PreparedTokenization & { assetMetadataUri: string; revenueTokenMetadataUri: string }> {
   const terms = input.submission.tokenization.terms;
   assertCompleteTokenizationTerms(terms);
+  const registryAddress = getConfiguredFacilityRegistryAddress(chainIdFromHeader(input.chainId));
 
   const anchors = input.submission.tokenization.anchors;
   const preparedAt = new Date().toISOString();
@@ -292,7 +509,6 @@ export async function prepareTokenization(input: {
   const requestedSupply = assetValueUnits / tokenPriceUnits;
   if (requestedSupply <= 0n) throw new Error("offeringLimitCents must be at least one token at the configured price.");
   const maturityTimestamp = BigInt(Math.floor(Date.now() / 1000) + terms.maturityMonths * 30 * 24 * 60 * 60);
-  const registry = getDeployedContract(chainIdFromHeader(input.chainId), "FacilityRegistry");
 
   return {
     assetMetadata,
@@ -300,7 +516,7 @@ export async function prepareTokenization(input: {
     assetMetadataUri,
     revenueTokenMetadataUri,
     evmCall: {
-      contractAddress: registry?.address,
+      contractAddress: registryAddress,
       contractName: "FacilityRegistry",
       functionName: "registerAssetAndCreateRevenueTokenPool",
       args: [

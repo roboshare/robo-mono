@@ -208,6 +208,11 @@ Use the flags as a matrix:
 - `ROBOMATA_TOKENIZATION_MOCK_METADATA_ENABLED=true` is a local-only test helper
   for deterministic tokenization metadata URIs. It is ignored in production and
   should not be used for shared previews or release candidates.
+- `ROBOMATA_TOKENIZATION_MOCK_REGISTRY_ADDRESS` and
+  `ROBOMATA_TOKENIZATION_MOCK_COMPLETION_VERIFICATION_ENABLED=true` are
+  local-only tokenization API smoke helpers. Shared preview, release candidate,
+  and production environments must rely on `deployedContracts.ts` registry
+  output and live transaction receipt verification.
 - `POSTGRES_URL` is required when the server workflow is enabled outside local
   development. `ROBOMATA_SUBMISSIONS_FILE=/local/path/submissions.json` is only
   a local-development fallback and must not be used for shared previews or

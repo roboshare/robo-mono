@@ -22,6 +22,8 @@ const baseUrl = `http://127.0.0.1:${port}`;
 const serverTimeoutMs = Number.parseInt(process.env.ROBOMATA_SMOKE_SERVER_TIMEOUT_MS ?? "90000", 10);
 const requestTimeoutMs = Number.parseInt(process.env.ROBOMATA_SMOKE_REQUEST_TIMEOUT_MS ?? "180000", 10);
 const smokeEvidencePlaintext = "smoke evidence\n";
+const smokeProfile = process.env.ROBOMATA_SMOKE_PROFILE ?? "testnet";
+const isLocalSmoke = smokeProfile === "local";
 
 let serverProcess;
 let tempDir;
@@ -201,6 +203,66 @@ async function fetchJson(url, options) {
   }
 }
 
+async function fetchJsonExpectStatus(url, options, expectedStatus) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    const payload = await response.json();
+    if (response.status !== expectedStatus) {
+      throw new Error(`Expected ${url} to return ${expectedStatus}, got ${response.status}: ${JSON.stringify(payload)}`);
+    }
+    return payload;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchText(url) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(`${url} failed ${response.status}: ${text}`);
+    }
+    return text;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function verifyPublicRoutes() {
+  const robomataHtml = await fetchText(`${baseUrl}/robomata`);
+  if (!robomataHtml.includes("Make fleet receivables financeable before the lender asks twice.")) {
+    throw new Error("Expected /robomata to render the public product headline.");
+  }
+  if (!robomataHtml.includes("/partner/submissions")) {
+    throw new Error("Expected /robomata to include the partner submissions CTA.");
+  }
+  if (
+    robomataHtml.includes("Keep Markets Live") ||
+    robomataHtml.includes("Keep Partner Flows Live") ||
+    robomataHtml.includes("First Customer")
+  ) {
+    throw new Error("Expected /robomata to exclude old demo/read-only projection copy.");
+  }
+  if (robomataHtml.includes("/api/robomata/submissions")) {
+    throw new Error("Expected /robomata not to embed private submission API references.");
+  }
+
+  const submissionsHtml = await fetchText(`${baseUrl}/partner/submissions`);
+  if (!submissionsHtml.includes("<html") || !submissionsHtml.includes("__next")) {
+    throw new Error("Expected /partner/submissions to return the operator submissions app shell.");
+  }
+
+  return {
+    publicRobomataRoute: "passed",
+    partnerSubmissionsRoute: "passed",
+  };
+}
+
 function sha256Hex(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -291,7 +353,94 @@ async function postJson({ authHeaders, requestPath, body = {} }) {
   });
 }
 
-async function runSubmissionFlow({ authHeaders, submissionId }) {
+async function createShareLink({ authHeaders, submissionId, body = {} }) {
+  const requestPath = `/api/robomata/submissions/${submissionId}/share-links`;
+  return postJson({ authHeaders, requestPath, body });
+}
+
+async function revokeShareLink({ authHeaders, submissionId, shareLinkId }) {
+  const requestPath = `/api/robomata/submissions/${submissionId}/share-links/${shareLinkId}`;
+  return fetchJson(`${baseUrl}${requestPath}`, {
+    method: "PATCH",
+    headers: await authHeaders("PATCH", requestPath, { "content-type": "application/json" }),
+    body: JSON.stringify({ status: "revoked" }),
+  });
+}
+
+async function getShareLinks({ authHeaders, submissionId }) {
+  const requestPath = `/api/robomata/submissions/${submissionId}/share-links`;
+  return fetchJson(`${baseUrl}${requestPath}`, {
+    method: "GET",
+    headers: await authHeaders("GET", requestPath),
+  });
+}
+
+async function runShareLinkFlow({ authHeaders, submissionId, facilityName }) {
+  const activePayload = await createShareLink({
+    authHeaders,
+    submissionId,
+    body: { recipientLabel: "Smoke lender credit team" },
+  });
+  if (!activePayload.shareLink?.id || !activePayload.token || !activePayload.url || !activePayload.apiUrl) {
+    throw new Error("Expected share-link create response to include shareLink, token, url, and apiUrl.");
+  }
+  if (!activePayload.url.includes(`/lender/packet/${activePayload.token}`)) {
+    throw new Error(`Expected share-link url to target the lender packet page, got ${activePayload.url}.`);
+  }
+
+  const packetPayload = await fetchJson(activePayload.apiUrl);
+  if (packetPayload.packet?.submission?.facilityName !== facilityName) {
+    throw new Error("Expected protected share API to return the lender packet for the smoke submission.");
+  }
+
+  const lenderPacketHtml = await fetchText(activePayload.url);
+  if (!lenderPacketHtml.includes("Lender packet") || !lenderPacketHtml.includes(facilityName)) {
+    throw new Error("Expected lender packet page HTML to render the packet heading and facility name.");
+  }
+
+  const shareLinksAfterAccess = await getShareLinks({ authHeaders, submissionId });
+  const accessedLink = shareLinksAfterAccess.shareLinks?.find(link => link.id === activePayload.shareLink.id);
+  if (!accessedLink || accessedLink.accessCount < 2 || !accessedLink.lastAccessedAt) {
+    throw new Error("Expected share-link access count and last-access metadata after API and page views.");
+  }
+
+  const revokePayload = await revokeShareLink({
+    authHeaders,
+    submissionId,
+    shareLinkId: activePayload.shareLink.id,
+  });
+  if (revokePayload.shareLink?.status !== "revoked") {
+    throw new Error("Expected share-link revocation to persist revoked status.");
+  }
+  await fetchJsonExpectStatus(activePayload.apiUrl, undefined, 410);
+
+  const expiringPayload = await createShareLink({
+    authHeaders,
+    submissionId,
+    body: {
+      recipientLabel: "Smoke expiring lender link",
+      expiresAt: new Date(Date.now() + 2_500).toISOString(),
+    },
+  });
+  await new Promise(resolve => setTimeout(resolve, 3_000));
+  await fetchJsonExpectStatus(expiringPayload.apiUrl, undefined, 410);
+  const shareLinksAfterExpiry = await getShareLinks({ authHeaders, submissionId });
+  const expiredLink = shareLinksAfterExpiry.shareLinks?.find(link => link.id === expiringPayload.shareLink.id);
+  if (expiredLink?.status !== "expired") {
+    throw new Error("Expected expired share link to be listed with expired status.");
+  }
+
+  return {
+    activeShareLinkId: activePayload.shareLink.id,
+    activeShareLinkStatus: revokePayload.shareLink.status,
+    activeShareLinkAccessCount: accessedLink.accessCount,
+    expiredShareLinkId: expiringPayload.shareLink.id,
+    expiredShareLinkStatus: expiredLink.status,
+    lenderPacketPageRendered: true,
+  };
+}
+
+async function runSubmissionFlow({ authHeaders, submissionId, requireTestnetEvidence }) {
   const csv = [
     "id,obligor,vehicles,outstanding,dpd,utilization,insured,title,lockbox",
     "AR-SMOKE-1,North Smoke Logistics,10,100000,5,91,true,true,true",
@@ -329,29 +478,46 @@ async function runSubmissionFlow({ authHeaders, submissionId }) {
     throw new Error(`Expected zero smoke exceptions, got ${exceptionCount}.`);
   }
 
-  const commitPayload = await postJson({
-    authHeaders,
-    requestPath: `/api/robomata/submissions/${submissionId}/commit-evidence`,
-  });
-
   const evidence = evidencePayload.evidence;
-  const commit = commitPayload.submission.evidenceCommit;
-  if (evidence.storageBackend !== "walrus") {
-    throw new Error(`Expected storageBackend=walrus, got ${evidence.storageBackend}.`);
-  }
-  if (evidence.encryptionBackend !== "seal") {
-    throw new Error(`Expected encryptionBackend=seal, got ${evidence.encryptionBackend}.`);
-  }
-  if (!evidence.walrusBlobId || !evidence.ciphertextDigest) {
-    throw new Error("Expected Walrus blob metadata and ciphertext digest on uploaded evidence.");
-  }
-  if (commit.status !== "committed" || !commit.txDigest) {
-    throw new Error(`Expected committed Sui evidence state, got ${commit.status}.`);
-  }
+  let commit = { status: "skipped", txDigest: undefined };
+  let walrusProof = { fetchedCiphertextBytes: undefined, fetchedCiphertextDigest: undefined };
 
-  const walrusProof = await verifyWalrusCiphertext({
-    evidence,
-    plaintext: smokeEvidencePlaintext,
+  if (requireTestnetEvidence) {
+    const commitPayload = await postJson({
+      authHeaders,
+      requestPath: `/api/robomata/submissions/${submissionId}/commit-evidence`,
+    });
+
+    commit = commitPayload.submission.evidenceCommit;
+    if (evidence.storageBackend !== "walrus") {
+      throw new Error(`Expected storageBackend=walrus, got ${evidence.storageBackend}.`);
+    }
+    if (evidence.encryptionBackend !== "seal") {
+      throw new Error(`Expected encryptionBackend=seal, got ${evidence.encryptionBackend}.`);
+    }
+    if (!evidence.walrusBlobId || !evidence.ciphertextDigest) {
+      throw new Error("Expected Walrus blob metadata and ciphertext digest on uploaded evidence.");
+    }
+    if (commit.status !== "committed" || !commit.txDigest) {
+      throw new Error(`Expected committed Sui evidence state, got ${commit.status}.`);
+    }
+
+    walrusProof = await verifyWalrusCiphertext({
+      evidence,
+      plaintext: smokeEvidencePlaintext,
+    });
+  } else {
+    if (evidence.storageBackend !== "walrus-mock") {
+      throw new Error(`Expected local smoke storageBackend=walrus-mock, got ${evidence.storageBackend}.`);
+    }
+    if (evidence.encryptionBackend !== "none") {
+      throw new Error(`Expected local smoke encryptionBackend=none, got ${evidence.encryptionBackend}.`);
+    }
+  }
+  const shareLinkProof = await runShareLinkFlow({
+    authHeaders,
+    submissionId,
+    facilityName: computePayload.submission.facilityName,
   });
 
   return {
@@ -366,19 +532,25 @@ async function runSubmissionFlow({ authHeaders, submissionId }) {
     sealIdentity: evidence.sealIdentity,
     commitStatus: commit.status,
     txDigest: commit.txDigest,
+    shareLinks: shareLinkProof,
   };
 }
 
 async function main() {
+  if (smokeProfile !== "testnet" && smokeProfile !== "local") {
+    throw new Error(`Unsupported ROBOMATA_SMOKE_PROFILE=${smokeProfile}. Use "testnet" or "local".`);
+  }
+
   const { envPath, values } = await loadGeneratedEnv();
   const mergedEnv = { ...values, ...process.env };
   const privateKey = `0x${randomBytes(32).toString("hex")}`;
   const account = privateKeyToAccount(privateKey);
   const partnerAddress = account.address;
-  requiredEnv(mergedEnv, "ROBOMATA_SUI_NETWORK");
-  const activeSuiSignerAddress = suiSignerAddress(mergedEnv);
+  if (!isLocalSmoke) requiredEnv(mergedEnv, "ROBOMATA_SUI_NETWORK");
+  const activeSuiSignerAddress = isLocalSmoke ? undefined : suiSignerAddress(mergedEnv);
   tempDir = await mkdtemp(path.join(tmpdir(), "robomata-smoke-"));
   const storeFile = path.join(tempDir, "submissions.json");
+  const shareLinksFile = path.join(tempDir, "share-links.json");
   await writeFile(storeFile, "", "utf8");
 
   const baseEnv = {
@@ -392,33 +564,41 @@ async function main() {
     ROBOMATA_WORKFLOW_MUTATIONS_ENABLED: "true",
     ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES: partnerAddress,
     ROBOMATA_SUBMISSIONS_FILE: storeFile,
-    ROBOMATA_WALRUS_UPLOADS_ENABLED: "true",
-    ROBOMATA_REQUIRE_REAL_EVIDENCE_STORAGE: "true",
+    ROBOMATA_SHARE_LINKS_FILE: shareLinksFile,
+    ROBOMATA_SHARE_LINKS_ENABLED: "true",
+    NEXT_PUBLIC_ROBOMATA_SHARE_LINKS_ENABLED: "true",
+    ROBOMATA_WALRUS_UPLOADS_ENABLED: isLocalSmoke ? "false" : "true",
+    ROBOMATA_REQUIRE_REAL_EVIDENCE_STORAGE: isLocalSmoke ? "false" : "true",
     WALRUS_PUBLISHER_URL:
       mergedEnv.WALRUS_PUBLISHER_URL ?? "https://publisher.walrus-testnet.walrus.space",
     WALRUS_AGGREGATOR_URL:
       mergedEnv.WALRUS_AGGREGATOR_URL ?? "https://aggregator.walrus-testnet.walrus.space",
-    ROBOMATA_SUI_COMMIT_ENABLED: "true",
-    ROBOMATA_SUI_SIGNER_ADDRESS: activeSuiSignerAddress,
+    ROBOMATA_SUI_COMMIT_ENABLED: isLocalSmoke ? "false" : "true",
+    ...(activeSuiSignerAddress ? { ROBOMATA_SUI_SIGNER_ADDRESS: activeSuiSignerAddress } : {}),
   };
 
   const authHeaders = authHeaderBuilder({ account, partnerAddress });
   await startServer(baseEnv);
+  const publicRoutes = await verifyPublicRoutes();
   const submissionId = await createSubmission({ authHeaders });
-  const facilityId = requiredEnv(baseEnv, "ROBOMATA_SUI_FACILITY_ID");
-  await bindFacilityToSubmission({
-    storeFile,
-    submissionId,
-    facilityId,
-    operatorAddress: activeSuiSignerAddress,
-  });
-  const result = await runSubmissionFlow({ authHeaders, submissionId });
+  if (!isLocalSmoke) {
+    const facilityId = requiredEnv(baseEnv, "ROBOMATA_SUI_FACILITY_ID");
+    await bindFacilityToSubmission({
+      storeFile,
+      submissionId,
+      facilityId,
+      operatorAddress: activeSuiSignerAddress,
+    });
+  }
+  const result = await runSubmissionFlow({ authHeaders, submissionId, requireTestnetEvidence: !isLocalSmoke });
 
   console.log(
     JSON.stringify(
       {
+        smokeProfile,
+        publicRoutes,
         ...result,
-        envPath,
+        ...(isLocalSmoke ? {} : { envPath }),
       },
       null,
       2,
