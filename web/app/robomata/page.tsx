@@ -98,8 +98,9 @@ const RobomataPage = () => {
                 </h1>
                 <p className="max-w-3xl text-lg leading-relaxed text-base-content/70">
                   Robomata helps fleet operators package receivables, evidence, exceptions, and borrowing-base output
-                  into a lender-ready workflow. The operator workspace lives in Partner Submissions; this page explains
-                  the product surface and why the evidence rail matters.
+                  into lender-ready packets. Operators get a clearer path from monthly reporting to credit review, while
+                  lenders receive a cleaner file with eligibility, evidence status, and unresolved exceptions already
+                  organized.
                 </p>
               </div>
 
@@ -119,35 +120,37 @@ const RobomataPage = () => {
               </div>
 
               <div className="rounded-2xl border border-dashed border-base-300 bg-base-200/50 p-4 text-sm leading-relaxed text-base-content/70">
-                Partner access is required to create or view private submissions. Protected lender packet links are a
-                separate controlled-sharing surface and are not public facility browsing.
+                Private submissions stay permissioned. Operators can prepare a packet, invite a lender through a
+                controlled link, and keep sensitive evidence behind access controls instead of forwarding raw files
+                through email.
               </div>
             </div>
 
             <div className="rounded-[1.75rem] border border-base-300 bg-base-200/70 p-5 sm:p-6">
-              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
-                Product Architecture
-              </p>
+              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">Operating Model</p>
               <div className="mt-5 space-y-4">
                 <div className="rounded-2xl border border-base-300 bg-base-100/80 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Public</div>
-                  <div className="mt-2 text-lg font-bold text-base-content">/robomata</div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Prepare</div>
+                  <div className="mt-2 text-lg font-bold text-base-content">Operator-controlled workspace</div>
                   <p className="mt-2 text-sm leading-relaxed text-base-content/70">
-                    Product positioning, workflow explanation, and operator entry points.
+                    Import receivables, attach evidence, calculate availability, and resolve exceptions before a lender
+                    review starts.
                   </p>
                 </div>
                 <div className="rounded-2xl border border-base-300 bg-base-100/80 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Operator</div>
-                  <div className="mt-2 text-lg font-bold text-base-content">/partner/submissions</div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Share</div>
+                  <div className="mt-2 text-lg font-bold text-base-content">Lender-ready packet</div>
                   <p className="mt-2 text-sm leading-relaxed text-base-content/70">
-                    Authenticated submission list, workspace, receivables import, evidence upload, compute, and commit.
+                    Send one controlled packet with borrowing-base output, exception status, and the evidence a credit
+                    team needs to diligence the file.
                   </p>
                 </div>
                 <div className="rounded-2xl border border-base-300 bg-base-100/80 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Lender</div>
-                  <div className="mt-2 text-lg font-bold text-base-content">Protected packet links</div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Monitor</div>
+                  <div className="mt-2 text-lg font-bold text-base-content">Verifiable evidence trail</div>
                   <p className="mt-2 text-sm leading-relaxed text-base-content/70">
-                    Controlled links for one lender-ready packet with expiry, revocation, and audit state.
+                    Keep sensitive documents controlled while preserving a tamper-evident record of what supported the
+                    borrowing-base calculation.
                   </p>
                 </div>
               </div>
@@ -176,8 +179,8 @@ const RobomataPage = () => {
               From receivables export to lender-ready packet.
             </h2>
             <p className="mt-4 text-base leading-relaxed text-base-content/70">
-              The MVP is centered on one product object: a partner-owned facility submission. It is not a public market,
-              not a public facility directory, and not a generic tokenization demo.
+              Robomata starts with the reporting materials operators already maintain, then turns them into a structured
+              credit package with clear eligibility, evidence, and exception status.
             </p>
 
             <div className="mt-6 space-y-3">
