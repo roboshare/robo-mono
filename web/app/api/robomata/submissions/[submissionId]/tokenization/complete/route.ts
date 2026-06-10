@@ -57,7 +57,6 @@ function normalizeTxHash(value: unknown): string {
 function isRetryableCompletionVerificationError(error: unknown) {
   const message = error instanceof Error ? error.message.toLowerCase() : "";
   return (
-    message.includes("receipt") ||
     message.includes("not found") ||
     message.includes("unable to verify") ||
     message.includes("timeout") ||

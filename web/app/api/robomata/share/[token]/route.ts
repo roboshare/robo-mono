@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isRobomataShareLinksEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
-import { buildResolvedSharedLenderPacketView } from "~~/lib/robomata/server/sharedLenderPacket";
+import {
+  buildResolvedSharedLenderPacketView,
+  shareLinkHasMonitoringMetadata,
+} from "~~/lib/robomata/server/sharedLenderPacket";
 import {
   getSubmissionShareLinkStore,
   hashShareLinkMetadataValue,
@@ -70,7 +73,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ tok
       return noStoreResponse({ error: "Share link not found." }, { status: 404 });
     }
 
-    if (!submission.computation?.lenderPacket) {
+    if (!submission.computation?.lenderPacket && !shareLinkHasMonitoringMetadata(shareLink)) {
       return noStoreResponse(
         { error: "Lender packet is no longer available. Ask the operator to regenerate it." },
         {
