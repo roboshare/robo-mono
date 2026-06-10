@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { NextPage } from "next";
 import { formatUnits } from "viem";
 import { useChainId, useChains, useReadContract, useReadContracts, useSwitchChain } from "wagmi";
 import {
   AdjustmentsHorizontalIcon,
+  ArrowRightIcon,
   ArrowsUpDownIcon,
   Bars4Icon,
   BriefcaseIcon,
@@ -1542,11 +1544,44 @@ const MarketsPage: NextPage = () => {
 
   return (
     <div className="flex flex-col gap-8 py-8 px-4 sm:px-6 lg:px-8 w-full max-w-full lg:max-w-[75%] 2xl:max-w-[80%] mx-auto overflow-x-hidden">
+      <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30 sm:p-8">
+        <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.28em] text-base-content/50">Downstream Markets</p>
+            <h1 className="mt-3 text-3xl font-black tracking-tight text-base-content lg:text-5xl">
+              Distribution starts after the facility is financeable.
+            </h1>
+            <p className="mt-4 max-w-3xl text-base leading-relaxed text-base-content/70">
+              Markets are the downstream layer for standardized and tokenized exposure. Robomata prepares operator
+              facilities, evidence, and borrowing-base state first; markets can then surface offerings and secondary
+              liquidity for assets that are ready to distribute.
+            </p>
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+              <Link href="/products/robomata" className="btn btn-primary rounded-full sm:min-w-44">
+                Start with Robomata
+                <ArrowRightIcon className="h-4 w-4" />
+              </Link>
+              <Link href="/products/robolend" className="btn btn-outline rounded-full sm:min-w-44">
+                Robolend coming soon
+              </Link>
+            </div>
+          </div>
+          <div className="rounded-[1.5rem] border border-base-300 bg-base-200/60 p-5">
+            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Market Role</div>
+            <div className="mt-3 space-y-3 text-sm leading-relaxed text-base-content/70">
+              <p>1. Operator packages a facility through Robomata.</p>
+              <p>2. Capital providers review and monitor the lender-ready packet.</p>
+              <p>3. Tokenized exposure can be distributed through markets when the facility is ready.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Header */}
       <div className="flex flex-col gap-4">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-3xl lg:text-4xl font-bold">Explore Markets</h1>
+            <h2 className="text-3xl lg:text-4xl font-bold">Explore Markets</h2>
             <div className="dropdown dropdown-end">
               <div
                 tabIndex={0}
@@ -1575,7 +1610,7 @@ const MarketsPage: NextPage = () => {
             </div>
           </div>
           <p className="text-lg opacity-70 mt-2">
-            Discover offerings and secondary listings for tokenized revenue streams
+            Discover offerings and secondary listings for standardized asset-backed revenue exposure
           </p>
         </div>
 

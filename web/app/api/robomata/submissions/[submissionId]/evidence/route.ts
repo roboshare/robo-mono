@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  isRobomataFacilityMonitoringEnabled,
   isRobomataWalrusUploadsEnabled,
   isRobomataWorkflowMutationEnabled,
   isRobomataWorkflowServerEnabled,
 } from "~~/lib/featureFlags";
 import { createEvidenceRecord } from "~~/lib/robomata/server/evidenceStorage";
+import { getFacilityMonitoringStore } from "~~/lib/robomata/server/facilityMonitoringStore";
 import {
   requirePartnerAddress,
   requireSubmissionAccess,
@@ -301,6 +303,13 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     }
 
     const saved = await saveEvidenceRecord({ evidence, partnerAddress, submissionId, store });
+    if (isRobomataFacilityMonitoringEnabled()) {
+      try {
+        await getFacilityMonitoringStore().syncEvidenceObservations(saved);
+      } catch (error) {
+        console.error("Failed to sync facility monitoring evidence observations.", error);
+      }
+    }
     return NextResponse.json({ submission: saved, evidence });
   } catch (error) {
     return NextResponse.json(

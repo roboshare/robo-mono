@@ -211,7 +211,7 @@ export const SettleAssetModal = ({
                       : liquidationReason === 1
                         ? "This asset can be force closed due to insolvency after missed-payout shortfall accrual."
                         : "This asset can be force closed under the current rules."}{" "}
-                    Forced final payout remains a public protocol action and is not managed from the partner dashboard.
+                    Forced final payout remains a public protocol action and is not managed from the operator portal.
                   </div>
                 </div>
               )}

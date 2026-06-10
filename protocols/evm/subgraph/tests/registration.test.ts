@@ -4,20 +4,34 @@ import {
   AssetRegistered,
   VehicleMetadataUpdated
 } from "../generated/VehicleRegistry/VehicleRegistry"
+import {
+  AssetRegistered as FacilityAssetRegistered,
+  FacilityMetadataUpdated,
+  FacilityRegistered
+} from "../generated/FacilityRegistry/FacilityRegistry"
 import { PrimaryPoolCreated } from "../generated/Marketplace/Marketplace"
 import { EarningsDistributed } from "../generated/EarningsManager/EarningsManager"
 import {
-  handleAssetRegistered,
+  handleFacilityAssetRegistered,
+  handleFacilityMetadataUpdated,
+  handleFacilityRegistered
+} from "../src/facility-mapping"
+import {
   handleEarningsDistributed,
   handlePrimaryPoolCreated,
+  handleVehicleAssetRegistered,
   handleVehicleMetadataUpdated
 } from "../src/mapping"
-import { EarningsDistribution, PrimaryPool, Vehicle } from "../generated/schema"
+import { EarningsDistribution, Facility, PrimaryPool, Vehicle } from "../generated/schema"
 
 const PARTNER = Address.fromString("0x8166E0fd513B1231DC77D98380F4a22024342347")
 const REGISTRY = Address.fromString("0xB41bBD6F6dEb64E3A2C19e5Ee0d1e71427d43903")
+const FACILITY_REGISTRY = Address.fromString("0x1111111111111111111111111111111111111111")
 const MARKETPLACE = Address.fromString("0x8f6453B2E6b1aCB9EAD2185D6cF1B264350bf819")
 const TX = Bytes.fromHexString("0x9178d980b4c2d49c7cd9e068dd8d240f67e25c989fa0d12025e0ad3d4d97a416")
+const FACILITY_COMMITMENT = Bytes.fromHexString(
+  "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+)
 
 function mockEvent<T extends ethereum.Event>(address: Address, logIndex: i32): T {
   let event = changetype<T>(newMockEvent())
@@ -45,7 +59,7 @@ describe("Launch offering registration flow", () => {
     assetRegistered.parameters.push(
       new ethereum.EventParam("status", ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(0)))
     )
-    handleAssetRegistered(assetRegistered)
+    handleVehicleAssetRegistered(assetRegistered)
 
     let poolCreated = changetype<PrimaryPoolCreated>(mockEvent<PrimaryPoolCreated>(MARKETPLACE, 15))
     poolCreated.parameters = new Array()
@@ -91,7 +105,7 @@ describe("Launch offering registration flow", () => {
     assetRegistered.parameters.push(
       new ethereum.EventParam("status", ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(0)))
     )
-    handleAssetRegistered(assetRegistered)
+    handleVehicleAssetRegistered(assetRegistered)
 
     let metadataUpdated = changetype<VehicleMetadataUpdated>(
       mockEvent<VehicleMetadataUpdated>(REGISTRY, 3)
@@ -114,6 +128,68 @@ describe("Launch offering registration flow", () => {
     assert.entityCount("Vehicle", 1)
     assert.fieldEquals("Vehicle", "1", "metadataURI", "ipfs://updated-asset")
     assert.assertNotNull(Vehicle.load("1"))
+  })
+
+  test("indexes facility registration metadata", () => {
+    clearStore()
+
+    let assetRegistered = changetype<FacilityAssetRegistered>(
+      mockEvent<FacilityAssetRegistered>(FACILITY_REGISTRY, 10)
+    )
+    assetRegistered.parameters = new Array()
+    assetRegistered.parameters.push(
+      new ethereum.EventParam("assetId", ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(7)))
+    )
+    assetRegistered.parameters.push(new ethereum.EventParam("owner", ethereum.Value.fromAddress(PARTNER)))
+    assetRegistered.parameters.push(
+      new ethereum.EventParam("assetValue", ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(100000)))
+    )
+    assetRegistered.parameters.push(
+      new ethereum.EventParam("status", ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(0)))
+    )
+    handleFacilityAssetRegistered(assetRegistered)
+
+    let facilityRegistered = changetype<FacilityRegistered>(
+      mockEvent<FacilityRegistered>(FACILITY_REGISTRY, 11)
+    )
+    facilityRegistered.parameters = new Array()
+    facilityRegistered.parameters.push(
+      new ethereum.EventParam("facilityId", ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(7)))
+    )
+    facilityRegistered.parameters.push(new ethereum.EventParam("partner", ethereum.Value.fromAddress(PARTNER)))
+    facilityRegistered.parameters.push(
+      new ethereum.EventParam("facilityCommitment", ethereum.Value.fromFixedBytes(FACILITY_COMMITMENT))
+    )
+    handleFacilityRegistered(facilityRegistered)
+
+    let metadataUpdated = changetype<FacilityMetadataUpdated>(
+      mockEvent<FacilityMetadataUpdated>(FACILITY_REGISTRY, 12)
+    )
+    metadataUpdated.parameters = new Array()
+    metadataUpdated.parameters.push(
+      new ethereum.EventParam("facilityId", ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(7)))
+    )
+    metadataUpdated.parameters.push(
+      new ethereum.EventParam("facilityCommitment", ethereum.Value.fromFixedBytes(FACILITY_COMMITMENT))
+    )
+    metadataUpdated.parameters.push(
+      new ethereum.EventParam("assetMetadataURI", ethereum.Value.fromString("ipfs://facility-asset"))
+    )
+    metadataUpdated.parameters.push(
+      new ethereum.EventParam(
+        "revenueTokenMetadataURI",
+        ethereum.Value.fromString("ipfs://facility-revenue")
+      )
+    )
+    handleFacilityMetadataUpdated(metadataUpdated)
+
+    assert.entityCount("Facility", 1)
+    assert.fieldEquals("Facility", "7", "partner", PARTNER.toHexString())
+    assert.fieldEquals("Facility", "7", "facilityCommitment", FACILITY_COMMITMENT.toHexString())
+    assert.fieldEquals("Facility", "7", "assetValue", "100000")
+    assert.fieldEquals("Facility", "7", "assetMetadataURI", "ipfs://facility-asset")
+    assert.fieldEquals("Facility", "7", "revenueTokenMetadataURI", "ipfs://facility-revenue")
+    assert.assertNotNull(Facility.load("7"))
   })
 
   test("indexes earnings distribution timestamps", () => {

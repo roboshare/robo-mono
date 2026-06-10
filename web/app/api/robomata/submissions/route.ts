@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  isRobomataFacilityMonitoringEnabled,
   isRobomataWalrusUploadsEnabled,
   isRobomataWorkflowMutationEnabled,
   isRobomataWorkflowServerEnabled,
 } from "~~/lib/featureFlags";
+import { getFacilityMonitoringStore } from "~~/lib/robomata/server/facilityMonitoringStore";
 import { getPrivyUserFromRequest, requirePartnerAddress } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
 import { ensureSubmissionSuiFacility } from "~~/lib/robomata/server/suiFacilityAssignment";
@@ -103,6 +105,15 @@ export async function POST(request: NextRequest) {
         },
         { status: assignmentError ? 503 : 409 },
       );
+    }
+
+    if (isRobomataFacilityMonitoringEnabled()) {
+      const facility = await getFacilityMonitoringStore().syncFacility(createdSubmission);
+      createdSubmission.facilityMonitoring = {
+        facilityId: facility.id,
+        status: facility.status,
+      };
+      createdSubmission = await store.save(createdSubmission);
     }
 
     return NextResponse.json({ submission: createdSubmission }, { status: 201 });

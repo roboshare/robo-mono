@@ -43,10 +43,10 @@ export const PartnerAccessGate = ({ children, loadingMessage }: PartnerAccessGat
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
         <div className="text-center py-16 px-6 max-w-xl">
-          <h2 className="text-2xl font-bold">Partner Access Required</h2>
+          <h2 className="text-2xl font-bold">Operator Access Required</h2>
           <p className="mt-3 opacity-70">
-            This dashboard is only available to authorized partners. If you believe this is an error, please contact the
-            Roboshare team.
+            This dashboard is only available to authorized operators. If you believe this is an error, please contact
+            the Roboshare team.
           </p>
         </div>
       </div>

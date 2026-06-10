@@ -7,6 +7,7 @@ import { RoboshareTokens } from "../contracts/RoboshareTokens.sol";
 import { PartnerManager } from "../contracts/PartnerManager.sol";
 import { RegistryRouter } from "../contracts/RegistryRouter.sol";
 import { VehicleRegistry } from "../contracts/VehicleRegistry.sol";
+import { FacilityRegistry } from "../contracts/FacilityRegistry.sol";
 import { Treasury } from "../contracts/Treasury.sol";
 import { EarningsManager } from "../contracts/EarningsManager.sol";
 import { Marketplace } from "../contracts/Marketplace.sol";
@@ -23,6 +24,7 @@ abstract contract DeployCore is ScaffoldETHDeploy {
         PartnerManager partnerManager;
         RegistryRouter router;
         VehicleRegistry vehicleRegistry;
+        FacilityRegistry facilityRegistry;
         Treasury treasury;
         EarningsManager earningsManager;
         Marketplace marketplace;
@@ -80,6 +82,20 @@ abstract contract DeployCore is ScaffoldETHDeploy {
             );
             ERC1967Proxy vehicleProxy = new ERC1967Proxy(address(vehicleImplementation), vehicleInitData);
             contracts.vehicleRegistry = VehicleRegistry(address(vehicleProxy));
+        }
+
+        // Deploy FacilityRegistry
+        {
+            FacilityRegistry facilityImplementation = new FacilityRegistry();
+            bytes memory facilityInitData = abi.encodeWithSignature(
+                "initialize(address,address,address,address)",
+                _deployer,
+                address(contracts.roboshareTokens),
+                address(contracts.partnerManager),
+                address(contracts.router)
+            );
+            ERC1967Proxy facilityProxy = new ERC1967Proxy(address(facilityImplementation), facilityInitData);
+            contracts.facilityRegistry = FacilityRegistry(address(facilityProxy));
         }
 
         // Deploy Treasury
@@ -167,15 +183,20 @@ abstract contract DeployCore is ScaffoldETHDeploy {
         contracts.roboshareTokens.setPositionManager(address(contracts.positionManager));
 
         // 2. Grant Roles
-        // Grant AUTHORIZED_REGISTRY_ROLE to VehicleRegistry
+        // Grant AUTHORIZED_REGISTRY_ROLE to asset registries
         contracts.router.grantRole(contracts.router.AUTHORIZED_REGISTRY_ROLE(), address(contracts.vehicleRegistry));
+        contracts.router.grantRole(contracts.router.AUTHORIZED_REGISTRY_ROLE(), address(contracts.facilityRegistry));
 
-        // Grant MINTER_ROLE to Router (for reserving token IDs) and to VehicleRegistry (for minting revenue tokens)
+        // Grant MINTER_ROLE to Router (for reserving token IDs) and registries (for minting asset/revenue tokens)
         contracts.roboshareTokens.grantRole(contracts.roboshareTokens.MINTER_ROLE(), address(contracts.router));
         contracts.roboshareTokens.grantRole(contracts.roboshareTokens.MINTER_ROLE(), address(contracts.vehicleRegistry));
+        contracts.roboshareTokens
+            .grantRole(contracts.roboshareTokens.MINTER_ROLE(), address(contracts.facilityRegistry));
 
-        // Grant BURNER_ROLE to VehicleRegistry (for burning revenue tokens on retirement)
+        // Grant BURNER_ROLE to registries (for burning revenue tokens on retirement)
         contracts.roboshareTokens.grantRole(contracts.roboshareTokens.BURNER_ROLE(), address(contracts.vehicleRegistry));
+        contracts.roboshareTokens
+            .grantRole(contracts.roboshareTokens.BURNER_ROLE(), address(contracts.facilityRegistry));
 
         // Grant AUTHORIZED_MARKETPLACE_ROLE to Marketplace on Treasury for purchase/redemption settlement flows
         contracts.treasury.grantRole(contracts.treasury.AUTHORIZED_MARKETPLACE_ROLE(), address(contracts.marketplace));

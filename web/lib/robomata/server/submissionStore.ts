@@ -16,6 +16,7 @@ import {
   type FacilitySubmission,
   createAuditEvent,
   createSubmissionShell,
+  normalizeSubmissionTokenization,
   touchSubmission,
 } from "~~/lib/robomata/submissions";
 
@@ -111,6 +112,7 @@ type LoadedSubmission = FacilitySubmission & {
 };
 
 function markLoadedSubmission(submission: FacilitySubmission): FacilitySubmission {
+  normalizeSubmissionTokenization(submission);
   Object.defineProperty(submission, expectedUpdatedAtSymbol, {
     configurable: true,
     enumerable: false,

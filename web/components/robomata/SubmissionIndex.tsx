@@ -111,7 +111,7 @@ const AuthorizedSubmissionIndex = () => {
         return;
       }
 
-      router.push(`/partner/submissions/${payload.submission.id}`);
+      router.push(`/operator/submissions/${payload.submission.id}`);
     } catch (error) {
       notification.error(error instanceof Error ? error.message : "Failed to create submission.");
     } finally {
@@ -124,7 +124,7 @@ const AuthorizedSubmissionIndex = () => {
       <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30 sm:p-8">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-3xl">
-            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">Partner Workflow</p>
+            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">Operator Workflow</p>
             <h1 className="mt-3 text-4xl font-black tracking-tight text-base-content sm:text-5xl">
               Borrowing base submissions
             </h1>
@@ -196,7 +196,7 @@ const AuthorizedSubmissionIndex = () => {
             {submissions.map(submission => (
               <Link
                 key={submission.id}
-                href={`/partner/submissions/${submission.id}`}
+                href={`/operator/submissions/${submission.id}`}
                 className="rounded-[1.5rem] border border-base-300 bg-base-200/50 p-5 transition hover:border-primary/40 hover:shadow-md"
               >
                 <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">

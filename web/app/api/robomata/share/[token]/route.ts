@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isRobomataShareLinksEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
 import {
+  buildResolvedSharedLenderPacketView,
+  shareLinkHasMonitoringMetadata,
+} from "~~/lib/robomata/server/sharedLenderPacket";
+import {
   getSubmissionShareLinkStore,
   hashShareLinkMetadataValue,
 } from "~~/lib/robomata/server/submissionShareLinkStore";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
-import { buildSharedLenderPacketView } from "~~/lib/robomata/shareLinks";
 
 export const runtime = "nodejs";
 
@@ -70,7 +73,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ tok
       return noStoreResponse({ error: "Share link not found." }, { status: 404 });
     }
 
-    if (!submission.computation?.lenderPacket) {
+    if (!submission.computation?.lenderPacket && !shareLinkHasMonitoringMetadata(shareLink)) {
       return noStoreResponse(
         { error: "Lender packet is no longer available. Ask the operator to regenerate it." },
         {
@@ -84,7 +87,9 @@ export async function GET(request: NextRequest, context: { params: Promise<{ tok
       return noStoreResponse({ error: "Share link is no longer active." }, { status: 410 });
     }
 
-    return noStoreResponse({ packet: buildSharedLenderPacketView({ shareLink: accessedShareLink, submission }) });
+    return noStoreResponse({
+      packet: await buildResolvedSharedLenderPacketView({ shareLink: accessedShareLink, submission }),
+    });
   } catch (error) {
     return noStoreResponse(
       { error: error instanceof Error ? error.message : "Failed to load lender packet share link." },

@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isRobomataWorkflowMutationEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
+import {
+  isRobomataFacilityMonitoringEnabled,
+  isRobomataWorkflowMutationEnabled,
+  isRobomataWorkflowServerEnabled,
+} from "~~/lib/featureFlags";
+import { getFacilityMonitoringStore } from "~~/lib/robomata/server/facilityMonitoringStore";
 import {
   getPrivyUserFromRequest,
   requirePartnerAddress,
@@ -9,6 +14,7 @@ import {
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
 import { ensureSubmissionSuiFacility } from "~~/lib/robomata/server/suiFacilityAssignment";
 import { computeSubmissionArtifacts } from "~~/lib/robomata/submissionAdapters";
+import type { FacilitySubmission } from "~~/lib/robomata/submissions";
 import { createAuditEvent } from "~~/lib/robomata/submissions";
 
 export const runtime = "nodejs";
@@ -21,6 +27,28 @@ function requireRobomataWorkflow() {
 function requireRobomataMutation() {
   if (isRobomataWorkflowMutationEnabled()) return null;
   return NextResponse.json({ error: "Robomata submission writes are not enabled." }, { status: 403 });
+}
+
+async function recordMonitoringRun(
+  submission: FacilitySubmission,
+  store: ReturnType<typeof getSubmissionStore>,
+): Promise<FacilitySubmission> {
+  if (!isRobomataFacilityMonitoringEnabled()) return submission;
+
+  const monitoringStore = getFacilityMonitoringStore();
+  const { packet, run } = await monitoringStore.recordRunFromSubmission(submission);
+  if (!run) return submission;
+
+  submission.facilityMonitoring = {
+    facilityId: run.facilityId,
+    latestRunId: run.id,
+    latestPacketId: packet?.id,
+    status: packet?.freshnessStatus === "fresh" ? "packet_fresh" : "run_locked",
+    packetFreshnessStatus: packet?.freshnessStatus,
+  };
+  const saved = await store.save(submission);
+  await monitoringStore.syncFacility(saved);
+  return saved;
 }
 
 export async function POST(request: NextRequest, context: { params: Promise<{ submissionId: string }> }) {
@@ -76,10 +104,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
         );
       }
       if (!assignment.assigned && assignment.reason === "updated") {
-        return NextResponse.json({ submission: assignment.submission });
+        return NextResponse.json({ submission: await recordMonitoringRun(assignment.submission, store) });
       }
       if (assignment.assigned) {
-        return NextResponse.json({ submission: assignment.submission });
+        return NextResponse.json({ submission: await recordMonitoringRun(assignment.submission, store) });
       }
 
       return NextResponse.json(
@@ -96,7 +124,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       submission: saved,
     });
 
-    return NextResponse.json({ submission: assignment.submission });
+    return NextResponse.json({ submission: await recordMonitoringRun(assignment.submission, store) });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to compute borrowing base." },

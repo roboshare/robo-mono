@@ -5,12 +5,18 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { hardhat } from "viem/chains";
-import { Bars3Icon, BugAntIcon, ClipboardDocumentListIcon, HomeIcon } from "@heroicons/react/24/outline";
-import { BuildingStorefrontIcon, MagnifyingGlassIcon, UserGroupIcon } from "@heroicons/react/24/outline";
+import { Bars3Icon, BugAntIcon, HomeIcon, RocketLaunchIcon } from "@heroicons/react/24/outline";
+import {
+  BuildingStorefrontIcon,
+  CubeTransparentIcon,
+  MagnifyingGlassIcon,
+  UserGroupIcon,
+} from "@heroicons/react/24/outline";
 import { FaucetButton, RainbowKitCustomConnectButton } from "~~/components/scaffold-eth";
 import { useOutsideClick, useTargetNetwork } from "~~/hooks/scaffold-eth";
 import { useIsAdmin } from "~~/hooks/useIsAdmin";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
+import { isRobomataWorkflowEnabled } from "~~/lib/featureFlags";
 
 type HeaderMenuLink = {
   label: string;
@@ -31,13 +37,8 @@ export const menuLinks: HeaderMenuLink[] = [
     icon: <BuildingStorefrontIcon className="h-4 w-4" />,
   },
   {
-    label: "Robomata",
-    href: "/robomata",
-    icon: <ClipboardDocumentListIcon className="h-4 w-4" />,
-  },
-  {
     label: "Partners",
-    href: "/partner",
+    href: "/partners",
     icon: <UserGroupIcon className="h-4 w-4" />,
   },
   {
@@ -54,12 +55,51 @@ export const menuLinks: HeaderMenuLink[] = [
   },
 ];
 
+const HeaderProductsMenu = () => {
+  const pathname = usePathname();
+  const isActive = pathname?.startsWith("/products") || pathname === "/robomata";
+
+  return (
+    <li>
+      <details>
+        <summary
+          onClick={event => {
+            event.stopPropagation();
+          }}
+          className={`${
+            isActive ? "bg-secondary shadow-md" : ""
+          } hover:bg-secondary hover:shadow-md focus:!bg-secondary active:!text-neutral py-1.5 px-3 text-sm rounded-full gap-2 grid grid-flow-col`}
+        >
+          <CubeTransparentIcon className="h-4 w-4" />
+          <span>Products</span>
+        </summary>
+        <ul className="rounded-box bg-base-100 p-2 shadow-lg">
+          <li>
+            <Link href="/products/robomata" className="gap-2 rounded-xl text-sm">
+              <span>Robomata</span>
+              <span className="badge badge-primary badge-sm">Active</span>
+            </Link>
+          </li>
+          <li>
+            <Link href="/products/robolend" className="gap-2 rounded-xl text-sm">
+              <span>Robolend</span>
+              <span className="badge badge-warning badge-sm">Coming soon</span>
+            </Link>
+          </li>
+        </ul>
+      </details>
+    </li>
+  );
+};
+
 export const HeaderMenuLinks = () => {
   const pathname = usePathname();
   const { isAdmin } = useIsAdmin();
+  const launchAppHref = isRobomataWorkflowEnabled() ? "/operator/submissions" : "/operator";
 
   return (
     <>
+      <HeaderProductsMenu />
       {menuLinks
         .filter(link => !link.adminOnly || isAdmin)
         .map(({ label, href, icon }) => {
@@ -79,6 +119,16 @@ export const HeaderMenuLinks = () => {
             </li>
           );
         })}
+      <li>
+        <Link
+          href={launchAppHref}
+          passHref
+          className="hover:bg-primary hover:text-primary-content focus:!bg-primary active:!text-primary-content py-1.5 px-3 text-sm rounded-full gap-2 grid grid-flow-col border border-primary/40 text-primary"
+        >
+          <RocketLaunchIcon className="h-4 w-4" />
+          <span>Launch App</span>
+        </Link>
+      </li>
     </>
   );
 };

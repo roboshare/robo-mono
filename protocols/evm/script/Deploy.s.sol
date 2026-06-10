@@ -7,6 +7,7 @@ import { RoboshareTokens } from "../contracts/RoboshareTokens.sol";
 import { PartnerManager } from "../contracts/PartnerManager.sol";
 import { RegistryRouter } from "../contracts/RegistryRouter.sol";
 import { VehicleRegistry } from "../contracts/VehicleRegistry.sol";
+import { FacilityRegistry } from "../contracts/FacilityRegistry.sol";
 import { Treasury } from "../contracts/Treasury.sol";
 import { EarningsManager } from "../contracts/EarningsManager.sol";
 import { Marketplace } from "../contracts/Marketplace.sol";
@@ -61,6 +62,7 @@ contract Deploy is DeployCore {
         partnerManager = contracts.partnerManager;
         router = contracts.router;
         vehicleRegistry = contracts.vehicleRegistry;
+        FacilityRegistry facilityRegistry = contracts.facilityRegistry;
         treasury = contracts.treasury;
         earningsManager = contracts.earningsManager;
         marketplace = contracts.marketplace;
@@ -71,6 +73,7 @@ contract Deploy is DeployCore {
         saveDeployment("PartnerManager", address(partnerManager));
         saveDeployment("RegistryRouter", address(router));
         saveDeployment("VehicleRegistry", address(vehicleRegistry));
+        saveDeployment("FacilityRegistry", address(facilityRegistry));
         saveDeployment("Treasury", address(treasury));
         saveDeployment("EarningsManager", address(earningsManager));
         saveDeployment("Marketplace", address(marketplace));

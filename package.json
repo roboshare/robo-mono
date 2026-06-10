@@ -53,6 +53,7 @@
     "ipfs": "yarn workspace web ipfs",
     "lint": "yarn web:lint && yarn evm:lint",
     "robomata:local-smoke": "yarn workspace web robomata:local-smoke",
+    "robomata:tokenization-api-test": "yarn workspace web robomata:tokenization-api-test",
     "robomata:testnet-smoke": "yarn workspace web robomata:testnet-smoke",
     "web:build": "yarn workspace web build",
     "web:check-types": "yarn workspace web check-types",

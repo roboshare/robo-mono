@@ -26,6 +26,17 @@ function shareStatusClass(status: string) {
   return "badge-ghost";
 }
 
+function freshnessBadgeClass(status: string) {
+  if (status === "fresh") return "badge-success";
+  if (["stale", "superseded", "refresh_available"].includes(status)) return "badge-warning";
+  if (status === "invalid") return "badge-error";
+  return "badge-ghost";
+}
+
+function formatStatus(value: string) {
+  return value.replace(/_/g, " ");
+}
+
 export const LenderPacketView = ({ packet }: LenderPacketViewProps) => {
   const { borrowingBase } = packet;
 
@@ -86,6 +97,32 @@ export const LenderPacketView = ({ packet }: LenderPacketViewProps) => {
             </div>
           ) : null}
         </div>
+        {packet.monitoring ? (
+          <div className="mt-5 rounded-2xl border border-base-300 bg-base-200/50 p-4 text-sm leading-relaxed text-base-content/70">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="font-semibold text-base-content">Packet freshness</div>
+                <div className="mt-1">
+                  This lender packet is pinned to borrowing-base run{" "}
+                  <span className="break-all font-mono text-xs">{packet.monitoring.runId}</span>.
+                </div>
+              </div>
+              <div className={`badge ${freshnessBadgeClass(packet.monitoring.packetFreshnessStatus)} capitalize`}>
+                {formatStatus(packet.monitoring.packetFreshnessStatus)}
+              </div>
+            </div>
+            <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+              <div>Packet manifest: {packet.monitoring.packetManifestId}</div>
+              <div>Generated: {packet.monitoring.packetGeneratedAt}</div>
+              {packet.monitoring.currentPacketFreshnessStatus ? (
+                <div>Current status: {formatStatus(packet.monitoring.currentPacketFreshnessStatus)}</div>
+              ) : null}
+              {packet.monitoring.runRootDigest ? (
+                <div className="break-all">Run root: {packet.monitoring.runRootDigest}</div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <section className="grid gap-6 lg:grid-cols-[1fr_0.9fr]">
