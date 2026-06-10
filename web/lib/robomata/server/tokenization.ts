@@ -408,9 +408,6 @@ export async function verifyTokenizationCompletion({
 
   const receipt = await publicClient.getTransactionReceipt({ hash: txHash as Hex });
   if (receipt.status !== "success") throw new Error("Tokenization transaction did not succeed on-chain.");
-  if (!receipt.to || normalizeAddress(receipt.to, "receipt.to") !== normalizedRegistryAddress) {
-    throw new Error("Tokenization transaction was not sent to the prepared FacilityRegistry.");
-  }
 
   const expectedAssetId = BigInt(assetId);
   if (!revenueTokenId) throw new Error("revenueTokenId is required for prepared offering completion.");
