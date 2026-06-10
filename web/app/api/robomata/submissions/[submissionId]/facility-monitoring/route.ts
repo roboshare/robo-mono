@@ -16,12 +16,12 @@ export async function GET(request: NextRequest, context: { params: Promise<{ sub
     const featureError = requireRobomataMonitoring();
     if (featureError) return featureError;
 
+    const partnerAddress = await requirePartnerAddress(request);
+    if (partnerAddress instanceof NextResponse) return partnerAddress;
+
     const { submissionId } = await context.params;
     const submission = await getSubmissionStore().get(submissionId);
     if (!submission) return NextResponse.json({ error: "Submission not found." }, { status: 404 });
-
-    const partnerAddress = await requirePartnerAddress(request);
-    if (partnerAddress instanceof NextResponse) return partnerAddress;
 
     const accessError = requireSubmissionAccess(submission, partnerAddress);
     if (accessError) return accessError;

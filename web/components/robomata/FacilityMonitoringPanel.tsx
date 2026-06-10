@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowPathIcon, CheckCircleIcon, CircleStackIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import { isRobomataFacilityMonitoringClientEnabled } from "~~/lib/featureFlags";
 import { formatUsd } from "~~/lib/robomata/borrowingBase";
@@ -107,19 +107,25 @@ export const FacilityMonitoringPanel = ({
   const [projection, setProjection] = useState<FacilityMonitoringProjection | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [serverUnavailable, setServerUnavailable] = useState(false);
+  const loadSequenceRef = useRef(0);
 
   const loadMonitoring = useCallback(async () => {
     if (!featureEnabled) return;
 
     const path = `/api/robomata/submissions/${submission.id}/facility-monitoring`;
+    const loadSequence = loadSequenceRef.current + 1;
+    loadSequenceRef.current = loadSequence;
+    const isCurrentLoad = () => loadSequenceRef.current === loadSequence;
     setIsLoading(true);
     setServerUnavailable(false);
+    setProjection(null);
     try {
       const response = await fetch(path, {
         headers: await getAuthHeaders({ chainId, method: "GET", path, signerAddress }),
       });
       const payload = await readJsonResponse<{ monitoring?: FacilityMonitoringProjection }>(response);
 
+      if (!isCurrentLoad()) return;
       if (response.status === 404) {
         setProjection(null);
         setServerUnavailable(true);
@@ -131,9 +137,11 @@ export const FacilityMonitoringPanel = ({
 
       setProjection(payload.monitoring);
     } catch (error) {
+      if (!isCurrentLoad()) return;
+      setProjection(null);
       notification.error(error instanceof Error ? error.message : "Failed to load facility monitoring.");
     } finally {
-      setIsLoading(false);
+      if (isCurrentLoad()) setIsLoading(false);
     }
   }, [chainId, featureEnabled, getAuthHeaders, signerAddress, submission.id]);
 
