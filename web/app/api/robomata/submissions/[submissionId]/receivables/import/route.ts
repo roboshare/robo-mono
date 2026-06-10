@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isRobomataWorkflowMutationEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
+import {
+  isRobomataFacilityMonitoringEnabled,
+  isRobomataWorkflowMutationEnabled,
+  isRobomataWorkflowServerEnabled,
+} from "~~/lib/featureFlags";
 import { importReceivablesCsv } from "~~/lib/robomata/server/csv";
+import { getFacilityMonitoringStore } from "~~/lib/robomata/server/facilityMonitoringStore";
 import {
   requirePartnerAddress,
   requireSubmissionAccess,
@@ -84,6 +89,14 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     });
 
     const saved = await store.save(submission);
+    if (isRobomataFacilityMonitoringEnabled()) {
+      await getFacilityMonitoringStore().createReceivablesImportObservation({
+        filename: file.name,
+        importedAt: saved.updatedAt,
+        receivableCount: saved.receivables.length,
+        submission: saved,
+      });
+    }
     return NextResponse.json({ submission: saved });
   } catch (error) {
     return NextResponse.json(
