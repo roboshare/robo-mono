@@ -183,6 +183,14 @@ Public token metadata must not include raw receivable rows, private evidence
 file contents, lender packet contents, plaintext evidence, or borrower-sensitive
 row-level diligence data.
 
+The next Robomata monitoring tranche keeps this submission object as the
+compatibility surface, but introduces a long-lived facility layer underneath it.
+In that model, a facility is the live workspace, evidence and receivable changes
+become observations, borrowing-base calculations become immutable runs, and
+lender packets become run-pinned artifacts that can be fresh or stale relative
+to newer observations. The detailed contract is tracked in
+[Robomata Live Facility Monitoring](./robomata-live-facility-monitoring.md).
+
 ## Release Flags
 
 The working submission workflow is feature-flagged because `dev` is the branch
@@ -213,6 +221,25 @@ Use the flags as a matrix:
   local-only tokenization API smoke helpers. Shared preview, release candidate,
   and production environments must rely on `deployedContracts.ts` registry
   output and live transaction receipt verification.
+- `ROBOMATA_FACILITY_MONITORING_ENABLED=true` enables additive server-side live
+  facility monitoring projections and APIs. It does not replace the current
+  submission workflow and should stay unset unless the monitoring tranche is
+  intentionally enabled.
+- `NEXT_PUBLIC_ROBOMATA_FACILITY_MONITORING_ENABLED=true` reveals the operator
+  monitoring UI for live facility state, observation freshness, locked runs, and
+  Sui root verification. The server flag remains authoritative.
+- `ROBOMATA_FACILITY_MONITORING_REFRESH_ENABLED=true` enables side-effectful
+  monitoring refresh behavior, such as scheduled or provider reads. Keep it
+  unset while the system only records manual uploads and seeded QA observations.
+- `ROBOMATA_FACILITY_MONITORING_FILE=/local/path/monitoring.json` is an optional
+  local-development JSON fallback for facility monitoring records when
+  `POSTGRES_URL` is not configured. Shared previews and release candidates must
+  use Postgres for monitoring sidecar state.
+- `ROBOMATA_LENDER_MONITORING_SHARE_ENABLED=true` and
+  `NEXT_PUBLIC_ROBOMATA_LENDER_MONITORING_SHARE_ENABLED=true` allow protected
+  lender views and share controls to include monitoring freshness. Existing
+  packet links remain packet-only unless the share capability and server flag
+  permit monitoring disclosure.
 - `POSTGRES_URL` is required when the server workflow is enabled outside local
   development. `ROBOMATA_SUBMISSIONS_FILE=/local/path/submissions.json` is only
   a local-development fallback and must not be used for shared previews or

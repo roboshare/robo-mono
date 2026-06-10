@@ -166,32 +166,49 @@ function buildRunAndPacket(
   if (!projection.latestRun || !submission.computation) return {};
 
   const inputObservationIds = observations.map(observation => observation.id);
+  const artifactSuffix = `${submission.computation.computedAt.replace(/[^0-9a-z]/gi, "")}_${(
+    submission.evidenceCommit.rootDigest ??
+    submission.computation.evidenceAnchor.evidenceRoot ??
+    submission.id
+  )
+    .replace(/^0x/, "")
+    .replace(/[^0-9a-z]/gi, "")
+    .slice(0, 12)}`;
+  const runId = submission.facilityMonitoring?.latestRunId ?? `run_${submission.id}_${artifactSuffix}`;
+  const packetId = submission.facilityMonitoring?.latestPacketId ?? `packet_${submission.id}_${artifactSuffix}`;
   const runWithoutMonitoringRoot: BorrowingBaseRun = {
     ...projection.latestRun,
+    id: runId,
     inputObservationIds,
+    packetId,
   };
   const runRoot = buildBorrowingBaseRunRootPayload(runWithoutMonitoringRoot);
   const run: BorrowingBaseRun = {
     ...runWithoutMonitoringRoot,
     rootDigest: runRoot.rootDigest,
   };
-  const packet = projection.latestPacket
+  const packetWithRunRoot = projection.latestPacket
     ? {
         ...projection.latestPacket,
+        id: packetId,
         evidenceObservationIds: inputObservationIds,
+        runId: run.id,
         runDigest: run.rootDigest,
+        publicMetadata: {
+          ...projection.latestPacket.publicMetadata,
+          monitoringRootVersion: runRoot.version,
+          runRootDigest: runRoot.rootDigest,
+        },
       }
     : undefined;
-  const packetRoot = packet ? buildPacketManifestRootPayload(packet) : undefined;
+  const packetRoot = packetWithRunRoot ? buildPacketManifestRootPayload(packetWithRunRoot) : undefined;
   const rootedPacket =
-    packet && packetRoot
+    packetWithRunRoot && packetRoot
       ? {
-          ...packet,
+          ...packetWithRunRoot,
           publicMetadata: {
-            ...packet.publicMetadata,
-            monitoringRootVersion: runRoot.version,
+            ...packetWithRunRoot.publicMetadata,
             packetRootDigest: packetRoot.rootDigest,
-            runRootDigest: runRoot.rootDigest,
           },
         }
       : undefined;
@@ -544,6 +561,10 @@ function createFileStore(): FacilityMonitoringStore {
         let updatedRoot: SuiRootCommit | null = null;
         fileStore.suiRootCommits = fileStore.suiRootCommits.map(root => {
           if (root.id !== id) return root;
+          if (root.status === "verified" && input.status !== "verified") {
+            updatedRoot = root;
+            return root;
+          }
           updatedRoot = {
             ...root,
             errorMessage: input.errorMessage,
@@ -778,6 +799,7 @@ function createPostgresStore(): FacilityMonitoringStore {
       `) as Array<{ payload: SuiRootCommit }>;
       const current = rows[0]?.payload;
       if (!current) return null;
+      if (current.status === "verified" && input.status !== "verified") return current;
       const updatedRoot: SuiRootCommit = {
         ...current,
         errorMessage: input.errorMessage,

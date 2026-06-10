@@ -1,4 +1,5 @@
 import type { EvidenceCommitment } from "~~/lib/robomata/evidence";
+import type { BorrowingBaseRun, PacketFreshnessStatus, PacketManifest } from "~~/lib/robomata/facilityMonitoring";
 import type {
   FacilitySubmission,
   FacilitySubmissionStatus,
@@ -37,6 +38,17 @@ export type SubmissionShareLinkAuditEvent = {
   type: "packet_share_created" | "packet_share_viewed" | "packet_share_revoked" | "packet_share_expired";
   createdAt: string;
   metadata?: Record<string, string | number | boolean | null>;
+};
+
+export type SubmissionShareLinkMonitoringBinding = {
+  facilityId: string;
+  runId: string;
+  packetManifestId: string;
+  packetGeneratedAt: string;
+  packetFreshnessStatus: PacketFreshnessStatus;
+  runRootDigest?: string;
+  packetRootDigest?: string;
+  monitoringRootVersion?: string;
 };
 
 export type SharedLenderPacketEvidence = {
@@ -82,24 +94,45 @@ export type SharedLenderPacketView = {
   lenderPacket: SubmissionComputation["lenderPacket"];
   exceptions: Array<Pick<SubmissionException, "id" | "severity" | "title" | "message" | "actionStatus">>;
   evidence: SharedLenderPacketEvidence[];
+  monitoring?: SubmissionShareLinkMonitoringBinding & {
+    currentPacketFreshnessStatus?: PacketFreshnessStatus;
+    pinnedAtShare: boolean;
+  };
 };
 
-function linkedExceptionIdsForEvidence(submission: FacilitySubmission, evidenceId: string): string[] {
-  return submission.exceptions
+function linkedExceptionIdsForEvidence(exceptions: SubmissionException[], evidenceId: string): string[] {
+  return exceptions
     .filter(exception => exception.kind === "evidence" && exception.itemId === evidenceId)
     .map(exception => exception.id);
 }
 
+function observationIdForEvidence(evidenceId: string): string {
+  return `obs_${evidenceId}`;
+}
+
 export function buildSharedLenderPacketView({
+  monitoring,
+  packetManifest,
+  run,
   shareLink,
   submission,
 }: {
+  monitoring?: SharedLenderPacketView["monitoring"];
+  packetManifest?: PacketManifest;
+  run?: BorrowingBaseRun;
   shareLink: SubmissionShareLink;
   submission: FacilitySubmission;
 }): SharedLenderPacketView {
   if (!submission.computation) {
     throw new Error("Submission does not have lender packet output.");
   }
+
+  const exceptions = run?.exceptions ?? submission.exceptions;
+  const evidence = packetManifest
+    ? submission.evidence.filter(entry =>
+        packetManifest.evidenceObservationIds.includes(observationIdForEvidence(entry.id)),
+      )
+    : submission.evidence;
 
   return {
     shareLink: {
@@ -117,16 +150,16 @@ export function buildSharedLenderPacketView({
       status: submission.status,
       updatedAt: submission.updatedAt,
     },
-    borrowingBase: submission.computation.borrowingBase,
-    lenderPacket: submission.computation.lenderPacket,
-    exceptions: submission.exceptions.map(exception => ({
+    borrowingBase: run?.borrowingBase ?? submission.computation.borrowingBase,
+    lenderPacket: packetManifest?.lenderPacket ?? submission.computation.lenderPacket,
+    exceptions: exceptions.map(exception => ({
       id: exception.id,
       severity: exception.severity,
       title: exception.title,
       message: exception.message,
       actionStatus: exception.actionStatus,
     })),
-    evidence: submission.evidence.map(evidence => ({
+    evidence: evidence.map(evidence => ({
       id: evidence.id,
       filename: evidence.filename,
       scope: evidence.scope,
@@ -134,7 +167,7 @@ export function buildSharedLenderPacketView({
       storageBackend: evidence.storageBackend,
       encryptionBackend: evidence.encryptionBackend,
       status: evidence.status,
-      linkedExceptionIds: linkedExceptionIdsForEvidence(submission, evidence.id),
+      linkedExceptionIds: linkedExceptionIdsForEvidence(exceptions, evidence.id),
       advanced: {
         walrusBlobId: evidence.walrusBlobId,
         walrusEventId: evidence.walrusEventId,
@@ -148,5 +181,6 @@ export function buildSharedLenderPacketView({
         evidenceRoot: submission.evidenceCommit.evidenceRoot,
       },
     })),
+    monitoring,
   };
 }
