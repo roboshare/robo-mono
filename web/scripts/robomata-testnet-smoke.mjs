@@ -665,6 +665,7 @@ async function seedMonitoringFreshnessFixtures({ baseSubmissionId, monitoringFil
     const seededSubmission = {
       ...baseSubmission,
       id: submissionId,
+      evidence: [],
       facilityName: `${baseSubmission.facilityName} ${fixtureCase.key}`,
       facilityMonitoring: {
         facilityId,
@@ -969,6 +970,11 @@ async function main() {
     ROBOMATA_SUBMISSIONS_FILE: storeFile,
     ROBOMATA_SHARE_LINKS_FILE: shareLinksFile,
     ROBOMATA_FACILITY_MONITORING_FILE: monitoringFile,
+    ROBOMATA_FACILITY_MONITORING_ENABLED: "",
+    NEXT_PUBLIC_ROBOMATA_FACILITY_MONITORING_ENABLED: "",
+    ROBOMATA_FACILITY_MONITORING_REFRESH_ENABLED: "",
+    ROBOMATA_LENDER_MONITORING_SHARE_ENABLED: "",
+    NEXT_PUBLIC_ROBOMATA_LENDER_MONITORING_SHARE_ENABLED: "",
     ROBOMATA_SHARE_LINKS_ENABLED: "true",
     NEXT_PUBLIC_ROBOMATA_SHARE_LINKS_ENABLED: "true",
     ROBOMATA_WALRUS_UPLOADS_ENABLED: isLocalSmoke ? "false" : "true",
