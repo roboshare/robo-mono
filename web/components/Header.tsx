@@ -16,6 +16,7 @@ import { FaucetButton, RainbowKitCustomConnectButton } from "~~/components/scaff
 import { useOutsideClick, useTargetNetwork } from "~~/hooks/scaffold-eth";
 import { useIsAdmin } from "~~/hooks/useIsAdmin";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
+import { isRobomataWorkflowEnabled } from "~~/lib/featureFlags";
 
 type HeaderMenuLink = {
   label: string;
@@ -62,6 +63,9 @@ const HeaderProductsMenu = () => {
     <li>
       <details>
         <summary
+          onClick={event => {
+            event.stopPropagation();
+          }}
           className={`${
             isActive ? "bg-secondary shadow-md" : ""
           } hover:bg-secondary hover:shadow-md focus:!bg-secondary active:!text-neutral py-1.5 px-3 text-sm rounded-full gap-2 grid grid-flow-col`}
@@ -91,6 +95,7 @@ const HeaderProductsMenu = () => {
 export const HeaderMenuLinks = () => {
   const pathname = usePathname();
   const { isAdmin } = useIsAdmin();
+  const launchAppHref = isRobomataWorkflowEnabled() ? "/operator/submissions" : "/operator";
 
   return (
     <>
@@ -116,7 +121,7 @@ export const HeaderMenuLinks = () => {
         })}
       <li>
         <Link
-          href="/operator/submissions"
+          href={launchAppHref}
           passHref
           className="hover:bg-primary hover:text-primary-content focus:!bg-primary active:!text-primary-content py-1.5 px-3 text-sm rounded-full gap-2 grid grid-flow-col border border-primary/40 text-primary"
         >
