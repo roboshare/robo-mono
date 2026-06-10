@@ -28,7 +28,7 @@ function assetIdFromTokenId(tokenId: BigInt): BigInt {
   return tokenId.minus(one)
 }
 
-export function handleAssetRegistered(event: AssetRegisteredEvent): void {
+export function handleVehicleAssetRegistered(event: AssetRegisteredEvent): void {
   let id = event.params.assetId.toString()
   let vehicle = Vehicle.load(id)
   if (!vehicle) {

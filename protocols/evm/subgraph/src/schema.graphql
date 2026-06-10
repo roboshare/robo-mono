@@ -12,6 +12,18 @@ type Vehicle @entity(immutable: false) {
   transactionHash: Bytes!
 }
 
+type Facility @entity(immutable: false) {
+  id: ID! # facilityId
+  partner: Bytes!
+  facilityCommitment: Bytes
+  assetValue: BigInt!
+  assetMetadataURI: String
+  revenueTokenMetadataURI: String
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
 type Listing @entity(immutable: false) {
   id: ID! # listingId
   tokenId: BigInt!

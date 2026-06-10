@@ -17,6 +17,7 @@ dataSources:
       language: wasm/assemblyscript
       entities: &entities
         - Vehicle
+        - Facility
         - Listing
         - PrimaryPool
         - EarningsDistribution
@@ -25,10 +26,33 @@ dataSources:
           file: ./abis/VehicleRegistry.json
       eventHandlers:
         - event: AssetRegistered(indexed uint256,indexed address,uint256,uint8)
-          handler: handleAssetRegistered
+          handler: handleVehicleAssetRegistered
         - event: VehicleMetadataUpdated(indexed uint256,string,string)
           handler: handleVehicleMetadataUpdated
       file: ./src/mapping.ts
+  - kind: ethereum/contract
+    name: FacilityRegistry
+    network: {{network}}
+    source:
+      abi: FacilityRegistry
+      address: "{{FacilityRegistry.address}}"
+      startBlock: "{{FacilityRegistry.startBlock}}"
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.6
+      language: wasm/assemblyscript
+      entities: *entities
+      abis:
+        - name: FacilityRegistry
+          file: ./abis/FacilityRegistry.json
+      eventHandlers:
+        - event: AssetRegistered(indexed uint256,indexed address,uint256,uint8)
+          handler: handleFacilityAssetRegistered
+        - event: FacilityRegistered(indexed uint256,indexed address,indexed bytes32)
+          handler: handleFacilityRegistered
+        - event: FacilityMetadataUpdated(indexed uint256,indexed bytes32,string,string)
+          handler: handleFacilityMetadataUpdated
+      file: ./src/facility-mapping.ts
   - kind: ethereum/contract
     name: Marketplace
     network: {{network}}

@@ -5,6 +5,7 @@ const DEFAULT_NETWORK = "localhost";
 const MANIFEST_TEMPLATE_FILE = "./subgraph.yaml";
 const NETWORKS_FILE = "./networks.json";
 const RENDERED_MANIFEST_FILE = "./subgraph.rendered.yaml";
+const OPTIONAL_DATA_SOURCES = new Set(["FacilityRegistry"]);
 
 function parseCliArgs() {
   const args = process.argv.slice(2);
@@ -74,6 +75,33 @@ function main() {
 
   // Expand YAML anchors so Studio receives a fully inlined manifest.
   const manifestDocument = yaml.load(substitutedManifest) as Record<string, unknown>;
+  const dataSources = Array.isArray(manifestDocument.dataSources)
+    ? (manifestDocument.dataSources as Array<{
+        name?: string;
+        source?: { address?: unknown; startBlock?: unknown };
+      }>)
+    : [];
+
+  manifestDocument.dataSources = dataSources
+    .filter(dataSource => {
+      const address = String(dataSource.source?.address ?? "");
+      const startBlock = String(dataSource.source?.startBlock ?? "");
+      const hasUnresolvedPlaceholder = address.includes("{{") || startBlock.includes("{{");
+      return !(dataSource.name && OPTIONAL_DATA_SOURCES.has(dataSource.name) && hasUnresolvedPlaceholder);
+    })
+    .map(dataSource => {
+      const startBlock = dataSource.source?.startBlock;
+      if (typeof startBlock === "string" && /^\d+$/.test(startBlock)) {
+        dataSource.source!.startBlock = Number.parseInt(startBlock, 10);
+      }
+      return dataSource;
+    });
+
+  const unresolvedManifest = JSON.stringify(manifestDocument);
+  if (unresolvedManifest.includes("{{")) {
+    throw new Error(`Rendered manifest for '${networkName}' still contains unresolved placeholders.`);
+  }
+
   const renderedManifest = yaml.dump(manifestDocument, {
     lineWidth: -1,
     noRefs: true,

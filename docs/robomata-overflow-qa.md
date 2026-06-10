@@ -88,6 +88,8 @@ Tracking issue: `ROB-134`.
 Command:
 
 - `yarn robomata:testnet-smoke`
+- `yarn robomata:tokenization-api-test`, for local API-level validation of the
+  submission-to-tokenization transition without a live EVM wallet signature
 
 The smoke command starts the local app on an isolated port, creates a temporary
 partner API signer, uses an ignored temporary submission file, uploads evidence
@@ -100,6 +102,18 @@ Required environment:
 - `NEXT_PUBLIC_ENABLE_ROBOMATA_WORKFLOW=true`
 - `ROBOMATA_WORKFLOW_ENABLED=true`
 - `ROBOMATA_WORKFLOW_MUTATIONS_ENABLED=true`
+- `ROBOMATA_TOKENIZATION_ENABLED=true`, when exercising the
+  borrowing-base-to-tokenization path
+- `NEXT_PUBLIC_ROBOMATA_TOKENIZATION_ENABLED=true`, when validating the
+  tokenization controls or tokenized facility dashboard assets
+- `ROBOMATA_TOKENIZATION_MOCK_METADATA_ENABLED=true`, only for local API smoke
+  tests that should avoid live IPFS/Pinata uploads while still producing stable
+  metadata URIs
+- `ROBOMATA_TOKENIZATION_MOCK_REGISTRY_ADDRESS` and
+  `ROBOMATA_TOKENIZATION_MOCK_COMPLETION_VERIFICATION_ENABLED=true`, only for
+  local API smoke tests that need to simulate a FacilityRegistry transaction
+  without a deployed local EVM registry. Do not use these in shared preview,
+  release candidate, or production environments.
 - `ROBOMATA_AUTHORIZED_PARTNER_ADDRESSES`, set by the smoke script to the
   temporary randomly generated local partner signer because this command runs
   `next dev` and intentionally exercises the development-only API allowlist
@@ -343,10 +357,38 @@ changes them:
 
 - no production public UCC, title, lien, insurance, telematics, or bank API
   integrations are claimed
-- no automatic tokenized vehicle registration is created from uploaded evidence
+- no automatic token creation is triggered from uploaded evidence or computed
+  borrowing-base output
+- committed submissions tokenize as facility-level assets, not synthetic vehicle
+  registrations
 - legal enforceability, lien perfection, custody, transfer agency, and regulated
   distribution remain out of scope
 - lender approval remains subject to lender diligence and exception cure
+
+## Submission-To-Tokenization QA Addendum
+
+Use this addendum when validating the merged origination path after the facility
+registry and partner UI are enabled.
+
+Expected gate:
+
+- a submission with uncomputed borrowing base must not expose tokenization
+- a computed submission with open exceptions must not expose tokenization
+- a clean submission must still require Sui evidence commit before tokenization
+- a committed submission exposes `Tokenize facility`
+
+Expected tokenization behavior:
+
+- starting a draft persists tokenization state on the submission
+- the default offering limit equals the committed available borrowing base
+- increasing the offering limit above committed availability is capped or
+  rejected by the API
+- prepared public metadata includes summary economics plus root/Sui anchors
+- prepared public metadata excludes raw receivables, evidence file contents, and
+  lender packet contents
+- the operator signs an EVM `FacilityRegistry` transaction explicitly
+- completion persists registry address, asset id, revenue token id, EVM tx hash,
+  and metadata URIs back to the submission
 
 ## ROB-132 Final Browser QA Evidence
 

@@ -10,7 +10,9 @@ protocol hook already exists on `dev`.
 The planned working submission flow lives inside `/partner`, where an operator
 creates a persisted `FacilitySubmission`, uploads receivables and evidence,
 computes eligibility and availability, resolves exceptions, generates a lender
-packet, and optionally commits the evidence root through the Sui path.
+packet, optionally commits the evidence root through the Sui path, and then uses
+that committed borrowing-base state as the origination step for facility-level
+tokenization.
 
 `/robomata` is now the public Robomata marketing and product-positioning
 surface. It must not load private submissions or act as a public facility
@@ -84,6 +86,14 @@ The lender-facing output includes:
 9. If runtime configuration is present, Robomata commits the evidence root
    through the Sui facility path and persists the commit result on the
    submission.
+10. Once the submission is committed with no open exceptions, the operator can
+    draft a facility-level tokenization package from the committed borrowing
+    base.
+11. Robomata prepares public asset and revenue-token metadata with summary
+    economics plus evidence anchors, excluding raw receivables, private
+    evidence, and lender packet contents.
+12. The operator explicitly signs the EVM transaction that registers the
+    facility asset and creates the paired revenue-token offering.
 
 ## Product Surfaces
 
@@ -137,10 +147,41 @@ Each submission contains:
 - open and resolved exceptions
 - lender-facing packet artifacts
 - evidence commit state
+- tokenization state, including committed Sui anchors, facility commitment,
+  offering terms, public metadata URIs, and completed EVM asset/token results
 - audit history
 
-The workflow is intentionally centered on the submission, not on an individual
-vehicle registration or tokenization object.
+The workflow is intentionally centered on the submission. In the merged
+origination model, tokenization is not a separate first step and is not forced
+through individual vehicle registration. A committed `FacilitySubmission` can
+become one facility-level asset with one paired revenue-token offering.
+
+## Submission-To-Tokenization Model
+
+The tokenization path starts only after:
+
+- the borrowing base has been computed from persisted submission data
+- open receivable and evidence exceptions are resolved or removed from lender
+  output
+- the evidence root is committed through the Sui facility path
+
+For v1, one committed submission maps to one facility-level EVM asset. The
+facility registry uses a `facilityCommitment` derived from submission identity,
+partner address, committed root digest, and as-of date. That commitment is the
+onchain uniqueness anchor; raw receivable rows and private evidence remain in
+Robomata controlled storage and lender-sharing flows.
+
+Public token metadata may include:
+
+- facility name, operator display name, and as-of date
+- available borrowing base and selected offering limit
+- root digest, evidence root, and Sui transaction digest
+- revenue-token economics such as token price, maturity, revenue share cap,
+  target yield, proceeds profile, and protection flag
+
+Public token metadata must not include raw receivable rows, private evidence
+file contents, lender packet contents, plaintext evidence, or borrower-sensitive
+row-level diligence data.
 
 ## Release Flags
 
@@ -159,6 +200,19 @@ Use the flags as a matrix:
   creating submissions, importing receivables, uploading evidence, computing the
   borrowing base, and committing evidence. Without this flag, writes fail closed
   with `403`.
+- `ROBOMATA_TOKENIZATION_ENABLED=true` enables the server-side
+  borrowing-base-to-tokenization APIs. Without this flag, tokenization APIs fail
+  closed with `404` even when the core submission workflow is enabled.
+- `NEXT_PUBLIC_ROBOMATA_TOKENIZATION_ENABLED=true` exposes the partner-facing
+  tokenization controls and tokenized facility assets in the dashboard.
+- `ROBOMATA_TOKENIZATION_MOCK_METADATA_ENABLED=true` is a local-only test helper
+  for deterministic tokenization metadata URIs. It is ignored in production and
+  should not be used for shared previews or release candidates.
+- `ROBOMATA_TOKENIZATION_MOCK_REGISTRY_ADDRESS` and
+  `ROBOMATA_TOKENIZATION_MOCK_COMPLETION_VERIFICATION_ENABLED=true` are
+  local-only tokenization API smoke helpers. Shared preview, release candidate,
+  and production environments must rely on `deployedContracts.ts` registry
+  output and live transaction receipt verification.
 - `POSTGRES_URL` is required when the server workflow is enabled outside local
   development. `ROBOMATA_SUBMISSIONS_FILE=/local/path/submissions.json` is only
   a local-development fallback and must not be used for shared previews or
@@ -338,8 +392,11 @@ This work follows the current repo policy:
 ## Non-Goals
 
 - Do not lead with a marketplace or tokenization story.
-- Do not auto-create tokenized vehicle registrations from uploaded evidence in
-  this tranche.
+- Do not auto-create tokens from uploaded evidence or computed borrowing-base
+  output. Tokenization requires a committed submission and an explicit EVM
+  wallet signature from the operator.
+- Do not force committed facility submissions through vehicle-specific VIN
+  semantics. Facility-level tokenization uses a facility registry.
 - Do not sell directly to Apollo, KKR, or other mega-managers as the first path.
 - Do not claim legal perfection of liens, collateral control, or custody.
 - Do not replace Alfa, Solifi, Vero, or lender system-of-record tools in v1.

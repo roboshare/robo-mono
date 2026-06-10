@@ -80,7 +80,11 @@ export type SubmissionAuditEvent = {
     | "packet_share_revoked"
     | "sui_facility_assigned"
     | "sui_commit_prepared"
-    | "sui_commit_completed";
+    | "sui_commit_completed"
+    | "tokenization_drafted"
+    | "tokenization_terms_updated"
+    | "tokenization_prepared"
+    | "tokenization_completed";
   createdAt: string;
   message: string;
   metadata?: Record<string, string | number | boolean | null>;
@@ -117,6 +121,52 @@ export type SubmissionComputation = {
   evidenceRail: EvidenceRail;
 };
 
+export type SubmissionTokenizationStatus =
+  | "not_started"
+  | "draft"
+  | "ready_to_sign"
+  | "registered"
+  | "offering_created"
+  | "failed";
+
+export type SubmissionTokenizationAnchors = {
+  evidenceRoot?: string;
+  rootDigest?: string;
+  suiTxDigest?: string;
+  facilityCommitment?: string;
+};
+
+export type SubmissionTokenizationTerms = {
+  offeringLimitCents?: number;
+  tokenPrice?: number;
+  maturityMonths?: number;
+  revenueShareBps?: number;
+  targetYieldBps?: number;
+  immediateProceeds?: boolean;
+  protectionEnabled?: boolean;
+};
+
+export type SubmissionTokenizationEvmResult = {
+  registryAddress?: string;
+  assetId?: string;
+  revenueTokenId?: string;
+  txHash?: string;
+  assetMetadataUri?: string;
+  revenueTokenMetadataUri?: string;
+  preparedCallArgs?: [string, string, string, string, string, string, string, boolean, boolean];
+};
+
+export type SubmissionTokenization = {
+  status: SubmissionTokenizationStatus;
+  anchors: SubmissionTokenizationAnchors;
+  terms: SubmissionTokenizationTerms;
+  evm: SubmissionTokenizationEvmResult;
+  preparedAt?: string;
+  completedAt?: string;
+  failedAt?: string;
+  errorMessage?: string;
+};
+
 export type FacilitySubmission = {
   id: string;
   partnerAddress: string;
@@ -129,6 +179,7 @@ export type FacilitySubmission = {
   exceptions: SubmissionException[];
   computation: SubmissionComputation | null;
   evidenceCommit: SubmissionEvidenceCommit;
+  tokenization: SubmissionTokenization;
   auditEvents: SubmissionAuditEvent[];
   createdAt: string;
   updatedAt: string;
@@ -163,6 +214,32 @@ export function createAuditEvent(
     message,
     metadata,
   };
+}
+
+export function createDefaultSubmissionTokenization(): SubmissionTokenization {
+  return {
+    status: "not_started",
+    anchors: {},
+    terms: {},
+    evm: {},
+  };
+}
+
+export function normalizeSubmissionTokenization(submission: FacilitySubmission): FacilitySubmission {
+  submission.tokenization = {
+    ...createDefaultSubmissionTokenization(),
+    ...(submission.tokenization ?? {}),
+    anchors: {
+      ...((submission.tokenization as SubmissionTokenization | undefined)?.anchors ?? {}),
+    },
+    terms: {
+      ...((submission.tokenization as SubmissionTokenization | undefined)?.terms ?? {}),
+    },
+    evm: {
+      ...((submission.tokenization as SubmissionTokenization | undefined)?.evm ?? {}),
+    },
+  };
+  return submission;
 }
 
 export function resolveSubmissionFacilityObjectId(
@@ -207,6 +284,7 @@ export function createSubmissionShell(input: CreateSubmissionInput): FacilitySub
       modulePath: SUI_COMMIT_MODULE_PATH,
       commitMode: "prepared",
     },
+    tokenization: createDefaultSubmissionTokenization(),
     auditEvents: [],
     createdAt,
     updatedAt: createdAt,
@@ -222,6 +300,7 @@ export function createSubmissionShell(input: CreateSubmissionInput): FacilitySub
 }
 
 export function touchSubmission(submission: FacilitySubmission): FacilitySubmission {
+  normalizeSubmissionTokenization(submission);
   submission.status = deriveSubmissionStatus(submission);
   submission.updatedAt = nowIsoString();
   return submission;
@@ -242,6 +321,7 @@ export function invalidateSubmissionArtifacts(submission: FacilitySubmission): F
     facilityAssignmentOperatorAddress: previousCommit.facilityAssignmentOperatorAddress,
     facilityAssignmentErrorMessage: previousCommit.facilityAssignmentErrorMessage,
   };
+  submission.tokenization = createDefaultSubmissionTokenization();
   return touchSubmission(submission);
 }
 

@@ -51,3 +51,11 @@ export function isRobomataShareLinksEnabled(): boolean {
 export function isRobomataShareLinksClientEnabled(): boolean {
   return isEnabled(process.env.NEXT_PUBLIC_ROBOMATA_SHARE_LINKS_ENABLED);
 }
+
+export function isRobomataTokenizationEnabled(): boolean {
+  return isEnabled(process.env.ROBOMATA_TOKENIZATION_ENABLED);
+}
+
+export function isRobomataTokenizationClientEnabled(): boolean {
+  return isEnabled(process.env.NEXT_PUBLIC_ROBOMATA_TOKENIZATION_ENABLED);
+}

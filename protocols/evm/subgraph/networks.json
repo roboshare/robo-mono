@@ -20,6 +20,10 @@
       "address": "0x82Dc47734901ee7d4f4232f398752cB9Dd5dACcC",
       "startBlock": 0
     },
+    "FacilityRegistry": {
+      "address": "0x1111111111111111111111111111111111111111",
+      "startBlock": 0
+    },
     "Treasury": {
       "address": "0x82C6D3ed4cD33d8EC1E51d0B5Cc1d822Eaa0c3dC",
       "startBlock": 0
