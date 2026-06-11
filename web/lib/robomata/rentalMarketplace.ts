@@ -215,7 +215,7 @@ export function rentalMarketplaceListingMatchesSearch(
   listing: RentalMarketplaceListing,
   search: RentalMarketplaceSearchInput,
 ): boolean {
-  if (!search.platformVehicleId && listing.status !== "available") return false;
+  if (listing.status !== "available") return false;
   if (search.platformVehicleId && listing.platformVehicleId !== search.platformVehicleId) return false;
   if (search.facilityAssetId && listing.facilityAssetId !== search.facilityAssetId) return false;
   if (normalized(search.city) && normalized(listing.location?.city) !== normalized(search.city)) return false;

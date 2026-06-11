@@ -7,7 +7,9 @@ import {
 import type { RentalCancellationInput } from "~~/lib/robomata/rentalSupport";
 import { getRentalBookingStore } from "~~/lib/robomata/server/rentalBookingStore";
 import { getRentalInventoryStore } from "~~/lib/robomata/server/rentalInventoryStore";
+import { requireRentalBookingAccess } from "~~/lib/robomata/server/rentalRouteAccess";
 import { getRentalSupportStore } from "~~/lib/robomata/server/rentalSupportStore";
+import { requirePartnerAddress } from "~~/lib/robomata/server/submissionAccess";
 
 export const runtime = "nodejs";
 
@@ -32,9 +34,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const mutationError = requireMutation();
     if (mutationError) return mutationError;
 
+    const partnerAddress = await requirePartnerAddress(request);
+    if (partnerAddress instanceof NextResponse) return partnerAddress;
+
     const { bookingId } = await context.params;
     const booking = await getRentalBookingStore().getBooking(bookingId);
     if (!booking) return NextResponse.json({ error: "Rental booking not found." }, { status: 404 });
+    const accessError = await requireRentalBookingAccess(booking, partnerAddress);
+    if (accessError) return accessError;
+
     if (["cancelled", "closed", "completed", "disputed"].includes(booking.state)) {
       return NextResponse.json({ error: `Booking cannot be cancelled from state ${booking.state}.` }, { status: 409 });
     }

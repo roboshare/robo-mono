@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isRobomataRentalInventoryEnabled, isRobomataWorkflowMutationEnabled } from "~~/lib/featureFlags";
 import { getRentalInventoryStore } from "~~/lib/robomata/server/rentalInventoryStore";
+import { requireRentalVehicleAccess } from "~~/lib/robomata/server/rentalRouteAccess";
 import { requirePartnerAddress } from "~~/lib/robomata/server/submissionAccess";
 
 export const runtime = "nodejs";
@@ -36,6 +37,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     const { platformVehicleId } = await context.params;
     const body = (await request.json()) as SafetyTakedownBody;
+    const access = await requireRentalVehicleAccess({ partnerAddress, platformVehicleId });
+    if (access instanceof NextResponse) return access;
+
     const vehicle = await getRentalInventoryStore().updateVehicleControls(platformVehicleId, {
       operationalStatus: "suspended",
     });

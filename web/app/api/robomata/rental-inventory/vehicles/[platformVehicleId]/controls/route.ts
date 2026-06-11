@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isRobomataRentalInventoryEnabled, isRobomataWorkflowMutationEnabled } from "~~/lib/featureFlags";
 import type { RentalVehicleHostControlsUpdate } from "~~/lib/robomata/rentalInventory";
 import { RentalInventoryValidationError, getRentalInventoryStore } from "~~/lib/robomata/server/rentalInventoryStore";
+import { requireRentalVehicleAccess } from "~~/lib/robomata/server/rentalRouteAccess";
 import { requirePartnerAddress } from "~~/lib/robomata/server/submissionAccess";
 
 export const runtime = "nodejs";
@@ -28,8 +29,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
   if (partnerAddress instanceof NextResponse) return partnerAddress;
 
   const { platformVehicleId } = await context.params;
-  const vehicle = await getRentalInventoryStore().getVehicle(platformVehicleId);
-  if (!vehicle) return NextResponse.json({ error: "Rental vehicle not found." }, { status: 404 });
+  const access = await requireRentalVehicleAccess({ partnerAddress, platformVehicleId });
+  if (access instanceof NextResponse) return access;
+  const { vehicle } = access;
   return NextResponse.json({ controls: vehicle.hostControls ?? null, vehicle });
 }
 
@@ -45,6 +47,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     const { platformVehicleId } = await context.params;
     const input = (await request.json()) as RentalVehicleHostControlsUpdate;
+    const access = await requireRentalVehicleAccess({ partnerAddress, platformVehicleId });
+    if (access instanceof NextResponse) return access;
+
     const vehicle = await getRentalInventoryStore().updateVehicleControls(platformVehicleId, input);
     if (!vehicle) return NextResponse.json({ error: "Rental vehicle not found." }, { status: 404 });
     return NextResponse.json({ controls: vehicle.hostControls ?? null, vehicle });

@@ -4,6 +4,8 @@ import type { RentalClaimCreateInput } from "~~/lib/robomata/rentalClaims";
 import type { RentalBookingLifecycleState } from "~~/lib/robomata/rentalOperations";
 import { getRentalBookingStore } from "~~/lib/robomata/server/rentalBookingStore";
 import { getRentalClaimStore } from "~~/lib/robomata/server/rentalClaimStore";
+import { requireRentalBookingAccess } from "~~/lib/robomata/server/rentalRouteAccess";
+import { requirePartnerAddress } from "~~/lib/robomata/server/submissionAccess";
 
 export const runtime = "nodejs";
 
@@ -34,9 +36,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const mutationError = requireMutation();
     if (mutationError) return mutationError;
 
+    const partnerAddress = await requirePartnerAddress(request);
+    if (partnerAddress instanceof NextResponse) return partnerAddress;
+
     const { bookingId } = await context.params;
     const booking = await getRentalBookingStore().getBooking(bookingId);
     if (!booking) return NextResponse.json({ error: "Rental booking not found." }, { status: 404 });
+    const accessError = await requireRentalBookingAccess(booking, partnerAddress);
+    if (accessError) return accessError;
 
     const input = (await request.json()) as RentalClaimCreateInput;
     const claim = await getRentalClaimStore().createClaim(booking, input);
