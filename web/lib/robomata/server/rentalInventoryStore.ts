@@ -450,9 +450,15 @@ function vehicleWithControls(
   }
 
   const current = vehicle.hostControls ?? emptyHostControls(vehicle, now);
+  const pricing = input.pricing
+    ? {
+        ...(current.pricing ?? {}),
+        ...input.pricing,
+      }
+    : current.pricing;
   const hostControls: RentalVehicleHostControls = {
     ...current,
-    pricing: input.pricing ?? current.pricing,
+    pricing,
     availability: input.availability ?? current.availability,
     blackoutRanges: input.blackoutRanges ?? current.blackoutRanges,
     maintenanceHolds: input.maintenanceHolds ?? current.maintenanceHolds,

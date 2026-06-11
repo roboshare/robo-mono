@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isRobomataRentalInventoryEnabled, isRobomataWorkflowMutationEnabled } from "~~/lib/featureFlags";
+import { rentalStoredFacilityAccessError } from "~~/lib/robomata/server/rentalInventoryAccess";
 import { getRentalInventoryStore } from "~~/lib/robomata/server/rentalInventoryStore";
 import { requirePartnerAddress } from "~~/lib/robomata/server/submissionAccess";
 
@@ -26,8 +27,15 @@ export async function POST(request: NextRequest, context: { params: Promise<{ ma
     if (partnerAddress instanceof NextResponse) return partnerAddress;
 
     const { manifestId } = await context.params;
+    const decodedManifestId = decodeURIComponent(manifestId);
+    const store = getRentalInventoryStore();
+    const manifest = await store.getManifest(decodedManifestId);
+    if (!manifest) return NextResponse.json({ error: "Rental inventory manifest not found." }, { status: 404 });
+    const accessError = await rentalStoredFacilityAccessError(manifest.facilityAssetId, partnerAddress);
+    if (accessError) return NextResponse.json({ error: accessError }, { status: 403 });
+
     const body = (await request.json().catch(() => ({}))) as { replayOfRunId?: string };
-    const result = await getRentalInventoryStore().replayManifest(decodeURIComponent(manifestId), {
+    const result = await store.replayManifest(decodedManifestId, {
       actor: partnerAddress,
       replayOfRunId: body.replayOfRunId,
       trigger: "manual_replay",
