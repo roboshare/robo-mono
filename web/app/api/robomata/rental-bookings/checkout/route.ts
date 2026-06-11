@@ -58,6 +58,9 @@ export async function POST(request: NextRequest) {
     if (!Number.isFinite(dateFrom) || !Number.isFinite(dateTo) || dateTo <= dateFrom) {
       return NextResponse.json({ error: "dateFrom and dateTo must be valid ordered timestamps." }, { status: 400 });
     }
+    if (dateFrom < Date.now()) {
+      return NextResponse.json({ error: "dateFrom cannot be in the past." }, { status: 400 });
+    }
 
     const [renter, vehicle] = await Promise.all([
       getRentalRenterStore().getRenter(body.renterId),
