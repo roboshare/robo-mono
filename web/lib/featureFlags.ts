@@ -92,6 +92,10 @@ export function isRobomataRentalInventoryEnabled(): boolean {
   return isEnabled(process.env.ROBOMATA_RENTAL_INVENTORY_ENABLED);
 }
 
+export function isRobomataRentalMarketplaceClientEnabled(): boolean {
+  return isEnabled(process.env.NEXT_PUBLIC_ROBOMATA_RENTAL_MARKETPLACE_ENABLED);
+}
+
 export function isRobomataRentalInventoryScheduledSyncEnabled(): boolean {
   return isEnabled(process.env.ROBOMATA_RENTAL_INVENTORY_SCHEDULED_SYNC_ENABLED);
 }

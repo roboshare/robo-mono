@@ -5,13 +5,13 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { hardhat } from "viem/chains";
-import { Bars3Icon, BugAntIcon, RocketLaunchIcon } from "@heroicons/react/24/outline";
+import { Bars3Icon, BugAntIcon, KeyIcon, RocketLaunchIcon } from "@heroicons/react/24/outline";
 import { CubeTransparentIcon, MagnifyingGlassIcon, UserGroupIcon } from "@heroicons/react/24/outline";
 import { FaucetButton, RainbowKitCustomConnectButton } from "~~/components/scaffold-eth";
 import { useOutsideClick, useTargetNetwork } from "~~/hooks/scaffold-eth";
 import { useIsAdmin } from "~~/hooks/useIsAdmin";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
-import { isRobomataWorkflowEnabled } from "~~/lib/featureFlags";
+import { isRobomataRentalMarketplaceClientEnabled, isRobomataWorkflowEnabled } from "~~/lib/featureFlags";
 
 type HeaderMenuLink = {
   label: string;
@@ -112,6 +112,7 @@ export const HeaderMenuLinks = () => {
     pathname === "/partner" ||
     pathname?.startsWith("/partner/");
   const showLaunchApp = isHostResolved && !isAppHost && !isOperatorPath;
+  const showRentalMarketplace = isRobomataRentalMarketplaceClientEnabled();
 
   useEffect(() => {
     setIsAppHost(window.location.hostname.toLowerCase() === getConfiguredAppHost());
@@ -121,6 +122,20 @@ export const HeaderMenuLinks = () => {
   return (
     <>
       <HeaderProductsMenu />
+      {showRentalMarketplace && (
+        <li>
+          <Link
+            href="/rentals"
+            passHref
+            className={`${
+              pathname === "/rentals" ? "bg-secondary shadow-md" : ""
+            } hover:bg-secondary hover:shadow-md focus:!bg-secondary active:!text-neutral py-1.5 px-3 text-sm rounded-full gap-2 grid grid-flow-col`}
+          >
+            <KeyIcon className="h-4 w-4" />
+            <span>Rentals</span>
+          </Link>
+        </li>
+      )}
       {menuLinks
         .filter(link => !link.adminOnly || isAdmin)
         .map(({ label, href, icon }) => {
