@@ -287,6 +287,21 @@ async function main() {
     throw new Error(`Expected payment-gated booking, got ${JSON.stringify(checkoutPayload)}`);
   }
 
+  const unreconciledCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
+    body: JSON.stringify({
+      dateFrom: new Date(Date.now() + 21 * 24 * 60 * 60 * 1_000).toISOString(),
+      dateTo: new Date(Date.now() + 23 * 24 * 60 * 60 * 1_000).toISOString(),
+      platformVehicleId,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const unreconciledBookingId = unreconciledCheckoutPayload.booking?.id;
+  if (!unreconciledBookingId || unreconciledCheckoutPayload.booking.state !== "pending_payment_authorization") {
+    throw new Error(`Expected second payment-gated booking, got ${JSON.stringify(unreconciledCheckoutPayload)}`);
+  }
+
   await expectJsonFailure(
     `${baseUrl}/api/robomata/rental-payments/payment-intents`,
     {
@@ -449,6 +464,25 @@ async function main() {
     409,
     "Payment reconciliation blocks rental revenue posting.",
   );
+  await expectJsonFailure(
+    `${baseUrl}${postingPath}`,
+    {
+      body: JSON.stringify({
+        ...postingBody,
+        entries: [
+          {
+            ...postingBody.entries[0],
+            id: "rle_stripe_smoke_unreconciled",
+            source: { bookingId: unreconciledBookingId },
+          },
+        ],
+      }),
+      headers: await authHeaders("POST", postingPath, { "content-type": "application/json" }),
+      method: "POST",
+    },
+    409,
+    "Captured payment reconciliation is required before rental revenue posting.",
+  );
 
   const reconciliationPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/reconcile`, {
     body: JSON.stringify({ paymentIntentId }),
@@ -460,6 +494,40 @@ async function main() {
   });
   if (reconciliationPayload.payment?.postingBlocked) {
     throw new Error(`Expected reconciliation to clear posting block, got ${JSON.stringify(reconciliationPayload)}`);
+  }
+
+  const delayedCapturableWebhookBody = JSON.stringify({
+    id: "evt_payment_capturable_delayed_smoke",
+    created: Math.floor(Date.now() / 1000) - 30,
+    type: "payment_intent.amount_capturable_updated",
+    data: {
+      object: {
+        id: paymentIntentId,
+        amount: paymentIntentPayload.payment.authorizedAmountCents,
+        amount_capturable: paymentIntentPayload.payment.authorizedAmountCents,
+        amount_received: 0,
+        capture_method: "manual",
+        currency: "usd",
+        latest_charge: "ch_stripe_smoke_actual",
+        metadata: { bookingId },
+        status: "requires_capture",
+      },
+    },
+  });
+  const delayedCapturablePayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/stripe/webhook`, {
+    body: delayedCapturableWebhookBody,
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": stripeSignatureHeader(delayedCapturableWebhookBody),
+    },
+    method: "POST",
+  });
+  if (delayedCapturablePayload.payment?.postingBlocked || delayedCapturablePayload.payment.status !== "captured") {
+    throw new Error(
+      `Expected delayed capturable webhook to preserve captured status, got ${JSON.stringify(
+        delayedCapturablePayload,
+      )}`,
+    );
   }
 
   const postingPayload = await fetchJson(`${baseUrl}${postingPath}`, {
@@ -512,6 +580,76 @@ async function main() {
   ) {
     throw new Error(
       `Expected reconciliation to preserve dispute posting block, got ${JSON.stringify(disputedReconciliationPayload)}`,
+    );
+  }
+
+  const disputeClosedWebhookBody = JSON.stringify({
+    id: "evt_payment_dispute_closed_smoke",
+    created: Math.floor(Date.now() / 1000),
+    type: "charge.dispute.closed",
+    data: {
+      object: {
+        id: "dp_stripe_smoke",
+        amount: 1000,
+        charge: "ch_stripe_smoke_actual",
+        currency: "usd",
+        payment_intent: paymentIntentId,
+        reason: "general",
+        status: "won",
+      },
+    },
+  });
+  const disputeClosedPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/stripe/webhook`, {
+    body: disputeClosedWebhookBody,
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": stripeSignatureHeader(disputeClosedWebhookBody),
+    },
+    method: "POST",
+  });
+  if (disputeClosedPayload.payment?.postingBlocked || disputeClosedPayload.payment.status !== "captured") {
+    throw new Error(`Expected closed dispute to clear posting block, got ${JSON.stringify(disputeClosedPayload)}`);
+  }
+
+  const refundWebhookBody = JSON.stringify({
+    id: "evt_payment_refund_smoke",
+    created: Math.floor(Date.now() / 1000),
+    type: "charge.refunded",
+    data: {
+      object: {
+        id: "ch_stripe_smoke_actual",
+        amount_refunded: 250,
+        currency: "usd",
+        payment_intent: paymentIntentId,
+      },
+    },
+  });
+  const refundPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/stripe/webhook`, {
+    body: refundWebhookBody,
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": stripeSignatureHeader(refundWebhookBody),
+    },
+    method: "POST",
+  });
+  if (refundPayload.payment?.status !== "refunded" || refundPayload.payment.refundedAmountCents !== 250) {
+    throw new Error(`Expected partial refund amount to persist, got ${JSON.stringify(refundPayload)}`);
+  }
+
+  const refundedReconciliationPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/reconcile`, {
+    body: JSON.stringify({ paymentIntentId }),
+    headers: {
+      "content-type": "application/json",
+      "x-robomata-payment-confirmation": paymentConfirmationSecret,
+    },
+    method: "POST",
+  });
+  if (
+    refundedReconciliationPayload.payment?.status !== "refunded" ||
+    refundedReconciliationPayload.payment.refundedAmountCents !== 250
+  ) {
+    throw new Error(
+      `Expected reconciliation to preserve refunded state, got ${JSON.stringify(refundedReconciliationPayload)}`,
     );
   }
 

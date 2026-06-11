@@ -52,13 +52,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "entries must include at least one ledger entry." }, { status: 400 });
     }
     if (isRobomataRentalPaymentsEnabled()) {
+      const paymentBackedEntries = body.entries.filter(entry => entry.source.bookingId || entry.source.paymentIntentId);
       const bookingIds = [
-        ...new Set(body.entries.flatMap(entry => (entry.source.bookingId ? [entry.source.bookingId] : []))),
+        ...new Set(paymentBackedEntries.flatMap(entry => (entry.source.bookingId ? [entry.source.bookingId] : []))),
       ];
       const paymentIntentIds = [
-        ...new Set(body.entries.flatMap(entry => (entry.source.paymentIntentId ? [entry.source.paymentIntentId] : []))),
+        ...new Set(
+          paymentBackedEntries.flatMap(entry => (entry.source.paymentIntentId ? [entry.source.paymentIntentId] : [])),
+        ),
       ];
-      const blockingPayments = await getRentalPaymentStore().listBlockingPaymentsByReferences({
+      const paymentStore = getRentalPaymentStore();
+      const blockingPayments = await paymentStore.listBlockingPaymentsByReferences({
         bookingIds,
         paymentIntentIds,
       });
@@ -72,6 +76,29 @@ export async function POST(request: NextRequest) {
               status: payment.status,
             })),
             error: "Payment reconciliation blocks rental revenue posting.",
+          },
+          { status: 409 },
+        );
+      }
+      const referencedPayments = await paymentStore.listPaymentsByReferences({ bookingIds, paymentIntentIds });
+      const unreconciledEntries = paymentBackedEntries.filter(entry => {
+        const payment = referencedPayments.find(
+          candidate =>
+            (entry.source.paymentIntentId &&
+              candidate.providerReference.paymentIntentId === entry.source.paymentIntentId) ||
+            candidate.bookingId === entry.source.bookingId,
+        );
+        return !payment || payment.status !== "captured" || payment.postingBlocked;
+      });
+      if (unreconciledEntries.length > 0) {
+        return NextResponse.json(
+          {
+            entries: unreconciledEntries.map(entry => ({
+              bookingId: entry.source.bookingId,
+              id: entry.id,
+              paymentIntentId: entry.source.paymentIntentId,
+            })),
+            error: "Captured payment reconciliation is required before rental revenue posting.",
           },
           { status: 409 },
         );

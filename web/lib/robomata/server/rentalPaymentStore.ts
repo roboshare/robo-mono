@@ -51,6 +51,10 @@ type RentalPaymentStore = {
     bookingIds?: string[];
     paymentIntentIds?: string[];
   }) => Promise<RentalPaymentRecord[]>;
+  listPaymentsByReferences: (input: {
+    bookingIds?: string[];
+    paymentIntentIds?: string[];
+  }) => Promise<RentalPaymentRecord[]>;
   recordStripeEvent: (input: RentalPaymentProviderEventInput) => Promise<RentalPaymentRecord>;
 };
 
@@ -123,6 +127,7 @@ function statusFromStripe(input: {
   snapshot: StripePaymentIntentSnapshot;
 }): RentalPaymentIntentStatus {
   if (input.eventKind === "dispute_opened" || input.eventKind === "chargeback_recorded") return "disputed";
+  if (input.eventKind === "dispute_closed") return "captured";
   if (input.eventKind === "refund_succeeded") return "refunded";
   if (input.eventKind === "refund_failed" || input.eventKind === "payment_failed") return "failed";
 
@@ -140,6 +145,31 @@ function statusFromStripe(input: {
     default:
       return "requires_payment_method";
   }
+}
+
+function isPendingProviderStatus(status: RentalPaymentIntentStatus) {
+  return (
+    status === "requires_payment_method" ||
+    status === "requires_confirmation" ||
+    status === "requires_capture" ||
+    status === "cancelled"
+  );
+}
+
+function monotonicPaymentStatus(input: {
+  eventKind: RentalPaymentProviderEventKind;
+  existing?: RentalPaymentRecord;
+  nextStatus: RentalPaymentIntentStatus;
+}): RentalPaymentIntentStatus {
+  if (!input.existing) return input.nextStatus;
+  if (
+    (input.existing.status === "disputed" || input.existing.status === "refunded") &&
+    input.eventKind === "reconciliation_refetched"
+  ) {
+    return input.existing.status;
+  }
+  if (input.existing.status === "captured" && isPendingProviderStatus(input.nextStatus)) return "captured";
+  return input.nextStatus;
 }
 
 function paymentPostingBlock(input: {
@@ -194,8 +224,7 @@ function paymentRecordFromEvent(
 
   const now = new Date().toISOString();
   const nextStatus = statusFromStripe(input);
-  const status =
-    existing?.status === "disputed" && input.eventKind === "reconciliation_refetched" ? "disputed" : nextStatus;
+  const status = monotonicPaymentStatus({ eventKind: input.eventKind, existing, nextStatus });
   const reference = providerReference(input);
   const capturedAmountCents =
     status === "captured" || status === "partially_captured"
@@ -287,15 +316,18 @@ function createFileStore(): RentalPaymentStore {
       return fileStore.payments.find(payment => payment.providerReference.paymentIntentId === paymentIntentId) ?? null;
     },
     async listBlockingPaymentsByReferences(input) {
+      const payments = await this.listPaymentsByReferences(input);
+      return payments.filter(payment => payment.postingBlocked);
+    },
+    async listPaymentsByReferences(input) {
       const paymentIntentIds = new Set(input.paymentIntentIds ?? []);
       const bookingIds = new Set(input.bookingIds ?? []);
       const fileStore = await readFileStore(filePath);
       return fileStore.payments.filter(
         payment =>
-          payment.postingBlocked &&
-          ((payment.providerReference.paymentIntentId &&
+          (payment.providerReference.paymentIntentId &&
             paymentIntentIds.has(payment.providerReference.paymentIntentId)) ||
-            bookingIds.has(payment.bookingId)),
+          bookingIds.has(payment.bookingId),
       );
     },
     async recordStripeEvent(input) {
@@ -338,6 +370,10 @@ function createPostgresStore(): RentalPaymentStore {
       return rows[0]?.payload ?? null;
     },
     async listBlockingPaymentsByReferences(input) {
+      const payments = await this.listPaymentsByReferences(input);
+      return payments.filter(payment => payment.postingBlocked);
+    },
+    async listPaymentsByReferences(input) {
       await ensurePostgresTables();
       const paymentIntentIds = input.paymentIntentIds ?? [];
       const bookingIds = input.bookingIds ?? [];
@@ -347,8 +383,7 @@ function createPostgresStore(): RentalPaymentStore {
           ? ((await sql`
               SELECT payload
               FROM robomata_rental_payments
-              WHERE posting_blocked = true
-                AND provider_payment_intent_id = ANY(${paymentIntentIds});
+              WHERE provider_payment_intent_id = ANY(${paymentIntentIds});
             `) as Array<{ payload: RentalPaymentRecord }>)
           : [];
       const bookingRows =
@@ -356,8 +391,7 @@ function createPostgresStore(): RentalPaymentStore {
           ? ((await sql`
               SELECT payload
               FROM robomata_rental_payments
-              WHERE posting_blocked = true
-                AND booking_id = ANY(${bookingIds});
+              WHERE booking_id = ANY(${bookingIds});
             `) as Array<{ payload: RentalPaymentRecord }>)
           : [];
       const payments = [...paymentIntentRows, ...bookingRows].map(row => row.payload);

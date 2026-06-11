@@ -54,6 +54,9 @@ function eventKindForStripeEvent(event: StripeWebhookEvent): RentalPaymentProvid
       return null;
     case "charge.dispute.created":
       return "dispute_opened";
+    case "charge.dispute.closed":
+      if (event.data.object.status === "lost") return "chargeback_recorded";
+      return "dispute_closed";
     case "charge.dispute.funds_withdrawn":
       return "chargeback_recorded";
     default:

@@ -25,6 +25,7 @@ export type RentalPaymentProviderEventKind =
   | "refund_succeeded"
   | "refund_failed"
   | "dispute_opened"
+  | "dispute_closed"
   | "chargeback_recorded"
   | "reconciliation_refetched";
 
