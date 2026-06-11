@@ -10,6 +10,7 @@ import {
   type RentalClaimRecord,
   type RentalClaimUpdateInput,
 } from "~~/lib/robomata/rentalClaims";
+import { assertNoProhibitedRentalPersistenceFields } from "~~/lib/robomata/rentalPersistencePolicy";
 import { getRobomataPostgresSql } from "~~/lib/robomata/server/postgres";
 
 type RentalClaimFileStore = {
@@ -81,6 +82,7 @@ async function withFileStoreWriteLock<T>(filePath: string, operation: () => Prom
 }
 
 function claimFromInput(booking: RentalBookingRecord, input: RentalClaimCreateInput): RentalClaimRecord {
+  assertNoProhibitedRentalPersistenceFields(input, "rental claim create input");
   const now = new Date().toISOString();
   if (
     input.payoutHoldAmountCents !== undefined &&
@@ -115,6 +117,7 @@ function claimFromInput(booking: RentalBookingRecord, input: RentalClaimCreateIn
 }
 
 function updatedClaim(current: RentalClaimRecord, input: RentalClaimUpdateInput): RentalClaimRecord {
+  assertNoProhibitedRentalPersistenceFields(input, "rental claim update input");
   const now = new Date().toISOString();
   const status = input.status ?? current.status;
   const payoutHold = { ...current.payoutHold, ...(input.payoutHold ?? {}) };

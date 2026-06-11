@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import "server-only";
 import { isRobomataRentalRevenuePostingEnabled } from "~~/lib/featureFlags";
+import { assertNoProhibitedRentalPersistenceFields } from "~~/lib/robomata/rentalPersistencePolicy";
 import {
   type RentalFinancingTarget,
   type RentalRevenueLedgerEntry,
@@ -150,6 +151,7 @@ function createFileStore(): RentalRevenueStore {
   const filePath = fileStorePath();
   return {
     async createPostingBatch(input) {
+      assertNoProhibitedRentalPersistenceFields(input.entries, "rental revenue ledger entries");
       return withFileStoreWriteLock(filePath, async () => {
         const fileStore = await readFileStore(filePath);
         const batch = buildRentalRevenuePostingBatch(input);
@@ -201,6 +203,7 @@ function createPostgresStore(): RentalRevenueStore {
   const sql = getRobomataPostgresSql();
   return {
     async createPostingBatch(input) {
+      assertNoProhibitedRentalPersistenceFields(input.entries, "rental revenue ledger entries");
       await ensurePostgresTables();
       const batch = buildRentalRevenuePostingBatch(input);
       return sql.begin(async tx => {

@@ -21,6 +21,7 @@ import {
   type RentalVehicleSetupChecklistKey,
   type RentalVehicleSetupValidationError,
 } from "~~/lib/robomata/rentalInventory";
+import { assertNoProhibitedRentalPersistenceFields } from "~~/lib/robomata/rentalPersistencePolicy";
 import { getRobomataPostgresSql } from "~~/lib/robomata/server/postgres";
 import { buildFacilityInventoryManifestRootPayload } from "~~/lib/robomata/server/rentalInventoryRoots";
 
@@ -188,6 +189,7 @@ function validateVehicle(vehicle: FacilityInventoryVehicle, manifest: FacilityIn
 }
 
 function validateManifest(manifest: FacilityInventoryManifest) {
+  assertNoProhibitedRentalPersistenceFields(manifest, "rental inventory manifest");
   if (manifest.version !== RENTAL_FACILITY_INVENTORY_MANIFEST_VERSION) {
     throw new RentalInventoryValidationError(`Unsupported rental inventory manifest version: ${manifest.version}.`);
   }

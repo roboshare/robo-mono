@@ -5,6 +5,7 @@ import path from "node:path";
 import "server-only";
 import { isRobomataRentalBookingsEnabled } from "~~/lib/featureFlags";
 import type { RentalBookingRecord } from "~~/lib/robomata/rentalBookings";
+import { assertNoProhibitedRentalPersistenceFields } from "~~/lib/robomata/rentalPersistencePolicy";
 import {
   type RentalAuditEvent,
   type RentalCancellationInput,
@@ -95,6 +96,7 @@ function cancellationAuditEvent(
   input: RentalCancellationInput,
   outcome: RentalCancellationOutcome,
 ): RentalAuditEvent {
+  assertNoProhibitedRentalPersistenceFields(input, "rental cancellation input");
   return {
     id: outcome.auditEventId,
     bookingId: booking.id,
@@ -115,6 +117,7 @@ function incidentFromInput(input: Omit<RentalIncidentRecord, "auditEventId" | "c
   auditEvent: RentalAuditEvent;
   incident: RentalIncidentRecord;
 } {
+  assertNoProhibitedRentalPersistenceFields(input, "rental incident input");
   const now = new Date().toISOString();
   const incidentId = `ri_${randomUUID()}`;
   const auditEventId = `rae_${randomUUID()}`;
