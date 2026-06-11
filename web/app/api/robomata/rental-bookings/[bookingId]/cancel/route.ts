@@ -35,7 +35,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const { bookingId } = await context.params;
     const booking = await getRentalBookingStore().getBooking(bookingId);
     if (!booking) return NextResponse.json({ error: "Rental booking not found." }, { status: 404 });
-    if (["completed", "closed"].includes(booking.state)) {
+    if (["cancelled", "closed", "completed", "disputed"].includes(booking.state)) {
       return NextResponse.json({ error: `Booking cannot be cancelled from state ${booking.state}.` }, { status: 409 });
     }
 

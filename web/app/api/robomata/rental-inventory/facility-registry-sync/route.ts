@@ -26,19 +26,16 @@ function requireScheduledSync(request: NextRequest) {
   }
 
   const configuredSecret = process.env.ROBOMATA_RENTAL_INVENTORY_SYNC_SECRET?.trim();
-  if (configuredSecret) {
-    const authorization = request.headers.get("authorization");
-    if (authorization === `Bearer ${configuredSecret}`) return null;
-    return NextResponse.json({ error: "Invalid rental inventory sync authorization." }, { status: 401 });
+  if (!configuredSecret) {
+    return NextResponse.json(
+      { error: "Rental inventory scheduled sync requires a configured bearer secret." },
+      { status: 403 },
+    );
   }
 
-  const userAgent = request.headers.get("user-agent") ?? "";
-  if (userAgent.includes("vercel-cron/1.0")) return null;
-
-  return NextResponse.json(
-    { error: "Rental inventory sync requires Vercel Cron or a configured bearer secret." },
-    { status: 401 },
-  );
+  const authorization = request.headers.get("authorization");
+  if (authorization === `Bearer ${configuredSecret}`) return null;
+  return NextResponse.json({ error: "Invalid rental inventory sync authorization." }, { status: 401 });
 }
 
 function parseOptionalInteger(value: unknown, field: string): bigint | undefined {

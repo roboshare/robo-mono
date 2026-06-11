@@ -162,6 +162,10 @@ function isActiveBooking(booking: RentalBookingRecord): boolean {
   return ACTIVE_BOOKING_STATES.includes(booking.state);
 }
 
+function advisoryLockKey(input: string): string {
+  return `robomata:rental-booking:${input}`;
+}
+
 function assertNoOverlappingActiveBooking(
   candidate: Pick<RentalBookingRecord, "dateFrom" | "dateTo" | "platformVehicleId">,
   bookings: RentalBookingRecord[],
@@ -181,11 +185,11 @@ function assertNoOverlappingActiveBooking(
 
 function confirmedBooking(current: RentalBookingRecord, input: RentalBookingConfirmationInput): RentalBookingRecord {
   const now = new Date().toISOString();
-  const state = input.hostReviewRequired ? "host_review" : "confirmed";
+  const state = current.state === "host_review" || !input.hostReviewRequired ? "confirmed" : "host_review";
   const events = [
     ...current.events,
-    bookingEvent(input.hostReviewRequired ? "host_review_required" : "booking_confirmed", current.id),
-    ...(input.hostReviewRequired ? [] : [bookingEvent("booking_reminder_scheduled", current.id)]),
+    bookingEvent(state === "host_review" ? "host_review_required" : "booking_confirmed", current.id),
+    ...(state === "host_review" ? [] : [bookingEvent("booking_reminder_scheduled", current.id)]),
   ];
   return {
     ...current,
@@ -282,59 +286,72 @@ function createPostgresStore(): RentalBookingStore {
   return {
     async createBooking(input) {
       await ensurePostgresTables();
-      const rows = (await sql`
-        SELECT payload
-        FROM robomata_rental_bookings
-        WHERE platform_vehicle_id = ${input.platformVehicleId}
-          AND state = ANY(${ACTIVE_BOOKING_STATES});
-      `) as Array<{ payload: RentalBookingRecord }>;
-      assertNoOverlappingActiveBooking(
-        input,
-        rows.map(row => row.payload),
-      );
-      const booking = createBookingRecord(input);
-      await sql`
-        INSERT INTO robomata_rental_bookings (
-          id, renter_id, platform_vehicle_id, facility_asset_id, state, payload, created_at, updated_at
-        )
-        VALUES (
-          ${booking.id},
-          ${booking.renterId},
-          ${booking.platformVehicleId},
-          ${booking.facilityAssetId},
-          ${booking.state},
-          ${JSON.stringify(booking)}::jsonb,
-          ${booking.createdAt}::timestamptz,
-          ${booking.updatedAt}::timestamptz
+      return sql.begin(async tx => {
+        await tx`SELECT pg_advisory_xact_lock(hashtext(${advisoryLockKey(input.platformVehicleId)}));`;
+        const rows = (await tx`
+          SELECT payload
+          FROM robomata_rental_bookings
+          WHERE platform_vehicle_id = ${input.platformVehicleId}
+            AND state = ANY(${ACTIVE_BOOKING_STATES});
+        `) as Array<{ payload: RentalBookingRecord }>;
+        assertNoOverlappingActiveBooking(
+          input,
+          rows.map(row => row.payload),
         );
-      `;
-      return booking;
+        const booking = createBookingRecord(input);
+        await tx`
+          INSERT INTO robomata_rental_bookings (
+            id, renter_id, platform_vehicle_id, facility_asset_id, state, payload, created_at, updated_at
+          )
+          VALUES (
+            ${booking.id},
+            ${booking.renterId},
+            ${booking.platformVehicleId},
+            ${booking.facilityAssetId},
+            ${booking.state},
+            ${JSON.stringify(booking)}::jsonb,
+            ${booking.createdAt}::timestamptz,
+            ${booking.updatedAt}::timestamptz
+          );
+        `;
+        return booking;
+      });
     },
     async confirmBooking(bookingId, input) {
       await ensurePostgresTables();
-      const current = await this.getBooking(bookingId);
-      if (!current) return null;
-      const rows = (await sql`
-        SELECT payload
-        FROM robomata_rental_bookings
-        WHERE platform_vehicle_id = ${current.platformVehicleId}
-          AND state = ANY(${ACTIVE_BOOKING_STATES})
-          AND id != ${bookingId};
-      `) as Array<{ payload: RentalBookingRecord }>;
-      assertNoOverlappingActiveBooking(
-        current,
-        rows.map(row => row.payload),
-        current.id,
-      );
-      const booking = confirmedBooking(current, input);
-      await sql`
-        UPDATE robomata_rental_bookings
-        SET state = ${booking.state},
-            payload = ${JSON.stringify(booking)}::jsonb,
-            updated_at = ${booking.updatedAt}::timestamptz
-        WHERE id = ${bookingId};
-      `;
-      return booking;
+      return sql.begin(async tx => {
+        const currentRows = (await tx`
+          SELECT payload
+          FROM robomata_rental_bookings
+          WHERE id = ${bookingId}
+          LIMIT 1;
+        `) as Array<{ payload: RentalBookingRecord }>;
+        const current = currentRows[0]?.payload;
+        if (!current) return null;
+
+        await tx`SELECT pg_advisory_xact_lock(hashtext(${advisoryLockKey(current.platformVehicleId)}));`;
+        const rows = (await tx`
+          SELECT payload
+          FROM robomata_rental_bookings
+          WHERE platform_vehicle_id = ${current.platformVehicleId}
+            AND state = ANY(${ACTIVE_BOOKING_STATES})
+            AND id != ${bookingId};
+        `) as Array<{ payload: RentalBookingRecord }>;
+        assertNoOverlappingActiveBooking(
+          current,
+          rows.map(row => row.payload),
+          current.id,
+        );
+        const booking = confirmedBooking(current, input);
+        await tx`
+          UPDATE robomata_rental_bookings
+          SET state = ${booking.state},
+              payload = ${JSON.stringify(booking)}::jsonb,
+              updated_at = ${booking.updatedAt}::timestamptz
+          WHERE id = ${bookingId};
+        `;
+        return booking;
+      });
     },
     async getBooking(bookingId) {
       await ensurePostgresTables();

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isRobomataRentalBookingsEnabled, isRobomataWorkflowMutationEnabled } from "~~/lib/featureFlags";
 import type { RentalClaimCreateInput } from "~~/lib/robomata/rentalClaims";
+import type { RentalBookingLifecycleState } from "~~/lib/robomata/rentalOperations";
 import { getRentalBookingStore } from "~~/lib/robomata/server/rentalBookingStore";
 import { getRentalClaimStore } from "~~/lib/robomata/server/rentalClaimStore";
 
@@ -18,6 +19,12 @@ function requireBookings() {
 function requireMutation() {
   if (isRobomataWorkflowMutationEnabled()) return null;
   return NextResponse.json({ error: "Robomata rental claim writes are not enabled." }, { status: 403 });
+}
+
+function claimBookingState(bookingState: RentalBookingLifecycleState): RentalBookingLifecycleState {
+  return ["check_in_open", "completed", "confirmed", "in_trip", "return_pending"].includes(bookingState)
+    ? "disputed"
+    : bookingState;
 }
 
 export async function POST(request: NextRequest, context: RouteContext) {
@@ -40,7 +47,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         payoutHoldStatus: claim.payoutHold.status,
         status: claim.status,
       },
-      state: booking.state === "completed" ? "disputed" : booking.state,
+      state: claimBookingState(booking.state),
     });
     return NextResponse.json({ booking: updatedBooking, claim }, { status: 201 });
   } catch (error) {

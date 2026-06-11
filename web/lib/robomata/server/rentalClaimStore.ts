@@ -82,6 +82,12 @@ async function withFileStoreWriteLock<T>(filePath: string, operation: () => Prom
 
 function claimFromInput(booking: RentalBookingRecord, input: RentalClaimCreateInput): RentalClaimRecord {
   const now = new Date().toISOString();
+  if (
+    input.payoutHoldAmountCents !== undefined &&
+    (!Number.isFinite(input.payoutHoldAmountCents) || input.payoutHoldAmountCents <= 0)
+  ) {
+    throw new Error("payoutHoldAmountCents must be a positive finite amount when provided.");
+  }
   return {
     id: `rc_${randomUUID()}`,
     bookingId: booking.id,

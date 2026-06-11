@@ -16,7 +16,11 @@ export async function POST(request: NextRequest) {
     if (featureError) return featureError;
 
     const body = (await request.json()) as RenterProfileInput;
-    const renter = await getRentalRenterStore().upsertRenter(body);
+    const renter = await getRentalRenterStore().upsertRenter({
+      displayName: body.displayName,
+      email: body.email,
+      phone: body.phone,
+    });
     return NextResponse.json({ renter }, { status: 201 });
   } catch (error) {
     return NextResponse.json(
