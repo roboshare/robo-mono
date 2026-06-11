@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isRobomataRentalInventoryEnabled, isRobomataWorkflowMutationEnabled } from "~~/lib/featureFlags";
 import type { FacilityInventoryManifest, RentalInventorySourceEvent } from "~~/lib/robomata/rentalInventory";
-import { rentalManifestAccessError } from "~~/lib/robomata/server/rentalInventoryAccess";
+import {
+  authorizedRentalFacilityAssetIds,
+  rentalManifestAccessError,
+  rentalStoredFacilityAccessError,
+} from "~~/lib/robomata/server/rentalInventoryAccess";
 import { RentalInventoryValidationError, getRentalInventoryStore } from "~~/lib/robomata/server/rentalInventoryStore";
 import { requirePartnerAddress } from "~~/lib/robomata/server/submissionAccess";
 
@@ -30,8 +34,18 @@ export async function GET(request: NextRequest) {
   if (partnerAddress instanceof NextResponse) return partnerAddress;
 
   const facilityAssetId = request.nextUrl.searchParams.get("facilityAssetId")?.trim() || undefined;
+  if (facilityAssetId) {
+    const accessError = await rentalStoredFacilityAccessError(facilityAssetId, partnerAddress);
+    if (accessError) return NextResponse.json({ error: accessError }, { status: 403 });
+  }
+
+  const allowedFacilityAssetIds = facilityAssetId
+    ? new Set([facilityAssetId])
+    : await authorizedRentalFacilityAssetIds(partnerAddress);
   const manifests = await getRentalInventoryStore().listManifests(facilityAssetId);
-  return NextResponse.json({ manifests });
+  return NextResponse.json({
+    manifests: manifests.filter(manifest => allowedFacilityAssetIds.has(manifest.facilityAssetId)),
+  });
 }
 
 export async function POST(request: NextRequest) {

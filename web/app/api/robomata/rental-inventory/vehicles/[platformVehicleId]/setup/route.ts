@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isRobomataRentalInventoryEnabled, isRobomataWorkflowMutationEnabled } from "~~/lib/featureFlags";
 import type { RentalVehicleHostSetupUpdate } from "~~/lib/robomata/rentalInventory";
 import { getRentalInventoryStore } from "~~/lib/robomata/server/rentalInventoryStore";
+import { requireRentalVehicleAccess } from "~~/lib/robomata/server/rentalRouteAccess";
 import { requirePartnerAddress } from "~~/lib/robomata/server/submissionAccess";
 
 export const runtime = "nodejs";
@@ -24,8 +25,12 @@ export async function GET(request: NextRequest, context: { params: Promise<{ pla
   if (partnerAddress instanceof NextResponse) return partnerAddress;
 
   const { platformVehicleId } = await context.params;
-  const vehicle = await getRentalInventoryStore().getVehicle(decodeURIComponent(platformVehicleId));
-  if (!vehicle) return NextResponse.json({ error: "Rental vehicle not found." }, { status: 404 });
+  const access = await requireRentalVehicleAccess({
+    partnerAddress,
+    platformVehicleId: decodeURIComponent(platformVehicleId),
+  });
+  if (access instanceof NextResponse) return access;
+  const { vehicle } = access;
   return NextResponse.json({ setup: vehicle.hostSetup ?? null, vehicle });
 }
 
@@ -44,6 +49,12 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ p
     if (!body.setup || typeof body.setup !== "object") {
       return NextResponse.json({ error: "setup must be provided." }, { status: 400 });
     }
+
+    const access = await requireRentalVehicleAccess({
+      partnerAddress,
+      platformVehicleId: decodeURIComponent(platformVehicleId),
+    });
+    if (access instanceof NextResponse) return access;
 
     const vehicle = await getRentalInventoryStore().updateVehicleSetup(
       decodeURIComponent(platformVehicleId),

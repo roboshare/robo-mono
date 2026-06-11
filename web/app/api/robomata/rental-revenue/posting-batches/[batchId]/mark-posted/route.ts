@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isRobomataRentalRevenuePostingEnabled, isRobomataWorkflowMutationEnabled } from "~~/lib/featureFlags";
-import {
-  configuredRentalFacilityOwners,
-  rentalStoredFacilityAccessError,
-} from "~~/lib/robomata/server/rentalInventoryAccess";
 import { getRentalRevenueStore } from "~~/lib/robomata/server/rentalRevenueStore";
+import { requireRentalRevenueBatchAccess } from "~~/lib/robomata/server/rentalRouteAccess";
 import { requirePartnerAddress } from "~~/lib/robomata/server/submissionAccess";
 
 export const runtime = "nodejs";
@@ -46,13 +43,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const store = getRentalRevenueStore();
     const currentBatch = await store.getPostingBatch(batchId);
     if (!currentBatch) return NextResponse.json({ error: "Rental revenue posting batch not found." }, { status: 404 });
-    const configuredOwner = configuredRentalFacilityOwners()[currentBatch.facilityAssetId]?.toLowerCase();
-    const accessError = await rentalStoredFacilityAccessError(currentBatch.facilityAssetId, partnerAddress);
-    const isCreator = currentBatch.attestation?.createdBy?.toLowerCase() === partnerAddress.toLowerCase();
-    const isConfiguredOwnerMismatch = configuredOwner !== undefined && configuredOwner !== partnerAddress.toLowerCase();
-    if (accessError && (!isCreator || isConfiguredOwnerMismatch)) {
-      return NextResponse.json({ error: accessError }, { status: 403 });
-    }
+    const accessError = await requireRentalRevenueBatchAccess(currentBatch, partnerAddress);
+    if (accessError) return accessError;
+
     const batch = await store.markPostingBatchPosted(batchId, body.protocolTxHash);
     if (!batch) return NextResponse.json({ error: "Rental revenue posting batch not found." }, { status: 404 });
     return NextResponse.json({ batch });
