@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isRobomataRentalBookingsEnabled, isRobomataRentalPaymentsEnabled } from "~~/lib/featureFlags";
+import {
+  isRobomataRentalBookingsEnabled,
+  isRobomataRentalInventoryEnabled,
+  isRobomataRentalPaymentsEnabled,
+} from "~~/lib/featureFlags";
 import type { RentalBookingRecord } from "~~/lib/robomata/rentalBookings";
-import type { RentalPaymentProviderEventKind } from "~~/lib/robomata/rentalPayments";
+import type { RentalPaymentProviderEventKind, RentalPaymentRecord } from "~~/lib/robomata/rentalPayments";
 import { getRentalBookingStore } from "~~/lib/robomata/server/rentalBookingStore";
+import { getRentalInventoryStore } from "~~/lib/robomata/server/rentalInventoryStore";
 import { getRentalPaymentStore } from "~~/lib/robomata/server/rentalPaymentStore";
 import {
   type StripeWebhookEvent,
@@ -44,6 +49,8 @@ function eventKindForStripeEvent(event: StripeWebhookEvent): RentalPaymentProvid
       return "authorization_succeeded";
     case "payment_intent.succeeded":
       return "capture_succeeded";
+    case "payment_intent.canceled":
+      return "payment_cancelled";
     case "payment_intent.payment_failed":
       return "payment_failed";
     case "charge.refunded":
@@ -106,6 +113,27 @@ function failureReasonForEvent(event: StripeWebhookEvent): string | undefined {
   return stringField(object.failure_message) ?? stringField(object.reason);
 }
 
+async function advanceBookingAfterPaymentAuthorization(input: {
+  eventKind: RentalPaymentProviderEventKind;
+  payment: RentalPaymentRecord;
+}) {
+  if (input.eventKind !== "authorization_succeeded" && input.eventKind !== "capture_succeeded") return;
+  const booking = await getRentalBookingStore().getBooking(input.payment.bookingId);
+  if (!booking || booking.state !== "pending_payment_authorization") return;
+
+  let hostReviewRequired = false;
+  if (isRobomataRentalInventoryEnabled()) {
+    const vehicle = await getRentalInventoryStore().getVehicle(booking.platformVehicleId);
+    hostReviewRequired = vehicle?.hostControls?.bookingReview.requireManualApproval === true;
+  }
+
+  await getRentalBookingStore().confirmBooking(booking.id, {
+    hostReviewRequired,
+    paymentAuthorized: true,
+    paymentProviderReference: input.payment.providerReference,
+  });
+}
+
 export async function POST(request: NextRequest) {
   try {
     const featureError = requireRentalPayments();
@@ -151,6 +179,7 @@ export async function POST(request: NextRequest) {
       refundId: event.type.startsWith("charge.refund.") ? stringField(event.data.object.id) : undefined,
       snapshot,
     });
+    await advanceBookingAfterPaymentAuthorization({ eventKind, payment });
     return NextResponse.json({ payment });
   } catch (error) {
     return NextResponse.json(

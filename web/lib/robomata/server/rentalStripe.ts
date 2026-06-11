@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import "server-only";
 import type { RentalBookingRecord } from "~~/lib/robomata/rentalBookings";
 import type { StripePaymentIntentSnapshot } from "~~/lib/robomata/server/rentalPaymentStore";
@@ -42,16 +42,21 @@ function stripeJsonHeaders() {
 function mockPaymentIntent(input: {
   amountCents: number;
   booking: RentalBookingRecord;
+  idempotencyKey?: string;
   status?: string;
 }): StripePaymentIntentSnapshot {
+  const idSuffix = input.idempotencyKey
+    ? `_${createHash("sha256").update(input.idempotencyKey).digest("hex").slice(0, 10)}`
+    : "";
+  const id = `pi_mock_${input.booking.id}${idSuffix}`;
   return {
     amount: input.amountCents,
     amount_capturable: input.amountCents,
     amount_received: 0,
     capture_method: "manual",
-    client_secret: `pi_mock_${input.booking.id}_secret_mock`,
+    client_secret: `${id}_secret_mock`,
     currency: "usd",
-    id: `pi_mock_${input.booking.id}`,
+    id,
     latest_charge: `ch_mock_${input.booking.id}`,
     status: input.status ?? "requires_capture",
   };
@@ -91,9 +96,13 @@ async function stripeRequest(path: string, init?: RequestInit): Promise<unknown>
 
 export async function createStripeRentalPaymentIntent(input: {
   booking: RentalBookingRecord;
+  idempotencyKey?: string;
 }): Promise<StripePaymentIntentSnapshot> {
   const amountCents = input.booking.paymentPlan.totalDueAtAuthorizationCents;
-  if (isStripeMockEnabled()) return mockPaymentIntent({ amountCents, booking: input.booking });
+  const idempotencyKey = input.idempotencyKey ?? `robomata-rental-booking-${input.booking.id}`;
+  if (isStripeMockEnabled()) {
+    return mockPaymentIntent({ amountCents, booking: input.booking, idempotencyKey: input.idempotencyKey });
+  }
 
   const body = new URLSearchParams({
     amount: String(amountCents),
@@ -110,7 +119,7 @@ export async function createStripeRentalPaymentIntent(input: {
     body,
     headers: {
       ...stripeJsonHeaders(),
-      "idempotency-key": `robomata-rental-booking-${input.booking.id}`,
+      "idempotency-key": idempotencyKey,
     },
     method: "POST",
   });

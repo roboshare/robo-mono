@@ -20,6 +20,7 @@ export type RentalPaymentProviderEventKind =
   | "payment_intent_created"
   | "authorization_required"
   | "authorization_succeeded"
+  | "payment_cancelled"
   | "capture_succeeded"
   | "payment_failed"
   | "refund_succeeded"

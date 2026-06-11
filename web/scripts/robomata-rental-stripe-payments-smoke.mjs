@@ -19,6 +19,7 @@ const stripeWebhookSecret = "whsec_stripe_smoke";
 const partnerAccount = privateKeyToAccount("0x59c6995e998f97a5a0044966f094538b2920b4214d56109c94e3e5095b25b8a5");
 const platformVehicleId = "pv_stripe_smoke";
 const facilityAssetId = "facility-stripe-smoke-asset";
+const otherFacilityAssetId = "facility-stripe-smoke-other";
 
 let serverProcess;
 let tempDir;
@@ -246,7 +247,10 @@ async function main() {
     ROBOMATA_RENTAL_BOOKINGS_ENABLED: "true",
     ROBOMATA_RENTAL_BOOKINGS_FILE: path.join(tempDir, "bookings.json"),
     ROBOMATA_RENTAL_INVENTORY_ENABLED: "true",
-    ROBOMATA_RENTAL_INVENTORY_FACILITY_OWNERS_JSON: JSON.stringify({ [facilityAssetId]: partnerAccount.address }),
+    ROBOMATA_RENTAL_INVENTORY_FACILITY_OWNERS_JSON: JSON.stringify({
+      [facilityAssetId]: partnerAccount.address,
+      [otherFacilityAssetId]: partnerAccount.address,
+    }),
     ROBOMATA_RENTAL_INVENTORY_FILE: inventoryFile,
     ROBOMATA_RENTAL_PAYMENT_CONFIRMATION_SECRET: paymentConfirmationSecret,
     ROBOMATA_RENTAL_PAYMENTS_ENABLED: "true",
@@ -271,6 +275,7 @@ async function main() {
   const renterId = renterPayload.renter?.id;
   if (!renterId) throw new Error(`Expected renter id, got ${JSON.stringify(renterPayload)}`);
   await approveRenterVerification(renterId);
+  const authHeaders = authHeaderBuilder({ account: partnerAccount, partnerAddress: partnerAccount.address });
 
   const checkoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
     body: JSON.stringify({
@@ -318,7 +323,7 @@ async function main() {
     headers: { "content-type": "application/json" },
     method: "POST",
   });
-  const paymentIntentId = paymentIntentPayload.payment?.providerReference?.paymentIntentId;
+  let paymentIntentId = paymentIntentPayload.payment?.providerReference?.paymentIntentId;
   if (!paymentIntentId || !paymentIntentPayload.clientSecret) {
     throw new Error(`Expected mock PaymentIntent and client secret, got ${JSON.stringify(paymentIntentPayload)}`);
   }
@@ -338,6 +343,49 @@ async function main() {
       )}`,
     );
   }
+
+  const canceledWebhookBody = JSON.stringify({
+    id: "evt_payment_canceled_smoke",
+    created: Math.floor(Date.now() / 1000),
+    type: "payment_intent.canceled",
+    data: {
+      object: {
+        id: paymentIntentId,
+        amount: paymentIntentPayload.payment.authorizedAmountCents,
+        amount_capturable: 0,
+        amount_received: 0,
+        capture_method: "manual",
+        currency: "usd",
+        latest_charge: "ch_stripe_smoke_cancelled",
+        metadata: { bookingId },
+        status: "canceled",
+      },
+    },
+  });
+  const canceledPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/stripe/webhook`, {
+    body: canceledWebhookBody,
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": stripeSignatureHeader(canceledWebhookBody),
+    },
+    method: "POST",
+  });
+  if (canceledPayload.payment?.status !== "cancelled" || !canceledPayload.payment.postingBlocked) {
+    throw new Error(`Expected canceled PaymentIntent to be blocked, got ${JSON.stringify(canceledPayload)}`);
+  }
+
+  const replacementPaymentIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
+    body: JSON.stringify({ bookingId, renterId }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const replacementPaymentIntentId = replacementPaymentIntentPayload.payment?.providerReference?.paymentIntentId;
+  if (!replacementPaymentIntentId || replacementPaymentIntentId === paymentIntentId) {
+    throw new Error(
+      `Expected canceled PaymentIntent to be replaced, got ${JSON.stringify(replacementPaymentIntentPayload)}`,
+    );
+  }
+  paymentIntentId = replacementPaymentIntentId;
 
   const capturableWebhookBody = JSON.stringify({
     id: "evt_payment_capturable_smoke",
@@ -369,6 +417,16 @@ async function main() {
   });
   if (capturablePayload.payment?.providerReference?.chargeId !== "ch_stripe_smoke_actual") {
     throw new Error(`Expected real charge id from PaymentIntent webhook, got ${JSON.stringify(capturablePayload)}`);
+  }
+  const authorizedBookingPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/${bookingId}`, {
+    headers: await authHeaders("GET", `/api/robomata/rental-bookings/${bookingId}`),
+    method: "GET",
+  });
+  if (
+    authorizedBookingPayload.booking?.state !== "confirmed" ||
+    authorizedBookingPayload.booking.paymentProviderReference?.paymentIntentId !== paymentIntentId
+  ) {
+    throw new Error(`Expected authorization webhook to confirm booking, got ${JSON.stringify(authorizedBookingPayload)}`);
   }
 
   const failedWebhookBody = JSON.stringify({
@@ -412,7 +470,6 @@ async function main() {
     throw new Error(`Expected failed payment to block posting, got ${JSON.stringify(failedWebhookPayload)}`);
   }
 
-  const authHeaders = authHeaderBuilder({ account: partnerAccount, partnerAddress: partnerAccount.address });
   const postingPath = "/api/robomata/rental-revenue/posting-batches";
   const postingBody = {
     entries: [
@@ -578,6 +635,32 @@ async function main() {
     409,
     "Captured payment reconciliation is required before rental revenue posting.",
   );
+  await expectJsonFailure(
+    `${baseUrl}${postingPath}`,
+    {
+      body: JSON.stringify({
+        ...postingBody,
+        entries: [
+          {
+            ...postingBody.entries[0],
+            facilityAssetId: otherFacilityAssetId,
+            id: "rle_stripe_smoke_wrong_facility",
+            postingAssetId: otherFacilityAssetId,
+            source: { bookingId, paymentIntentId },
+          },
+        ],
+        target: {
+          facilityAssetId: otherFacilityAssetId,
+          postingAssetId: otherFacilityAssetId,
+          postingAssetKind: "facility",
+        },
+      }),
+      headers: await authHeaders("POST", postingPath, { "content-type": "application/json" }),
+      method: "POST",
+    },
+    409,
+    "Captured payment reconciliation is required before rental revenue posting.",
+  );
 
   const postingPayload = await fetchJson(`${baseUrl}${postingPath}`, {
     body: JSON.stringify(postingBody),
@@ -685,6 +768,33 @@ async function main() {
     throw new Error(`Expected partial refund amount to persist, got ${JSON.stringify(refundPayload)}`);
   }
 
+  const secondRefundWebhookBody = JSON.stringify({
+    id: "evt_payment_refund_second_smoke",
+    created: Math.floor(Date.now() / 1000),
+    type: "charge.refund.updated",
+    data: {
+      object: {
+        id: "re_stripe_smoke_second",
+        amount: 300,
+        charge: "ch_stripe_smoke_actual",
+        currency: "usd",
+        payment_intent: paymentIntentId,
+        status: "succeeded",
+      },
+    },
+  });
+  const secondRefundPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/stripe/webhook`, {
+    body: secondRefundWebhookBody,
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": stripeSignatureHeader(secondRefundWebhookBody),
+    },
+    method: "POST",
+  });
+  if (secondRefundPayload.payment?.status !== "refunded" || secondRefundPayload.payment.refundedAmountCents !== 550) {
+    throw new Error(`Expected separate partial refunds to accumulate, got ${JSON.stringify(secondRefundPayload)}`);
+  }
+
   const refundedReconciliationPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/reconcile`, {
     body: JSON.stringify({ paymentIntentId }),
     headers: {
@@ -695,7 +805,7 @@ async function main() {
   });
   if (
     refundedReconciliationPayload.payment?.status !== "refunded" ||
-    refundedReconciliationPayload.payment.refundedAmountCents !== 250
+    refundedReconciliationPayload.payment.refundedAmountCents !== 550
   ) {
     throw new Error(
       `Expected reconciliation to preserve refunded state, got ${JSON.stringify(refundedReconciliationPayload)}`,
@@ -727,7 +837,7 @@ async function main() {
       entries: [
         {
           ...postingBody.entries[0],
-          amountCents: 750,
+          amountCents: 450,
           id: "rle_stripe_smoke_refund_adjusted",
           source: { bookingId, paymentIntentId },
         },

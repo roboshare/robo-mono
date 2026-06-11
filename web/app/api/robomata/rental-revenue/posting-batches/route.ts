@@ -36,7 +36,17 @@ function paymentMatchesEntry(payment: RentalPaymentRecord, entry: RentalRevenueL
   const bookingMatches = !entry.source.bookingId || payment.bookingId === entry.source.bookingId;
   const intentMatches =
     !entry.source.paymentIntentId || payment.providerReference.paymentIntentId === entry.source.paymentIntentId;
-  return bookingMatches && intentMatches;
+  const facilityMatches = payment.facilityAssetId === entry.facilityAssetId;
+  const vehicleMatches = !entry.vehicleAssetId || payment.vehicleAssetId === entry.vehicleAssetId;
+  return bookingMatches && intentMatches && facilityMatches && vehicleMatches;
+}
+
+function paymentForEntry(payments: RentalPaymentRecord[], entry: RentalRevenueLedgerEntry) {
+  const candidates = payments
+    .filter(payment => paymentMatchesEntry(payment, entry))
+    .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
+  if (entry.source.paymentIntentId) return candidates[0];
+  return candidates.find(payment => !payment.postingBlocked) ?? candidates[0];
 }
 
 function paymentCanBackPosting(payment: RentalPaymentRecord) {
@@ -81,27 +91,27 @@ export async function POST(request: NextRequest) {
         ),
       ];
       const paymentStore = getRentalPaymentStore();
-      const blockingPayments = await paymentStore.listBlockingPaymentsByReferences({
-        bookingIds,
-        paymentIntentIds,
-      });
-      if (blockingPayments.length > 0) {
+      const referencedPayments = await paymentStore.listPaymentsByReferences({ bookingIds, paymentIntentIds });
+      const blockedEntries = paymentBackedEntries
+        .map(entry => ({ entry, payment: paymentForEntry(referencedPayments, entry) }))
+        .filter(item => item.payment?.postingBlocked);
+      if (blockedEntries.length > 0) {
         return NextResponse.json(
           {
-            blockingPayments: blockingPayments.map(payment => ({
-              bookingId: payment.bookingId,
-              paymentIntentId: payment.providerReference.paymentIntentId,
-              postingBlockReason: payment.postingBlockReason,
-              status: payment.status,
+            blockingPayments: blockedEntries.map(({ entry, payment }) => ({
+              bookingId: entry.source.bookingId,
+              id: entry.id,
+              paymentIntentId: entry.source.paymentIntentId ?? payment?.providerReference.paymentIntentId,
+              postingBlockReason: payment?.postingBlockReason,
+              status: payment?.status,
             })),
             error: "Payment reconciliation blocks rental revenue posting.",
           },
           { status: 409 },
         );
       }
-      const referencedPayments = await paymentStore.listPaymentsByReferences({ bookingIds, paymentIntentIds });
       const unreconciledEntries = paymentBackedEntries.filter(entry => {
-        const payment = referencedPayments.find(candidate => paymentMatchesEntry(candidate, entry));
+        const payment = paymentForEntry(referencedPayments, entry);
         return !payment || !paymentCanBackPosting(payment);
       });
       if (unreconciledEntries.length > 0) {
@@ -122,7 +132,7 @@ export async function POST(request: NextRequest) {
         { amountCents: number; entries: RentalRevenueLedgerEntry[]; payment: RentalPaymentRecord }
       >();
       for (const entry of paymentBackedEntries) {
-        const payment = referencedPayments.find(candidate => paymentMatchesEntry(candidate, entry));
+        const payment = paymentForEntry(referencedPayments, entry);
         if (!payment) continue;
         const current = paymentBackedTotals.get(payment.id) ?? { amountCents: 0, entries: [], payment };
         current.amountCents += entry.amountCents;

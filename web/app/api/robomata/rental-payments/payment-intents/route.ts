@@ -55,6 +55,24 @@ export async function POST(request: NextRequest) {
     const existingPayment = await getRentalPaymentStore().getPaymentByBooking(booking.id);
     if (existingPayment?.providerReference.paymentIntentId) {
       const paymentIntent = await retrieveStripeRentalPaymentIntent(existingPayment.providerReference.paymentIntentId);
+      if (existingPayment.status === "cancelled" || paymentIntent.status === "canceled") {
+        const replacementIntent = await createStripeRentalPaymentIntent({
+          booking,
+          idempotencyKey: `robomata-rental-booking-${booking.id}-replacement-${existingPayment.id}`,
+        });
+        const replacementPayment = await getRentalPaymentStore().recordStripeEvent({
+          booking,
+          eventKind: "payment_intent_created",
+          snapshot: replacementIntent,
+        });
+        return NextResponse.json(
+          {
+            clientSecret: replacementIntent.client_secret,
+            payment: replacementPayment,
+          },
+          { status: 201 },
+        );
+      }
       return NextResponse.json({
         clientSecret: paymentIntent.client_secret,
         payment: existingPayment,

@@ -129,6 +129,7 @@ function statusFromStripe(input: {
   if (input.eventKind === "dispute_opened" || input.eventKind === "chargeback_recorded") return "disputed";
   if (input.eventKind === "dispute_closed") return "captured";
   if (input.eventKind === "refund_succeeded") return "refunded";
+  if (input.eventKind === "payment_cancelled") return "cancelled";
   if (input.eventKind === "refund_failed" || input.eventKind === "payment_failed") return "failed";
 
   switch (input.snapshot.status) {
@@ -206,6 +207,26 @@ function providerReference(input: RentalPaymentProviderEventInput): RentalPaymen
   };
 }
 
+function refundedAmountFromEvent(
+  existing: RentalPaymentRecord | undefined,
+  input: RentalPaymentProviderEventInput,
+  status: RentalPaymentIntentStatus,
+) {
+  if (status !== "refunded") return existing?.refundedAmountCents ?? 0;
+  const refundAmount = Math.max(input.refundAmountCents ?? 0, 0);
+  const existingTotal = existing?.refundedAmountCents ?? 0;
+  if (!input.refundId) return Math.max(existingTotal, refundAmount);
+
+  let existingRefundAmount = 0;
+  for (const event of existing?.events ?? []) {
+    const refundId = event.providerReference.refundId;
+    if (event.kind === "refund_succeeded" && refundId === input.refundId) {
+      existingRefundAmount = Math.max(existingRefundAmount, event.amountCents ?? 0);
+    }
+  }
+  return existingTotal - existingRefundAmount + Math.max(existingRefundAmount, refundAmount);
+}
+
 function paymentRecordFromEvent(
   existing: RentalPaymentRecord | undefined,
   input: RentalPaymentProviderEventInput,
@@ -223,10 +244,7 @@ function paymentRecordFromEvent(
     status === "captured" || status === "partially_captured"
       ? Math.max(input.snapshot.amount_received ?? 0, existing?.capturedAmountCents ?? 0, 0)
       : (existing?.capturedAmountCents ?? 0);
-  const refundedAmountCents =
-    status === "refunded"
-      ? Math.max(existing?.refundedAmountCents ?? 0, input.refundAmountCents ?? 0)
-      : (existing?.refundedAmountCents ?? 0);
+  const refundedAmountCents = refundedAmountFromEvent(existing, input, status);
   const postingBlock = paymentPostingBlock({ failureReason: input.failureReason, status });
   const event = {
     amountCents: input.refundAmountCents ?? input.snapshot.amount,
