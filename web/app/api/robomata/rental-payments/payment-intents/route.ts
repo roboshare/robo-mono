@@ -6,7 +6,10 @@ import {
 } from "~~/lib/featureFlags";
 import { getRentalBookingStore } from "~~/lib/robomata/server/rentalBookingStore";
 import { getRentalPaymentStore } from "~~/lib/robomata/server/rentalPaymentStore";
-import { createStripeRentalPaymentIntent } from "~~/lib/robomata/server/rentalStripe";
+import {
+  createStripeRentalPaymentIntent,
+  retrieveStripeRentalPaymentIntent,
+} from "~~/lib/robomata/server/rentalStripe";
 
 export const runtime = "nodejs";
 
@@ -50,8 +53,9 @@ export async function POST(request: NextRequest) {
 
     const existingPayment = await getRentalPaymentStore().getPaymentByBooking(booking.id);
     if (existingPayment?.providerReference.paymentIntentId) {
+      const paymentIntent = await retrieveStripeRentalPaymentIntent(existingPayment.providerReference.paymentIntentId);
       return NextResponse.json({
-        clientSecret: undefined,
+        clientSecret: paymentIntent.client_secret,
         payment: existingPayment,
       });
     }

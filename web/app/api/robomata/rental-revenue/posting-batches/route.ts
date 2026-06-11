@@ -52,10 +52,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "entries must include at least one ledger entry." }, { status: 400 });
     }
     if (isRobomataRentalPaymentsEnabled()) {
+      const bookingIds = [
+        ...new Set(body.entries.flatMap(entry => (entry.source.bookingId ? [entry.source.bookingId] : []))),
+      ];
       const paymentIntentIds = [
         ...new Set(body.entries.flatMap(entry => (entry.source.paymentIntentId ? [entry.source.paymentIntentId] : []))),
       ];
-      const blockingPayments = await getRentalPaymentStore().listBlockingPaymentsByPaymentIntentIds(paymentIntentIds);
+      const blockingPayments = await getRentalPaymentStore().listBlockingPaymentsByReferences({
+        bookingIds,
+        paymentIntentIds,
+      });
       if (blockingPayments.length > 0) {
         return NextResponse.json(
           {

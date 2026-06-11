@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
+import { createHmac } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -14,6 +15,7 @@ const baseUrl = `http://127.0.0.1:${port}`;
 const requestTimeoutMs = Number.parseInt(process.env.ROBOMATA_RENTAL_STRIPE_SMOKE_REQUEST_TIMEOUT_MS ?? "120000", 10);
 const serverTimeoutMs = Number.parseInt(process.env.ROBOMATA_RENTAL_STRIPE_SMOKE_SERVER_TIMEOUT_MS ?? "120000", 10);
 const paymentConfirmationSecret = "stripe-smoke-payment-secret";
+const stripeWebhookSecret = "whsec_stripe_smoke";
 const partnerAccount = privateKeyToAccount("0x59c6995e998f97a5a0044966f094538b2920b4214d56109c94e3e5095b25b8a5");
 const platformVehicleId = "pv_stripe_smoke";
 const facilityAssetId = "facility-stripe-smoke-asset";
@@ -64,6 +66,11 @@ async function expectJsonFailure(url, options, expectedStatus, expectedMessage) 
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function stripeSignatureHeader(payload, timestamp = Math.floor(Date.now() / 1000)) {
+  const signature = createHmac("sha256", stripeWebhookSecret).update(`${timestamp}.${payload}`).digest("hex");
+  return `t=${timestamp},v1=${signature}`;
 }
 
 async function waitForServer() {
@@ -247,9 +254,11 @@ async function main() {
     ROBOMATA_RENTAL_REVENUE_FILE: path.join(tempDir, "revenue.json"),
     ROBOMATA_RENTAL_REVENUE_POSTING_ENABLED: "true",
     ROBOMATA_RENTAL_STRIPE_MOCK: "true",
+    ROBOMATA_RENTAL_STRIPE_MOCK_RECONCILE_STATUS: "succeeded",
     ROBOMATA_RENTER_ACCOUNTS_ENABLED: "true",
     ROBOMATA_RENTER_ACCOUNTS_FILE: path.join(tempDir, "renters.json"),
     ROBOMATA_WORKFLOW_MUTATIONS_ENABLED: "true",
+    STRIPE_WEBHOOK_SECRET: stripeWebhookSecret,
   };
 
   await startServer(env);
@@ -288,23 +297,57 @@ async function main() {
     throw new Error(`Expected mock PaymentIntent and client secret, got ${JSON.stringify(paymentIntentPayload)}`);
   }
 
-  const failedWebhookPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/stripe/webhook`, {
-    body: JSON.stringify({
-      id: "evt_payment_failed_smoke",
-      created: Math.floor(Date.now() / 1000),
-      type: "payment_intent.payment_failed",
-      data: {
-        object: {
-          id: paymentIntentId,
-          amount: paymentIntentPayload.payment.authorizedAmountCents,
-          currency: "usd",
-          last_payment_error: { message: "Card declined in smoke." },
-          metadata: { bookingId },
-          status: "requires_payment_method",
-        },
-      },
-    }),
+  const repeatedPaymentIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
+    body: JSON.stringify({ bookingId, renterId }),
     headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  if (
+    repeatedPaymentIntentPayload.payment?.providerReference?.paymentIntentId !== paymentIntentId ||
+    !repeatedPaymentIntentPayload.clientSecret
+  ) {
+    throw new Error(
+      `Expected repeated PaymentIntent creation to return existing intent and client secret, got ${JSON.stringify(
+        repeatedPaymentIntentPayload,
+      )}`,
+    );
+  }
+
+  const failedWebhookBody = JSON.stringify({
+    id: "evt_payment_failed_smoke",
+    created: Math.floor(Date.now() / 1000),
+    type: "payment_intent.payment_failed",
+    data: {
+      object: {
+        id: paymentIntentId,
+        amount: paymentIntentPayload.payment.authorizedAmountCents,
+        currency: "usd",
+        last_payment_error: { message: "Card declined in smoke." },
+        metadata: { bookingId },
+        status: "requires_payment_method",
+      },
+    },
+  });
+  await expectJsonFailure(
+    `${baseUrl}/api/robomata/rental-payments/stripe/webhook`,
+    {
+      body: failedWebhookBody,
+      headers: {
+        "content-type": "application/json",
+        "stripe-signature": stripeSignatureHeader(failedWebhookBody, Math.floor(Date.now() / 1000) - 600),
+      },
+      method: "POST",
+    },
+    400,
+    "outside the allowed tolerance",
+  );
+
+  const failedWebhookPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/stripe/webhook`, {
+    body: failedWebhookBody,
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": stripeSignatureHeader(failedWebhookBody),
+    },
     method: "POST",
   });
   if (!failedWebhookPayload.payment?.postingBlocked) {
@@ -341,6 +384,22 @@ async function main() {
     `${baseUrl}${postingPath}`,
     {
       body: JSON.stringify(postingBody),
+      headers: await authHeaders("POST", postingPath, { "content-type": "application/json" }),
+      method: "POST",
+    },
+    409,
+    "Payment reconciliation blocks rental revenue posting.",
+  );
+  await expectJsonFailure(
+    `${baseUrl}${postingPath}`,
+    {
+      body: JSON.stringify({
+        ...postingBody,
+        entries: postingBody.entries.map(entry => ({
+          ...entry,
+          source: { bookingId },
+        })),
+      }),
       headers: await authHeaders("POST", postingPath, { "content-type": "application/json" }),
       method: "POST",
     },

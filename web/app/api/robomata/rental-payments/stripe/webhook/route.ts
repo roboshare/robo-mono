@@ -49,7 +49,9 @@ function eventKindForStripeEvent(event: StripeWebhookEvent): RentalPaymentProvid
     case "charge.refunded":
       return "refund_succeeded";
     case "charge.refund.updated":
-      return event.data.object.status === "failed" ? "refund_failed" : "refund_succeeded";
+      if (event.data.object.status === "failed") return "refund_failed";
+      if (event.data.object.status === "succeeded") return "refund_succeeded";
+      return null;
     case "charge.dispute.created":
       return "dispute_opened";
     case "charge.dispute.funds_withdrawn":
@@ -57,6 +59,12 @@ function eventKindForStripeEvent(event: StripeWebhookEvent): RentalPaymentProvid
     default:
       return null;
   }
+}
+
+function refundAmountForEvent(event: StripeWebhookEvent): number | undefined {
+  if (event.type === "charge.refunded") return numberField(event.data.object.amount_refunded);
+  if (event.type.startsWith("charge.refund.")) return numberField(event.data.object.amount);
+  return undefined;
 }
 
 function paymentIntentIdFromEvent(event: StripeWebhookEvent): string | undefined {
@@ -127,6 +135,7 @@ export async function POST(request: NextRequest) {
       failureReason: failureReasonForEvent(event),
       occurredAt: event.created ? new Date(event.created * 1_000).toISOString() : undefined,
       providerEventId: event.id,
+      refundAmountCents: refundAmountForEvent(event),
       refundId: event.type.startsWith("charge.refund.") ? stringField(event.data.object.id) : undefined,
       snapshot,
     });

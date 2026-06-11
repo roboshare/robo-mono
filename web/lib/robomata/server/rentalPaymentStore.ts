@@ -35,6 +35,7 @@ export type RentalPaymentProviderEventInput = {
   failureReason?: string;
   occurredAt?: string;
   providerEventId?: string;
+  refundAmountCents?: number;
   refundId?: string;
   snapshot: StripePaymentIntentSnapshot;
 };
@@ -46,7 +47,10 @@ type RentalPaymentFileStore = {
 type RentalPaymentStore = {
   getPaymentByBooking: (bookingId: string) => Promise<RentalPaymentRecord | null>;
   getPaymentByPaymentIntent: (paymentIntentId: string) => Promise<RentalPaymentRecord | null>;
-  listBlockingPaymentsByPaymentIntentIds: (paymentIntentIds: string[]) => Promise<RentalPaymentRecord[]>;
+  listBlockingPaymentsByReferences: (input: {
+    bookingIds?: string[];
+    paymentIntentIds?: string[];
+  }) => Promise<RentalPaymentRecord[]>;
   recordStripeEvent: (input: RentalPaymentProviderEventInput) => Promise<RentalPaymentRecord>;
 };
 
@@ -154,6 +158,17 @@ function paymentPostingBlock(input: {
       postingBlockReason: "Payment provider dispute or chargeback is unresolved.",
     };
   }
+  if (
+    input.status === "requires_payment_method" ||
+    input.status === "requires_confirmation" ||
+    input.status === "requires_capture" ||
+    input.status === "cancelled"
+  ) {
+    return {
+      postingBlocked: true,
+      postingBlockReason: "Payment has not been captured and must be reconciled before revenue posting.",
+    };
+  }
   return { postingBlocked: false, postingBlockReason: undefined };
 }
 
@@ -186,11 +201,11 @@ function paymentRecordFromEvent(
       : (existing?.capturedAmountCents ?? 0);
   const refundedAmountCents =
     status === "refunded"
-      ? Math.max(existing?.refundedAmountCents ?? 0, input.snapshot.amount_received ?? 0)
+      ? Math.max(existing?.refundedAmountCents ?? 0, input.refundAmountCents ?? 0)
       : (existing?.refundedAmountCents ?? 0);
   const postingBlock = paymentPostingBlock({ failureReason: input.failureReason, status });
   const event = {
-    amountCents: input.snapshot.amount,
+    amountCents: input.refundAmountCents ?? input.snapshot.amount,
     failureReason: input.failureReason,
     id: `rpe_${randomUUID()}`,
     kind: input.eventKind,
@@ -269,14 +284,16 @@ function createFileStore(): RentalPaymentStore {
       const fileStore = await readFileStore(filePath);
       return fileStore.payments.find(payment => payment.providerReference.paymentIntentId === paymentIntentId) ?? null;
     },
-    async listBlockingPaymentsByPaymentIntentIds(paymentIntentIds) {
-      const ids = new Set(paymentIntentIds);
+    async listBlockingPaymentsByReferences(input) {
+      const paymentIntentIds = new Set(input.paymentIntentIds ?? []);
+      const bookingIds = new Set(input.bookingIds ?? []);
       const fileStore = await readFileStore(filePath);
       return fileStore.payments.filter(
         payment =>
           payment.postingBlocked &&
-          payment.providerReference.paymentIntentId &&
-          ids.has(payment.providerReference.paymentIntentId),
+          ((payment.providerReference.paymentIntentId &&
+            paymentIntentIds.has(payment.providerReference.paymentIntentId)) ||
+            bookingIds.has(payment.bookingId)),
       );
     },
     async recordStripeEvent(input) {
@@ -318,16 +335,31 @@ function createPostgresStore(): RentalPaymentStore {
       `) as Array<{ payload: RentalPaymentRecord }>;
       return rows[0]?.payload ?? null;
     },
-    async listBlockingPaymentsByPaymentIntentIds(paymentIntentIds) {
+    async listBlockingPaymentsByReferences(input) {
       await ensurePostgresTables();
-      if (paymentIntentIds.length === 0) return [];
-      const rows = (await sql`
-        SELECT payload
-        FROM robomata_rental_payments
-        WHERE provider_payment_intent_id = ANY(${paymentIntentIds})
-          AND posting_blocked = true;
-      `) as Array<{ payload: RentalPaymentRecord }>;
-      return rows.map(row => row.payload);
+      const paymentIntentIds = input.paymentIntentIds ?? [];
+      const bookingIds = input.bookingIds ?? [];
+      if (paymentIntentIds.length === 0 && bookingIds.length === 0) return [];
+      const paymentIntentRows =
+        paymentIntentIds.length > 0
+          ? ((await sql`
+              SELECT payload
+              FROM robomata_rental_payments
+              WHERE posting_blocked = true
+                AND provider_payment_intent_id = ANY(${paymentIntentIds});
+            `) as Array<{ payload: RentalPaymentRecord }>)
+          : [];
+      const bookingRows =
+        bookingIds.length > 0
+          ? ((await sql`
+              SELECT payload
+              FROM robomata_rental_payments
+              WHERE posting_blocked = true
+                AND booking_id = ANY(${bookingIds});
+            `) as Array<{ payload: RentalPaymentRecord }>)
+          : [];
+      const payments = [...paymentIntentRows, ...bookingRows].map(row => row.payload);
+      return [...new Map(payments.map(payment => [payment.id, payment])).values()];
     },
     async recordStripeEvent(input) {
       await ensurePostgresTables();

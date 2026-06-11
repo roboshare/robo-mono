@@ -4,6 +4,7 @@ import type { RentalBookingRecord } from "~~/lib/robomata/rentalBookings";
 import type { StripePaymentIntentSnapshot } from "~~/lib/robomata/server/rentalPaymentStore";
 
 const STRIPE_API_BASE = "https://api.stripe.com/v1";
+const DEFAULT_STRIPE_WEBHOOK_TOLERANCE_SECONDS = 300;
 
 type StripeApiError = {
   error?: {
@@ -107,7 +108,10 @@ export async function createStripeRentalPaymentIntent(input: {
 
   const payload = await stripeRequest("/payment_intents", {
     body,
-    headers: stripeJsonHeaders(),
+    headers: {
+      ...stripeJsonHeaders(),
+      "idempotency-key": `robomata-rental-booking-${input.booking.id}`,
+    },
     method: "POST",
   });
   return stripePaymentIntentFromJson(payload);
@@ -115,15 +119,18 @@ export async function createStripeRentalPaymentIntent(input: {
 
 export async function retrieveStripeRentalPaymentIntent(paymentIntentId: string): Promise<StripePaymentIntentSnapshot> {
   if (isStripeMockEnabled()) {
+    const status = process.env.ROBOMATA_RENTAL_STRIPE_MOCK_RECONCILE_STATUS ?? "requires_capture";
+    const amount = 1_000;
     return {
-      amount: 1_000,
-      amount_capturable: 1_000,
-      amount_received: 0,
+      amount,
+      amount_capturable: status === "requires_capture" ? amount : 0,
+      amount_received: status === "succeeded" ? amount : 0,
       capture_method: "manual",
+      client_secret: `${paymentIntentId}_secret_mock`,
       currency: "usd",
       id: paymentIntentId,
       latest_charge: `ch_mock_${paymentIntentId}`,
-      status: process.env.ROBOMATA_RENTAL_STRIPE_MOCK_RECONCILE_STATUS ?? "requires_capture",
+      status,
     };
   }
   const payload = await stripeRequest(`/payment_intents/${encodeURIComponent(paymentIntentId)}`, {
@@ -155,6 +162,18 @@ export function verifyStripeWebhookPayload(input: {
   if (!input.signatureHeader) throw new Error("Missing Stripe signature header.");
 
   const { signature, timestamp } = parseStripeSignatureHeader(input.signatureHeader);
+  const timestampSeconds = Number.parseInt(timestamp, 10);
+  const toleranceSeconds = Number.parseInt(
+    process.env.STRIPE_WEBHOOK_TOLERANCE_SECONDS ?? String(DEFAULT_STRIPE_WEBHOOK_TOLERANCE_SECONDS),
+    10,
+  );
+  const nowSeconds = Math.floor(Date.now() / 1_000);
+  if (!Number.isFinite(timestampSeconds) || timestampSeconds <= 0) {
+    throw new Error("Invalid Stripe webhook signature timestamp.");
+  }
+  if (Math.abs(nowSeconds - timestampSeconds) > toleranceSeconds) {
+    throw new Error("Stripe webhook signature timestamp is outside the allowed tolerance.");
+  }
   const expected = createHmac("sha256", secret).update(`${timestamp}.${input.payload}`).digest("hex");
   const providedBuffer = Buffer.from(signature, "hex");
   const expectedBuffer = Buffer.from(expected, "hex");
