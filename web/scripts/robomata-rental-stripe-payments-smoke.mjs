@@ -530,6 +530,55 @@ async function main() {
     );
   }
 
+  const delayedFailedWebhookBody = JSON.stringify({
+    id: "evt_payment_failed_delayed_smoke",
+    created: Math.floor(Date.now() / 1000) - 45,
+    type: "payment_intent.payment_failed",
+    data: {
+      object: {
+        id: paymentIntentId,
+        amount: paymentIntentPayload.payment.authorizedAmountCents,
+        currency: "usd",
+        last_payment_error: { message: "Delayed earlier failure in smoke." },
+        metadata: { bookingId },
+        status: "requires_payment_method",
+      },
+    },
+  });
+  const delayedFailedPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/stripe/webhook`, {
+    body: delayedFailedWebhookBody,
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": stripeSignatureHeader(delayedFailedWebhookBody),
+    },
+    method: "POST",
+  });
+  if (delayedFailedPayload.payment?.postingBlocked || delayedFailedPayload.payment.status !== "captured") {
+    throw new Error(
+      `Expected delayed failed webhook to preserve captured status, got ${JSON.stringify(delayedFailedPayload)}`,
+    );
+  }
+
+  await expectJsonFailure(
+    `${baseUrl}${postingPath}`,
+    {
+      body: JSON.stringify({
+        ...postingBody,
+        entries: [
+          {
+            ...postingBody.entries[0],
+            id: "rle_stripe_smoke_mismatched_reference",
+            source: { bookingId, paymentIntentId: "pi_mock_wrong_booking" },
+          },
+        ],
+      }),
+      headers: await authHeaders("POST", postingPath, { "content-type": "application/json" }),
+      method: "POST",
+    },
+    409,
+    "Captured payment reconciliation is required before rental revenue posting.",
+  );
+
   const postingPayload = await fetchJson(`${baseUrl}${postingPath}`, {
     body: JSON.stringify(postingBody),
     headers: await authHeaders("POST", postingPath, { "content-type": "application/json" }),
@@ -650,6 +699,48 @@ async function main() {
   ) {
     throw new Error(
       `Expected reconciliation to preserve refunded state, got ${JSON.stringify(refundedReconciliationPayload)}`,
+    );
+  }
+
+  await expectJsonFailure(
+    `${baseUrl}${postingPath}`,
+    {
+      body: JSON.stringify({
+        ...postingBody,
+        entries: [
+          {
+            ...postingBody.entries[0],
+            id: "rle_stripe_smoke_over_captured",
+            source: { bookingId, paymentIntentId },
+          },
+        ],
+      }),
+      headers: await authHeaders("POST", postingPath, { "content-type": "application/json" }),
+      method: "POST",
+    },
+    409,
+    "Payment-backed revenue exceeds captured payment amount.",
+  );
+  const refundAdjustedPostingPayload = await fetchJson(`${baseUrl}${postingPath}`, {
+    body: JSON.stringify({
+      ...postingBody,
+      entries: [
+        {
+          ...postingBody.entries[0],
+          amountCents: 750,
+          id: "rle_stripe_smoke_refund_adjusted",
+          source: { bookingId, paymentIntentId },
+        },
+      ],
+      periodEnd: new Date(Date.now() + 12 * 60 * 60 * 1_000).toISOString(),
+      periodStart: new Date(Date.now() - 12 * 60 * 60 * 1_000).toISOString(),
+    }),
+    headers: await authHeaders("POST", postingPath, { "content-type": "application/json" }),
+    method: "POST",
+  });
+  if (refundAdjustedPostingPayload.batch?.status !== "ready") {
+    throw new Error(
+      `Expected refund-adjusted posting to pass captured cap, got ${JSON.stringify(refundAdjustedPostingPayload)}`,
     );
   }
 

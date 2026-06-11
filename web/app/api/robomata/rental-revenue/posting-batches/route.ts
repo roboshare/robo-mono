@@ -4,6 +4,7 @@ import {
   isRobomataRentalRevenuePostingEnabled,
   isRobomataWorkflowMutationEnabled,
 } from "~~/lib/featureFlags";
+import type { RentalPaymentRecord } from "~~/lib/robomata/rentalPayments";
 import type { RentalFinancingTarget, RentalRevenueLedgerEntry } from "~~/lib/robomata/rentalRevenue";
 import { rentalStoredFacilityAccessError } from "~~/lib/robomata/server/rentalInventoryAccess";
 import { getRentalPaymentStore } from "~~/lib/robomata/server/rentalPaymentStore";
@@ -29,6 +30,24 @@ function requireRevenuePosting() {
 function requireMutation() {
   if (isRobomataWorkflowMutationEnabled()) return null;
   return NextResponse.json({ error: "Robomata rental revenue posting writes are not enabled." }, { status: 403 });
+}
+
+function paymentMatchesEntry(payment: RentalPaymentRecord, entry: RentalRevenueLedgerEntry) {
+  const bookingMatches = !entry.source.bookingId || payment.bookingId === entry.source.bookingId;
+  const intentMatches =
+    !entry.source.paymentIntentId || payment.providerReference.paymentIntentId === entry.source.paymentIntentId;
+  return bookingMatches && intentMatches;
+}
+
+function paymentCanBackPosting(payment: RentalPaymentRecord) {
+  return (
+    !payment.postingBlocked &&
+    (payment.status === "captured" || payment.status === "partially_captured" || payment.status === "refunded")
+  );
+}
+
+function netCapturedAmountCents(payment: RentalPaymentRecord) {
+  return Math.max(payment.capturedAmountCents - payment.refundedAmountCents, 0);
 }
 
 export async function POST(request: NextRequest) {
@@ -82,13 +101,8 @@ export async function POST(request: NextRequest) {
       }
       const referencedPayments = await paymentStore.listPaymentsByReferences({ bookingIds, paymentIntentIds });
       const unreconciledEntries = paymentBackedEntries.filter(entry => {
-        const payment = referencedPayments.find(
-          candidate =>
-            (entry.source.paymentIntentId &&
-              candidate.providerReference.paymentIntentId === entry.source.paymentIntentId) ||
-            candidate.bookingId === entry.source.bookingId,
-        );
-        return !payment || payment.status !== "captured" || payment.postingBlocked;
+        const payment = referencedPayments.find(candidate => paymentMatchesEntry(candidate, entry));
+        return !payment || !paymentCanBackPosting(payment);
       });
       if (unreconciledEntries.length > 0) {
         return NextResponse.json(
@@ -99,6 +113,43 @@ export async function POST(request: NextRequest) {
               paymentIntentId: entry.source.paymentIntentId,
             })),
             error: "Captured payment reconciliation is required before rental revenue posting.",
+          },
+          { status: 409 },
+        );
+      }
+      const paymentBackedTotals = new Map<
+        string,
+        { amountCents: number; entries: RentalRevenueLedgerEntry[]; payment: RentalPaymentRecord }
+      >();
+      for (const entry of paymentBackedEntries) {
+        const payment = referencedPayments.find(candidate => paymentMatchesEntry(candidate, entry));
+        if (!payment) continue;
+        const current = paymentBackedTotals.get(payment.id) ?? { amountCents: 0, entries: [], payment };
+        current.amountCents += entry.amountCents;
+        current.entries.push(entry);
+        paymentBackedTotals.set(payment.id, current);
+      }
+      const overCapturedPayment = [...paymentBackedTotals.values()].find(
+        item => item.amountCents > netCapturedAmountCents(item.payment),
+      );
+      if (overCapturedPayment) {
+        return NextResponse.json(
+          {
+            entries: overCapturedPayment.entries.map(entry => ({
+              amountCents: entry.amountCents,
+              bookingId: entry.source.bookingId,
+              id: entry.id,
+              paymentIntentId: entry.source.paymentIntentId,
+            })),
+            error: "Payment-backed revenue exceeds captured payment amount.",
+            payment: {
+              bookingId: overCapturedPayment.payment.bookingId,
+              capturedAmountCents: overCapturedPayment.payment.capturedAmountCents,
+              netCapturedAmountCents: netCapturedAmountCents(overCapturedPayment.payment),
+              paymentIntentId: overCapturedPayment.payment.providerReference.paymentIntentId,
+              refundedAmountCents: overCapturedPayment.payment.refundedAmountCents,
+              status: overCapturedPayment.payment.status,
+            },
           },
           { status: 409 },
         );

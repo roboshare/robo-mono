@@ -147,15 +147,6 @@ function statusFromStripe(input: {
   }
 }
 
-function isPendingProviderStatus(status: RentalPaymentIntentStatus) {
-  return (
-    status === "requires_payment_method" ||
-    status === "requires_confirmation" ||
-    status === "requires_capture" ||
-    status === "cancelled"
-  );
-}
-
 function monotonicPaymentStatus(input: {
   eventKind: RentalPaymentProviderEventKind;
   existing?: RentalPaymentRecord;
@@ -168,7 +159,9 @@ function monotonicPaymentStatus(input: {
   ) {
     return input.existing.status;
   }
-  if (input.existing.status === "captured" && isPendingProviderStatus(input.nextStatus)) return "captured";
+  if (input.existing.status === "captured" && input.nextStatus !== "disputed" && input.nextStatus !== "refunded") {
+    return "captured";
+  }
   return input.nextStatus;
 }
 
@@ -228,7 +221,7 @@ function paymentRecordFromEvent(
   const reference = providerReference(input);
   const capturedAmountCents =
     status === "captured" || status === "partially_captured"
-      ? Math.max(input.snapshot.amount_received ?? existing?.capturedAmountCents ?? 0, 0)
+      ? Math.max(input.snapshot.amount_received ?? 0, existing?.capturedAmountCents ?? 0, 0)
       : (existing?.capturedAmountCents ?? 0);
   const refundedAmountCents =
     status === "refunded"
