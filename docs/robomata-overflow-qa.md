@@ -372,6 +372,29 @@ Verify:
   preview, release candidate, and production environments must use Postgres
   when the agent flags are enabled
 
+### 8c. Scheduled Agent Tick Preview
+
+Status: preview behind `ROBOMATA_AGENTS_ENABLED` and
+`ROBOMATA_AGENT_REFRESH_ENABLED`.
+
+Tracking issue: `ROB-221`.
+
+Verify:
+
+- `POST /api/robomata/agents/tick` requires
+  `x-robomata-agent-tick-secret`
+- disabled agent flag, disabled refresh flag, missing configured secret,
+  missing header secret, and wrong header secret return distinct failures
+- zero active policies returns `{ count: 0, results: [] }`
+- a mixed batch with one valid active policy and one dangling active policy
+  returns per-policy `completed` and `failed` results without failing the route
+- repeated ticks leave `ROBOMATA_SUBMISSIONS_FILE` byte-for-byte unchanged
+- local smoke keeps Sui commit execution disabled while scheduled ticks run
+- scheduled tick actions remain `proposed` even when the policy has
+  `autoApproveActionTypes` configured
+- deployment scheduling remains caller-owned until a durable worker or
+  control-plane service is justified
+
 ### 9. Public `/robomata` Product Surface
 
 Status: passed.
@@ -382,7 +405,7 @@ Verify:
   privileges
 - `/robomata` does not call private submission APIs or accept
   `?submission=<id>` as an access mechanism
-- primary CTA sends operators to `/partner/submissions`
+- primary CTA sends operators to `/operator/submissions`
 - page presents product positioning, workflow steps, and evidence rails in
   customer-facing terms
 - page does not present demo-only controls such as `Keep Markets Live`,
@@ -553,11 +576,12 @@ Non-secret local smoke result:
   "smokeProfile": "local",
   "publicRoutes": {
     "publicRobomataRoute": "passed",
-    "partnerSubmissionsRoute": "passed"
+    "operatorSubmissionsRoute": "passed"
   },
   "agentSupervision": {
     "flagOff": {
       "apiClosed": true,
+      "tickClosed": true,
       "uiHidden": true
     },
     "durableLocalStore": {
@@ -577,6 +601,23 @@ Non-secret local smoke result:
         "approvedIntermediate": "approved"
       },
       "unauthorizedPartnerHidden": true
+    },
+    "scheduledTick": {
+      "disabledAgentStatus": "Robomata agents are not enabled.",
+      "disabledRefreshStatus": "Robomata agent refresh is not enabled.",
+      "missingConfiguredSecretStatus": "ROBOMATA_AGENT_TICK_SECRET is not configured.",
+      "missingHeaderSecretStatus": "Missing Robomata agent tick secret.",
+      "wrongHeaderSecretStatus": "Invalid Robomata agent tick secret.",
+      "zeroActivePolicyCount": 0,
+      "firstTickCount": 2,
+      "firstTickStatuses": [
+        "completed",
+        "failed"
+      ],
+      "repeatedTickCount": 2,
+      "scheduledActionsRemainProposed": true,
+      "submissionsUnchangedAfterRepeatedTicks": true,
+      "suiCommitExecutionDisabled": true
     }
   },
   "submissionId": "sub_28b0e81f-f592-42bf-b295-bf126cc66bd7",
