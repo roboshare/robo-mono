@@ -140,7 +140,8 @@ Live facility monitoring is additive and default-off:
   agent runs, and operator action decisions.
 - `ROBOMATA_AGENT_REFRESH_ENABLED=true` enables scheduled agent ticks at
   `POST /api/robomata/agents/tick`; the route also requires
-  `ROBOMATA_AGENT_TICK_SECRET`.
+  `ROBOMATA_AGENT_TICK_SECRET` and callers must send the same value in
+  `x-robomata-agent-tick-secret`.
 - `ROBOMATA_AGENTS_FILE=/local/path/agents.json` is an optional local-only JSON
   fallback when `POSTGRES_URL` is not configured.
 
@@ -153,6 +154,42 @@ facility projection, create immutable run records, and propose actions such as
 evidence review, packet refresh, borrowing-base recompute, Sui-root review, or
 tokenization readiness. Operators still approve, reject, or complete actions;
 the agent layer does not silently mutate submissions or execute Sui/EVM writes.
+
+## Scheduled Agent Tick Route
+
+`POST /api/robomata/agents/tick` is an operator-controlled scheduling target,
+not a durable worker by itself. Cron, Vercel Cron, Linear automations, or a
+future control plane can call it, but the scheduling mechanism remains the
+caller concern until repeated production load justifies a dedicated worker or
+control-plane service.
+
+Required runtime gates:
+
+- `ROBOMATA_WORKFLOW_ENABLED=true`
+- `ROBOMATA_AGENTS_ENABLED=true`
+- `ROBOMATA_AGENT_REFRESH_ENABLED=true`
+- `ROBOMATA_AGENT_TICK_SECRET=<secret>`
+- request header `x-robomata-agent-tick-secret: <secret>`
+
+Expected guard failures:
+
+- workflow disabled: `404` with `Robomata workflow is not enabled.`
+- agent flag disabled: `404` with `Robomata agents are not enabled.`
+- refresh flag disabled: `403` with `Robomata agent refresh is not enabled.`
+- configured secret missing: `500` with
+  `ROBOMATA_AGENT_TICK_SECRET is not configured.`
+- header secret missing: `401` with `Missing Robomata agent tick secret.`
+- header secret wrong: `401` with `Invalid Robomata agent tick secret.`
+
+Successful ticks return `{ count, results }`. Each result is scoped to one
+active policy and reports `completed` with a `runId` and `actionCount`, or
+`failed` with an error. A dangling policy or failed facility does not fail the
+whole batch. If no active policies exist, the route succeeds with
+`{ count: 0, results: [] }`.
+
+Scheduled ticks do not execute approved actions, mutate submissions, or perform
+Sui/EVM writes. Tick-created actions are recorded as proposed even if a policy
+has auto-approval configured, so operator approval remains the handoff boundary.
 
 ## Sui Roots
 

@@ -37,6 +37,7 @@ export type RecordAgentRunInput = {
   summary: string;
   actionDrafts: RobomataAgentActionDraft[];
   errorMessage?: string;
+  suppressAutoApprove?: boolean;
 };
 
 export type UpdateAgentActionInput = {
@@ -236,7 +237,8 @@ function buildActions(input: RecordAgentRunInput, run: RobomataAgentRun): Roboma
     submissionId: input.policy.submissionId,
     facilityId: run.facilityId,
     partnerAddress: input.policy.partnerAddress,
-    status: input.policy.autoApproveActionTypes.includes(draft.type) ? "approved" : "proposed",
+    status:
+      !input.suppressAutoApprove && input.policy.autoApproveActionTypes.includes(draft.type) ? "approved" : "proposed",
     proposedAt: input.completedAt,
   }));
 }
