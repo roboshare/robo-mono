@@ -15,6 +15,7 @@
     "robomata:rental-host-ops-ui-smoke": "node scripts/robomata-rental-host-ops-ui-smoke.mjs",
     "robomata:rental-persistence:bootstrap": "node scripts/robomata-rental-persistence-bootstrap.mjs",
     "robomata:rental-verification-providers-smoke": "node scripts/robomata-rental-verification-providers-smoke.mjs",
+    "robomata:rental-stripe-payments-smoke": "node scripts/robomata-rental-stripe-payments-smoke.mjs",
     "robomata:tokenization-api-test": "node scripts/robomata-tokenization-api-test.mjs",
     "robomata:testnet-smoke": "node scripts/robomata-testnet-smoke.mjs",
     "serve": "next start",

@@ -1,0 +1,69 @@
+import { NextRequest, NextResponse } from "next/server";
+import {
+  isRobomataRentalBookingsEnabled,
+  isRobomataRentalPaymentsEnabled,
+  isRobomataWorkflowMutationEnabled,
+} from "~~/lib/featureFlags";
+import { getRentalBookingStore } from "~~/lib/robomata/server/rentalBookingStore";
+import { getRentalPaymentStore } from "~~/lib/robomata/server/rentalPaymentStore";
+import { retrieveStripeRentalPaymentIntent } from "~~/lib/robomata/server/rentalStripe";
+
+export const runtime = "nodejs";
+
+type ReconcilePaymentBody = {
+  bookingId?: string;
+  paymentIntentId?: string;
+};
+
+function requireRentalPaymentReconciliation(request: NextRequest) {
+  if (!isRobomataRentalBookingsEnabled()) {
+    return NextResponse.json({ error: "Robomata rental bookings are not enabled." }, { status: 404 });
+  }
+  if (!isRobomataRentalPaymentsEnabled()) {
+    return NextResponse.json({ error: "Robomata rental payments are not enabled." }, { status: 404 });
+  }
+  if (!isRobomataWorkflowMutationEnabled()) {
+    return NextResponse.json({ error: "Robomata rental payment writes are not enabled." }, { status: 403 });
+  }
+
+  const secret = process.env.ROBOMATA_RENTAL_PAYMENT_CONFIRMATION_SECRET?.trim();
+  if (!secret && process.env.NODE_ENV === "development") return null;
+  if (!secret) return NextResponse.json({ error: "Rental payment reconciliation is not configured." }, { status: 503 });
+
+  const provided = request.headers.get("x-robomata-payment-confirmation")?.trim();
+  if (provided === secret) return null;
+  return NextResponse.json(
+    { error: "Missing or invalid rental payment reconciliation authorization." },
+    { status: 403 },
+  );
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const featureError = requireRentalPaymentReconciliation(request);
+    if (featureError) return featureError;
+
+    const body = (await request.json()) as ReconcilePaymentBody;
+    if (!body.paymentIntentId?.trim()) {
+      return NextResponse.json({ error: "paymentIntentId must be provided." }, { status: 400 });
+    }
+
+    const existingPayment = await getRentalPaymentStore().getPaymentByPaymentIntent(body.paymentIntentId);
+    const booking =
+      existingPayment || !body.bookingId?.trim()
+        ? undefined
+        : ((await getRentalBookingStore().getBooking(body.bookingId)) ?? undefined);
+    const snapshot = await retrieveStripeRentalPaymentIntent(body.paymentIntentId);
+    const payment = await getRentalPaymentStore().recordStripeEvent({
+      booking,
+      eventKind: "reconciliation_refetched",
+      snapshot,
+    });
+    return NextResponse.json({ payment });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to reconcile rental payment." },
+      { status: 400 },
+    );
+  }
+}

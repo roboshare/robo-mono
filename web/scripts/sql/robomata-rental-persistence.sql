@@ -90,6 +90,21 @@ CREATE INDEX IF NOT EXISTS robomata_rental_bookings_vehicle_idx
 CREATE INDEX IF NOT EXISTS robomata_rental_bookings_renter_idx
   ON robomata_rental_bookings (renter_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS robomata_rental_payments (
+  id text PRIMARY KEY,
+  booking_id text NOT NULL,
+  provider text NOT NULL,
+  provider_payment_intent_id text UNIQUE NOT NULL,
+  status text NOT NULL,
+  posting_blocked boolean NOT NULL,
+  payload jsonb NOT NULL,
+  created_at timestamptz NOT NULL,
+  updated_at timestamptz NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS robomata_rental_payments_booking_idx
+  ON robomata_rental_payments (booking_id);
+
 CREATE TABLE IF NOT EXISTS robomata_rental_trips (
   id text PRIMARY KEY,
   booking_id text NOT NULL,
@@ -173,6 +188,9 @@ COMMENT ON TABLE robomata_rental_renters IS
 
 COMMENT ON TABLE robomata_rental_bookings IS
   'Rental booking records retain checkout, lifecycle, cancellation policy, and provider reference IDs; raw payment method data and client secrets are prohibited.';
+
+COMMENT ON TABLE robomata_rental_payments IS
+  'Rental payment records retain Stripe provider IDs, statuses, amounts, timestamps, posting block state, and event references only; raw payment method data and client secrets stay with Stripe.';
 
 COMMENT ON TABLE robomata_rental_claims IS
   'Rental claims retain evidence references, digests, notes, and payout holds; raw evidence blobs and documents stay in controlled object/provider storage.';

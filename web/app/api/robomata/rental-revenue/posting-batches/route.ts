@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isRobomataRentalRevenuePostingEnabled, isRobomataWorkflowMutationEnabled } from "~~/lib/featureFlags";
+import {
+  isRobomataRentalPaymentsEnabled,
+  isRobomataRentalRevenuePostingEnabled,
+  isRobomataWorkflowMutationEnabled,
+} from "~~/lib/featureFlags";
 import type { RentalFinancingTarget, RentalRevenueLedgerEntry } from "~~/lib/robomata/rentalRevenue";
 import { rentalStoredFacilityAccessError } from "~~/lib/robomata/server/rentalInventoryAccess";
+import { getRentalPaymentStore } from "~~/lib/robomata/server/rentalPaymentStore";
 import { getRentalRevenueStore } from "~~/lib/robomata/server/rentalRevenueStore";
 import { requirePartnerAddress } from "~~/lib/robomata/server/submissionAccess";
 
@@ -45,6 +50,26 @@ export async function POST(request: NextRequest) {
     if (accessError) return NextResponse.json({ error: accessError }, { status: 403 });
     if (!Array.isArray(body.entries) || body.entries.length === 0) {
       return NextResponse.json({ error: "entries must include at least one ledger entry." }, { status: 400 });
+    }
+    if (isRobomataRentalPaymentsEnabled()) {
+      const paymentIntentIds = [
+        ...new Set(body.entries.flatMap(entry => (entry.source.paymentIntentId ? [entry.source.paymentIntentId] : []))),
+      ];
+      const blockingPayments = await getRentalPaymentStore().listBlockingPaymentsByPaymentIntentIds(paymentIntentIds);
+      if (blockingPayments.length > 0) {
+        return NextResponse.json(
+          {
+            blockingPayments: blockingPayments.map(payment => ({
+              bookingId: payment.bookingId,
+              paymentIntentId: payment.providerReference.paymentIntentId,
+              postingBlockReason: payment.postingBlockReason,
+              status: payment.status,
+            })),
+            error: "Payment reconciliation blocks rental revenue posting.",
+          },
+          { status: 409 },
+        );
+      }
     }
 
     const result = await getRentalRevenueStore().createPostingBatch({

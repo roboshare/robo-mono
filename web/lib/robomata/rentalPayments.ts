@@ -16,6 +16,18 @@ export type RentalPaymentIntentStatus =
   | "refunded"
   | "disputed";
 
+export type RentalPaymentProviderEventKind =
+  | "payment_intent_created"
+  | "authorization_required"
+  | "authorization_succeeded"
+  | "capture_succeeded"
+  | "payment_failed"
+  | "refund_succeeded"
+  | "refund_failed"
+  | "dispute_opened"
+  | "chargeback_recorded"
+  | "reconciliation_refetched";
+
 export type RentalDepositHoldStatus =
   | "not_required"
   | "authorization_required"
@@ -90,6 +102,17 @@ export type RentalPaymentProviderReference = {
   disputeId?: string;
 };
 
+export type RentalPaymentProviderEvent = {
+  id: string;
+  kind: RentalPaymentProviderEventKind;
+  providerEventId?: string;
+  providerReference: RentalPaymentProviderReference;
+  status: RentalPaymentIntentStatus;
+  amountCents?: number;
+  occurredAt: string;
+  failureReason?: string;
+};
+
 export type RentalPaymentRecord = {
   id: string;
   bookingId: string;
@@ -108,6 +131,12 @@ export type RentalPaymentRecord = {
   capturedAt?: string;
   cancelledAt?: string;
   failureReason?: string;
+  postingBlocked: boolean;
+  postingBlockReason?: string;
+  reconciliationCheckedAt?: string;
+  events: RentalPaymentProviderEvent[];
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type RentalStripeAuthorizationRequest = {

@@ -22,7 +22,7 @@ Stripe is the MVP processor because it supports:
 - provider webhooks for reconciliation
 - Vercel Marketplace provisioning for sandbox keys and webhook secrets
 
-The current implementation exposes a quote-only payment-plan route:
+The implementation exposes a quote-only payment-plan route:
 
 - `POST /api/robomata/rental-marketplace/payment-plan`
 
@@ -31,7 +31,19 @@ The route requires:
 - `ROBOMATA_RENTAL_INVENTORY_ENABLED=true`
 - `ROBOMATA_RENTAL_PAYMENTS_ENABLED=true`
 
-It returns a deterministic payment plan and a Stripe-shaped manual-capture authorization request. It does not create a live Stripe `PaymentIntent` until provider writes are explicitly added.
+It returns a deterministic payment plan and a Stripe-shaped manual-capture authorization request.
+
+Provider write routes:
+
+- `POST /api/robomata/rental-payments/payment-intents`
+- `POST /api/robomata/rental-payments/stripe/webhook`
+- `POST /api/robomata/rental-payments/reconcile`
+
+`payment-intents` creates a live Stripe `PaymentIntent` with `capture_method=manual` when `STRIPE_SECRET_KEY` is configured. Local and CI smoke tests can set `ROBOMATA_RENTAL_STRIPE_MOCK=true` to exercise the same platform persistence path without calling Stripe.
+
+`stripe/webhook` verifies `STRIPE_WEBHOOK_SECRET` outside local development and stores selected provider IDs, statuses, amounts, timestamps, and event references only. It handles authorization, capture, payment failure, refund, dispute, and chargeback event shapes.
+
+`reconcile` re-fetches Stripe state by `paymentIntentId` and requires `x-robomata-payment-confirmation` with `ROBOMATA_RENTAL_PAYMENT_CONFIRMATION_SECRET` outside local development.
 
 ## Checkout Flow
 
@@ -39,7 +51,7 @@ It returns a deterministic payment plan and a Stripe-shaped manual-capture autho
 2. Platform builds a marketplace listing and trip estimate from host controls.
 3. Payment plan computes trip charge, platform fees, protection-plan amount, taxes, and deposit hold.
 4. Provider authorization request is prepared with manual capture semantics.
-5. Future provider-write route creates a Stripe payment intent and records provider IDs.
+5. Provider-write route creates a Stripe payment intent and records provider IDs.
 6. Booking can move from `pending_payment_authorization` to host review or confirmation after authorization succeeds.
 7. At trip completion, the platform captures the final authorized charge, releases or captures the deposit outcome, and creates immutable revenue ledger entries.
 
@@ -66,6 +78,8 @@ Provider events must map to immutable platform records before they affect recogn
 - disputed bookings must not enter protocol posting batches until the outcome is final
 
 Provider IDs belong in offchain records and ledger source references. They must not be written into facility commitments or token metadata.
+
+Failed payment, failed refund, dispute, and chargeback states set `postingBlocked=true` on the payment record. Revenue posting batch creation rejects ledger entries that reference blocked `paymentIntentId` values until a webhook or reconciliation run records a non-blocking final state.
 
 ## Compliance And Legal Constraints
 
