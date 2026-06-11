@@ -1,0 +1,151 @@
+import "server-only";
+import {
+  type RobomataAgentActionDraft,
+  type RobomataAgentActionSeverity,
+  type RobomataAgentActionType,
+  type RobomataAgentPolicy,
+  isAgentActionAllowed,
+} from "~~/lib/robomata/agents";
+import type { FacilityMonitoringProjection, FacilityObservationStatus } from "~~/lib/robomata/facilityMonitoring";
+import { getRobomataAgentStore } from "~~/lib/robomata/server/agentStore";
+import { getFacilityMonitoringStore } from "~~/lib/robomata/server/facilityMonitoringStore";
+import type { FacilitySubmission } from "~~/lib/robomata/submissions";
+
+export class RobomataAgentPolicyPausedError extends Error {
+  constructor() {
+    super("Robomata agent policy is paused for this submission.");
+  }
+}
+
+type RunAgentForSubmissionInput = {
+  force?: boolean;
+  submission: FacilitySubmission;
+};
+
+function appendAction(
+  actions: RobomataAgentActionDraft[],
+  policy: RobomataAgentPolicy,
+  action: RobomataAgentActionDraft & { type: RobomataAgentActionType },
+) {
+  if (!isAgentActionAllowed(policy, action.type)) return;
+  actions.push(action);
+}
+
+function observationSeverity(statuses: FacilityObservationStatus[]): RobomataAgentActionSeverity {
+  if (statuses.some(status => ["exception", "expired"].includes(status))) return "high";
+  if (statuses.some(status => ["stale", "warning"].includes(status))) return "medium";
+  return "low";
+}
+
+function buildAgentActionDrafts(
+  submission: FacilitySubmission,
+  policy: RobomataAgentPolicy,
+  projection: FacilityMonitoringProjection,
+): RobomataAgentActionDraft[] {
+  const actions: RobomataAgentActionDraft[] = [];
+  const nonFreshObservations = projection.observations.filter(
+    observation => !["fresh", "superseded"].includes(observation.status),
+  );
+
+  if (nonFreshObservations.length) {
+    appendAction(actions, policy, {
+      type: "evidence_review",
+      severity: observationSeverity(nonFreshObservations.map(observation => observation.status)),
+      title: "Review facility evidence freshness",
+      message: `${nonFreshObservations.length} monitoring observation${
+        nonFreshObservations.length === 1 ? "" : "s"
+      } need operator review before the lender packet should be trusted.`,
+      reason: "Facility monitoring detected stale, pending, warning, expired, or exception observations.",
+      metadata: {
+        observationCount: nonFreshObservations.length,
+        statuses: [...new Set(nonFreshObservations.map(observation => observation.status))].join(","),
+      },
+    });
+  }
+
+  if (!projection.latestRun && submission.receivables.length > 0 && submission.evidence.length > 0) {
+    appendAction(actions, policy, {
+      type: "borrowing_base_recompute",
+      severity: "medium",
+      title: "Compute borrowing base run",
+      message: "Receivables and evidence are present, but no locked borrowing-base run exists for monitoring.",
+      reason: "Agent supervision requires a run artifact before packet freshness and Sui roots can be evaluated.",
+      metadata: {
+        evidenceCount: submission.evidence.length,
+        receivableCount: submission.receivables.length,
+      },
+    });
+  }
+
+  if (projection.freshnessStatus !== "fresh") {
+    appendAction(actions, policy, {
+      type: "packet_refresh",
+      severity: projection.freshnessStatus === "invalid" ? "high" : "medium",
+      title: "Refresh lender packet",
+      message: `Latest packet freshness is ${projection.freshnessStatus.replace(/_/g, " ")}.`,
+      reason: "Lender-facing packet state should be regenerated or reviewed before sharing.",
+      metadata: {
+        freshnessStatus: projection.freshnessStatus,
+        latestPacketId: projection.latestPacket?.id ?? null,
+      },
+    });
+  }
+
+  if (["pending", "failed", "mismatch", "retryable"].includes(projection.suiRootStatus)) {
+    appendAction(actions, policy, {
+      type: "sui_root_review",
+      severity: ["failed", "mismatch"].includes(projection.suiRootStatus) ? "high" : "medium",
+      title: "Review Sui root commit",
+      message: `Sui root verification is ${projection.suiRootStatus.replace(/_/g, " ")}.`,
+      reason: "The packet evidence root needs an operator-visible commit or reconciliation path.",
+      metadata: {
+        latestRootCommitId: projection.latestSuiRootCommit?.id ?? null,
+        suiRootStatus: projection.suiRootStatus,
+      },
+    });
+  }
+
+  if (
+    submission.evidenceCommit.status === "committed" &&
+    ["not_started", "draft", "failed"].includes(submission.tokenization.status)
+  ) {
+    appendAction(actions, policy, {
+      type: "tokenization_readiness",
+      severity: submission.tokenization.status === "failed" ? "high" : "low",
+      title: "Prepare tokenization handoff",
+      message: "Evidence is committed, but tokenization is not registered or offering-ready.",
+      reason: "Committed packet evidence can now be advanced into the controlled tokenization origination path.",
+      metadata: {
+        tokenizationStatus: submission.tokenization.status,
+      },
+    });
+  }
+
+  return actions;
+}
+
+export async function runRobomataAgentForSubmission(input: RunAgentForSubmissionInput) {
+  const store = getRobomataAgentStore();
+  const policy = await store.getOrCreateDefaultPolicy(input.submission);
+  if (policy.status !== "active" && !input.force) {
+    throw new RobomataAgentPolicyPausedError();
+  }
+
+  const startedAt = new Date().toISOString();
+  const projection = await getFacilityMonitoringStore().getProjectionForSubmission(input.submission);
+  const actionDrafts = buildAgentActionDrafts(input.submission, policy, projection);
+  const completedAt = new Date().toISOString();
+  const summary = actionDrafts.length
+    ? `Proposed ${actionDrafts.length} supervised agent action${actionDrafts.length === 1 ? "" : "s"}.`
+    : "No supervised agent actions proposed.";
+
+  return store.recordRun({
+    policy,
+    projection,
+    status: "completed",
+    startedAt,
+    completedAt,
+    summary,
+    actionDrafts,
+  });
+}

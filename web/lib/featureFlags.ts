@@ -72,6 +72,22 @@ export function isRobomataFacilityMonitoringRefreshEnabled(): boolean {
   return isEnabled(process.env.ROBOMATA_FACILITY_MONITORING_REFRESH_ENABLED);
 }
 
+export function isRobomataAgentsEnabled(): boolean {
+  return isEnabled(process.env.ROBOMATA_AGENTS_ENABLED);
+}
+
+export function isRobomataAgentsClientEnabled(): boolean {
+  return isEnabled(process.env.NEXT_PUBLIC_ROBOMATA_AGENTS_ENABLED);
+}
+
+export function isRobomataAgentMutationsEnabled(): boolean {
+  return isEnabled(process.env.ROBOMATA_AGENT_MUTATIONS_ENABLED);
+}
+
+export function isRobomataAgentRefreshEnabled(): boolean {
+  return isEnabled(process.env.ROBOMATA_AGENT_REFRESH_ENABLED);
+}
+
 export function isRobomataLenderMonitoringShareEnabled(): boolean {
   return isEnabled(process.env.ROBOMATA_LENDER_MONITORING_SHARE_ENABLED);
 }
