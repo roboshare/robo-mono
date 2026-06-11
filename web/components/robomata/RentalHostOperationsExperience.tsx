@@ -1,10 +1,10 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { useAccount } from "wagmi";
 import { ExclamationTriangleIcon, TruckIcon } from "@heroicons/react/24/outline";
 import { useTargetNetwork } from "~~/hooks/scaffold-eth";
 import { useRobomataApiAuth } from "~~/hooks/useRobomataApiAuth";
+import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
 import type {
   RentalVehicleDateRange,
   RentalVehicleHostControlsUpdate,
@@ -18,7 +18,7 @@ type ApiResult<T> = T & {
   error?: string;
 };
 
-type TripAction = "check-in" | "check-out" | "incident" | "claim";
+type TripAction = "approve" | "check-in" | "check-out" | "incident" | "claim";
 
 type OperationalStatusSelection = NonNullable<RentalVehicleHostControlsUpdate["operationalStatus"]> | "keep_current";
 
@@ -106,9 +106,9 @@ function maintenanceHoldFromForm(input: {
 }
 
 export const RentalHostOperationsExperience = () => {
-  const { address: accountAddress } = useAccount();
+  const { address: accountAddress, connectedAddress } = useTransactingAccount();
   const { targetNetwork } = useTargetNetwork();
-  const signerAddress = accountAddress;
+  const signerAddress = connectedAddress ?? accountAddress;
   const getAuthHeaders = useRobomataApiAuth(accountAddress);
   const [facilityAssetId, setFacilityAssetId] = useState("");
   const [vehicles, setVehicles] = useState<RentalVehicleRecord[]>([]);
@@ -256,6 +256,7 @@ export const RentalHostOperationsExperience = () => {
           ? selectedVehicle.hostSetup.photoUris
           : (selectedVehicle.display.imageUris ?? []);
       const existingPickupDropoff = selectedVehicle.hostSetup?.pickupDropoff;
+      const existingSetupPricing = selectedVehicle.hostSetup?.pricing;
       const primaryPhotoUri = setupPhotoUri.trim();
       const setup: RentalVehicleHostSetupUpdate = {
         photoUris: primaryPhotoUri
@@ -271,6 +272,7 @@ export const RentalHostOperationsExperience = () => {
           deliveryAvailable: existingPickupDropoff?.deliveryAvailable ?? false,
         },
         pricing: {
+          ...existingSetupPricing,
           currency: "USD",
           dailyRateCents: centsFromCurrency(dailyRate),
           minimumTripDays: numberFromInput(setupMinimumTripDays),
@@ -403,7 +405,10 @@ export const RentalHostOperationsExperience = () => {
       const actor = { id: accountAddress ?? "operator", role: "ops" as const };
       let path = `/api/robomata/rental-bookings/${normalizedBookingId}/${tripAction}`;
       let body: unknown;
-      if (tripAction === "check-in" || tripAction === "check-out") {
+      if (tripAction === "approve") {
+        path = `/api/robomata/rental-bookings/${normalizedBookingId}/approve`;
+        body = {};
+      } else if (tripAction === "check-in" || tripAction === "check-out") {
         body = {
           actor: accountAddress,
           condition,
@@ -857,6 +862,7 @@ export const RentalHostOperationsExperience = () => {
                       value={tripAction}
                       onChange={event => setTripAction(event.target.value as TripAction)}
                     >
+                      <option value="approve">Approve host-review booking</option>
                       <option value="check-in">Check in</option>
                       <option value="check-out">Check out</option>
                       <option value="incident">Incident</option>

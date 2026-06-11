@@ -381,6 +381,16 @@ async function main() {
     throw new Error(`Expected host_review booking under manual approval, got ${confirmResponse.booking?.state}`);
   }
 
+  const approveResponse = await requestJson({
+    authHeaders,
+    method: "POST",
+    requestPath: `/api/robomata/rental-bookings/${bookingId}/approve`,
+    body: {},
+  });
+  if (approveResponse.booking?.state !== "confirmed") {
+    throw new Error(`Expected confirmed booking after host approval, got ${approveResponse.booking?.state}`);
+  }
+
   const autoAcceptControlsResponse = await requestJson({
     authHeaders,
     method: "PATCH",
@@ -505,6 +515,9 @@ async function main() {
   });
   if (takedownResponse.vehicle?.operationalStatus !== "suspended") {
     throw new Error(`Expected suspended after safety takedown, got ${takedownResponse.vehicle?.operationalStatus}`);
+  }
+  if (takedownResponse.vehicle?.hostControls?.safetyTakedown?.supportCaseId !== "SUP-HOST-OPS-SMOKE") {
+    throw new Error("Expected safety takedown support case to persist on host controls.");
   }
 
   console.log(
