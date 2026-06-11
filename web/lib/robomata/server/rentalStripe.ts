@@ -140,16 +140,19 @@ export async function retrieveStripeRentalPaymentIntent(paymentIntentId: string)
   return stripePaymentIntentFromJson(payload);
 }
 
-function parseStripeSignatureHeader(header: string): { timestamp: string; signature: string } {
-  const parts = Object.fromEntries(
-    header
-      .split(",")
-      .map(part => part.split("="))
-      .filter(([key, value]) => key && value)
-      .map(([key, value]) => [key.trim(), value.trim()]),
-  );
-  if (!parts.t || !parts.v1) throw new Error("Invalid Stripe signature header.");
-  return { signature: parts.v1, timestamp: parts.t };
+function parseStripeSignatureHeader(header: string): { signatures: string[]; timestamp: string } {
+  let timestamp: string | undefined;
+  const signatures: string[] = [];
+  for (const part of header.split(",")) {
+    const [rawKey, ...rawValue] = part.split("=");
+    const key = rawKey?.trim();
+    const value = rawValue.join("=").trim();
+    if (!key || !value) continue;
+    if (key === "t") timestamp = value;
+    if (key === "v1") signatures.push(value);
+  }
+  if (!timestamp || signatures.length === 0) throw new Error("Invalid Stripe signature header.");
+  return { signatures, timestamp };
 }
 
 export function verifyStripeWebhookPayload(input: {
@@ -161,7 +164,7 @@ export function verifyStripeWebhookPayload(input: {
   if (!secret) throw new Error("STRIPE_WEBHOOK_SECRET is required for Stripe webhook verification.");
   if (!input.signatureHeader) throw new Error("Missing Stripe signature header.");
 
-  const { signature, timestamp } = parseStripeSignatureHeader(input.signatureHeader);
+  const { signatures, timestamp } = parseStripeSignatureHeader(input.signatureHeader);
   const timestampSeconds = Number.parseInt(timestamp, 10);
   const toleranceSeconds = Number.parseInt(
     process.env.STRIPE_WEBHOOK_TOLERANCE_SECONDS ?? String(DEFAULT_STRIPE_WEBHOOK_TOLERANCE_SECONDS),
@@ -175,9 +178,12 @@ export function verifyStripeWebhookPayload(input: {
     throw new Error("Stripe webhook signature timestamp is outside the allowed tolerance.");
   }
   const expected = createHmac("sha256", secret).update(`${timestamp}.${input.payload}`).digest("hex");
-  const providedBuffer = Buffer.from(signature, "hex");
   const expectedBuffer = Buffer.from(expected, "hex");
-  if (providedBuffer.length !== expectedBuffer.length || !timingSafeEqual(providedBuffer, expectedBuffer)) {
+  const hasValidSignature = signatures.some(signature => {
+    const providedBuffer = Buffer.from(signature, "hex");
+    return providedBuffer.length === expectedBuffer.length && timingSafeEqual(providedBuffer, expectedBuffer);
+  });
+  if (!hasValidSignature) {
     throw new Error("Invalid Stripe webhook signature.");
   }
   return JSON.parse(input.payload) as StripeWebhookEvent;

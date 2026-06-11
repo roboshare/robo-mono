@@ -68,9 +68,9 @@ async function expectJsonFailure(url, options, expectedStatus, expectedMessage) 
   }
 }
 
-function stripeSignatureHeader(payload, timestamp = Math.floor(Date.now() / 1000)) {
+function stripeSignatureHeader(payload, timestamp = Math.floor(Date.now() / 1000), extraSignatures = []) {
   const signature = createHmac("sha256", stripeWebhookSecret).update(`${timestamp}.${payload}`).digest("hex");
-  return `t=${timestamp},v1=${signature}`;
+  return [`t=${timestamp}`, `v1=${signature}`, ...extraSignatures.map(extra => `v1=${extra}`)].join(",");
 }
 
 async function waitForServer() {
@@ -287,6 +287,17 @@ async function main() {
     throw new Error(`Expected payment-gated booking, got ${JSON.stringify(checkoutPayload)}`);
   }
 
+  await expectJsonFailure(
+    `${baseUrl}/api/robomata/rental-payments/payment-intents`,
+    {
+      body: JSON.stringify({ bookingId }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    },
+    400,
+    "renterId must be provided",
+  );
+
   const paymentIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
     body: JSON.stringify({ bookingId, renterId }),
     headers: { "content-type": "application/json" },
@@ -311,6 +322,38 @@ async function main() {
         repeatedPaymentIntentPayload,
       )}`,
     );
+  }
+
+  const capturableWebhookBody = JSON.stringify({
+    id: "evt_payment_capturable_smoke",
+    created: Math.floor(Date.now() / 1000),
+    type: "payment_intent.amount_capturable_updated",
+    data: {
+      object: {
+        id: paymentIntentId,
+        amount: paymentIntentPayload.payment.authorizedAmountCents,
+        amount_capturable: paymentIntentPayload.payment.authorizedAmountCents,
+        amount_received: 0,
+        capture_method: "manual",
+        currency: "usd",
+        latest_charge: "ch_stripe_smoke_actual",
+        metadata: { bookingId },
+        status: "requires_capture",
+      },
+    },
+  });
+  const capturablePayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/stripe/webhook`, {
+    body: capturableWebhookBody,
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": stripeSignatureHeader(capturableWebhookBody, Math.floor(Date.now() / 1000), [
+        "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      ]),
+    },
+    method: "POST",
+  });
+  if (capturablePayload.payment?.providerReference?.chargeId !== "ch_stripe_smoke_actual") {
+    throw new Error(`Expected real charge id from PaymentIntent webhook, got ${JSON.stringify(capturablePayload)}`);
   }
 
   const failedWebhookBody = JSON.stringify({
@@ -426,6 +469,50 @@ async function main() {
   });
   if (postingPayload.batch?.status !== "ready") {
     throw new Error(`Expected posting batch after reconciliation, got ${JSON.stringify(postingPayload)}`);
+  }
+
+  const disputeWebhookBody = JSON.stringify({
+    id: "evt_payment_dispute_smoke",
+    created: Math.floor(Date.now() / 1000),
+    type: "charge.dispute.created",
+    data: {
+      object: {
+        id: "dp_stripe_smoke",
+        amount: 1000,
+        charge: "ch_stripe_smoke_actual",
+        currency: "usd",
+        payment_intent: paymentIntentId,
+        reason: "general",
+      },
+    },
+  });
+  const disputePayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/stripe/webhook`, {
+    body: disputeWebhookBody,
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": stripeSignatureHeader(disputeWebhookBody),
+    },
+    method: "POST",
+  });
+  if (!disputePayload.payment?.postingBlocked || disputePayload.payment.status !== "disputed") {
+    throw new Error(`Expected dispute webhook to block posting, got ${JSON.stringify(disputePayload)}`);
+  }
+
+  const disputedReconciliationPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/reconcile`, {
+    body: JSON.stringify({ paymentIntentId }),
+    headers: {
+      "content-type": "application/json",
+      "x-robomata-payment-confirmation": paymentConfirmationSecret,
+    },
+    method: "POST",
+  });
+  if (
+    !disputedReconciliationPayload.payment?.postingBlocked ||
+    disputedReconciliationPayload.payment.status !== "disputed"
+  ) {
+    throw new Error(
+      `Expected reconciliation to preserve dispute posting block, got ${JSON.stringify(disputedReconciliationPayload)}`,
+    );
   }
 
   console.log(

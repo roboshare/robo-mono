@@ -193,7 +193,9 @@ function paymentRecordFromEvent(
   }
 
   const now = new Date().toISOString();
-  const status = statusFromStripe(input);
+  const nextStatus = statusFromStripe(input);
+  const status =
+    existing?.status === "disputed" && input.eventKind === "reconciliation_refetched" ? "disputed" : nextStatus;
   const reference = providerReference(input);
   const capturedAmountCents =
     status === "captured" || status === "partially_captured"
@@ -363,32 +365,40 @@ function createPostgresStore(): RentalPaymentStore {
     },
     async recordStripeEvent(input) {
       await ensurePostgresTables();
-      const existing = await this.getPaymentByPaymentIntent(input.snapshot.id);
-      const payment = paymentRecordFromEvent(existing ?? undefined, input);
-      const paymentIntentId = payment.providerReference.paymentIntentId;
-      if (!paymentIntentId) throw new Error("Rental payment record requires a provider PaymentIntent ID.");
-      await sql`
-        INSERT INTO robomata_rental_payments (
-          id, booking_id, provider, provider_payment_intent_id, status, posting_blocked, payload, created_at, updated_at
-        )
-        VALUES (
-          ${payment.id},
-          ${payment.bookingId},
-          ${payment.provider},
-          ${paymentIntentId},
-          ${payment.status},
-          ${payment.postingBlocked},
-          ${JSON.stringify(payment)}::jsonb,
-          ${payment.createdAt}::timestamptz,
-          ${payment.updatedAt}::timestamptz
-        )
-        ON CONFLICT (provider_payment_intent_id) DO UPDATE
-        SET status = EXCLUDED.status,
-            posting_blocked = EXCLUDED.posting_blocked,
-            payload = EXCLUDED.payload,
-            updated_at = EXCLUDED.updated_at;
-      `;
-      return payment;
+      return sql.begin(async transaction => {
+        await transaction`SELECT pg_advisory_xact_lock(hashtext(${input.snapshot.id}));`;
+        const rows = (await transaction`
+          SELECT payload
+          FROM robomata_rental_payments
+          WHERE provider_payment_intent_id = ${input.snapshot.id}
+          FOR UPDATE;
+        `) as Array<{ payload: RentalPaymentRecord }>;
+        const payment = paymentRecordFromEvent(rows[0]?.payload, input);
+        const paymentIntentId = payment.providerReference.paymentIntentId;
+        if (!paymentIntentId) throw new Error("Rental payment record requires a provider PaymentIntent ID.");
+        await transaction`
+          INSERT INTO robomata_rental_payments (
+            id, booking_id, provider, provider_payment_intent_id, status, posting_blocked, payload, created_at, updated_at
+          )
+          VALUES (
+            ${payment.id},
+            ${payment.bookingId},
+            ${payment.provider},
+            ${paymentIntentId},
+            ${payment.status},
+            ${payment.postingBlocked},
+            ${JSON.stringify(payment)}::jsonb,
+            ${payment.createdAt}::timestamptz,
+            ${payment.updatedAt}::timestamptz
+          )
+          ON CONFLICT (provider_payment_intent_id) DO UPDATE
+          SET status = EXCLUDED.status,
+              posting_blocked = EXCLUDED.posting_blocked,
+              payload = EXCLUDED.payload,
+              updated_at = EXCLUDED.updated_at;
+        `;
+        return payment;
+      });
     },
   };
 }

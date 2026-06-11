@@ -38,10 +38,11 @@ export async function POST(request: NextRequest) {
 
     const body = (await request.json()) as CreatePaymentIntentBody;
     if (!body.bookingId?.trim()) return NextResponse.json({ error: "bookingId must be provided." }, { status: 400 });
+    if (!body.renterId?.trim()) return NextResponse.json({ error: "renterId must be provided." }, { status: 400 });
 
     const booking = await getRentalBookingStore().getBooking(body.bookingId);
     if (!booking) return NextResponse.json({ error: "Rental booking not found." }, { status: 404 });
-    if (body.renterId?.trim() && body.renterId.trim() !== booking.renterId) {
+    if (body.renterId.trim() !== booking.renterId) {
       return NextResponse.json({ error: "Renter does not match booking." }, { status: 403 });
     }
     if (booking.state !== "pending_payment_authorization") {

@@ -73,6 +73,15 @@ function paymentIntentIdFromEvent(event: StripeWebhookEvent): string | undefined
   return stringField(object.payment_intent);
 }
 
+function chargeIdFromEvent(event: StripeWebhookEvent): string | undefined {
+  const object = event.data.object;
+  if (event.type.startsWith("payment_intent.")) return stringField(object.latest_charge);
+  if (event.type.startsWith("charge.refund.") || event.type.startsWith("charge.dispute.")) {
+    return stringField(object.charge);
+  }
+  return stringField(object.id);
+}
+
 async function bookingForEvent(
   event: StripeWebhookEvent,
   paymentIntentId: string,
@@ -129,7 +138,7 @@ export async function POST(request: NextRequest) {
     const booking = await bookingForEvent(event, paymentIntentId);
     const payment = await getRentalPaymentStore().recordStripeEvent({
       booking,
-      chargeId: stringField(event.data.object.charge) ?? stringField(event.data.object.id),
+      chargeId: chargeIdFromEvent(event),
       disputeId: event.type.startsWith("charge.dispute.") ? stringField(event.data.object.id) : undefined,
       eventKind,
       failureReason: failureReasonForEvent(event),
