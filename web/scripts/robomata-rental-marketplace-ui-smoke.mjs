@@ -236,7 +236,9 @@ async function main() {
     throw new Error("Expected /rentals to return the Next.js app shell.");
   }
 
-  const listingsPayload = await fetchJson(`${baseUrl}/api/robomata/rental-marketplace/listings?city=Austin&evOnly=true`);
+  const listingsPayload = await fetchJson(
+    `${baseUrl}/api/robomata/rental-marketplace/listings?city=Austin&evOnly=true`,
+  );
   const listing = listingsPayload.listings?.[0];
   if (listing?.platformVehicleId !== "pv_smoke_rivian") {
     throw new Error(`Expected smoke listing pv_smoke_rivian, got ${JSON.stringify(listingsPayload)}`);
@@ -280,15 +282,17 @@ async function main() {
     throw new Error(`Expected contact-only renter request to avoid verified profile reuse.`);
   }
 
-  const reusedRenterPayload = await fetchJson(`${baseUrl}/api/robomata/rental-renters`, {
-    body: JSON.stringify({ id: renterPayload.renter.id, displayName: "Smoke Renter Again", email: "RENTER@example.test" }),
+  const clientChosenIdPayload = await fetchJson(`${baseUrl}/api/robomata/rental-renters`, {
+    body: JSON.stringify({
+      id: renterPayload.renter.id,
+      displayName: "Smoke Renter Again",
+      email: "RENTER@example.test",
+    }),
     headers: { "content-type": "application/json" },
     method: "POST",
   });
-  if (reusedRenterPayload.renter?.id !== renterPayload.renter.id) {
-    throw new Error(
-      `Expected returning renter to reuse ${renterPayload.renter.id}, got ${JSON.stringify(reusedRenterPayload)}`,
-    );
+  if (clientChosenIdPayload.renter?.id === renterPayload.renter.id) {
+    throw new Error(`Expected public renter creation to ignore client-provided renter ids.`);
   }
 
   await expectJsonFailure(
@@ -297,6 +301,22 @@ async function main() {
       body: JSON.stringify({
         dateFrom: new Date(Date.now() - 3 * 24 * 60 * 60 * 1_000).toISOString(),
         dateTo: new Date(Date.now() - 2 * 24 * 60 * 60 * 1_000).toISOString(),
+        platformVehicleId: listing.platformVehicleId,
+        renterId: renterPayload.renter.id,
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    },
+    400,
+    "dateFrom cannot be in the past.",
+  );
+
+  await expectJsonFailure(
+    `${baseUrl}/api/robomata/rental-bookings/checkout`,
+    {
+      body: JSON.stringify({
+        dateFrom: new Date(Date.now() - 60 * 1000).toISOString(),
+        dateTo: new Date(Date.now() + 24 * 60 * 60 * 1_000).toISOString(),
         platformVehicleId: listing.platformVehicleId,
         renterId: renterPayload.renter.id,
       }),
@@ -326,9 +346,9 @@ async function main() {
       {
         bookingId: checkoutPayload.booking.id,
         contactOnlyRenterId: contactOnlyRenterPayload.renter.id,
+        ignoredClientChosenRenterId: clientChosenIdPayload.renter.id,
         listingCount: listingsPayload.listings.length,
         paymentAuthorizationCents: paymentPlanPayload.paymentPlan.totalDueAtAuthorizationCents,
-        reusedRenterId: reusedRenterPayload.renter.id,
         status: "passed",
       },
       null,
