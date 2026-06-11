@@ -5,6 +5,10 @@ import { RentalRenterValidationError, getRentalRenterStore } from "~~/lib/roboma
 
 export const runtime = "nodejs";
 
+type RenterProfileRequestBody = RenterProfileInput & {
+  id?: string;
+};
+
 function requireRenterAccounts() {
   if (isRobomataRentalRenterAccountsEnabled()) return null;
   return NextResponse.json({ error: "Robomata renter accounts are not enabled." }, { status: 404 });
@@ -15,10 +19,11 @@ export async function POST(request: NextRequest) {
     const featureError = requireRenterAccounts();
     if (featureError) return featureError;
 
-    const body = (await request.json()) as RenterProfileInput;
+    const body = (await request.json()) as RenterProfileRequestBody;
     const renter = await getRentalRenterStore().upsertRenter({
       displayName: body.displayName,
       email: body.email,
+      id: body.id,
       phone: body.phone,
     });
     return NextResponse.json({ renter }, { status: 201 });

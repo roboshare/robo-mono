@@ -271,8 +271,17 @@ async function main() {
     "Renter profile requires at least email or phone.",
   );
 
-  const reusedRenterPayload = await fetchJson(`${baseUrl}/api/robomata/rental-renters`, {
+  const contactOnlyRenterPayload = await fetchJson(`${baseUrl}/api/robomata/rental-renters`, {
     body: JSON.stringify({ displayName: "Smoke Renter Again", email: "RENTER@example.test" }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  if (contactOnlyRenterPayload.renter?.id === renterPayload.renter.id) {
+    throw new Error(`Expected contact-only renter request to avoid verified profile reuse.`);
+  }
+
+  const reusedRenterPayload = await fetchJson(`${baseUrl}/api/robomata/rental-renters`, {
+    body: JSON.stringify({ id: renterPayload.renter.id, displayName: "Smoke Renter Again", email: "RENTER@example.test" }),
     headers: { "content-type": "application/json" },
     method: "POST",
   });
@@ -316,6 +325,7 @@ async function main() {
     JSON.stringify(
       {
         bookingId: checkoutPayload.booking.id,
+        contactOnlyRenterId: contactOnlyRenterPayload.renter.id,
         listingCount: listingsPayload.listings.length,
         paymentAuthorizationCents: paymentPlanPayload.paymentPlan.totalDueAtAuthorizationCents,
         reusedRenterId: reusedRenterPayload.renter.id,

@@ -35,6 +35,7 @@ const today = new Date();
 const minimumRentalDate = today.toISOString().slice(0, 10);
 const defaultDateFrom = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1_000).toISOString().slice(0, 10);
 const defaultDateTo = new Date(today.getTime() + 10 * 24 * 60 * 60 * 1_000).toISOString().slice(0, 10);
+const renterProfileStorageKey = "robomata:rental:renter-profile-links";
 
 function cents(value: number | undefined): string {
   return new Intl.NumberFormat("en-US", {
@@ -56,6 +57,45 @@ function bookingFormError(filters: SearchFilters, renterForm: { email: string; p
   }
   if (filters.dateTo <= filters.dateFrom) return "Return date must be after pickup date.";
   return undefined;
+}
+
+function renterContactKeys(renterForm: { email: string; phone: string }): string[] {
+  return [
+    renterForm.email.trim() ? `email:${renterForm.email.trim().toLowerCase()}` : undefined,
+    renterForm.phone.trim() ? `phone:${renterForm.phone.trim()}` : undefined,
+  ].filter((key): key is string => Boolean(key));
+}
+
+function readStoredRenterProfileLinks(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(renterProfileStorageKey);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function storedRenterIdForForm(renterForm: { email: string; phone: string }): string | undefined {
+  const links = readStoredRenterProfileLinks();
+  return renterContactKeys(renterForm)
+    .map(key => links[key])
+    .find((id): id is string => Boolean(id));
+}
+
+function rememberRenterProfile(renterForm: { email: string; phone: string }, renter: RenterProfile) {
+  if (typeof window === "undefined") return;
+  const keys = renterContactKeys(renterForm);
+  if (keys.length === 0) return;
+  try {
+    const links = readStoredRenterProfileLinks();
+    for (const key of keys) links[key] = renter.id;
+    window.localStorage.setItem(renterProfileStorageKey, JSON.stringify(links));
+  } catch {
+    // Local storage is an optimization for returning renters; checkout still works without it.
+  }
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -185,11 +225,13 @@ export const RentalMarketplaceExperience = () => {
       const validationError = bookingFormError(filters, renterForm);
       if (validationError) throw new Error(validationError);
 
+      const storedRenterId = storedRenterIdForForm(renterForm);
       const renterPayload = await fetchJson<{ renter: RenterProfile }>("/api/robomata/rental-renters", {
-        body: JSON.stringify(renterForm),
+        body: JSON.stringify({ ...renterForm, ...(storedRenterId ? { id: storedRenterId } : {}) }),
         headers: { "content-type": "application/json" },
         method: "POST",
       });
+      rememberRenterProfile(renterForm, renterPayload.renter);
       const checkoutPayload = await fetchJson<{
         booking: RentalBookingRecord;
         checkoutEligibility: RenterCheckoutEligibility;
@@ -483,8 +525,8 @@ export const RentalMarketplaceExperience = () => {
                   />
                 </label>
                 <p id="renter-contact-help" className="sm:col-span-2 text-sm text-base-content/60">
-                  Provide at least one contact method. Returning renters are matched by email or phone so existing
-                  verification status can be reused.
+                  Provide at least one contact method. This browser can reuse a saved renter profile id after a
+                  successful checkout request.
                 </p>
               </div>
 
