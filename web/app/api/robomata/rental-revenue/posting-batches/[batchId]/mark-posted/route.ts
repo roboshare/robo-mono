@@ -48,7 +48,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (!currentBatch) return NextResponse.json({ error: "Rental revenue posting batch not found." }, { status: 404 });
     const configuredOwner = configuredRentalFacilityOwners()[currentBatch.facilityAssetId]?.toLowerCase();
     const accessError = await rentalStoredFacilityAccessError(currentBatch.facilityAssetId, partnerAddress);
-    const isCreator = currentBatch.attestation.createdBy.toLowerCase() === partnerAddress.toLowerCase();
+    const isCreator = currentBatch.attestation?.createdBy?.toLowerCase() === partnerAddress.toLowerCase();
     const isConfiguredOwnerMismatch = configuredOwner !== undefined && configuredOwner !== partnerAddress.toLowerCase();
     if (accessError && (!isCreator || isConfiguredOwnerMismatch)) {
       return NextResponse.json({ error: accessError }, { status: 403 });
