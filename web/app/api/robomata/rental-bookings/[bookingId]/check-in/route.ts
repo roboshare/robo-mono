@@ -7,7 +7,9 @@ import {
 import type { RentalTripCheckInInput } from "~~/lib/robomata/rentalTrips";
 import { getRentalBookingStore } from "~~/lib/robomata/server/rentalBookingStore";
 import { getRentalInventoryStore } from "~~/lib/robomata/server/rentalInventoryStore";
+import { requireRentalBookingAccess } from "~~/lib/robomata/server/rentalRouteAccess";
 import { getRentalTripStore } from "~~/lib/robomata/server/rentalTripStore";
+import { requirePartnerAddress } from "~~/lib/robomata/server/submissionAccess";
 
 export const runtime = "nodejs";
 
@@ -32,9 +34,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const mutationError = requireMutation();
     if (mutationError) return mutationError;
 
+    const partnerAddress = await requirePartnerAddress(request);
+    if (partnerAddress instanceof NextResponse) return partnerAddress;
+
     const { bookingId } = await context.params;
     const booking = await getRentalBookingStore().getBooking(bookingId);
     if (!booking) return NextResponse.json({ error: "Rental booking not found." }, { status: 404 });
+    const accessError = await requireRentalBookingAccess(booking, partnerAddress);
+    if (accessError) return accessError;
+
     if (booking.state !== "confirmed" && booking.state !== "check_in_open") {
       return NextResponse.json({ error: `Booking cannot check in from state ${booking.state}.` }, { status: 409 });
     }
