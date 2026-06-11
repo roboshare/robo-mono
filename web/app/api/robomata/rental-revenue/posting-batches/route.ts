@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isRobomataRentalRevenuePostingEnabled, isRobomataWorkflowMutationEnabled } from "~~/lib/featureFlags";
 import type { RentalFinancingTarget, RentalRevenueLedgerEntry } from "~~/lib/robomata/rentalRevenue";
+import { rentalFacilityAccessError } from "~~/lib/robomata/server/rentalInventoryAccess";
 import { getRentalRevenueStore } from "~~/lib/robomata/server/rentalRevenueStore";
+import { requirePartnerAddress } from "~~/lib/robomata/server/submissionAccess";
 
 export const runtime = "nodejs";
 
@@ -31,18 +33,26 @@ export async function POST(request: NextRequest) {
     const mutationError = requireMutation();
     if (mutationError) return mutationError;
 
+    const partnerAddress = await requirePartnerAddress(request);
+    if (partnerAddress instanceof NextResponse) return partnerAddress;
+
     const body = (await request.json()) as CreatePostingBatchBody;
     if (!body.periodStart || !body.periodEnd) {
       return NextResponse.json({ error: "periodStart and periodEnd must be provided." }, { status: 400 });
     }
     if (!body.target) return NextResponse.json({ error: "target must be provided." }, { status: 400 });
+    const accessError = rentalFacilityAccessError({
+      facilityAssetId: body.target.facilityAssetId,
+      partnerAddress,
+    });
+    if (accessError) return NextResponse.json({ error: accessError }, { status: 403 });
     if (!Array.isArray(body.entries) || body.entries.length === 0) {
       return NextResponse.json({ error: "entries must include at least one ledger entry." }, { status: 400 });
     }
 
     const result = await getRentalRevenueStore().createPostingBatch({
       auditEventId: body.auditEventId,
-      createdBy: body.createdBy,
+      createdBy: partnerAddress,
       entries: body.entries,
       periodEnd: body.periodEnd,
       periodStart: body.periodStart,

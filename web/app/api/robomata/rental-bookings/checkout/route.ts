@@ -4,6 +4,7 @@ import {
   isRobomataRentalInventoryEnabled,
   isRobomataRentalPaymentsEnabled,
   isRobomataRentalRenterAccountsEnabled,
+  isRobomataWorkflowMutationEnabled,
 } from "~~/lib/featureFlags";
 import { defaultRentalCancellationPolicy } from "~~/lib/robomata/rentalBookings";
 import { rentalMarketplaceListingFromVehicle } from "~~/lib/robomata/rentalMarketplace";
@@ -18,7 +19,6 @@ export const runtime = "nodejs";
 type CheckoutRequestBody = {
   dateFrom?: string;
   dateTo?: string;
-  fees?: Parameters<typeof buildRentalCheckoutPaymentPlan>[0]["fees"];
   platformVehicleId?: string;
   renterId?: string;
 };
@@ -33,6 +33,9 @@ function requireBookingCheckout() {
     !isRobomataRentalRenterAccountsEnabled()
   ) {
     return NextResponse.json({ error: "Rental checkout dependencies are not enabled." }, { status: 404 });
+  }
+  if (!isRobomataWorkflowMutationEnabled()) {
+    return NextResponse.json({ error: "Robomata rental booking writes are not enabled." }, { status: 403 });
   }
   return null;
 }
@@ -76,7 +79,6 @@ export async function POST(request: NextRequest) {
     }
 
     const paymentPlan = buildRentalCheckoutPaymentPlan({
-      fees: body.fees,
       listing,
       tripEstimate: listing.tripEstimate,
     });

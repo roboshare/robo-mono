@@ -25,7 +25,7 @@ function requireScheduledSync(request: NextRequest) {
     return NextResponse.json({ error: "Robomata rental inventory scheduled sync is not enabled." }, { status: 403 });
   }
 
-  const configuredSecret = process.env.ROBOMATA_RENTAL_INVENTORY_SYNC_SECRET?.trim();
+  const configuredSecret = process.env.CRON_SECRET?.trim() || process.env.ROBOMATA_RENTAL_INVENTORY_SYNC_SECRET?.trim();
   if (!configuredSecret) {
     return NextResponse.json(
       { error: "Rental inventory scheduled sync requires a configured bearer secret." },

@@ -88,11 +88,24 @@ function refundBpsForCancellation(booking: RentalBookingRecord, cancelledAt: str
   return matchingPolicy?.refundBps ?? 0;
 }
 
+function cancellationTimestamp(input: RentalCancellationInput): string {
+  const nowMs = Date.now();
+  const now = new Date(nowMs).toISOString();
+  if (!input.cancelledAt) return now;
+
+  const requestedMs = Date.parse(input.cancelledAt);
+  if (!Number.isFinite(requestedMs)) throw new Error("cancelledAt must be a valid timestamp when provided.");
+  if (requestedMs > nowMs) throw new Error("cancelledAt cannot be in the future.");
+
+  const hasSupportOverride = input.actor.role === "ops" && Boolean(input.supportCaseId?.trim());
+  return hasSupportOverride ? new Date(requestedMs).toISOString() : now;
+}
+
 export function buildRentalCancellationOutcome(
   booking: RentalBookingRecord,
   input: RentalCancellationInput,
 ): RentalCancellationOutcome {
-  const cancelledAt = input.cancelledAt ?? new Date().toISOString();
+  const cancelledAt = cancellationTimestamp(input);
   const tripChargeCents = booking.paymentPlan.rentalCharge.totalAuthorizeCents;
   const refundBps = refundBpsForCancellation(booking, cancelledAt);
   const refundableAmountCents = Math.floor((tripChargeCents * refundBps) / 10_000);

@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isRobomataRentalRevenuePostingEnabled, isRobomataWorkflowMutationEnabled } from "~~/lib/featureFlags";
+import {
+  configuredRentalFacilityOwners,
+  rentalFacilityAccessError,
+} from "~~/lib/robomata/server/rentalInventoryAccess";
 import { getRentalRevenueStore } from "~~/lib/robomata/server/rentalRevenueStore";
+import { requirePartnerAddress } from "~~/lib/robomata/server/submissionAccess";
 
 export const runtime = "nodejs";
 
@@ -29,13 +34,29 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const mutationError = requireMutation();
     if (mutationError) return mutationError;
 
+    const partnerAddress = await requirePartnerAddress(request);
+    if (partnerAddress instanceof NextResponse) return partnerAddress;
+
     const body = (await request.json()) as MarkPostedBody;
     if (!body.protocolTxHash?.trim()) {
       return NextResponse.json({ error: "protocolTxHash must be provided." }, { status: 400 });
     }
 
     const { batchId } = await context.params;
-    const batch = await getRentalRevenueStore().markPostingBatchPosted(batchId, body.protocolTxHash);
+    const store = getRentalRevenueStore();
+    const currentBatch = await store.getPostingBatch(batchId);
+    if (!currentBatch) return NextResponse.json({ error: "Rental revenue posting batch not found." }, { status: 404 });
+    const configuredOwner = configuredRentalFacilityOwners()[currentBatch.facilityAssetId]?.toLowerCase();
+    const accessError = rentalFacilityAccessError({
+      facilityAssetId: currentBatch.facilityAssetId,
+      partnerAddress,
+    });
+    const isCreator = currentBatch.attestation.createdBy.toLowerCase() === partnerAddress.toLowerCase();
+    const isConfiguredOwnerMismatch = configuredOwner !== undefined && configuredOwner !== partnerAddress.toLowerCase();
+    if (accessError && (!isCreator || isConfiguredOwnerMismatch)) {
+      return NextResponse.json({ error: accessError }, { status: 403 });
+    }
+    const batch = await store.markPostingBatchPosted(batchId, body.protocolTxHash);
     if (!batch) return NextResponse.json({ error: "Rental revenue posting batch not found." }, { status: 404 });
     return NextResponse.json({ batch });
   } catch (error) {

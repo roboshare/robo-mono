@@ -244,6 +244,7 @@ function matchingLedgerEntries(input: {
 
 function matchingPostingBatches(input: {
   attribution: RentalInvestorKpiAttribution;
+  ledgerEntryIds: Set<string>;
   periodEnd: string;
   periodStart: string;
   postingBatches: RentalRevenuePostingBatch[];
@@ -257,6 +258,7 @@ function matchingPostingBatches(input: {
       return false;
     }
     if (!input.attribution.vehicleAssetId && batch.postingAssetKind !== "facility") return false;
+    if (!batch.entryIds.some(entryId => input.ledgerEntryIds.has(entryId))) return false;
     return (
       periodContains(batch.periodStart, input.periodStart, input.periodEnd) &&
       periodContains(batch.periodEnd, input.periodStart, input.periodEnd)
@@ -341,6 +343,7 @@ export function buildRentalInvestorRevenueVarianceReport(
   });
   const postingBatches = matchingPostingBatches({
     attribution: input.attribution,
+    ledgerEntryIds: new Set(ledgerEntries.map(entry => entry.id)),
     periodEnd: input.metrics.periodEnd,
     periodStart: input.metrics.periodStart,
     postingBatches: input.postingBatches ?? [],

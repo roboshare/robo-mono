@@ -245,9 +245,25 @@ export function buildRentalRevenuePostingBatch(input: {
     throw new Error("Posting batch periodEnd must be on or after periodStart.");
   }
 
-  const mismatchedEntry = input.entries.find(entry => entry.postingAssetId !== input.target.postingAssetId);
+  if (input.target.postingAssetKind === "facility" && input.target.postingAssetId !== input.target.facilityAssetId) {
+    throw new Error("Facility-level posting targets must post to the facilityAssetId.");
+  }
+  if (input.target.postingAssetKind === "vehicle") {
+    if (!input.target.vehicleAssetId) throw new Error("Vehicle-level posting targets must include vehicleAssetId.");
+    if (input.target.postingAssetId !== input.target.vehicleAssetId) {
+      throw new Error("Vehicle-level posting targets must post to the vehicleAssetId.");
+    }
+  }
+
+  const mismatchedEntry = input.entries.find(entry => {
+    if (entry.facilityAssetId !== input.target.facilityAssetId) return true;
+    if (entry.postingAssetId !== input.target.postingAssetId) return true;
+    if (entry.postingAssetKind !== input.target.postingAssetKind) return true;
+    if (input.target.vehicleAssetId && entry.vehicleAssetId !== input.target.vehicleAssetId) return true;
+    return false;
+  });
   if (mismatchedEntry) {
-    throw new Error(`Ledger entry ${mismatchedEntry.id} does not match posting target ${input.target.postingAssetId}.`);
+    throw new Error(`Ledger entry ${mismatchedEntry.id} does not match the full posting target attribution.`);
   }
   const seenEntryIds = new Set<string>();
   const duplicateEntry = input.entries.find(entry => {
