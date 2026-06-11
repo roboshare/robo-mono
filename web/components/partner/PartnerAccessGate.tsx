@@ -2,6 +2,7 @@
 
 import type { PropsWithChildren, ReactNode } from "react";
 import { useReadContract } from "wagmi";
+import { OperatorLoginRequired } from "~~/components/partner/OperatorLoginRequired";
 import { useSelectedNetwork } from "~~/hooks/scaffold-eth";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
 import { getDeployedContract } from "~~/utils/contracts";
@@ -24,11 +25,7 @@ export const PartnerAccessGate = ({ children, loadingMessage }: PartnerAccessGat
   });
 
   if (!accountAddress) {
-    return (
-      <div className="min-h-[60vh] flex items-center justify-center">
-        <div className="text-center py-20 text-xl opacity-70">Please log in to access the dashboard.</div>
-      </div>
-    );
+    return <OperatorLoginRequired />;
   }
 
   if (isCheckingPartner) {
