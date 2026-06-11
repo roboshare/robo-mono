@@ -178,6 +178,12 @@ function parsePeriodBoundary(value: string, boundary: "end" | "start"): number {
   return parsed;
 }
 
+function canonicalPeriodBoundary(value: string, boundary: "end" | "start"): string {
+  const parsed = parsePeriodBoundary(value, boundary);
+  if (!Number.isFinite(parsed)) throw new Error("Posting batch periods must be valid dates.");
+  return new Date(parsed).toISOString();
+}
+
 function periodContains(timestamp: string, periodStart: string, periodEnd: string): boolean {
   const value = Date.parse(timestamp);
   const start = parsePeriodBoundary(periodStart, "start");
@@ -233,6 +239,11 @@ export function buildRentalRevenuePostingBatch(input: {
   target: RentalFinancingTarget;
 }): RentalRevenuePostingBatch {
   if (input.entries.length === 0) throw new Error("Posting batch requires at least one ledger entry.");
+  const periodStart = canonicalPeriodBoundary(input.periodStart, "start");
+  const periodEnd = canonicalPeriodBoundary(input.periodEnd, "end");
+  if (Date.parse(periodEnd) < Date.parse(periodStart)) {
+    throw new Error("Posting batch periodEnd must be on or after periodStart.");
+  }
 
   const mismatchedEntry = input.entries.find(entry => entry.postingAssetId !== input.target.postingAssetId);
   if (mismatchedEntry) {
@@ -261,9 +272,7 @@ export function buildRentalRevenuePostingBatch(input: {
   if (nonRecognizedEntry) {
     throw new Error(`Ledger entry ${nonRecognizedEntry.id} is not recognized revenue and cannot be posted.`);
   }
-  const outOfPeriodEntry = input.entries.find(
-    entry => !periodContains(entry.occurredAt, input.periodStart, input.periodEnd),
-  );
+  const outOfPeriodEntry = input.entries.find(entry => !periodContains(entry.occurredAt, periodStart, periodEnd));
   if (outOfPeriodEntry) {
     throw new Error(`Ledger entry ${outOfPeriodEntry.id} is outside the posting batch period.`);
   }
@@ -272,8 +281,8 @@ export function buildRentalRevenuePostingBatch(input: {
   if (totalRecognizedRevenueCents < 0) throw new Error("Posting batch total recognized revenue must be non-negative.");
 
   const batchId = revenuePostingBatchId({
-    periodEnd: input.periodEnd,
-    periodStart: input.periodStart,
+    periodEnd,
+    periodStart,
     postingAssetId: input.target.postingAssetId,
   });
   const createdAt = new Date().toISOString();
@@ -282,8 +291,8 @@ export function buildRentalRevenuePostingBatch(input: {
     createdAt,
     createdBy: input.createdBy,
     entries: input.entries,
-    periodEnd: input.periodEnd,
-    periodStart: input.periodStart,
+    periodEnd,
+    periodStart,
     target: input.target,
     totalRecognizedRevenueCents,
   });
@@ -291,8 +300,8 @@ export function buildRentalRevenuePostingBatch(input: {
     ...input.target,
     id: batchId,
     status: "ready",
-    periodStart: input.periodStart,
-    periodEnd: input.periodEnd,
+    periodStart,
+    periodEnd,
     entryIds: input.entries.map(entry => entry.id),
     totalRecognizedRevenueCents,
     currency: "USD",

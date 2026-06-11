@@ -250,7 +250,12 @@ function matchingPostingBatches(input: {
 }) {
   return input.postingBatches.filter(batch => {
     if (batch.facilityAssetId !== input.attribution.facilityAssetId) return false;
-    if (input.attribution.vehicleAssetId && batch.vehicleAssetId !== input.attribution.vehicleAssetId) return false;
+    if (
+      input.attribution.vehicleAssetId &&
+      (batch.postingAssetKind !== "vehicle" || batch.postingAssetId !== input.attribution.vehicleAssetId)
+    ) {
+      return false;
+    }
     if (!input.attribution.vehicleAssetId && batch.postingAssetKind !== "facility") return false;
     return (
       periodContains(batch.periodStart, input.periodStart, input.periodEnd) &&
