@@ -24,7 +24,11 @@ import { useScaffoldWriteContract, useSelectedNetwork } from "~~/hooks/scaffold-
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
 import { useRobomataApiAuth } from "~~/hooks/useRobomataApiAuth";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
-import { isRobomataTokenizationClientEnabled, isRobomataWorkflowEnabled } from "~~/lib/featureFlags";
+import {
+  isRobomataRentalHostOpsClientEnabled,
+  isRobomataTokenizationClientEnabled,
+  isRobomataWorkflowEnabled,
+} from "~~/lib/featureFlags";
 import { formatUsd } from "~~/lib/robomata/borrowingBase";
 import type { FacilitySubmission } from "~~/lib/robomata/submissions";
 import { getDeployedContract } from "~~/utils/contracts";
@@ -1290,6 +1294,11 @@ const PartnerDashboard: NextPage = () => {
             {isRobomataWorkflowEnabled() && (
               <Link href="/operator/submissions" className="btn btn-outline rounded-full">
                 Borrowing Base Submissions
+              </Link>
+            )}
+            {isRobomataRentalHostOpsClientEnabled() && (
+              <Link href="/operator/rentals" className="btn btn-outline rounded-full">
+                Rental Operations
               </Link>
             )}
             <div className="flex">

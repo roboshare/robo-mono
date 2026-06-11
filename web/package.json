@@ -12,6 +12,7 @@
     "lint": "next lint",
     "robomata:local-smoke": "ROBOMATA_SMOKE_PROFILE=local node scripts/robomata-testnet-smoke.mjs",
     "robomata:rental-marketplace-ui-smoke": "node scripts/robomata-rental-marketplace-ui-smoke.mjs",
+    "robomata:rental-host-ops-ui-smoke": "node scripts/robomata-rental-host-ops-ui-smoke.mjs",
     "robomata:rental-persistence:bootstrap": "node scripts/robomata-rental-persistence-bootstrap.mjs",
     "robomata:rental-verification-providers-smoke": "node scripts/robomata-rental-verification-providers-smoke.mjs",
     "robomata:tokenization-api-test": "node scripts/robomata-tokenization-api-test.mjs",
