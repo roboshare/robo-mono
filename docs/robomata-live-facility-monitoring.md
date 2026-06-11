@@ -132,10 +132,27 @@ Live facility monitoring is additive and default-off:
   to include monitoring freshness.
 - `NEXT_PUBLIC_ROBOMATA_LENDER_MONITORING_SHARE_ENABLED=true` reveals lender
   monitoring share controls.
+- `ROBOMATA_AGENTS_ENABLED=true` enables supervised agent policies, runs, and
+  proposed actions derived from monitoring state.
+- `NEXT_PUBLIC_ROBOMATA_AGENTS_ENABLED=true` reveals the operator-facing agent
+  supervision panel.
+- `ROBOMATA_AGENT_MUTATIONS_ENABLED=true` enables policy activation, manual
+  agent runs, and operator action decisions.
+- `ROBOMATA_AGENT_REFRESH_ENABLED=true` enables scheduled agent ticks at
+  `POST /api/robomata/agents/tick`; the route also requires
+  `ROBOMATA_AGENT_TICK_SECRET`.
+- `ROBOMATA_AGENTS_FILE=/local/path/agents.json` is an optional local-only JSON
+  fallback when `POSTGRES_URL` is not configured.
 
 When these flags are unset, `/robomata`, `/partner/submissions`, Robomata
 submission APIs, protected packet sharing, Walrus/Seal storage, and Sui evidence
 commits must behave as they do today.
+
+The first agent-first slice is intentionally supervised. Agents can evaluate the
+facility projection, create immutable run records, and propose actions such as
+evidence review, packet refresh, borrowing-base recompute, Sui-root review, or
+tokenization readiness. Operators still approve, reject, or complete actions;
+the agent layer does not silently mutate submissions or execute Sui/EVM writes.
 
 ## Sui Roots
 
