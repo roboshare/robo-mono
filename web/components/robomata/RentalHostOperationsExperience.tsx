@@ -134,12 +134,14 @@ export const RentalHostOperationsExperience = () => {
   const [pickupRegion, setPickupRegion] = useState("");
   const [pickupCountry, setPickupCountry] = useState("US");
   const [dailyRate, setDailyRate] = useState("");
-  const [minimumTripDays, setMinimumTripDays] = useState("1");
+  const [setupMinimumTripDays, setSetupMinimumTripDays] = useState("1");
+  const [setupAdvanceNoticeHours, setSetupAdvanceNoticeHours] = useState("");
   const [timezone, setTimezone] = useState("America/Chicago");
   const [instantBook, setInstantBook] = useState(false);
   const [mileageLimit, setMileageLimit] = useState("");
   const [additionalRules, setAdditionalRules] = useState("");
   const [controlDailyRate, setControlDailyRate] = useState("");
+  const [controlMinimumTripDays, setControlMinimumTripDays] = useState("");
   const [operationalStatus, setOperationalStatus] = useState<OperationalStatusSelection>("keep_current");
   const [manualApproval, setManualApproval] = useState(false);
   const [maxTripDays, setMaxTripDays] = useState("");
@@ -151,6 +153,7 @@ export const RentalHostOperationsExperience = () => {
   const [maintenanceEnd, setMaintenanceEnd] = useState("");
   const [maintenanceReason, setMaintenanceReason] = useState("");
   const [safetyReason, setSafetyReason] = useState("");
+  const [tripSupportCaseId, setTripSupportCaseId] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -213,12 +216,16 @@ export const RentalHostOperationsExperience = () => {
     setPickupRegion(setup?.pickupDropoff?.region ?? "");
     setPickupCountry(setup?.pickupDropoff?.country ?? "US");
     setDailyRate(currencyFromCents(setup?.pricing?.dailyRateCents));
-    setMinimumTripDays(String(setup?.pricing?.minimumTripDays ?? 1));
+    setSetupMinimumTripDays(String(setup?.pricing?.minimumTripDays ?? 1));
+    setSetupAdvanceNoticeHours(
+      setup?.availability?.advanceNoticeHours ? String(setup.availability.advanceNoticeHours) : "",
+    );
     setTimezone(setup?.availability?.timezone ?? "America/Chicago");
     setInstantBook(Boolean(setup?.availability?.instantBookEnabled));
     setMileageLimit(setup?.rules?.mileageLimitPerDay ? String(setup.rules.mileageLimitPerDay) : "");
     setAdditionalRules(setup?.rules?.additionalRules ?? "");
     setControlDailyRate(currencyFromCents(controls?.pricing?.dailyRateCents ?? setup?.pricing?.dailyRateCents));
+    setControlMinimumTripDays(String(controls?.pricing?.minimumTripDays ?? setup?.pricing?.minimumTripDays ?? 1));
     setOperationalStatus(
       statusOptions.includes(selectedVehicle.operationalStatus as Exclude<OperationalStatusSelection, "keep_current">)
         ? (selectedVehicle.operationalStatus as Exclude<OperationalStatusSelection, "keep_current">)
@@ -237,8 +244,15 @@ export const RentalHostOperationsExperience = () => {
     setIsSaving(true);
     setError(null);
     try {
+      const existingPhotoUris =
+        selectedVehicle.hostSetup?.photoUris && selectedVehicle.hostSetup.photoUris.length > 0
+          ? selectedVehicle.hostSetup.photoUris
+          : (selectedVehicle.display.imageUris ?? []);
+      const primaryPhotoUri = setupPhotoUri.trim();
       const setup: RentalVehicleHostSetupUpdate = {
-        photoUris: setupPhotoUri.trim() ? [setupPhotoUri.trim()] : [],
+        photoUris: primaryPhotoUri
+          ? [primaryPhotoUri, ...existingPhotoUris.filter(uri => uri !== primaryPhotoUri)]
+          : existingPhotoUris,
         publicDescription: publicDescription.trim(),
         pickupDropoff: {
           addressLabel: pickupAddress.trim(),
@@ -250,12 +264,12 @@ export const RentalHostOperationsExperience = () => {
         pricing: {
           currency: "USD",
           dailyRateCents: centsFromCurrency(dailyRate),
-          minimumTripDays: numberFromInput(minimumTripDays),
+          minimumTripDays: numberFromInput(setupMinimumTripDays),
         },
         availability: {
           timezone: timezone.trim(),
           instantBookEnabled: instantBook,
-          advanceNoticeHours: numberFromInput(minimumNoticeHours),
+          advanceNoticeHours: numberFromInput(setupAdvanceNoticeHours),
         },
         rules: {
           mileageLimitPerDay: numberFromInput(mileageLimit),
@@ -287,7 +301,7 @@ export const RentalHostOperationsExperience = () => {
         pricing: {
           currency: "USD",
           dailyRateCents: centsFromCurrency(controlDailyRate),
-          minimumTripDays: numberFromInput(minimumTripDays),
+          minimumTripDays: numberFromInput(controlMinimumTripDays),
         },
         availability: {
           ...(selectedVehicle.hostSetup?.availability ?? {}),
@@ -402,7 +416,7 @@ export const RentalHostOperationsExperience = () => {
           kind: incidentKind,
           status: incidentStatus,
           notes: tripNotes.trim() || undefined,
-          supportCaseId: supportCaseId.trim() || undefined,
+          supportCaseId: tripSupportCaseId.trim() || undefined,
         };
       } else {
         path = `/api/robomata/rental-bookings/${normalizedBookingId}/claims`;
@@ -413,7 +427,7 @@ export const RentalHostOperationsExperience = () => {
           payoutHoldAmountCents: centsFromCurrency(payoutHoldAmount),
           payoutHoldReason: tripNotes.trim() || "Rental claim opened from host operations",
           releaseConditions: ["Ops adjudication completed", "Renter evidence review completed"],
-          supportCaseId: supportCaseId.trim() || undefined,
+          supportCaseId: tripSupportCaseId.trim() || undefined,
           evidence: tripPhotoUri.trim()
             ? [
                 {
@@ -626,14 +640,20 @@ export const RentalHostOperationsExperience = () => {
                       <input
                         className="input input-bordered"
                         placeholder="Minimum trip days"
-                        value={minimumTripDays}
-                        onChange={event => setMinimumTripDays(event.target.value)}
+                        value={setupMinimumTripDays}
+                        onChange={event => setSetupMinimumTripDays(event.target.value)}
                       />
                       <input
                         className="input input-bordered"
                         placeholder="Timezone"
                         value={timezone}
                         onChange={event => setTimezone(event.target.value)}
+                      />
+                      <input
+                        className="input input-bordered"
+                        placeholder="Setup advance notice hours"
+                        value={setupAdvanceNoticeHours}
+                        onChange={event => setSetupAdvanceNoticeHours(event.target.value)}
                       />
                       <input
                         className="input input-bordered"
@@ -696,6 +716,12 @@ export const RentalHostOperationsExperience = () => {
                         placeholder="Max trip days"
                         value={maxTripDays}
                         onChange={event => setMaxTripDays(event.target.value)}
+                      />
+                      <input
+                        className="input input-bordered"
+                        placeholder="Controls minimum trip days"
+                        value={controlMinimumTripDays}
+                        onChange={event => setControlMinimumTripDays(event.target.value)}
                       />
                       <input
                         className="input input-bordered"
@@ -927,6 +953,14 @@ export const RentalHostOperationsExperience = () => {
                       value={tripPhotoUri}
                       onChange={event => setTripPhotoUri(event.target.value)}
                     />
+                    {(tripAction === "incident" || tripAction === "claim") && (
+                      <input
+                        className="input input-bordered"
+                        placeholder="Trip support case ID"
+                        value={tripSupportCaseId}
+                        onChange={event => setTripSupportCaseId(event.target.value)}
+                      />
+                    )}
                     <textarea
                       className="textarea textarea-bordered"
                       placeholder="Notes"
