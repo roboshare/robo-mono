@@ -275,27 +275,38 @@ function createPostgresStore(): RentalRevenueStore {
     },
     async markPostingBatchPosted(batchId, protocolTxHash) {
       await ensurePostgresTables();
-      const current = await this.getPostingBatch(batchId);
-      if (!current) return null;
-      if (current.status === "posted") {
-        if (current.protocolTxHash === protocolTxHash) return current;
-        throw new Error(`Posting batch ${batchId} is already posted with a different protocol transaction.`);
-      }
-      const postedAt = new Date().toISOString();
-      const batch: RentalRevenuePostingBatch = {
-        ...current,
-        status: "posted",
-        postedAt,
-        protocolTxHash,
-      };
-      await sql`
-        UPDATE robomata_rental_revenue_posting_batches
-        SET status = ${batch.status},
-            payload = ${JSON.stringify(batch)}::jsonb,
-            updated_at = ${postedAt}::timestamptz
-        WHERE id = ${batchId};
-      `;
-      return batch;
+      return sql.begin(async tx => {
+        await tx`SELECT pg_advisory_xact_lock(hashtext(${advisoryLockKey(batchId)}));`;
+        const currentRows = (await tx`
+          SELECT payload
+          FROM robomata_rental_revenue_posting_batches
+          WHERE id = ${batchId}
+          LIMIT 1;
+        `) as Array<{ payload: RentalRevenuePostingBatch }>;
+        const current = currentRows[0]?.payload;
+        if (!current) return null;
+        if (current.status === "posted") {
+          if (current.protocolTxHash === protocolTxHash) return current;
+          throw new Error(`Posting batch ${batchId} is already posted with a different protocol transaction.`);
+        }
+        const postedAt = new Date().toISOString();
+        const batch: RentalRevenuePostingBatch = {
+          ...current,
+          status: "posted",
+          postedAt,
+          protocolTxHash,
+        };
+        const updatedRows = (await tx`
+          UPDATE robomata_rental_revenue_posting_batches
+          SET status = ${batch.status},
+              payload = ${JSON.stringify(batch)}::jsonb,
+              updated_at = ${postedAt}::timestamptz
+          WHERE id = ${batchId}
+            AND status != 'posted'
+          RETURNING payload;
+        `) as Array<{ payload: RentalRevenuePostingBatch }>;
+        return updatedRows[0]?.payload ?? batch;
+      });
     },
   };
 }

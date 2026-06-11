@@ -211,10 +211,19 @@ export function buildInvestorKpiValues(input: {
   ];
 }
 
+function parsePeriodBoundary(value: string, boundary: "end" | "start"): number {
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) return Number.NaN;
+  if (boundary === "end" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return parsed + 24 * 60 * 60 * 1_000 - 1;
+  }
+  return parsed;
+}
+
 function periodContains(timestamp: string, periodStart: string, periodEnd: string): boolean {
   const value = Date.parse(timestamp);
-  const start = Date.parse(periodStart);
-  const end = Date.parse(periodEnd);
+  const start = parsePeriodBoundary(periodStart, "start");
+  const end = parsePeriodBoundary(periodEnd, "end");
   if (!Number.isFinite(value) || !Number.isFinite(start) || !Number.isFinite(end)) return false;
   return value >= start && value <= end;
 }
@@ -242,6 +251,7 @@ function matchingPostingBatches(input: {
   return input.postingBatches.filter(batch => {
     if (batch.facilityAssetId !== input.attribution.facilityAssetId) return false;
     if (input.attribution.vehicleAssetId && batch.vehicleAssetId !== input.attribution.vehicleAssetId) return false;
+    if (!input.attribution.vehicleAssetId && batch.postingAssetKind !== "facility") return false;
     return (
       periodContains(batch.periodStart, input.periodStart, input.periodEnd) &&
       periodContains(batch.periodEnd, input.periodStart, input.periodEnd)
@@ -291,6 +301,7 @@ function settlementStatus(input: {
   if (input.hasIncompleteData) return "stale_or_incomplete";
   if (input.postedRevenueCents === 0) return "not_started";
   if (input.varianceCents === 0) return "posted";
+  if (input.varianceCents < 0) return "variance";
   if (input.postedRevenueCents > 0) return "partially_posted";
   return "variance";
 }

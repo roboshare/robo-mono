@@ -169,10 +169,19 @@ function ledgerEntriesDigest(entries: RentalRevenueLedgerEntry[]): string {
   return createHash("sha256").update(JSON.stringify(digestInput)).digest("hex");
 }
 
+function parsePeriodBoundary(value: string, boundary: "end" | "start"): number {
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) return Number.NaN;
+  if (boundary === "end" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return parsed + 24 * 60 * 60 * 1_000 - 1;
+  }
+  return parsed;
+}
+
 function periodContains(timestamp: string, periodStart: string, periodEnd: string): boolean {
   const value = Date.parse(timestamp);
-  const start = Date.parse(periodStart);
-  const end = Date.parse(periodEnd);
+  const start = parsePeriodBoundary(periodStart, "start");
+  const end = parsePeriodBoundary(periodEnd, "end");
   if (![value, start, end].every(Number.isFinite) || end < start) {
     throw new Error("Posting batch period and ledger entry timestamps must be valid dates.");
   }
@@ -228,6 +237,21 @@ export function buildRentalRevenuePostingBatch(input: {
   const mismatchedEntry = input.entries.find(entry => entry.postingAssetId !== input.target.postingAssetId);
   if (mismatchedEntry) {
     throw new Error(`Ledger entry ${mismatchedEntry.id} does not match posting target ${input.target.postingAssetId}.`);
+  }
+  const seenEntryIds = new Set<string>();
+  const duplicateEntry = input.entries.find(entry => {
+    if (seenEntryIds.has(entry.id)) return true;
+    seenEntryIds.add(entry.id);
+    return false;
+  });
+  if (duplicateEntry) {
+    throw new Error(`Ledger entry ${duplicateEntry.id} appears more than once in the posting batch.`);
+  }
+  const invalidAmountEntry = input.entries.find(
+    entry => typeof entry.amountCents !== "number" || !Number.isFinite(entry.amountCents),
+  );
+  if (invalidAmountEntry) {
+    throw new Error(`Ledger entry ${invalidAmountEntry.id} must include a numeric amountCents value.`);
   }
   const nonUsdEntry = input.entries.find(entry => entry.currency !== "USD");
   if (nonUsdEntry) {
