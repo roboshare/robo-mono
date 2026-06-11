@@ -9,7 +9,9 @@ import {
   type RenterProfile,
   type RenterProfileInput,
   type RenterVerificationActor,
+  type RenterVerificationDecisionSource,
   type RenterVerificationKind,
+  type RenterVerificationStatus,
   type RenterVerificationUpdate,
   emptyRenterVerification,
 } from "~~/lib/robomata/rentalRenters";
@@ -35,6 +37,20 @@ export class RentalRenterValidationError extends Error {
 let ensuredPostgresTables = false;
 let storeSingleton: RentalRenterStore | null = null;
 const fileStoreLocks = new Map<string, Promise<void>>();
+const RENTER_VERIFICATION_KINDS: RenterVerificationKind[] = ["identity", "driver_license", "sanctions"];
+const RENTER_VERIFICATION_STATUSES: RenterVerificationStatus[] = [
+  "not_started",
+  "pending",
+  "approved",
+  "manual_review",
+  "failed",
+  "expired",
+];
+const RENTER_VERIFICATION_DECISION_SOURCES: RenterVerificationDecisionSource[] = [
+  "provider",
+  "admin_override",
+  "system",
+];
 
 function hasPostgresConfig() {
   return Boolean(process.env.POSTGRES_URL);
@@ -155,6 +171,15 @@ function defaultVerificationActor(input: RenterVerificationUpdate): RenterVerifi
 function validateVerificationUpdate(input: RenterVerificationUpdate) {
   if (!input.kind) throw new RentalRenterValidationError("Verification update requires a check kind.");
   if (!input.status) throw new RentalRenterValidationError("Verification update requires a status.");
+  if (!RENTER_VERIFICATION_KINDS.includes(input.kind)) {
+    throw new RentalRenterValidationError("Verification update includes an unsupported check kind.");
+  }
+  if (!RENTER_VERIFICATION_STATUSES.includes(input.status)) {
+    throw new RentalRenterValidationError("Verification update includes an unsupported status.");
+  }
+  if (input.decisionSource && !RENTER_VERIFICATION_DECISION_SOURCES.includes(input.decisionSource)) {
+    throw new RentalRenterValidationError("Verification update includes an unsupported decision source.");
+  }
   if (input.decisionSource === "admin_override" && !input.reason?.trim()) {
     throw new RentalRenterValidationError("Manual verification overrides require a reason.");
   }

@@ -130,15 +130,43 @@ function configuredMaxBlockRange(): bigint {
   }
 }
 
+function configuredAllowedMetadataOrigins(): Set<string> {
+  return new Set(
+    (process.env.ROBOMATA_RENTAL_INVENTORY_METADATA_ALLOWED_ORIGINS ?? "")
+      .split(",")
+      .map(origin => origin.trim().replace(/\/+$/, ""))
+      .filter(Boolean),
+  );
+}
+
+function isLocalDevelopmentUrl(url: URL): boolean {
+  if (process.env.NODE_ENV === "production") return false;
+  return url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1";
+}
+
+function assertSafeMetadataUrl(url: URL, source: "direct" | "ipfs") {
+  if (source === "ipfs") return;
+  if (url.protocol === "http:" && isLocalDevelopmentUrl(url)) return;
+  if (url.protocol !== "https:") throw new Error(`Unsupported rental inventory metadata URL protocol: ${url.protocol}`);
+  if (configuredAllowedMetadataOrigins().has(url.origin)) return;
+  throw new Error(`Rental inventory metadata origin ${url.origin} is not allowlisted.`);
+}
+
 function checkpointId(chainId: number, registryAddress: `0x${string}`) {
   return `${chainId}:${registryAddress.toLowerCase()}:FacilityRegistry`;
 }
 
 function resolveMetadataUrl(uri: string): string {
-  if (uri.startsWith("https://") || uri.startsWith("http://")) return uri;
+  if (uri.startsWith("https://") || uri.startsWith("http://")) {
+    const url = new URL(uri);
+    assertSafeMetadataUrl(url, "direct");
+    return url.toString();
+  }
   if (uri.startsWith("ipfs://")) {
     const gateway = (process.env.ROBOMATA_RENTAL_INVENTORY_IPFS_GATEWAY || DEFAULT_IPFS_GATEWAY).replace(/\/+$/, "");
-    return `${gateway}/${uri.slice("ipfs://".length).replace(/^\/+/, "")}`;
+    const url = new URL(`${gateway}/${uri.slice("ipfs://".length).replace(/^\/+/, "")}`);
+    assertSafeMetadataUrl(url, "ipfs");
+    return url.toString();
   }
   throw new Error(`Unsupported rental inventory metadata URI: ${uri}`);
 }

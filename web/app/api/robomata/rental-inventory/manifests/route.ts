@@ -16,6 +16,40 @@ function requireRobomataMutation() {
   return NextResponse.json({ error: "Robomata rental inventory writes are not enabled." }, { status: 403 });
 }
 
+function configuredFacilityOwners(): Record<string, string> {
+  const raw = process.env.ROBOMATA_RENTAL_INVENTORY_FACILITY_OWNERS_JSON?.trim();
+  if (!raw) return {};
+  const parsed = JSON.parse(raw) as Record<string, unknown>;
+  return Object.fromEntries(
+    Object.entries(parsed).flatMap(([facilityAssetId, partnerAddress]) =>
+      typeof partnerAddress === "string" ? [[facilityAssetId, partnerAddress.toLowerCase()]] : [],
+    ),
+  );
+}
+
+function requireManifestFacilityAccess(manifest: FacilityInventoryManifest, partnerAddress: string) {
+  const normalizedPartner = partnerAddress.toLowerCase();
+  const configuredOwner = configuredFacilityOwners()[manifest.facilityAssetId]?.toLowerCase();
+  if (configuredOwner && configuredOwner !== normalizedPartner) {
+    return NextResponse.json(
+      { error: "Partner is not authorized for this rental facility manifest." },
+      { status: 403 },
+    );
+  }
+
+  const sourceId = manifest.source?.sourceId?.trim().toLowerCase();
+  if (sourceId && sourceId !== normalizedPartner) {
+    return NextResponse.json({ error: "Manifest sourceId must match the authorized partner." }, { status: 403 });
+  }
+  if (!configuredOwner && !sourceId && process.env.NODE_ENV === "production") {
+    return NextResponse.json(
+      { error: "Manifest facility ownership must be configured or source-attributed." },
+      { status: 403 },
+    );
+  }
+  return null;
+}
+
 export async function GET(request: NextRequest) {
   const featureError = requireRentalInventory();
   if (featureError) return featureError;
@@ -45,6 +79,8 @@ export async function POST(request: NextRequest) {
     if (!body.manifest || typeof body.manifest !== "object") {
       return NextResponse.json({ error: "manifest must be provided." }, { status: 400 });
     }
+    const accessError = requireManifestFacilityAccess(body.manifest, partnerAddress);
+    if (accessError) return accessError;
 
     const result = await getRentalInventoryStore().upsertManifest(body.manifest, {
       actor: partnerAddress,

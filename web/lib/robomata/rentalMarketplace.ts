@@ -96,7 +96,9 @@ function dateRangeTripDays(dateFrom: string | undefined, dateTo: string | undefi
   if (!dateFrom || !dateTo) return 1;
   const start = Date.parse(dateFrom);
   const end = Date.parse(dateTo);
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 1;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    throw new Error("dateFrom and dateTo must be valid dates with dateTo after dateFrom.");
+  }
   return Math.max(1, Math.ceil((end - start) / (24 * 60 * 60 * 1_000)));
 }
 

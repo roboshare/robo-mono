@@ -443,6 +443,11 @@ function vehicleWithControls(
   if (input.operationalStatus === "listed" && vehicle.hostSetup?.status !== "complete") {
     throw new RentalInventoryValidationError("Vehicle setup must be complete before the vehicle can be listed.");
   }
+  if (input.operationalStatus === "listed" && vehicle.operationalStatus === "retired") {
+    throw new RentalInventoryValidationError(
+      "Retired rental inventory cannot be listed without a new eligible manifest.",
+    );
+  }
 
   const current = vehicle.hostControls ?? emptyHostControls(vehicle, now);
   const hostControls: RentalVehicleHostControls = {

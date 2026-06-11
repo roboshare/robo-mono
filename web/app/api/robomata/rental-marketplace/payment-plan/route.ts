@@ -3,7 +3,6 @@ import { isRobomataRentalInventoryEnabled, isRobomataRentalPaymentsEnabled } fro
 import { rentalMarketplaceListingFromVehicle } from "~~/lib/robomata/rentalMarketplace";
 import {
   DEFAULT_RENTAL_DEPOSIT_POLICY,
-  type RentalDepositPolicy,
   type RentalPaymentFees,
   buildRentalCheckoutPaymentPlan,
   buildStripeAuthorizationRequest,
@@ -16,10 +15,10 @@ type PaymentPlanRequestBody = {
   bookingId?: string;
   dateFrom?: string;
   dateTo?: string;
-  depositPolicy?: RentalDepositPolicy;
-  fees?: RentalPaymentFees;
   platformVehicleId?: string;
 };
+
+const SERVER_CONTROLLED_RENTAL_FEES: RentalPaymentFees = {};
 
 function requireRentalPayments() {
   if (!isRobomataRentalInventoryEnabled()) {
@@ -58,8 +57,8 @@ export async function POST(request: NextRequest) {
 
     const paymentPlan = buildRentalCheckoutPaymentPlan({
       bookingId: body.bookingId,
-      depositPolicy: body.depositPolicy ?? DEFAULT_RENTAL_DEPOSIT_POLICY,
-      fees: body.fees,
+      depositPolicy: DEFAULT_RENTAL_DEPOSIT_POLICY,
+      fees: SERVER_CONTROLLED_RENTAL_FEES,
       listing,
       tripEstimate: listing.tripEstimate,
     });

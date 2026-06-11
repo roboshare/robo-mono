@@ -24,7 +24,6 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
   return NextResponse.json({
     checkoutEligibility: renterCheckoutEligibility(renter),
-    renter,
     verificationPolicy: RENTER_VERIFICATION_POLICY_V1,
   });
 }

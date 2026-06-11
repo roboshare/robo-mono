@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isRobomataRentalInventoryEnabled, isRobomataWorkflowMutationEnabled } from "~~/lib/featureFlags";
 import { getRentalInventoryStore } from "~~/lib/robomata/server/rentalInventoryStore";
+import { requirePartnerAddress } from "~~/lib/robomata/server/submissionAccess";
 
 export const runtime = "nodejs";
 
@@ -29,6 +30,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (featureError) return featureError;
     const mutationError = requireMutation();
     if (mutationError) return mutationError;
+
+    const partnerAddress = await requirePartnerAddress(request);
+    if (partnerAddress instanceof NextResponse) return partnerAddress;
 
     const { platformVehicleId } = await context.params;
     const body = (await request.json()) as SafetyTakedownBody;
