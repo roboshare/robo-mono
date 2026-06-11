@@ -214,6 +214,10 @@ function validateManifest(manifest: FacilityInventoryManifest) {
   }
 }
 
+function validateIngestionInput(input: RentalInventoryIngestionInput | undefined) {
+  assertNoProhibitedRentalPersistenceFields(input, "rental inventory ingestion input");
+}
+
 function buildManifestRef(manifest: FacilityInventoryManifest): FacilityInventoryManifestRef {
   const root = buildFacilityInventoryManifestRootPayload(manifest);
   return {
@@ -582,6 +586,7 @@ function createFileStore(): RentalInventoryStore {
       return fileStore.vehicles.filter(vehicle => vehicleMatchesInput(vehicle, input));
     },
     async recordIngestionRun(ingestionRun) {
+      assertNoProhibitedRentalPersistenceFields(ingestionRun, "rental inventory ingestion run");
       return withFileStoreWriteLock(filePath, async () => {
         const fileStore = await readFileStore(filePath);
         fileStore.ingestionRuns = [ingestionRun, ...fileStore.ingestionRuns.filter(run => run.id !== ingestionRun.id)];
@@ -635,6 +640,7 @@ function createFileStore(): RentalInventoryStore {
     },
     async upsertManifest(manifest, input) {
       return withFileStoreWriteLock(filePath, async () => {
+        validateIngestionInput(input);
         const startedAt = new Date().toISOString();
         const fileStore = await readFileStore(filePath);
         try {
@@ -790,6 +796,7 @@ function createPostgresStore(): RentalInventoryStore {
     },
     async recordIngestionRun(ingestionRun) {
       await ensurePostgresTables();
+      assertNoProhibitedRentalPersistenceFields(ingestionRun, "rental inventory ingestion run");
       await sql`
         INSERT INTO robomata_rental_inventory_ingestion_runs (
           id, facility_asset_id, manifest_id, manifest_digest, status, trigger, payload, started_at, completed_at
@@ -881,6 +888,7 @@ function createPostgresStore(): RentalInventoryStore {
     },
     async upsertManifest(manifest, input) {
       await ensurePostgresTables();
+      validateIngestionInput(input);
       const startedAt = new Date().toISOString();
       try {
         validateManifest(manifest);
