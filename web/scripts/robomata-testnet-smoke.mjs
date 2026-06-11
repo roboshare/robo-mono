@@ -236,8 +236,8 @@ async function verifyPublicRoutes() {
   if (!robomataHtml.includes("Make fleet receivables financeable before the lender asks twice.")) {
     throw new Error("Expected /robomata to render the public product headline.");
   }
-  if (!robomataHtml.includes("/partner/submissions")) {
-    throw new Error("Expected /robomata to include the partner submissions CTA.");
+  if (!robomataHtml.includes("/operator/submissions")) {
+    throw new Error("Expected /robomata to include the operator submissions CTA.");
   }
   if (
     robomataHtml.includes("Keep Markets Live") ||
@@ -250,9 +250,9 @@ async function verifyPublicRoutes() {
     throw new Error("Expected /robomata not to embed private submission API references.");
   }
 
-  const submissionsHtml = await fetchText(`${baseUrl}/partner/submissions`);
+  const submissionsHtml = await fetchText(`${baseUrl}/operator/submissions`);
   if (!submissionsHtml.includes("<html") || !submissionsHtml.includes("__next")) {
-    throw new Error("Expected /partner/submissions to return the operator submissions app shell.");
+    throw new Error("Expected /operator/submissions to return the operator submissions app shell.");
   }
 
   return {
