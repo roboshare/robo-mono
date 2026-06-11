@@ -343,6 +343,35 @@ Verify:
   `invalid`, `superseded`, and `refresh_available`, plus facility statuses
   `packet_fresh`, `packet_stale`, and `needs_review`
 
+### 8b. Supervised Agent Lifecycle Preview
+
+Status: preview behind `ROBOMATA_AGENTS_ENABLED`,
+`NEXT_PUBLIC_ROBOMATA_AGENTS_ENABLED`, and
+`ROBOMATA_AGENT_MUTATIONS_ENABLED`.
+
+Tracking issue: `ROB-220`.
+
+Verify:
+
+- flag-off local smoke confirms agent policy, run, and action routes return
+  `404`
+- flag-off local smoke confirms the operator workspace does not render the
+  `Agent supervision` panel
+- default policies start paused, and manual run attempts fail with `409` until
+  the operator activates the policy
+- activating a policy allows a manual run against
+  `sub_seed_expired_observation`
+- the seeded expired-observation case proposes `evidence_review`,
+  `packet_refresh`, and `sui_root_review`
+- wrong-partner access is hidden for policy, run, and action decision routes
+- `approved`, `rejected`, `completed`, and `skipped` decisions persist in the
+  local agent store after reloading the run list
+- pausing the policy returns the submission to the expected `409` run-conflict
+  state
+- local smoke uses `ROBOMATA_AGENTS_FILE` as the ignored JSON fallback; shared
+  preview, release candidate, and production environments must use Postgres
+  when the agent flags are enabled
+
 ### 9. Public `/robomata` Product Surface
 
 Status: passed.
@@ -514,7 +543,8 @@ Result:
   `/lender/packet/[token]`, and the protected share-link API routes.
 - `yarn robomata:local-smoke` passed using an isolated local Next runtime,
   temporary file-backed submission store, temporary file-backed share-link
-  store, mock Walrus evidence, and disabled Sui commit.
+  store, temporary file-backed monitoring and agent stores, mock Walrus
+  evidence, and disabled Sui commit.
 
 Non-secret local smoke result:
 
@@ -524,6 +554,30 @@ Non-secret local smoke result:
   "publicRoutes": {
     "publicRobomataRoute": "passed",
     "partnerSubmissionsRoute": "passed"
+  },
+  "agentSupervision": {
+    "flagOff": {
+      "apiClosed": true,
+      "uiHidden": true
+    },
+    "durableLocalStore": {
+      "policyDefaultStatus": "paused",
+      "policyFinalStatus": "paused",
+      "pausedRunConflict": true,
+      "actionCount": 3,
+      "actionTypes": [
+        "evidence_review",
+        "packet_refresh",
+        "sui_root_review"
+      ],
+      "persistedActionStatuses": {
+        "approvedThenCompleted": "completed",
+        "rejected": "rejected",
+        "skipped": "skipped",
+        "approvedIntermediate": "approved"
+      },
+      "unauthorizedPartnerHidden": true
+    }
   },
   "submissionId": "sub_28b0e81f-f592-42bf-b295-bf126cc66bd7",
   "storageBackend": "walrus-mock",
@@ -558,6 +612,10 @@ Covered behavior:
 - Listing share links shows access count and last-access metadata.
 - Revocation persists `revoked` status and the API rejects the revoked link
   with `410`.
+- Agent routes stay closed and the operator panel stays hidden while agent
+  flags are off.
+- The local JSON-backed agent store persists policy activation, manual run
+  output, action decisions, and the final paused-policy conflict state.
 - A short-lived link derives `expired` status and the API rejects the expired
   link with `410`.
 - Walrus, Seal, Sui, digest, and transaction metadata remain outside the public
