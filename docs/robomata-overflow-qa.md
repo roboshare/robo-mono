@@ -280,7 +280,10 @@ Verify:
   - edit allowed imported row fields
   - recompute submission
 - deterministic review output explains next steps
-- LLM/agent output is optional and subordinate to rules-based credit logic
+- deterministic LLM diligence memo output is optional and subordinate to
+  rules-based credit logic
+- supervised agent actions are separate policy/run/action records; they can
+  propose operator work but do not replace rules-based credit calculation
 
 ### 7. Generate Lender Packet
 
@@ -394,6 +397,29 @@ Verify:
   `autoApproveActionTypes` configured
 - deployment scheduling remains caller-owned until a durable worker or
   control-plane service is justified
+
+### 8d. Agent-First Trust Boundary
+
+Status: documented for the current supervised tranche.
+
+Tracking issue: `ROB-222`.
+
+Verify:
+
+- current agents are described as monitors, evaluators, action proposers, and
+  audit trail producers
+- deterministic LLM diligence memo output remains separate from supervised
+  policy/run/action state
+- operators still approve, reject, complete, or skip proposed actions
+- scheduled ticks do not approve their own work, mutate submissions, or execute
+  Sui/EVM writes
+- Sui commits remain operator-owned sponsored browser flow when configured, with
+  the direct server-signed path treated as legacy/test-only
+- EVM tokenization remains an explicit operator-signed `FacilityRegistry`
+  transaction
+- autonomous execution is deferred to the follow-on Linear project
+  `Robomata Agent-First Operating System`
+- default-off flags and known limitations remain explicit before release
 
 ### 9. Public `/robomata` Product Surface
 
@@ -715,3 +741,17 @@ Reason:
 - release notes for this tranche are captured in
   `docs/releases/robomata-overflow-v0.1.7.md`
 - known limitations remain explicit and do not block the Overflow MVP release
+
+Agent-first release readiness notes:
+
+- agent policy, run, action, event, mutation, UI, refresh, and scheduled tick
+  paths remain default-off behind explicit environment flags
+- local JSON stores are development-only; shared previews, release candidates,
+  and production environments should use Postgres when agent flags are enabled
+- the current implementation is supervised: agents monitor, evaluate, propose
+  actions, and write audit records, while operators approve, reject, complete,
+  or skip
+- Sui and EVM execution remains outside agent autonomy; those writes are
+  operator-signed product paths or explicitly configured legacy/test paths
+- broader autonomous execution is a follow-on project, not a release gate for
+  the current live monitoring tranche

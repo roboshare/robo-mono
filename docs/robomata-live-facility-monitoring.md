@@ -145,15 +145,39 @@ Live facility monitoring is additive and default-off:
 - `ROBOMATA_AGENTS_FILE=/local/path/agents.json` is an optional local-only JSON
   fallback when `POSTGRES_URL` is not configured.
 
-When these flags are unset, `/robomata`, `/partner/submissions`, Robomata
+When these flags are unset, `/robomata`, `/operator/submissions`, Robomata
 submission APIs, protected packet sharing, Walrus/Seal storage, and Sui evidence
 commits must behave as they do today.
 
-The first agent-first slice is intentionally supervised. Agents can evaluate the
-facility projection, create immutable run records, and propose actions such as
-evidence review, packet refresh, borrowing-base recompute, Sui-root review, or
-tokenization readiness. Operators still approve, reject, or complete actions;
-the agent layer does not silently mutate submissions or execute Sui/EVM writes.
+## Supervised Agent Trust Boundary
+
+The first agent-first slice is intentionally supervised. The current agent role
+is to monitor the facility projection, evaluate freshness and readiness signals,
+propose operator-visible actions, and produce an audit trail through policy,
+run, action, and event records.
+
+Supervised agent actions are separate from the deterministic LLM diligence memo
+used in the borrowing-base workflow. The diligence memo can summarize the
+rules-based credit package, but it is not an agent policy, not an executable
+action queue, and not the source of credit truth.
+
+Operators remain the execution boundary. They activate or pause policy, trigger
+manual checks, and approve, reject, complete, or skip proposed actions. Scheduled
+ticks can create proposed actions, but they do not approve their own work, mutate
+submissions, or execute Sui/EVM writes.
+
+Sui and EVM writes remain explicit operator-signed product paths or separately
+configured legacy/test paths:
+
+- Sui evidence commits should use the operator-owned sponsored browser flow when
+  configured; the direct server-signed path is legacy/test-only.
+- EVM tokenization requires the operator to explicitly sign the configured
+  `FacilityRegistry` transaction.
+- Agent runs can recommend Sui-root review or tokenization readiness, but the
+  current monitoring tranche does not let agents submit those writes.
+
+Broader autonomous execution belongs to the follow-on Linear project
+`Robomata Agent-First Operating System`, not this live monitoring tranche.
 
 ## Scheduled Agent Tick Route
 
