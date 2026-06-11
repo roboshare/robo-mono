@@ -236,8 +236,8 @@ async function verifyPublicRoutes() {
   if (!robomataHtml.includes("Make fleet receivables financeable before the lender asks twice.")) {
     throw new Error("Expected /robomata to render the public product headline.");
   }
-  if (!robomataHtml.includes("/partner/submissions")) {
-    throw new Error("Expected /robomata to include the partner submissions CTA.");
+  if (!robomataHtml.includes("/operator/submissions")) {
+    throw new Error("Expected /robomata to include the operator submissions CTA.");
   }
   if (
     robomataHtml.includes("Keep Markets Live") ||
@@ -250,9 +250,9 @@ async function verifyPublicRoutes() {
     throw new Error("Expected /robomata not to embed private submission API references.");
   }
 
-  const submissionsHtml = await fetchText(`${baseUrl}/partner/submissions`);
+  const submissionsHtml = await fetchText(`${baseUrl}/operator/submissions`);
   if (!submissionsHtml.includes("<html") || !submissionsHtml.includes("__next")) {
-    throw new Error("Expected /partner/submissions to return the operator submissions app shell.");
+    throw new Error("Expected /operator/submissions to return the operator submissions app shell.");
   }
 
   return {
@@ -387,6 +387,101 @@ async function getFacilityMonitoringSuiRoots({ authHeaders, submissionId }) {
   });
 }
 
+async function getAgentPolicy({ authHeaders, submissionId }) {
+  const requestPath = `/api/robomata/submissions/${submissionId}/agent-policy`;
+  return fetchJson(`${baseUrl}${requestPath}`, {
+    method: "GET",
+    headers: await authHeaders("GET", requestPath),
+  });
+}
+
+async function updateAgentPolicy({ authHeaders, submissionId, status }) {
+  const requestPath = `/api/robomata/submissions/${submissionId}/agent-policy`;
+  return fetchJson(`${baseUrl}${requestPath}`, {
+    method: "PATCH",
+    headers: await authHeaders("PATCH", requestPath, { "content-type": "application/json" }),
+    body: JSON.stringify({ status }),
+  });
+}
+
+async function getAgentRuns({ authHeaders, submissionId }) {
+  const requestPath = `/api/robomata/submissions/${submissionId}/agent-runs`;
+  return fetchJson(`${baseUrl}${requestPath}`, {
+    method: "GET",
+    headers: await authHeaders("GET", requestPath),
+  });
+}
+
+async function runAgent({ authHeaders, submissionId, body = {} }) {
+  const requestPath = `/api/robomata/submissions/${submissionId}/agent-runs`;
+  return fetchJson(`${baseUrl}${requestPath}`, {
+    method: "POST",
+    headers: await authHeaders("POST", requestPath, { "content-type": "application/json" }),
+    body: JSON.stringify(body),
+  });
+}
+
+async function updateAgentAction({ actionId, authHeaders, decisionReason, status, submissionId }) {
+  const requestPath = `/api/robomata/submissions/${submissionId}/agent-actions/${actionId}`;
+  return fetchJson(`${baseUrl}${requestPath}`, {
+    method: "PATCH",
+    headers: await authHeaders("PATCH", requestPath, { "content-type": "application/json" }),
+    body: JSON.stringify({ decisionReason, status }),
+  });
+}
+
+async function verifyAgentSupervisionDisabled({ authHeaders, submissionId }) {
+  const policyPath = `/api/robomata/submissions/${submissionId}/agent-policy`;
+  await fetchJsonExpectStatus(
+    `${baseUrl}${policyPath}`,
+    {
+      method: "GET",
+      headers: await authHeaders("GET", policyPath),
+    },
+    404,
+  );
+
+  const runsPath = `/api/robomata/submissions/${submissionId}/agent-runs`;
+  await fetchJsonExpectStatus(
+    `${baseUrl}${runsPath}`,
+    {
+      method: "GET",
+      headers: await authHeaders("GET", runsPath),
+    },
+    404,
+  );
+  await fetchJsonExpectStatus(
+    `${baseUrl}${runsPath}`,
+    {
+      method: "POST",
+      headers: await authHeaders("POST", runsPath, { "content-type": "application/json" }),
+      body: JSON.stringify({}),
+    },
+    404,
+  );
+
+  const actionPath = `/api/robomata/submissions/${submissionId}/agent-actions/agent_action_smoke_missing`;
+  await fetchJsonExpectStatus(
+    `${baseUrl}${actionPath}`,
+    {
+      method: "PATCH",
+      headers: await authHeaders("PATCH", actionPath, { "content-type": "application/json" }),
+      body: JSON.stringify({ status: "skipped" }),
+    },
+    404,
+  );
+
+  const workspaceHtml = await fetchText(`${baseUrl}/partner/submissions/${submissionId}`);
+  if (workspaceHtml.includes("Agent supervision") || workspaceHtml.includes("Run check")) {
+    throw new Error("Expected agent supervision UI to stay hidden while NEXT_PUBLIC_ROBOMATA_AGENTS_ENABLED is off.");
+  }
+
+  return {
+    apiClosed: true,
+    uiHidden: true,
+  };
+}
+
 async function verifyFacilityMonitoringDisabled({ authHeaders, submissionId }) {
   const requestPath = `/api/robomata/submissions/${submissionId}/facility-monitoring`;
   await fetchJsonExpectStatus(
@@ -508,6 +603,154 @@ async function verifyFacilityMonitoringEnabled({
     suiRootStatus: monitoring.suiRootStatus,
     freshnessStatus: monitoring.freshnessStatus,
     facilityStatus: monitoring.facility.status,
+    unauthorizedPartnerHidden: true,
+  };
+}
+
+async function verifyAgentSupervisionLifecycle({ authHeaders, otherAuthHeaders, submissionId }) {
+  const expectedActionTypes = ["evidence_review", "packet_refresh", "sui_root_review"];
+  const policyPayload = await getAgentPolicy({ authHeaders, submissionId });
+  if (policyPayload.policy?.status !== "paused") {
+    throw new Error(`Expected default agent policy to be paused, got ${policyPayload.policy?.status}.`);
+  }
+
+  const runsPath = `/api/robomata/submissions/${submissionId}/agent-runs`;
+  await fetchJsonExpectStatus(
+    `${baseUrl}${runsPath}`,
+    {
+      method: "POST",
+      headers: await authHeaders("POST", runsPath, { "content-type": "application/json" }),
+      body: JSON.stringify({}),
+    },
+    409,
+  );
+
+  const policyPath = `/api/robomata/submissions/${submissionId}/agent-policy`;
+  await fetchJsonExpectStatus(
+    `${baseUrl}${policyPath}`,
+    {
+      method: "GET",
+      headers: await otherAuthHeaders("GET", policyPath),
+    },
+    404,
+  );
+  await fetchJsonExpectStatus(
+    `${baseUrl}${runsPath}`,
+    {
+      method: "GET",
+      headers: await otherAuthHeaders("GET", runsPath),
+    },
+    404,
+  );
+
+  const activePolicyPayload = await updateAgentPolicy({ authHeaders, submissionId, status: "active" });
+  if (activePolicyPayload.policy?.status !== "active") {
+    throw new Error(`Expected activated agent policy, got ${activePolicyPayload.policy?.status}.`);
+  }
+
+  const runPayload = await runAgent({ authHeaders, submissionId });
+  if (runPayload.run?.status !== "completed") {
+    throw new Error(`Expected completed agent run, got ${runPayload.run?.status}.`);
+  }
+  if (!Array.isArray(runPayload.actions) || runPayload.actions.length < expectedActionTypes.length) {
+    throw new Error(`Expected at least ${expectedActionTypes.length} proposed agent actions.`);
+  }
+
+  const actionTypes = runPayload.actions.map(action => action.type).sort();
+  for (const expectedType of expectedActionTypes) {
+    if (!actionTypes.includes(expectedType)) {
+      throw new Error(`Expected agent run to propose ${expectedType}; got ${actionTypes.join(",")}.`);
+    }
+  }
+
+  const [approveTarget, rejectTarget, skipTarget] = expectedActionTypes.map(expectedType => {
+    const action = runPayload.actions.find(candidate => candidate.type === expectedType);
+    if (!action) throw new Error(`Missing ${expectedType} action in agent run.`);
+    return action;
+  });
+
+  const approvedPayload = await updateAgentAction({
+    actionId: approveTarget.id,
+    authHeaders,
+    decisionReason: "Local smoke approval before completion.",
+    status: "approved",
+    submissionId,
+  });
+  const rejectedPayload = await updateAgentAction({
+    actionId: rejectTarget.id,
+    authHeaders,
+    decisionReason: "Local smoke rejection path.",
+    status: "rejected",
+    submissionId,
+  });
+  const skippedPayload = await updateAgentAction({
+    actionId: skipTarget.id,
+    authHeaders,
+    decisionReason: "Local smoke skip path.",
+    status: "skipped",
+    submissionId,
+  });
+  const completedPayload = await updateAgentAction({
+    actionId: approveTarget.id,
+    authHeaders,
+    decisionReason: "Local smoke completion path.",
+    status: "completed",
+    submissionId,
+  });
+
+  const actionPath = `/api/robomata/submissions/${submissionId}/agent-actions/${approveTarget.id}`;
+  await fetchJsonExpectStatus(
+    `${baseUrl}${actionPath}`,
+    {
+      method: "PATCH",
+      headers: await otherAuthHeaders("PATCH", actionPath, { "content-type": "application/json" }),
+      body: JSON.stringify({ status: "skipped" }),
+    },
+    404,
+  );
+
+  const persistedPayload = await getAgentRuns({ authHeaders, submissionId });
+  const persistedStatuses = Object.fromEntries(
+    persistedPayload.actions.map(action => [action.id, action.status]),
+  );
+  const expectedStatuses = {
+    [approveTarget.id]: "completed",
+    [rejectTarget.id]: "rejected",
+    [skipTarget.id]: "skipped",
+  };
+  for (const [actionId, expectedStatus] of Object.entries(expectedStatuses)) {
+    if (persistedStatuses[actionId] !== expectedStatus) {
+      throw new Error(`Expected persisted agent action ${actionId} to be ${expectedStatus}.`);
+    }
+  }
+
+  const pausedPolicyPayload = await updateAgentPolicy({ authHeaders, submissionId, status: "paused" });
+  if (pausedPolicyPayload.policy?.status !== "paused") {
+    throw new Error(`Expected paused agent policy, got ${pausedPolicyPayload.policy?.status}.`);
+  }
+  await fetchJsonExpectStatus(
+    `${baseUrl}${runsPath}`,
+    {
+      method: "POST",
+      headers: await authHeaders("POST", runsPath, { "content-type": "application/json" }),
+      body: JSON.stringify({}),
+    },
+    409,
+  );
+
+  return {
+    policyDefaultStatus: policyPayload.policy.status,
+    policyFinalStatus: pausedPolicyPayload.policy.status,
+    pausedRunConflict: true,
+    runId: runPayload.run.id,
+    actionCount: runPayload.actions.length,
+    actionTypes,
+    persistedActionStatuses: {
+      approvedThenCompleted: completedPayload.action.status,
+      rejected: rejectedPayload.action.status,
+      skipped: skippedPayload.action.status,
+      approvedIntermediate: approvedPayload.action.status,
+    },
     unauthorizedPartnerHidden: true,
   };
 }
@@ -955,6 +1198,7 @@ async function main() {
   const storeFile = path.join(tempDir, "submissions.json");
   const shareLinksFile = path.join(tempDir, "share-links.json");
   const monitoringFile = path.join(tempDir, "facility-monitoring.json");
+  const agentsFile = path.join(tempDir, "agents.json");
   await writeFile(storeFile, "", "utf8");
 
   const baseEnv = {
@@ -970,9 +1214,15 @@ async function main() {
     ROBOMATA_SUBMISSIONS_FILE: storeFile,
     ROBOMATA_SHARE_LINKS_FILE: shareLinksFile,
     ROBOMATA_FACILITY_MONITORING_FILE: monitoringFile,
+    ROBOMATA_AGENTS_FILE: agentsFile,
     ROBOMATA_FACILITY_MONITORING_ENABLED: "",
     NEXT_PUBLIC_ROBOMATA_FACILITY_MONITORING_ENABLED: "",
     ROBOMATA_FACILITY_MONITORING_REFRESH_ENABLED: "",
+    ROBOMATA_AGENTS_ENABLED: "",
+    NEXT_PUBLIC_ROBOMATA_AGENTS_ENABLED: "",
+    ROBOMATA_AGENT_MUTATIONS_ENABLED: "",
+    ROBOMATA_AGENT_REFRESH_ENABLED: "",
+    ROBOMATA_AGENT_TICK_SECRET: "local-smoke-agent-secret",
     ROBOMATA_LENDER_MONITORING_SHARE_ENABLED: "",
     NEXT_PUBLIC_ROBOMATA_LENDER_MONITORING_SHARE_ENABLED: "",
     ROBOMATA_SHARE_LINKS_ENABLED: "true",
@@ -1001,14 +1251,18 @@ async function main() {
   }
   const result = await runSubmissionFlow({ authHeaders, submissionId, requireTestnetEvidence: !isLocalSmoke });
   const monitoringFlagOff = await verifyFacilityMonitoringDisabled({ authHeaders, submissionId });
+  const agentFlagOff = await verifyAgentSupervisionDisabled({ authHeaders, submissionId });
 
   await stopServer();
   await startServer({
     ...baseEnv,
     ROBOMATA_FACILITY_MONITORING_ENABLED: "true",
     ROBOMATA_LENDER_MONITORING_SHARE_ENABLED: "true",
+    ROBOMATA_AGENTS_ENABLED: "true",
+    ROBOMATA_AGENT_MUTATIONS_ENABLED: "true",
     NEXT_PUBLIC_ROBOMATA_FACILITY_MONITORING_ENABLED: "true",
     NEXT_PUBLIC_ROBOMATA_LENDER_MONITORING_SHARE_ENABLED: "true",
+    NEXT_PUBLIC_ROBOMATA_AGENTS_ENABLED: "true",
   });
   const monitoring = await verifyFacilityMonitoringEnabled({ authHeaders, otherAuthHeaders, submissionId });
   let durableMonitoring;
@@ -1057,7 +1311,11 @@ async function main() {
       storeFile,
     });
     durableMonitoring.seededFreshnessCases = [];
+    let expiredObservationSubmissionId;
     for (const seededCase of seededMonitoringCases) {
+      if (seededCase.submissionId === "sub_seed_expired_observation") {
+        expiredObservationSubmissionId = seededCase.submissionId;
+      }
       durableMonitoring.seededFreshnessCases.push(
         await verifyFacilityMonitoringEnabled({
           authHeaders,
@@ -1070,6 +1328,14 @@ async function main() {
         }),
       );
     }
+    if (!expiredObservationSubmissionId) {
+      throw new Error("Expected local smoke freshness fixtures to include sub_seed_expired_observation.");
+    }
+    durableMonitoring.agentSupervision = await verifyAgentSupervisionLifecycle({
+      authHeaders,
+      otherAuthHeaders,
+      submissionId: expiredObservationSubmissionId,
+    });
   }
 
   console.log(
@@ -1081,6 +1347,10 @@ async function main() {
           flagOff: monitoringFlagOff,
           ...monitoring,
           ...(durableMonitoring ? { durableLocalStore: durableMonitoring } : {}),
+        },
+        agentSupervision: {
+          flagOff: agentFlagOff,
+          ...(durableMonitoring?.agentSupervision ? { durableLocalStore: durableMonitoring.agentSupervision } : {}),
         },
         ...result,
         ...(isLocalSmoke ? {} : { envPath }),
