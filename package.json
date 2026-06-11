@@ -55,6 +55,7 @@
     "robomata:local-smoke": "yarn workspace web robomata:local-smoke",
     "robomata:rental-marketplace-ui-smoke": "yarn workspace web robomata:rental-marketplace-ui-smoke",
     "robomata:rental-persistence:bootstrap": "yarn workspace web robomata:rental-persistence:bootstrap",
+    "robomata:rental-verification-providers-smoke": "yarn workspace web robomata:rental-verification-providers-smoke",
     "robomata:tokenization-api-test": "yarn workspace web robomata:tokenization-api-test",
     "robomata:testnet-smoke": "yarn workspace web robomata:testnet-smoke",
     "web:build": "yarn workspace web build",
