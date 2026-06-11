@@ -164,6 +164,7 @@ export function buildProtocolEarningsDistributionCall(input: {
   const assetId = protocolAssetId(input.postingAssetId);
   if (assetId === null) return null;
   const totalRevenue = centsToPaymentTokenBaseUnits(input.amountCents);
+  if (totalRevenue === 0n) return null;
   const tryAutoRelease = input.tryAutoRelease ?? false;
   return {
     contractName: "EarningsManager",

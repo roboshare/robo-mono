@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isRobomataRentalRevenuePostingEnabled, isRobomataWorkflowMutationEnabled } from "~~/lib/featureFlags";
+import { ROBOMATA_AUTH_HEADERS } from "~~/lib/robomata/auth";
 import { getRentalRevenueStore } from "~~/lib/robomata/server/rentalRevenueStore";
 import { requireRentalRevenueBatchAccess } from "~~/lib/robomata/server/rentalRouteAccess";
 import { requirePartnerAddress } from "~~/lib/robomata/server/submissionAccess";
@@ -43,6 +44,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const chainId = body.chainId;
     if (typeof chainId !== "number" || !Number.isInteger(chainId) || chainId <= 0) {
       return NextResponse.json({ error: "chainId must be provided." }, { status: 400 });
+    }
+    const authenticatedChainId = Number.parseInt(request.headers.get(ROBOMATA_AUTH_HEADERS.chainId) ?? "", 10);
+    if (!Number.isInteger(authenticatedChainId) || authenticatedChainId <= 0 || authenticatedChainId !== chainId) {
+      return NextResponse.json({ error: "chainId must match the authenticated request chain." }, { status: 400 });
     }
     if (body.confirmationMode !== "operator_confirmed" && body.confirmationMode !== "submitted") {
       return NextResponse.json({ error: "confirmationMode must be operator_confirmed or submitted." }, { status: 400 });

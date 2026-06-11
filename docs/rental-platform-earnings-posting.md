@@ -55,13 +55,15 @@ The request is the handoff to the protocol execution layer. `mark-posted` record
 When `postingAssetId` is a uint256-compatible protocol asset ID, the request also includes an executable
 `protocolCall` payload for `EarningsManager.distributeEarnings(uint256,uint256,bool)`, which is the current deployed
 execution path for posting earnings into Treasury accounting. Amounts are converted from USD cents into 6-decimal
-payment-token base units.
+payment-token base units. Zero-net posting batches are metadata-only and do not emit executable calldata because the
+protocol call would revert with zero revenue.
 
 The platform does not submit protocol transactions implicitly. The signer boundary is:
 
 - the posting API prepares the batch, attestation, idempotency key, and calldata
 - an authorized operator or execution service submits the protocol transaction using the intended wallet policy
 - `mark-posted` requires `protocolTxHash`, `chainId`, and `confirmationMode`
+- `chainId` must match the authenticated `x-robomata-chain-id` request header used for partner authorization
 - `confirmationMode=operator_confirmed` is used when a human/operator confirms an externally submitted transaction
 - `confirmationMode=submitted` is used only when an approved executor submits and observes a successful transaction
 - failed or reverted submissions must use `mark-failed` with an actionable `errorMessage`; the batch remains unposted

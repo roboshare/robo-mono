@@ -233,6 +233,17 @@ async function main() {
     expectedStatus: 400,
     body: { protocolTxHash: `0x${"1".repeat(64)}` },
   });
+  await requestJson({
+    authHeaders,
+    method: "POST",
+    requestPath: `${postingPath}/${batchId}/mark-posted`,
+    expectedStatus: 400,
+    body: {
+      chainId: 1,
+      confirmationMode: "operator_confirmed",
+      protocolTxHash: `0x${"1".repeat(64)}`,
+    },
+  });
   const postedPayload = await requestJson({
     authHeaders,
     method: "POST",
@@ -302,6 +313,38 @@ async function main() {
   if (vehiclePayload.protocolRequest?.protocolCall?.args.assetId !== "202") {
     throw new Error(`Expected executable vehicle protocol call, got ${JSON.stringify(vehiclePayload)}`);
   }
+
+  const zeroRevenuePayload = await requestJson({
+    authHeaders,
+    method: "POST",
+    requestPath: postingPath,
+    expectedStatus: 201,
+    body: {
+      entries: [
+        ledgerEntry({
+          amountCents: 0,
+          facilityAssetId: "101",
+          id: "rle_executor_zero_revenue",
+          platformVehicleId: "platform-executor-3",
+          postingAssetId: "303",
+          postingAssetKind: "vehicle",
+          vehicleAssetId: "303",
+        }),
+      ],
+      periodEnd: nowIso(1),
+      periodStart: nowIso(-1),
+      target: {
+        facilityAssetId: "101",
+        postingAssetId: "303",
+        postingAssetKind: "vehicle",
+        vehicleAssetId: "303",
+      },
+    },
+  });
+  if (zeroRevenuePayload.protocolRequest?.protocolCall) {
+    throw new Error(`Expected zero-revenue batch to be metadata-only, got ${JSON.stringify(zeroRevenuePayload)}`);
+  }
+
   const failedPayload = await requestJson({
     authHeaders,
     method: "POST",
