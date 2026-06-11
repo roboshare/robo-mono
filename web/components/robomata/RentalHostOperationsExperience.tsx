@@ -31,6 +31,7 @@ const statusOptions: Array<Exclude<OperationalStatusSelection, "keep_current">> 
 ];
 
 const conditionOptions: RentalVehicleConditionRating[] = ["clean", "minor_wear", "damage_reported", "unsafe"];
+const checkInConditionOptions = conditionOptions.filter(option => option !== "unsafe");
 
 function currencyFromCents(value?: number) {
   return value ? (value / 100).toFixed(2) : "";
@@ -238,6 +239,12 @@ export const RentalHostOperationsExperience = () => {
     );
   }, [selectedVehicle]);
 
+  useEffect(() => {
+    if (tripAction === "check-in" && condition === "unsafe") {
+      setCondition("damage_reported");
+    }
+  }, [condition, tripAction]);
+
   async function saveSetup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedVehicle) return;
@@ -248,6 +255,7 @@ export const RentalHostOperationsExperience = () => {
         selectedVehicle.hostSetup?.photoUris && selectedVehicle.hostSetup.photoUris.length > 0
           ? selectedVehicle.hostSetup.photoUris
           : (selectedVehicle.display.imageUris ?? []);
+      const existingPickupDropoff = selectedVehicle.hostSetup?.pickupDropoff;
       const primaryPhotoUri = setupPhotoUri.trim();
       const setup: RentalVehicleHostSetupUpdate = {
         photoUris: primaryPhotoUri
@@ -255,11 +263,12 @@ export const RentalHostOperationsExperience = () => {
           : existingPhotoUris,
         publicDescription: publicDescription.trim(),
         pickupDropoff: {
+          ...existingPickupDropoff,
           addressLabel: pickupAddress.trim(),
           city: pickupCity.trim() || undefined,
           region: pickupRegion.trim() || undefined,
           country: pickupCountry.trim() || undefined,
-          deliveryAvailable: false,
+          deliveryAvailable: existingPickupDropoff?.deliveryAvailable ?? false,
         },
         pricing: {
           currency: "USD",
@@ -297,6 +306,8 @@ export const RentalHostOperationsExperience = () => {
     setIsSaving(true);
     setError(null);
     try {
+      const existingControlsAvailability =
+        selectedVehicle.hostControls?.availability ?? selectedVehicle.hostSetup?.availability ?? {};
       const controls: RentalVehicleHostControlsUpdate = {
         pricing: {
           currency: "USD",
@@ -304,7 +315,7 @@ export const RentalHostOperationsExperience = () => {
           minimumTripDays: numberFromInput(controlMinimumTripDays),
         },
         availability: {
-          ...(selectedVehicle.hostSetup?.availability ?? {}),
+          ...existingControlsAvailability,
           timezone: timezone.trim(),
           instantBookEnabled: instantBook,
         },
@@ -379,6 +390,10 @@ export const RentalHostOperationsExperience = () => {
     event.preventDefault();
     if (!bookingId.trim()) {
       setError("Booking ID is required.");
+      return;
+    }
+    if (tripAction === "check-in" && condition === "unsafe") {
+      setError("Unsafe check-ins must be blocked before handoff. Suspend the vehicle or record an incident instead.");
       return;
     }
     setIsSaving(true);
@@ -854,7 +869,7 @@ export const RentalHostOperationsExperience = () => {
                           value={condition}
                           onChange={event => setCondition(event.target.value as RentalVehicleConditionRating)}
                         >
-                          {conditionOptions.map(option => (
+                          {(tripAction === "check-in" ? checkInConditionOptions : conditionOptions).map(option => (
                             <option key={option} value={option}>
                               {option}
                             </option>
