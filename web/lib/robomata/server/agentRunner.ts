@@ -20,6 +20,7 @@ export class RobomataAgentPolicyPausedError extends Error {
 type RunAgentForSubmissionInput = {
   force?: boolean;
   submission: FacilitySubmission;
+  suppressAutoApprove?: boolean;
 };
 
 function appendAction(
@@ -147,5 +148,6 @@ export async function runRobomataAgentForSubmission(input: RunAgentForSubmission
     completedAt,
     summary,
     actionDrafts,
+    suppressAutoApprove: input.suppressAutoApprove,
   });
 }

@@ -11,7 +11,10 @@ import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
 export const runtime = "nodejs";
 
 function requireRobomataAgentTick(request: NextRequest) {
-  if (!isRobomataWorkflowServerEnabled() || !isRobomataAgentsEnabled()) {
+  if (!isRobomataWorkflowServerEnabled()) {
+    return NextResponse.json({ error: "Robomata workflow is not enabled." }, { status: 404 });
+  }
+  if (!isRobomataAgentsEnabled()) {
     return NextResponse.json({ error: "Robomata agents are not enabled." }, { status: 404 });
   }
   if (!isRobomataAgentRefreshEnabled()) {
@@ -24,7 +27,10 @@ function requireRobomataAgentTick(request: NextRequest) {
   }
 
   const providedSecret = request.headers.get("x-robomata-agent-tick-secret")?.trim();
-  if (!providedSecret || providedSecret !== expectedSecret) {
+  if (!providedSecret) {
+    return NextResponse.json({ error: "Missing Robomata agent tick secret." }, { status: 401 });
+  }
+  if (providedSecret !== expectedSecret) {
     return NextResponse.json({ error: "Invalid Robomata agent tick secret." }, { status: 401 });
   }
 
@@ -40,19 +46,19 @@ export async function POST(request: NextRequest) {
     const results = [];
 
     for (const policy of policies) {
-      const submission = await getSubmissionStore().get(policy.submissionId);
-      if (!submission) {
-        results.push({
-          error: "Submission not found.",
-          policyId: policy.id,
-          status: "skipped",
-          submissionId: policy.submissionId,
-        });
-        continue;
-      }
-
       try {
-        const result = await runRobomataAgentForSubmission({ submission });
+        const submission = await getSubmissionStore().get(policy.submissionId);
+        if (!submission) {
+          results.push({
+            error: "Submission not found.",
+            policyId: policy.id,
+            status: "failed",
+            submissionId: policy.submissionId,
+          });
+          continue;
+        }
+
+        const result = await runRobomataAgentForSubmission({ submission, suppressAutoApprove: true });
         results.push({
           actionCount: result.run.actionCount,
           policyId: policy.id,
