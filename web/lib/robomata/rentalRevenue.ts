@@ -259,7 +259,9 @@ export function buildRentalRevenuePostingBatch(input: {
     if (entry.facilityAssetId !== input.target.facilityAssetId) return true;
     if (entry.postingAssetId !== input.target.postingAssetId) return true;
     if (entry.postingAssetKind !== input.target.postingAssetKind) return true;
-    if (input.target.vehicleAssetId && entry.vehicleAssetId !== input.target.vehicleAssetId) return true;
+    if (input.target.postingAssetKind === "vehicle" && entry.vehicleAssetId !== input.target.vehicleAssetId) {
+      return true;
+    }
     return false;
   });
   if (mismatchedEntry) {

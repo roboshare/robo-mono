@@ -93,12 +93,14 @@ function cancellationTimestamp(input: RentalCancellationInput): string {
   const now = new Date(nowMs).toISOString();
   if (!input.cancelledAt) return now;
 
+  const hasSupportOverride = input.actor.role === "ops" && Boolean(input.supportCaseId?.trim());
+  if (!hasSupportOverride) return now;
+
   const requestedMs = Date.parse(input.cancelledAt);
   if (!Number.isFinite(requestedMs)) throw new Error("cancelledAt must be a valid timestamp when provided.");
   if (requestedMs > nowMs) throw new Error("cancelledAt cannot be in the future.");
 
-  const hasSupportOverride = input.actor.role === "ops" && Boolean(input.supportCaseId?.trim());
-  return hasSupportOverride ? new Date(requestedMs).toISOString() : now;
+  return new Date(requestedMs).toISOString();
 }
 
 export function buildRentalCancellationOutcome(
