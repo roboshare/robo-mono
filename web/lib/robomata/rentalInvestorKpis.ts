@@ -242,14 +242,24 @@ function matchingPostingBatches(input: {
   return input.postingBatches.filter(batch => {
     if (batch.facilityAssetId !== input.attribution.facilityAssetId) return false;
     if (input.attribution.vehicleAssetId && batch.vehicleAssetId !== input.attribution.vehicleAssetId) return false;
-    return batch.periodStart >= input.periodStart && batch.periodEnd <= input.periodEnd;
+    return (
+      periodContains(batch.periodStart, input.periodStart, input.periodEnd) &&
+      periodContains(batch.periodEnd, input.periodStart, input.periodEnd)
+    );
   });
 }
 
-function postedRevenueCents(batches: RentalRevenuePostingBatch[]): number {
+function postedRevenueCents(batches: RentalRevenuePostingBatch[], ledgerEntries: RentalRevenueLedgerEntry[]): number {
   return batches
     .filter(batch => batch.status === "posted")
-    .reduce((total, batch) => total + batch.totalRecognizedRevenueCents, 0);
+    .reduce(
+      (total, batch) =>
+        total +
+        ledgerEntries
+          .filter(entry => batch.entryIds.includes(entry.id))
+          .reduce((entryTotal, entry) => entryTotal + entry.amountCents, 0),
+      0,
+    );
 }
 
 function claimsImpactCents(entries: RentalRevenueLedgerEntry[]): number {
@@ -320,7 +330,7 @@ export function buildRentalInvestorRevenueVarianceReport(
     postingBatches: input.postingBatches ?? [],
   });
   const recognized = recognizedRevenueCents(ledgerEntries, input.metrics.recognizedRevenueCents);
-  const posted = postedRevenueCents(postingBatches);
+  const posted = postedRevenueCents(postingBatches, ledgerEntries);
   const staleOrIncompleteReasons = [
     ...(ledgerEntries.length === 0 ? ["No matching revenue ledger entries were supplied for this period."] : []),
     ...(postingBatches.length === 0 ? ["No matching posting batches were supplied for this period."] : []),

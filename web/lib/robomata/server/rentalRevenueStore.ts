@@ -43,6 +43,17 @@ function protocolRequestForBatch(batch: RentalRevenuePostingBatch) {
   return batch.status === "ready" || batch.status === "failed" ? buildProtocolEarningsDistributionRequest(batch) : null;
 }
 
+function advisoryLockKey(batchId: string): string {
+  return `robomata:rental-revenue:${batchId}`;
+}
+
+function assertMatchingBatchId(existingBatch: RentalRevenuePostingBatch | undefined, batch: RentalRevenuePostingBatch) {
+  if (!existingBatch || existingBatch.idempotencyKey === batch.idempotencyKey) return;
+  throw new Error(
+    `Posting batch ${batch.id} already exists for this asset and period with a different ledger entry set.`,
+  );
+}
+
 function hasPostgresConfig() {
   return Boolean(process.env.POSTGRES_URL);
 }
@@ -149,6 +160,10 @@ function createFileStore(): RentalRevenueStore {
             protocolRequest: protocolRequestForBatch(existingBatch),
           };
         }
+        assertMatchingBatchId(
+          fileStore.batches.find(candidate => candidate.id === batch.id),
+          batch,
+        );
         fileStore.ledgerEntries = upsertEntries(fileStore.ledgerEntries, input.entries);
         fileStore.batches = [batch, ...fileStore.batches];
         await writeFileStore(filePath, fileStore);
@@ -188,51 +203,65 @@ function createPostgresStore(): RentalRevenueStore {
     async createPostingBatch(input) {
       await ensurePostgresTables();
       const batch = buildRentalRevenuePostingBatch(input);
-      const existingRows = (await sql`
-        SELECT payload
-        FROM robomata_rental_revenue_posting_batches
-        WHERE idempotency_key = ${batch.idempotencyKey}
-        LIMIT 1;
-      `) as Array<{ payload: RentalRevenuePostingBatch }>;
-      if (existingRows[0]?.payload) {
-        return {
-          batch: existingRows[0].payload,
-          protocolRequest: protocolRequestForBatch(existingRows[0].payload),
-        };
-      }
+      return sql.begin(async tx => {
+        await tx`SELECT pg_advisory_xact_lock(hashtext(${advisoryLockKey(batch.id)}));`;
+        const existingRows = (await tx`
+          SELECT payload
+          FROM robomata_rental_revenue_posting_batches
+          WHERE idempotency_key = ${batch.idempotencyKey}
+          LIMIT 1;
+        `) as Array<{ payload: RentalRevenuePostingBatch }>;
+        if (existingRows[0]?.payload) {
+          return {
+            batch: existingRows[0].payload,
+            protocolRequest: protocolRequestForBatch(existingRows[0].payload),
+          };
+        }
 
-      for (const entry of input.entries) {
-        await sql`
-          INSERT INTO robomata_rental_revenue_ledger_entries (
-            id, platform_vehicle_id, posting_asset_id, payload, occurred_at, created_at
+        const sameBatchRows = (await tx`
+          SELECT payload
+          FROM robomata_rental_revenue_posting_batches
+          WHERE id = ${batch.id}
+          LIMIT 1;
+        `) as Array<{ payload: RentalRevenuePostingBatch }>;
+        assertMatchingBatchId(sameBatchRows[0]?.payload, batch);
+
+        for (const entry of input.entries) {
+          await tx`
+            INSERT INTO robomata_rental_revenue_ledger_entries (
+              id, platform_vehicle_id, posting_asset_id, payload, occurred_at, created_at
+            )
+            VALUES (
+              ${entry.id},
+              ${entry.platformVehicleId},
+              ${entry.postingAssetId},
+              ${JSON.stringify(entry)}::jsonb,
+              ${entry.occurredAt}::timestamptz,
+              ${entry.createdAt}::timestamptz
+            )
+            ON CONFLICT (id) DO NOTHING;
+          `;
+        }
+
+        const insertedRows = (await tx`
+          INSERT INTO robomata_rental_revenue_posting_batches (
+            id, idempotency_key, posting_asset_id, status, payload, created_at, updated_at
           )
           VALUES (
-            ${entry.id},
-            ${entry.platformVehicleId},
-            ${entry.postingAssetId},
-            ${JSON.stringify(entry)}::jsonb,
-            ${entry.occurredAt}::timestamptz,
-            ${entry.createdAt}::timestamptz
+            ${batch.id},
+            ${batch.idempotencyKey},
+            ${batch.postingAssetId},
+            ${batch.status},
+            ${JSON.stringify(batch)}::jsonb,
+            ${batch.createdAt}::timestamptz,
+            ${batch.createdAt}::timestamptz
           )
-          ON CONFLICT (id) DO NOTHING;
-        `;
-      }
-
-      await sql`
-        INSERT INTO robomata_rental_revenue_posting_batches (
-          id, idempotency_key, posting_asset_id, status, payload, created_at, updated_at
-        )
-        VALUES (
-          ${batch.id},
-          ${batch.idempotencyKey},
-          ${batch.postingAssetId},
-          ${batch.status},
-          ${JSON.stringify(batch)}::jsonb,
-          ${batch.createdAt}::timestamptz,
-          ${batch.createdAt}::timestamptz
-        );
-      `;
-      return { batch, protocolRequest: protocolRequestForBatch(batch) };
+          ON CONFLICT (idempotency_key) DO NOTHING
+          RETURNING payload;
+        `) as Array<{ payload: RentalRevenuePostingBatch }>;
+        const storedBatch = insertedRows[0]?.payload ?? batch;
+        return { batch: storedBatch, protocolRequest: protocolRequestForBatch(storedBatch) };
+      });
     },
     async getPostingBatch(batchId) {
       await ensurePostgresTables();

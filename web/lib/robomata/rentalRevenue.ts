@@ -229,6 +229,10 @@ export function buildRentalRevenuePostingBatch(input: {
   if (mismatchedEntry) {
     throw new Error(`Ledger entry ${mismatchedEntry.id} does not match posting target ${input.target.postingAssetId}.`);
   }
+  const nonUsdEntry = input.entries.find(entry => entry.currency !== "USD");
+  if (nonUsdEntry) {
+    throw new Error(`Ledger entry ${nonUsdEntry.id} must use USD currency before posting.`);
+  }
   const nonRecognizedEntry = input.entries.find(entry => entry.kind !== "recognized_revenue");
   if (nonRecognizedEntry) {
     throw new Error(`Ledger entry ${nonRecognizedEntry.id} is not recognized revenue and cannot be posted.`);
