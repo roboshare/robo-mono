@@ -29,7 +29,7 @@ type CreatePostingBatchInput = {
 type RentalRevenueStore = {
   createPostingBatch: (input: CreatePostingBatchInput) => Promise<{
     batch: RentalRevenuePostingBatch;
-    protocolRequest: ReturnType<typeof buildProtocolEarningsDistributionRequest>;
+    protocolRequest: ReturnType<typeof buildProtocolEarningsDistributionRequest> | null;
   }>;
   getPostingBatch: (batchId: string) => Promise<RentalRevenuePostingBatch | null>;
   markPostingBatchPosted: (batchId: string, protocolTxHash: string) => Promise<RentalRevenuePostingBatch | null>;
@@ -38,6 +38,10 @@ type RentalRevenueStore = {
 let ensuredPostgresTables = false;
 let storeSingleton: RentalRevenueStore | null = null;
 const fileStoreLocks = new Map<string, Promise<void>>();
+
+function protocolRequestForBatch(batch: RentalRevenuePostingBatch) {
+  return batch.status === "ready" || batch.status === "failed" ? buildProtocolEarningsDistributionRequest(batch) : null;
+}
 
 function hasPostgresConfig() {
   return Boolean(process.env.POSTGRES_URL);
@@ -142,13 +146,13 @@ function createFileStore(): RentalRevenueStore {
         if (existingBatch) {
           return {
             batch: existingBatch,
-            protocolRequest: buildProtocolEarningsDistributionRequest(existingBatch),
+            protocolRequest: protocolRequestForBatch(existingBatch),
           };
         }
         fileStore.ledgerEntries = upsertEntries(fileStore.ledgerEntries, input.entries);
         fileStore.batches = [batch, ...fileStore.batches];
         await writeFileStore(filePath, fileStore);
-        return { batch, protocolRequest: buildProtocolEarningsDistributionRequest(batch) };
+        return { batch, protocolRequest: protocolRequestForBatch(batch) };
       });
     },
     async getPostingBatch(batchId) {
@@ -160,6 +164,10 @@ function createFileStore(): RentalRevenueStore {
         const fileStore = await readFileStore(filePath);
         const current = fileStore.batches.find(batch => batch.id === batchId);
         if (!current) return null;
+        if (current.status === "posted") {
+          if (current.protocolTxHash === protocolTxHash) return current;
+          throw new Error(`Posting batch ${batchId} is already posted with a different protocol transaction.`);
+        }
         const batch: RentalRevenuePostingBatch = {
           ...current,
           status: "posted",
@@ -189,7 +197,7 @@ function createPostgresStore(): RentalRevenueStore {
       if (existingRows[0]?.payload) {
         return {
           batch: existingRows[0].payload,
-          protocolRequest: buildProtocolEarningsDistributionRequest(existingRows[0].payload),
+          protocolRequest: protocolRequestForBatch(existingRows[0].payload),
         };
       }
 
@@ -224,7 +232,7 @@ function createPostgresStore(): RentalRevenueStore {
           ${batch.createdAt}::timestamptz
         );
       `;
-      return { batch, protocolRequest: buildProtocolEarningsDistributionRequest(batch) };
+      return { batch, protocolRequest: protocolRequestForBatch(batch) };
     },
     async getPostingBatch(batchId) {
       await ensurePostgresTables();
@@ -240,6 +248,10 @@ function createPostgresStore(): RentalRevenueStore {
       await ensurePostgresTables();
       const current = await this.getPostingBatch(batchId);
       if (!current) return null;
+      if (current.status === "posted") {
+        if (current.protocolTxHash === protocolTxHash) return current;
+        throw new Error(`Posting batch ${batchId} is already posted with a different protocol transaction.`);
+      }
       const postedAt = new Date().toISOString();
       const batch: RentalRevenuePostingBatch = {
         ...current,

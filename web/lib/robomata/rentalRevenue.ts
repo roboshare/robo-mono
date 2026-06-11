@@ -169,6 +169,16 @@ function ledgerEntriesDigest(entries: RentalRevenueLedgerEntry[]): string {
   return createHash("sha256").update(JSON.stringify(digestInput)).digest("hex");
 }
 
+function periodContains(timestamp: string, periodStart: string, periodEnd: string): boolean {
+  const value = Date.parse(timestamp);
+  const start = Date.parse(periodStart);
+  const end = Date.parse(periodEnd);
+  if (![value, start, end].every(Number.isFinite) || end < start) {
+    throw new Error("Posting batch period and ledger entry timestamps must be valid dates.");
+  }
+  return value >= start && value <= end;
+}
+
 export function buildRentalRevenueAttestationMetadata(input: {
   batchId: string;
   createdAt: string;
@@ -218,6 +228,16 @@ export function buildRentalRevenuePostingBatch(input: {
   const mismatchedEntry = input.entries.find(entry => entry.postingAssetId !== input.target.postingAssetId);
   if (mismatchedEntry) {
     throw new Error(`Ledger entry ${mismatchedEntry.id} does not match posting target ${input.target.postingAssetId}.`);
+  }
+  const nonRecognizedEntry = input.entries.find(entry => entry.kind !== "recognized_revenue");
+  if (nonRecognizedEntry) {
+    throw new Error(`Ledger entry ${nonRecognizedEntry.id} is not recognized revenue and cannot be posted.`);
+  }
+  const outOfPeriodEntry = input.entries.find(
+    entry => !periodContains(entry.occurredAt, input.periodStart, input.periodEnd),
+  );
+  if (outOfPeriodEntry) {
+    throw new Error(`Ledger entry ${outOfPeriodEntry.id} is outside the posting batch period.`);
   }
 
   const totalRecognizedRevenueCents = input.entries.reduce((total, entry) => total + entry.amountCents, 0);

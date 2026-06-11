@@ -265,7 +265,7 @@ function recognizedRevenueCents(entries: RentalRevenueLedgerEntry[], fallback: n
 }
 
 function distributionFrequency(
-  batches: RentalRevenuePostingBatch[],
+  batches: Array<Pick<RentalRevenuePostingBatch, "status">>,
 ): RentalInvestorDashboard["summary"]["distributionFrequency"] {
   const postedCount = batches.filter(batch => batch.status === "posted").length;
   if (postedCount === 0) return "none";
@@ -332,9 +332,15 @@ export function buildRentalInvestorRevenueVarianceReport(
     const vehicleEntries = ledgerEntries.filter(entry => entry.platformVehicleId === platformVehicleId);
     const vehicleRecognized = recognizedRevenueCents(vehicleEntries, 0);
     const vehiclePosted = postingBatches
-      .filter(batch => batch.entryIds.some(entryId => vehicleEntries.some(entry => entry.id === entryId)))
       .filter(batch => batch.status === "posted")
-      .reduce((total, batch) => total + batch.totalRecognizedRevenueCents, 0);
+      .reduce(
+        (total, batch) =>
+          total +
+          vehicleEntries
+            .filter(entry => batch.entryIds.includes(entry.id))
+            .reduce((vehicleTotal, entry) => vehicleTotal + entry.amountCents, 0),
+        0,
+      );
     return {
       platformVehicleId,
       recognizedRevenueCents: vehicleRecognized,
@@ -401,7 +407,7 @@ export function buildRentalInvestorDashboard(input: RentalInvestorDashboardInput
       recognizedRevenueCents: varianceReport.recognizedRevenueCents,
       postedRevenueCents: varianceReport.postedRevenueCents,
       postingVarianceCents: varianceReport.varianceCents,
-      distributionFrequency: distributionFrequency(input.postingBatches ?? []),
+      distributionFrequency: distributionFrequency(varianceReport.attestations),
       downtimeDays: input.metrics.downtimeDays,
       claimsImpactCents: claimsImpactCents(ledgerEntries),
       disputeCount: input.metrics.disputeCount,
