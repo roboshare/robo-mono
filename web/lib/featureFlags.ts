@@ -120,6 +120,10 @@ export function isRobomataRentalInvestorReportingEnabled(): boolean {
   return isEnabled(process.env.ROBOMATA_RENTAL_INVESTOR_REPORTING_ENABLED);
 }
 
+export function isRobomataRentalHostOpsClientEnabled(): boolean {
+  return isEnabled(process.env.NEXT_PUBLIC_ROBOMATA_RENTAL_HOST_OPS_ENABLED);
+}
+
 export function isRobomataLenderMonitoringShareEnabled(): boolean {
   return isEnabled(process.env.ROBOMATA_LENDER_MONITORING_SHARE_ENABLED);
 }
