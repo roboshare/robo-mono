@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -19,6 +19,10 @@ type HeaderMenuLink = {
   icon?: React.ReactNode;
   adminOnly?: boolean;
 };
+
+const DEFAULT_APP_HOST = "app.roboshare.finance";
+
+const getConfiguredAppHost = () => process.env.NEXT_PUBLIC_ROBOSHARE_APP_HOST?.trim().toLowerCase() || DEFAULT_APP_HOST;
 
 export const menuLinks: HeaderMenuLink[] = [
   {
@@ -99,7 +103,20 @@ const HeaderProductsMenu = () => {
 export const HeaderMenuLinks = () => {
   const pathname = usePathname();
   const { isAdmin } = useIsAdmin();
+  const [isAppHost, setIsAppHost] = useState(false);
+  const [isHostResolved, setIsHostResolved] = useState(false);
   const launchAppHref = isRobomataWorkflowEnabled() ? "/operator/submissions" : "/operator";
+  const isOperatorPath =
+    pathname === "/operator" ||
+    pathname?.startsWith("/operator/") ||
+    pathname === "/partner" ||
+    pathname?.startsWith("/partner/");
+  const showLaunchApp = isHostResolved && !isAppHost && !isOperatorPath;
+
+  useEffect(() => {
+    setIsAppHost(window.location.hostname.toLowerCase() === getConfiguredAppHost());
+    setIsHostResolved(true);
+  }, []);
 
   return (
     <>
@@ -123,16 +140,18 @@ export const HeaderMenuLinks = () => {
             </li>
           );
         })}
-      <li>
-        <Link
-          href={launchAppHref}
-          passHref
-          className="grid grid-flow-col gap-2 rounded-full border border-primary/70 bg-primary px-3 py-1.5 text-sm font-semibold text-primary-content shadow-md shadow-primary/20 hover:bg-primary/90 focus:!bg-primary active:!text-primary-content"
-        >
-          <RocketLaunchIcon className="h-4 w-4" />
-          <span>Launch App</span>
-        </Link>
-      </li>
+      {showLaunchApp ? (
+        <li>
+          <Link
+            href={launchAppHref}
+            passHref
+            className="grid grid-flow-col gap-2 rounded-full border border-primary/70 bg-primary px-3 py-1.5 text-sm font-semibold text-primary-content shadow-md shadow-primary/20 hover:bg-primary/90 focus:!bg-primary active:!text-primary-content"
+          >
+            <RocketLaunchIcon className="h-4 w-4" />
+            <span>Launch App</span>
+          </Link>
+        </li>
+      ) : null}
     </>
   );
 };

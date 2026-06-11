@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import "server-only";
 import { isRobomataRentalRenterAccountsEnabled } from "~~/lib/featureFlags";
+import { assertNoProhibitedRentalPersistenceFields } from "~~/lib/robomata/rentalPersistencePolicy";
 import {
   RENTER_VERIFICATION_POLICY_V1,
   type RenterProfile,
@@ -144,6 +145,7 @@ function normalizeRenterProfile(renter: RenterProfile): RenterProfile {
 }
 
 function createRenter(input: RenterProfileInput & { id?: string }, existing?: RenterProfile): RenterProfile {
+  assertNoProhibitedRentalPersistenceFields(input, "rental renter profile");
   const now = new Date().toISOString();
   const normalized = validateRenterInput(input);
   const current = existing ? normalizeRenterProfile(existing) : undefined;
@@ -189,6 +191,7 @@ function validateVerificationUpdate(input: RenterVerificationUpdate) {
 }
 
 function updateVerificationRecord(renter: RenterProfile, input: RenterVerificationUpdate): RenterProfile {
+  assertNoProhibitedRentalPersistenceFields(input, "rental renter verification update");
   validateVerificationUpdate(input);
   const now = new Date().toISOString();
   const normalized = normalizeRenterProfile(renter);
