@@ -295,12 +295,43 @@ async function main() {
           facilityAssetId: "101",
           id: "rle_executor_vehicle",
           platformVehicleId: "platform-executor-2",
+          postingAssetId: "203",
+          postingAssetKind: "vehicle",
+          vehicleAssetId: "203",
+        }),
+      ],
+      periodEnd: nowIso(3),
+      periodStart: nowIso(-1),
+      target: {
+        facilityAssetId: "101",
+        postingAssetId: "203",
+        postingAssetKind: "vehicle",
+        vehicleAssetId: "203",
+      },
+    },
+  });
+  if (vehiclePayload.protocolRequest?.protocolCall?.args.assetId !== "203") {
+    throw new Error(`Expected executable vehicle protocol call, got ${JSON.stringify(vehiclePayload)}`);
+  }
+
+  const evenAssetPayload = await requestJson({
+    authHeaders,
+    method: "POST",
+    requestPath: postingPath,
+    expectedStatus: 201,
+    body: {
+      entries: [
+        ledgerEntry({
+          amountCents: 2500,
+          facilityAssetId: "101",
+          id: "rle_executor_even_asset",
+          platformVehicleId: "platform-executor-even",
           postingAssetId: "202",
           postingAssetKind: "vehicle",
           vehicleAssetId: "202",
         }),
       ],
-      periodEnd: nowIso(3),
+      periodEnd: nowIso(4),
       periodStart: nowIso(-1),
       target: {
         facilityAssetId: "101",
@@ -310,8 +341,39 @@ async function main() {
       },
     },
   });
-  if (vehiclePayload.protocolRequest?.protocolCall?.args.assetId !== "202") {
-    throw new Error(`Expected executable vehicle protocol call, got ${JSON.stringify(vehiclePayload)}`);
+  if (evenAssetPayload.protocolRequest?.protocolCall) {
+    throw new Error(`Expected even revenue-token ID to be metadata-only, got ${JSON.stringify(evenAssetPayload)}`);
+  }
+
+  const subDollarPayload = await requestJson({
+    authHeaders,
+    method: "POST",
+    requestPath: postingPath,
+    expectedStatus: 201,
+    body: {
+      entries: [
+        ledgerEntry({
+          amountCents: 99,
+          facilityAssetId: "101",
+          id: "rle_executor_sub_dollar",
+          platformVehicleId: "platform-executor-small",
+          postingAssetId: "305",
+          postingAssetKind: "vehicle",
+          vehicleAssetId: "305",
+        }),
+      ],
+      periodEnd: nowIso(5),
+      periodStart: nowIso(-1),
+      target: {
+        facilityAssetId: "101",
+        postingAssetId: "305",
+        postingAssetKind: "vehicle",
+        vehicleAssetId: "305",
+      },
+    },
+  });
+  if (subDollarPayload.protocolRequest?.protocolCall) {
+    throw new Error(`Expected sub-dollar batch to be metadata-only, got ${JSON.stringify(subDollarPayload)}`);
   }
 
   const zeroRevenuePayload = await requestJson({

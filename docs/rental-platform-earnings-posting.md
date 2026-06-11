@@ -52,11 +52,11 @@ The service emits a `distributeEarnings` request shape with:
 
 The request is the handoff to the protocol execution layer. `mark-posted` records the protocol transaction hash after execution.
 
-When `postingAssetId` is a uint256-compatible protocol asset ID, the request also includes an executable
+When `postingAssetId` is a uint256-compatible odd protocol asset ID, the request also includes an executable
 `protocolCall` payload for `EarningsManager.distributeEarnings(uint256,uint256,bool)`, which is the current deployed
 execution path for posting earnings into Treasury accounting. Amounts are converted from USD cents into 6-decimal
-payment-token base units. Zero-net posting batches are metadata-only and do not emit executable calldata because the
-protocol call would revert with zero revenue.
+payment-token base units. Zero-net, sub-dollar, nonnumeric, and even revenue-token IDs are metadata-only and do not emit
+executable calldata because the protocol call would revert.
 
 The platform does not submit protocol transactions implicitly. The signer boundary is:
 

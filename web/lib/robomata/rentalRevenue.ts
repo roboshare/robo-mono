@@ -3,6 +3,7 @@ import { encodeFunctionData } from "viem";
 import type { PlatformVehicleId, ProtocolAssetId } from "~~/lib/robomata/rentalInventory";
 
 const PROTOCOL_PAYMENT_TOKEN_DECIMALS = 6;
+const MIN_PROTOCOL_FEE_BASE_UNITS = 1_000_000n;
 const EARNINGS_MANAGER_DISTRIBUTE_EARNINGS_ABI = [
   {
     inputs: [
@@ -146,7 +147,9 @@ export type RentalProtocolEarningsDistributionRequest = {
 
 function protocolAssetId(input: ProtocolAssetId): bigint | null {
   if (!/^\d+$/.test(input)) return null;
-  return BigInt(input);
+  const assetId = BigInt(input);
+  if (assetId <= 0n || assetId % 2n === 0n) return null;
+  return assetId;
 }
 
 function centsToPaymentTokenBaseUnits(amountCents: number): bigint {
@@ -164,7 +167,7 @@ export function buildProtocolEarningsDistributionCall(input: {
   const assetId = protocolAssetId(input.postingAssetId);
   if (assetId === null) return null;
   const totalRevenue = centsToPaymentTokenBaseUnits(input.amountCents);
-  if (totalRevenue === 0n) return null;
+  if (totalRevenue < MIN_PROTOCOL_FEE_BASE_UNITS) return null;
   const tryAutoRelease = input.tryAutoRelease ?? false;
   return {
     contractName: "EarningsManager",
