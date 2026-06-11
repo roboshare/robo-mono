@@ -381,6 +381,24 @@ async function main() {
     throw new Error(`Expected host_review booking under manual approval, got ${confirmResponse.booking?.state}`);
   }
 
+  const retryConfirmResponse = await requestJson({
+    authHeaders,
+    method: "POST",
+    requestPath: `/api/robomata/rental-bookings/${bookingId}/confirm`,
+    headers: { "x-robomata-payment-confirmation": paymentConfirmationSecret },
+    body: {
+      paymentProviderReference: {
+        provider: "stripe",
+        authorizationId: "pi_host_ops_smoke",
+        status: "authorized",
+        authorizedAt: nowIso(),
+      },
+    },
+  });
+  if (retryConfirmResponse.booking?.state !== "host_review") {
+    throw new Error(`Expected payment confirmation retry to stay in host_review, got ${retryConfirmResponse.booking?.state}`);
+  }
+
   const approveResponse = await requestJson({
     authHeaders,
     method: "POST",

@@ -82,6 +82,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (!["pending_payment_authorization", "host_review"].includes(current.state)) {
       return NextResponse.json({ error: `Booking cannot be confirmed from state ${current.state}.` }, { status: 409 });
     }
+    if (current.state === "host_review") {
+      return NextResponse.json({ booking: current });
+    }
     let hostReviewRequiredByControls = false;
     if (isRobomataRentalInventoryEnabled()) {
       const vehicle = await getRentalInventoryStore().getVehicle(current.platformVehicleId);

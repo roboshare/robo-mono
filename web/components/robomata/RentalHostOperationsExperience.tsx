@@ -257,6 +257,7 @@ export const RentalHostOperationsExperience = () => {
           : (selectedVehicle.display.imageUris ?? []);
       const existingPickupDropoff = selectedVehicle.hostSetup?.pickupDropoff;
       const existingSetupPricing = selectedVehicle.hostSetup?.pricing;
+      const existingSetupRules = selectedVehicle.hostSetup?.rules;
       const primaryPhotoUri = setupPhotoUri.trim();
       const setup: RentalVehicleHostSetupUpdate = {
         photoUris: primaryPhotoUri
@@ -283,6 +284,7 @@ export const RentalHostOperationsExperience = () => {
           advanceNoticeHours: numberFromInput(setupAdvanceNoticeHours),
         },
         rules: {
+          ...existingSetupRules,
           mileageLimitPerDay: numberFromInput(mileageLimit),
           additionalRules: additionalRules.trim() || undefined,
         },
