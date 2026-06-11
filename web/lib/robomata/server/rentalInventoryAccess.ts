@@ -44,28 +44,21 @@ export function rentalManifestAccessError(manifest: FacilityInventoryManifest, p
   });
 }
 
-export async function sourceIdForRentalFacilityAccess(
-  facilityAssetId: string,
-  partnerAddress: string,
-): Promise<string | undefined> {
-  const normalizedPartner = partnerAddress.toLowerCase();
+export async function sourceIdForRentalFacilityAccess(facilityAssetId: string): Promise<string | undefined> {
   const configuredOwner = configuredRentalFacilityOwners()[facilityAssetId]?.toLowerCase();
   if (configuredOwner) return undefined;
 
   const store = getRentalInventoryStore();
   const manifestRefs = await store.listManifests(facilityAssetId);
-  const manifests = await Promise.all(manifestRefs.map(ref => store.getManifest(ref.manifestId)));
-  return (
-    manifests.find(manifest => manifest?.source?.sourceId?.trim().toLowerCase() === normalizedPartner)?.source
-      .sourceId ?? manifests.find(manifest => manifest?.source?.sourceId)?.source.sourceId
-  );
+  const latestManifest = manifestRefs[0] ? await store.getManifest(manifestRefs[0].manifestId) : null;
+  return latestManifest?.source?.sourceId?.trim();
 }
 
 export async function rentalStoredFacilityAccessError(
   facilityAssetId: string,
   partnerAddress: string,
 ): Promise<string | null> {
-  const sourceId = await sourceIdForRentalFacilityAccess(facilityAssetId, partnerAddress);
+  const sourceId = await sourceIdForRentalFacilityAccess(facilityAssetId);
   return rentalFacilityAccessError({ facilityAssetId, partnerAddress, sourceId });
 }
 
@@ -77,8 +70,13 @@ export async function authorizedRentalFacilityAssetIds(partnerAddress: string): 
     .map(([facilityAssetId]) => facilityAssetId);
   const store = getRentalInventoryStore();
   const manifestRefs = await store.listManifests();
-  const manifestIds = new Set(manifestRefs.map(ref => ref.manifestId));
-  const manifests = await Promise.all([...manifestIds].map(manifestId => store.getManifest(manifestId)));
+  const latestRefsByFacility = new Map<string, string>();
+  for (const ref of manifestRefs) {
+    if (!latestRefsByFacility.has(ref.facilityAssetId)) latestRefsByFacility.set(ref.facilityAssetId, ref.manifestId);
+  }
+  const manifests = await Promise.all(
+    [...latestRefsByFacility.values()].map(manifestId => store.getManifest(manifestId)),
+  );
   const sourceAttributedIds = manifests.flatMap(manifest => {
     if (!manifest || configuredOwners[manifest.facilityAssetId]) return [];
     return manifest.source?.sourceId?.trim().toLowerCase() === normalizedPartner ? [manifest.facilityAssetId] : [];
