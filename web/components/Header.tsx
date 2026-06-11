@@ -167,6 +167,21 @@ export const Header = () => {
             <HeaderMenuLinks />
           </ul>
         </details>
+        <Link
+          href="/"
+          aria-label="Roboshare home"
+          className="ml-1 flex h-10 w-10 items-center justify-center rounded-full text-base-content hover:bg-secondary lg:hidden"
+        >
+          <svg viewBox="0 0 40 40" aria-hidden="true" className="h-7 w-7" fill="none">
+            <path
+              d="m8.25 22.5 17.5-18.75-3.75 13.75h13.75L18.25 36.25 22 22.5H8.25Z"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2.5"
+            />
+          </svg>
+        </Link>
         <Link href="/" passHref className="hidden lg:flex items-center gap-2 ml-4 mr-6 shrink-0">
           <div className="flex flex-col">
             <Image
