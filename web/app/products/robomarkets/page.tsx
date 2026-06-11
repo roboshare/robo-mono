@@ -30,7 +30,7 @@ const RobomarketsPage = () => (
     <div className="w-full max-w-7xl space-y-10">
       <section className="overflow-hidden rounded-[2.25rem] border border-base-300 bg-base-100 shadow-xl shadow-base-300/40">
         <div className="grid items-stretch gap-8 px-6 py-9 sm:px-9 sm:py-12 lg:grid-cols-[1.12fr_0.88fr] lg:px-12">
-          <div className="flex h-full flex-col justify-between gap-8">
+          <div className="flex h-full flex-col gap-7">
             <div className="space-y-4">
               <p className="text-sm font-semibold uppercase tracking-[0.32em] text-base-content/50">Robomarkets</p>
               <h1 className="max-w-4xl text-4xl font-black tracking-tight text-base-content sm:text-6xl">
@@ -44,9 +44,12 @@ const RobomarketsPage = () => (
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row">
-              <Link href="/markets" className="btn btn-primary rounded-full sm:min-w-48">
+              <Link
+                href="/markets"
+                className="btn group rounded-full border-primary bg-primary text-primary-content transition-colors hover:border-primary hover:bg-primary-content hover:text-primary sm:min-w-48"
+              >
                 Open live markets
-                <ArrowRightIcon className="h-4 w-4" />
+                <ArrowRightIcon className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
               </Link>
               <Link href="/products/robomata" className="btn btn-outline rounded-full sm:min-w-48">
                 Start with Robomata

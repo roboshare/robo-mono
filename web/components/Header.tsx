@@ -6,12 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { hardhat } from "viem/chains";
 import { Bars3Icon, BugAntIcon, RocketLaunchIcon } from "@heroicons/react/24/outline";
-import {
-  BuildingStorefrontIcon,
-  CubeTransparentIcon,
-  MagnifyingGlassIcon,
-  UserGroupIcon,
-} from "@heroicons/react/24/outline";
+import { CubeTransparentIcon, MagnifyingGlassIcon, UserGroupIcon } from "@heroicons/react/24/outline";
 import { FaucetButton, RainbowKitCustomConnectButton } from "~~/components/scaffold-eth";
 import { useOutsideClick, useTargetNetwork } from "~~/hooks/scaffold-eth";
 import { useIsAdmin } from "~~/hooks/useIsAdmin";
@@ -26,11 +21,6 @@ type HeaderMenuLink = {
 };
 
 export const menuLinks: HeaderMenuLink[] = [
-  {
-    label: "Robomarkets",
-    href: "/products/robomarkets",
-    icon: <BuildingStorefrontIcon className="h-4 w-4" />,
-  },
   {
     label: "Partners",
     href: "/partners",
@@ -53,10 +43,15 @@ export const menuLinks: HeaderMenuLink[] = [
 const HeaderProductsMenu = () => {
   const pathname = usePathname();
   const isActive = pathname?.startsWith("/products") || pathname === "/robomata";
+  const productsMenuRef = useRef<HTMLDetailsElement>(null);
+
+  useOutsideClick(productsMenuRef, () => {
+    productsMenuRef?.current?.removeAttribute("open");
+  });
 
   return (
     <li>
-      <details>
+      <details className="dropdown" ref={productsMenuRef}>
         <summary
           onClick={event => {
             event.stopPropagation();
@@ -68,7 +63,12 @@ const HeaderProductsMenu = () => {
           <CubeTransparentIcon className="h-4 w-4" />
           <span>Products</span>
         </summary>
-        <ul className="rounded-box bg-base-100 p-2 shadow-lg">
+        <ul
+          className="rounded-box bg-base-100 p-2 shadow-lg"
+          onClick={() => {
+            productsMenuRef?.current?.removeAttribute("open");
+          }}
+        >
           <li>
             <Link href="/products/robomata" className="justify-between gap-4 rounded-xl text-sm">
               <span>Robomata</span>
@@ -127,7 +127,7 @@ export const HeaderMenuLinks = () => {
         <Link
           href={launchAppHref}
           passHref
-          className="hover:bg-primary hover:text-primary-content focus:!bg-primary active:!text-primary-content py-1.5 px-3 text-sm rounded-full gap-2 grid grid-flow-col border border-primary/40 text-primary"
+          className="grid grid-flow-col gap-2 rounded-full border border-primary/70 bg-primary px-3 py-1.5 text-sm font-semibold text-primary-content shadow-md shadow-primary/20 hover:bg-primary/90 focus:!bg-primary active:!text-primary-content"
         >
           <RocketLaunchIcon className="h-4 w-4" />
           <span>Launch App</span>
