@@ -135,7 +135,7 @@ export function normalizeAgentActionTypes(values: unknown): RobomataAgentActionT
   const normalized = values.filter((value): value is RobomataAgentActionType => {
     return typeof value === "string" && allowed.has(value as RobomataAgentActionType);
   });
-  return normalized.length ? [...new Set(normalized)] : defaultAllowedAgentActionTypes();
+  return [...new Set(normalized)];
 }
 
 export function isAgentActionAllowed(policy: RobomataAgentPolicy, type: RobomataAgentActionType): boolean {
