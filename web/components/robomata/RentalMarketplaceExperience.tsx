@@ -32,6 +32,7 @@ type BookingResult = {
 };
 
 const today = new Date();
+const minimumRentalDate = today.toISOString().slice(0, 10);
 const defaultDateFrom = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1_000).toISOString().slice(0, 10);
 const defaultDateTo = new Date(today.getTime() + 10 * 24 * 60 * 60 * 1_000).toISOString().slice(0, 10);
 
@@ -45,6 +46,16 @@ function cents(value: number | undefined): string {
 
 function dateInputToIso(value: string): string {
   return value ? new Date(`${value}T12:00:00.000Z`).toISOString() : "";
+}
+
+function bookingFormError(filters: SearchFilters, renterForm: { email: string; phone: string }): string | undefined {
+  if (!renterForm.email.trim() && !renterForm.phone.trim()) return "Enter an email or phone number to continue.";
+  if (!filters.dateFrom || !filters.dateTo) return "Select pickup and return dates.";
+  if (filters.dateFrom < minimumRentalDate || filters.dateTo < minimumRentalDate) {
+    return "Pickup and return dates cannot be in the past.";
+  }
+  if (filters.dateTo <= filters.dateFrom) return "Return date must be after pickup date.";
+  return undefined;
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -96,6 +107,7 @@ export const RentalMarketplaceExperience = () => {
   const [paymentPlanError, setPaymentPlanError] = useState<string>();
 
   const selectedListing = listings.find(listing => listing.platformVehicleId === selectedId) ?? listings[0];
+  const checkoutFormError = bookingFormError(filters, renterForm);
 
   useEffect(() => {
     let active = true;
@@ -170,6 +182,9 @@ export const RentalMarketplaceExperience = () => {
     setBookingResult(undefined);
 
     try {
+      const validationError = bookingFormError(filters, renterForm);
+      if (validationError) throw new Error(validationError);
+
       const renterPayload = await fetchJson<{ renter: RenterProfile }>("/api/robomata/rental-renters", {
         body: JSON.stringify(renterForm),
         headers: { "content-type": "application/json" },
@@ -226,6 +241,7 @@ export const RentalMarketplaceExperience = () => {
           <FieldLabel>Pickup date</FieldLabel>
           <input
             className="input input-bordered mt-2 rounded-2xl"
+            min={minimumRentalDate}
             type="date"
             value={filters.dateFrom}
             onChange={event => setFilters(current => ({ ...current, dateFrom: event.target.value }))}
@@ -235,6 +251,7 @@ export const RentalMarketplaceExperience = () => {
           <FieldLabel>Return date</FieldLabel>
           <input
             className="input input-bordered mt-2 rounded-2xl"
+            min={filters.dateFrom || minimumRentalDate}
             type="date"
             value={filters.dateTo}
             onChange={event => setFilters(current => ({ ...current, dateTo: event.target.value }))}
@@ -450,6 +467,7 @@ export const RentalMarketplaceExperience = () => {
                   <FieldLabel>Email</FieldLabel>
                   <input
                     className="input input-bordered mt-2 rounded-2xl"
+                    aria-describedby="renter-contact-help"
                     type="email"
                     value={renterForm.email}
                     onChange={event => setRenterForm(current => ({ ...current, email: event.target.value }))}
@@ -459,10 +477,15 @@ export const RentalMarketplaceExperience = () => {
                   <FieldLabel>Phone</FieldLabel>
                   <input
                     className="input input-bordered mt-2 rounded-2xl"
+                    aria-describedby="renter-contact-help"
                     value={renterForm.phone}
                     onChange={event => setRenterForm(current => ({ ...current, phone: event.target.value }))}
                   />
                 </label>
+                <p id="renter-contact-help" className="sm:col-span-2 text-sm text-base-content/60">
+                  Provide at least one contact method. Returning renters are matched by email or phone so existing
+                  verification status can be reused.
+                </p>
               </div>
 
               <div className="mt-5 rounded-2xl bg-base-200/70 p-4 text-sm text-base-content/70">
@@ -500,7 +523,12 @@ export const RentalMarketplaceExperience = () => {
                 </span>
               </label>
 
-              <button className="btn btn-primary mt-5 w-full rounded-full" disabled={bookingBusy || !selectedListing}>
+              {checkoutFormError && <p className="mt-4 text-sm font-semibold text-error">{checkoutFormError}</p>}
+
+              <button
+                className="btn btn-primary mt-5 w-full rounded-full"
+                disabled={bookingBusy || !selectedListing || Boolean(checkoutFormError)}
+              >
                 {bookingBusy ? "Creating booking..." : "Create booking request"}
               </button>
             </form>

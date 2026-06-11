@@ -123,6 +123,26 @@ function validateRenterInput(input: RenterProfileInput) {
   return normalized;
 }
 
+function findExistingRenterByIdentity(
+  renters: RenterProfile[],
+  input: RenterProfileInput & { id?: string },
+): RenterProfile | undefined {
+  if (input.id) {
+    const existingById = renters.find(renter => renter.id === input.id);
+    if (existingById) return existingById;
+  }
+
+  const normalized = normalizeContact(input);
+  if (normalized.email) {
+    const existingByEmail = renters.find(renter => renter.email?.toLowerCase() === normalized.email);
+    if (existingByEmail) return existingByEmail;
+  }
+  if (normalized.phone) {
+    return renters.find(renter => renter.phone === normalized.phone);
+  }
+  return undefined;
+}
+
 function verificationRecord(now: string): RenterProfile["verification"] {
   return {
     driver_license: emptyRenterVerification("driver_license", now),
@@ -266,7 +286,7 @@ function createFileStore(): RentalRenterStore {
     async upsertRenter(input) {
       return withFileStoreWriteLock(filePath, async () => {
         const fileStore = await readFileStore(filePath);
-        const existing = input.id ? fileStore.renters.find(renter => renter.id === input.id) : undefined;
+        const existing = findExistingRenterByIdentity(fileStore.renters, input);
         const renter = createRenter(input, existing);
         fileStore.renters = [renter, ...fileStore.renters.filter(candidate => candidate.id !== renter.id)];
         await writeFileStore(filePath, fileStore);
@@ -302,7 +322,28 @@ function createPostgresStore(): RentalRenterStore {
     },
     async upsertRenter(input) {
       await ensurePostgresTables();
-      const existing = input.id ? await this.getRenter(input.id) : null;
+      const normalized = normalizeContact(input);
+      let existing = input.id ? await this.getRenter(input.id) : null;
+      if (!existing && normalized.email) {
+        const rows = (await sql`
+          SELECT payload
+          FROM robomata_rental_renters
+          WHERE email = ${normalized.email}
+          ORDER BY updated_at DESC
+          LIMIT 1;
+        `) as Array<{ payload: RenterProfile }>;
+        existing = rows[0]?.payload ? normalizeRenterProfile(rows[0].payload) : null;
+      }
+      if (!existing && normalized.phone) {
+        const rows = (await sql`
+          SELECT payload
+          FROM robomata_rental_renters
+          WHERE phone = ${normalized.phone}
+          ORDER BY updated_at DESC
+          LIMIT 1;
+        `) as Array<{ payload: RenterProfile }>;
+        existing = rows[0]?.payload ? normalizeRenterProfile(rows[0].payload) : null;
+      }
       const renter = createRenter(input, existing ?? undefined);
       await sql`
         INSERT INTO robomata_rental_renters (id, email, phone, payload, created_at, updated_at)

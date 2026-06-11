@@ -55,6 +55,25 @@ async function fetchJson(url, options) {
   }
 }
 
+async function expectJsonFailure(url, options, expectedStatus, expectedMessage) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    const payload = await response.json();
+    if (response.status !== expectedStatus || !payload.error?.includes(expectedMessage)) {
+      throw new Error(
+        `${url} expected ${expectedStatus} including ${expectedMessage}, got ${response.status}: ${JSON.stringify(
+          payload,
+        )}`,
+      );
+    }
+    return payload;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function waitForServer() {
   const deadline = Date.now() + serverTimeoutMs;
   while (Date.now() < deadline) {
@@ -241,6 +260,44 @@ async function main() {
   });
   if (!renterPayload.renter?.id) throw new Error(`Expected renter id, got ${JSON.stringify(renterPayload)}`);
 
+  await expectJsonFailure(
+    `${baseUrl}/api/robomata/rental-renters`,
+    {
+      body: JSON.stringify({ displayName: "No Contact Renter" }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    },
+    400,
+    "Renter profile requires at least email or phone.",
+  );
+
+  const reusedRenterPayload = await fetchJson(`${baseUrl}/api/robomata/rental-renters`, {
+    body: JSON.stringify({ displayName: "Smoke Renter Again", email: "RENTER@example.test" }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  if (reusedRenterPayload.renter?.id !== renterPayload.renter.id) {
+    throw new Error(
+      `Expected returning renter to reuse ${renterPayload.renter.id}, got ${JSON.stringify(reusedRenterPayload)}`,
+    );
+  }
+
+  await expectJsonFailure(
+    `${baseUrl}/api/robomata/rental-bookings/checkout`,
+    {
+      body: JSON.stringify({
+        dateFrom: new Date(Date.now() - 3 * 24 * 60 * 60 * 1_000).toISOString(),
+        dateTo: new Date(Date.now() - 2 * 24 * 60 * 60 * 1_000).toISOString(),
+        platformVehicleId: listing.platformVehicleId,
+        renterId: renterPayload.renter.id,
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    },
+    400,
+    "dateFrom cannot be in the past.",
+  );
+
   const checkoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
     body: JSON.stringify({
       dateFrom,
@@ -261,6 +318,7 @@ async function main() {
         bookingId: checkoutPayload.booking.id,
         listingCount: listingsPayload.listings.length,
         paymentAuthorizationCents: paymentPlanPayload.paymentPlan.totalDueAtAuthorizationCents,
+        reusedRenterId: reusedRenterPayload.renter.id,
         status: "passed",
       },
       null,
