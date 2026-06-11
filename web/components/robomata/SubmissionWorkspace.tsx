@@ -12,6 +12,7 @@ import {
   ExclamationTriangleIcon,
   ShieldCheckIcon,
 } from "@heroicons/react/24/outline";
+import { AgentSupervisionPanel } from "~~/components/robomata/AgentSupervisionPanel";
 import { FacilityMonitoringPanel } from "~~/components/robomata/FacilityMonitoringPanel";
 import { PacketSharePanel } from "~~/components/robomata/PacketSharePanel";
 import { useSelectedNetwork, useTransactor } from "~~/hooks/scaffold-eth";
@@ -1286,12 +1287,20 @@ export const SubmissionWorkspace = ({
           </section>
 
           {!readOnly ? (
-            <FacilityMonitoringPanel
-              chainId={selectedNetwork.id}
-              getAuthHeaders={getAuthHeaders}
-              signerAddress={signerAddress}
-              submission={submission}
-            />
+            <>
+              <FacilityMonitoringPanel
+                chainId={selectedNetwork.id}
+                getAuthHeaders={getAuthHeaders}
+                signerAddress={signerAddress}
+                submission={submission}
+              />
+              <AgentSupervisionPanel
+                chainId={selectedNetwork.id}
+                getAuthHeaders={getAuthHeaders}
+                signerAddress={signerAddress}
+                submission={submission}
+              />
+            </>
           ) : null}
 
           <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
