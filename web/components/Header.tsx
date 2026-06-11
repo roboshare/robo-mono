@@ -43,10 +43,15 @@ export const menuLinks: HeaderMenuLink[] = [
 const HeaderProductsMenu = () => {
   const pathname = usePathname();
   const isActive = pathname?.startsWith("/products") || pathname === "/robomata";
+  const productsMenuRef = useRef<HTMLDetailsElement>(null);
+
+  useOutsideClick(productsMenuRef, () => {
+    productsMenuRef?.current?.removeAttribute("open");
+  });
 
   return (
     <li>
-      <details>
+      <details className="dropdown" ref={productsMenuRef}>
         <summary
           onClick={event => {
             event.stopPropagation();
@@ -58,7 +63,12 @@ const HeaderProductsMenu = () => {
           <CubeTransparentIcon className="h-4 w-4" />
           <span>Products</span>
         </summary>
-        <ul className="rounded-box bg-base-100 p-2 shadow-lg">
+        <ul
+          className="rounded-box bg-base-100 p-2 shadow-lg"
+          onClick={() => {
+            productsMenuRef?.current?.removeAttribute("open");
+          }}
+        >
           <li>
             <Link href="/products/robomata" className="justify-between gap-4 rounded-xl text-sm">
               <span>Robomata</span>
