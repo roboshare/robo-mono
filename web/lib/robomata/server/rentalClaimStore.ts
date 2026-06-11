@@ -117,15 +117,25 @@ function claimFromInput(booking: RentalBookingRecord, input: RentalClaimCreateIn
 function updatedClaim(current: RentalClaimRecord, input: RentalClaimUpdateInput): RentalClaimRecord {
   const now = new Date().toISOString();
   const status = input.status ?? current.status;
+  const payoutHold = { ...current.payoutHold, ...(input.payoutHold ?? {}) };
+  if (
+    payoutHold.amountCents !== undefined &&
+    (!Number.isFinite(payoutHold.amountCents) || payoutHold.amountCents <= 0)
+  ) {
+    throw new Error("payoutHold.amountCents must be a positive finite amount when provided.");
+  }
+  if (
+    ["held", "partially_released", "captured"].includes(payoutHold.status) &&
+    (payoutHold.amountCents === undefined || payoutHold.amountCents <= 0)
+  ) {
+    throw new Error("payoutHold.amountCents must be provided for active payout holds.");
+  }
   return {
     ...current,
     assignedTo: input.assignedTo ?? current.assignedTo,
     adjudicationNotes: input.adjudicationNotes ?? current.adjudicationNotes,
     evidence: [...current.evidence, ...(input.evidence ?? [])],
-    payoutHold: {
-      ...current.payoutHold,
-      ...(input.payoutHold ?? {}),
-    },
+    payoutHold,
     status,
     updatedAt: now,
     closedAt: ["settled", "closed", "denied"].includes(status) ? (current.closedAt ?? now) : current.closedAt,

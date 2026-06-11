@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isRobomataRentalInventoryEnabled, isRobomataWorkflowMutationEnabled } from "~~/lib/featureFlags";
 import type { FacilityInventoryManifest, RentalInventorySourceEvent } from "~~/lib/robomata/rentalInventory";
+import { rentalManifestAccessError } from "~~/lib/robomata/server/rentalInventoryAccess";
 import { RentalInventoryValidationError, getRentalInventoryStore } from "~~/lib/robomata/server/rentalInventoryStore";
 import { requirePartnerAddress } from "~~/lib/robomata/server/submissionAccess";
 
@@ -16,38 +17,9 @@ function requireRobomataMutation() {
   return NextResponse.json({ error: "Robomata rental inventory writes are not enabled." }, { status: 403 });
 }
 
-function configuredFacilityOwners(): Record<string, string> {
-  const raw = process.env.ROBOMATA_RENTAL_INVENTORY_FACILITY_OWNERS_JSON?.trim();
-  if (!raw) return {};
-  const parsed = JSON.parse(raw) as Record<string, unknown>;
-  return Object.fromEntries(
-    Object.entries(parsed).flatMap(([facilityAssetId, partnerAddress]) =>
-      typeof partnerAddress === "string" ? [[facilityAssetId, partnerAddress.toLowerCase()]] : [],
-    ),
-  );
-}
-
 function requireManifestFacilityAccess(manifest: FacilityInventoryManifest, partnerAddress: string) {
-  const normalizedPartner = partnerAddress.toLowerCase();
-  const configuredOwner = configuredFacilityOwners()[manifest.facilityAssetId]?.toLowerCase();
-  if (configuredOwner && configuredOwner !== normalizedPartner) {
-    return NextResponse.json(
-      { error: "Partner is not authorized for this rental facility manifest." },
-      { status: 403 },
-    );
-  }
-
-  const sourceId = manifest.source?.sourceId?.trim().toLowerCase();
-  if (sourceId && sourceId !== normalizedPartner) {
-    return NextResponse.json({ error: "Manifest sourceId must match the authorized partner." }, { status: 403 });
-  }
-  if (!configuredOwner && !sourceId && process.env.NODE_ENV === "production") {
-    return NextResponse.json(
-      { error: "Manifest facility ownership must be configured or source-attributed." },
-      { status: 403 },
-    );
-  }
-  return null;
+  const error = rentalManifestAccessError(manifest, partnerAddress);
+  return error ? NextResponse.json({ error }, { status: 403 }) : null;
 }
 
 export async function GET(request: NextRequest) {

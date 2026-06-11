@@ -86,13 +86,14 @@ Every manifest ingest creates a durable ingestion run with trigger, source event
 
 `facility-registry-sync` scans `FacilityMetadataUpdated` events, resolves the event `assetMetadataURI`, extracts either an embedded `rentalInventoryManifest` object or a `rentalInventoryManifestUri` reference, and upserts the resulting manifest through the same validation and storage path as direct API uploads. The sync stores a checkpoint keyed by chain ID and registry address so cron jobs or agents can safely rerun it. Failed metadata fetches or invalid manifests are recorded as failed ingestion runs rather than stopping audit visibility.
 
-The same route also exposes a scheduled `GET` path. `web/vercel.json` calls it every five minutes in production deployments. The scheduled path is protected by `ROBOMATA_RENTAL_INVENTORY_SCHEDULED_SYNC_ENABLED=true` and accepts Vercel Cron requests. If `ROBOMATA_RENTAL_INVENTORY_SYNC_SECRET` is set, non-Vercel callers must send `Authorization: Bearer <secret>`.
+The same route also exposes a scheduled `GET` path. `web/vercel.json` calls it every five minutes in production deployments. The scheduled path is protected by `ROBOMATA_RENTAL_INVENTORY_SCHEDULED_SYNC_ENABLED=true` and accepts Vercel Cron requests signed with `Authorization: Bearer <CRON_SECRET>`. `ROBOMATA_RENTAL_INVENTORY_SYNC_SECRET` remains a fallback for manual non-Vercel callers.
 
 Operational environment:
 
 - `ROBOMATA_RENTAL_INVENTORY_ENABLED=true` enables protected read APIs and store access.
 - `ROBOMATA_RENTAL_INVENTORY_SCHEDULED_SYNC_ENABLED=true` enables scheduled FacilityRegistry sync side effects.
-- `ROBOMATA_RENTAL_INVENTORY_SYNC_SECRET` optionally protects non-Vercel sync callers with a bearer token.
+- `CRON_SECRET` is the Vercel Cron bearer secret for scheduled sync requests.
+- `ROBOMATA_RENTAL_INVENTORY_SYNC_SECRET` optionally protects manual non-Vercel sync callers with a bearer token.
 - `ROBOMATA_WORKFLOW_MUTATIONS_ENABLED=true` enables manifest writes, replay, and registry sync.
 - `ROBOMATA_RENTAL_INVENTORY_FILE` enables a local JSON fallback when `POSTGRES_URL` is absent in development.
 - `ROBOMATA_RENTAL_INVENTORY_SYNC_FROM_BLOCK` sets the first registry-sync block when no checkpoint exists.

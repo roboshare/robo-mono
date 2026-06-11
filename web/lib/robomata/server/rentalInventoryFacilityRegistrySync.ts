@@ -264,23 +264,12 @@ export async function syncFacilityRegistryRentalInventory(
   const toBlock = requestedToBlock < cappedToBlock ? requestedToBlock : cappedToBlock;
 
   if (toBlock < fromBlock) {
-    const now = new Date().toISOString();
-    const savedCheckpoint = await store.saveSyncCheckpoint({
-      id: checkpointKey,
-      chainId,
-      registry: "FacilityRegistry",
-      registryAddress,
-      nextBlock: fromBlock.toString(),
-      updatedAt: now,
-      lastSyncedBlock: checkpoint?.lastSyncedBlock,
-      lastRunId: checkpoint?.lastRunId,
-    });
     return {
       chainId,
       checkpoint: {
-        id: savedCheckpoint.id,
-        nextBlock: savedCheckpoint.nextBlock,
-        updatedAt: savedCheckpoint.updatedAt,
+        id: checkpointKey,
+        nextBlock: checkpoint?.nextBlock ?? fromBlock.toString(),
+        updatedAt: checkpoint?.updatedAt ?? new Date().toISOString(),
       },
       failedRuns: [],
       fromBlock: fromBlock.toString(),

@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isRobomataRentalInventoryEnabled } from "~~/lib/featureFlags";
+import {
+  authorizedRentalFacilityAssetIds,
+  rentalStoredFacilityAccessError,
+} from "~~/lib/robomata/server/rentalInventoryAccess";
 import { getRentalInventoryStore } from "~~/lib/robomata/server/rentalInventoryStore";
 import { requirePartnerAddress } from "~~/lib/robomata/server/submissionAccess";
 
@@ -19,6 +23,18 @@ export async function GET(request: NextRequest) {
 
   const facilityAssetId = request.nextUrl.searchParams.get("facilityAssetId")?.trim() || undefined;
   const platformVehicleId = request.nextUrl.searchParams.get("platformVehicleId")?.trim() || undefined;
-  const vehicles = await getRentalInventoryStore().listVehicles({ facilityAssetId, platformVehicleId });
+  const store = getRentalInventoryStore();
+
+  if (facilityAssetId) {
+    const accessError = await rentalStoredFacilityAccessError(facilityAssetId, partnerAddress);
+    if (accessError) return NextResponse.json({ error: accessError }, { status: 403 });
+  }
+
+  const allowedFacilityAssetIds = facilityAssetId
+    ? new Set([facilityAssetId])
+    : await authorizedRentalFacilityAssetIds(partnerAddress);
+  const vehicles = (await store.listVehicles({ facilityAssetId, platformVehicleId })).filter(vehicle =>
+    allowedFacilityAssetIds.has(vehicle.facilityAssetId),
+  );
   return NextResponse.json({ vehicles });
 }
