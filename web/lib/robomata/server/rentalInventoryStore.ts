@@ -397,6 +397,7 @@ function vehicleWithSetup(
   input: RentalVehicleHostSetupUpdate,
   now: string,
 ): RentalVehicleRecord {
+  assertNoProhibitedRentalPersistenceFields(input, "rental vehicle setup update");
   const hostSetup = mergeVehicleSetup(vehicle.hostSetup, input, now);
   const operationalStatus =
     hostSetup.status === "complete" && vehicle.operationalStatus === "setup" ? "ready" : vehicle.operationalStatus;
@@ -437,6 +438,7 @@ function vehicleWithControls(
   input: RentalVehicleHostControlsUpdate,
   now: string,
 ): RentalVehicleRecord {
+  assertNoProhibitedRentalPersistenceFields(input, "rental vehicle controls update");
   if (input.pricing?.dailyRateCents !== undefined && !positiveNumber(input.pricing.dailyRateCents)) {
     throw new RentalInventoryValidationError("pricing.dailyRateCents must be positive when provided.");
   }

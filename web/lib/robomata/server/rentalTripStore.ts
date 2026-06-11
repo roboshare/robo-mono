@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import "server-only";
 import { isRobomataRentalBookingsEnabled } from "~~/lib/featureFlags";
+import { assertNoProhibitedRentalPersistenceFields } from "~~/lib/robomata/rentalPersistencePolicy";
 import {
   type RentalTripCheckInInput,
   type RentalTripCheckOutInput,
@@ -104,6 +105,7 @@ function checkedInTrip(
     checkIn: RentalTripCheckInInput;
   },
 ): RentalTripRecord {
+  assertNoProhibitedRentalPersistenceFields(input, "rental trip check-in input");
   validateReportInput(input.checkIn);
   const now = new Date().toISOString();
   return {
@@ -120,6 +122,7 @@ function checkedInTrip(
 }
 
 function checkedOutTrip(current: RentalTripRecord, input: RentalTripCheckOutInput): RentalTripRecord {
+  assertNoProhibitedRentalPersistenceFields(input, "rental trip check-out input");
   validateReportInput(input);
   const now = new Date().toISOString();
   const status = input.exception ? "exception" : "completed";

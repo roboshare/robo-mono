@@ -151,7 +151,7 @@ function createFileStore(): RentalRevenueStore {
   const filePath = fileStorePath();
   return {
     async createPostingBatch(input) {
-      assertNoProhibitedRentalPersistenceFields(input.entries, "rental revenue ledger entries");
+      assertNoProhibitedRentalPersistenceFields(input, "rental revenue posting batch input");
       return withFileStoreWriteLock(filePath, async () => {
         const fileStore = await readFileStore(filePath);
         const batch = buildRentalRevenuePostingBatch(input);
@@ -203,7 +203,7 @@ function createPostgresStore(): RentalRevenueStore {
   const sql = getRobomataPostgresSql();
   return {
     async createPostingBatch(input) {
-      assertNoProhibitedRentalPersistenceFields(input.entries, "rental revenue ledger entries");
+      assertNoProhibitedRentalPersistenceFields(input, "rental revenue posting batch input");
       await ensurePostgresTables();
       const batch = buildRentalRevenuePostingBatch(input);
       return sql.begin(async tx => {
