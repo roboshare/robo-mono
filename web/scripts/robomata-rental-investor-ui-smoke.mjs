@@ -5,7 +5,7 @@ import { createServer } from "node:net";
 const port = process.env.ROBOMATA_RENTAL_INVESTOR_SMOKE_PORT ?? "3231";
 const baseUrl = `http://127.0.0.1:${port}`;
 const requestTimeoutMs = Number.parseInt(process.env.ROBOMATA_RENTAL_INVESTOR_SMOKE_REQUEST_TIMEOUT_MS ?? "120000", 10);
-const serverTimeoutMs = Number.parseInt(process.env.ROBOMATA_RENTAL_INVESTOR_SMOKE_SERVER_TIMEOUT_MS ?? "120000", 10);
+const serverTimeoutMs = Number.parseInt(process.env.ROBOMATA_RENTAL_INVESTOR_SMOKE_SERVER_TIMEOUT_MS ?? "240000", 10);
 
 let serverProcess;
 

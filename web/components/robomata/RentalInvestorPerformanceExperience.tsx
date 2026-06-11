@@ -148,6 +148,28 @@ function prettyJson(value: unknown) {
   return JSON.stringify(value, null, 2);
 }
 
+function formatReportingDate(value: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "UTC",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
+function formatReportingTimestamp(value: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "2-digit",
+    second: "2-digit",
+    timeZone: "UTC",
+    timeZoneName: "short",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
 export const RentalInvestorPerformanceExperience = () => {
   const [inputJson, setInputJson] = useState(prettyJson(sampleInput));
   const [dashboard, setDashboard] = useState<RentalInvestorDashboard | null>(null);
@@ -251,9 +273,8 @@ export const RentalInvestorPerformanceExperience = () => {
                     </p>
                     <h2 className="mt-2 break-all text-2xl font-black">{dashboard.facilityAssetId}</h2>
                     <p className="text-sm text-base-content/60">
-                      {new Date(dashboard.periodStart).toLocaleDateString()} -{" "}
-                      {new Date(dashboard.periodEnd).toLocaleDateString()} / computed{" "}
-                      {new Date(dashboard.computedAt).toLocaleString()}
+                      {formatReportingDate(dashboard.periodStart)} - {formatReportingDate(dashboard.periodEnd)} /
+                      computed {formatReportingTimestamp(dashboard.computedAt)}
                     </p>
                   </div>
                   <span className="badge badge-lg badge-primary">{dashboard.summary.settlementStatus}</span>
