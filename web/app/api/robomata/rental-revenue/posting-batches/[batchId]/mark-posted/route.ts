@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isRobomataRentalRevenuePostingEnabled, isRobomataWorkflowMutationEnabled } from "~~/lib/featureFlags";
 import {
   configuredRentalFacilityOwners,
-  rentalFacilityAccessError,
+  rentalStoredFacilityAccessError,
 } from "~~/lib/robomata/server/rentalInventoryAccess";
 import { getRentalRevenueStore } from "~~/lib/robomata/server/rentalRevenueStore";
 import { requirePartnerAddress } from "~~/lib/robomata/server/submissionAccess";
@@ -47,10 +47,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const currentBatch = await store.getPostingBatch(batchId);
     if (!currentBatch) return NextResponse.json({ error: "Rental revenue posting batch not found." }, { status: 404 });
     const configuredOwner = configuredRentalFacilityOwners()[currentBatch.facilityAssetId]?.toLowerCase();
-    const accessError = rentalFacilityAccessError({
-      facilityAssetId: currentBatch.facilityAssetId,
-      partnerAddress,
-    });
+    const accessError = await rentalStoredFacilityAccessError(currentBatch.facilityAssetId, partnerAddress);
     const isCreator = currentBatch.attestation.createdBy.toLowerCase() === partnerAddress.toLowerCase();
     const isConfiguredOwnerMismatch = configuredOwner !== undefined && configuredOwner !== partnerAddress.toLowerCase();
     if (accessError && (!isCreator || isConfiguredOwnerMismatch)) {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isRobomataRentalRevenuePostingEnabled, isRobomataWorkflowMutationEnabled } from "~~/lib/featureFlags";
 import type { RentalFinancingTarget, RentalRevenueLedgerEntry } from "~~/lib/robomata/rentalRevenue";
-import { rentalFacilityAccessError } from "~~/lib/robomata/server/rentalInventoryAccess";
+import { rentalStoredFacilityAccessError } from "~~/lib/robomata/server/rentalInventoryAccess";
 import { getRentalRevenueStore } from "~~/lib/robomata/server/rentalRevenueStore";
 import { requirePartnerAddress } from "~~/lib/robomata/server/submissionAccess";
 
@@ -41,10 +41,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "periodStart and periodEnd must be provided." }, { status: 400 });
     }
     if (!body.target) return NextResponse.json({ error: "target must be provided." }, { status: 400 });
-    const accessError = rentalFacilityAccessError({
-      facilityAssetId: body.target.facilityAssetId,
-      partnerAddress,
-    });
+    const accessError = await rentalStoredFacilityAccessError(body.target.facilityAssetId, partnerAddress);
     if (accessError) return NextResponse.json({ error: accessError }, { status: 403 });
     if (!Array.isArray(body.entries) || body.entries.length === 0) {
       return NextResponse.json({ error: "entries must include at least one ledger entry." }, { status: 400 });
