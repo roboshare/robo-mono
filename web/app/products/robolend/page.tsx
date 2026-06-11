@@ -26,14 +26,14 @@ const reviewSteps = [
 
 const RobolendPage = () => (
   <div className="flex flex-1 justify-center px-4 py-8 sm:px-6 sm:py-10">
-    <div className="w-full max-w-7xl space-y-8">
+    <div className="w-full max-w-7xl space-y-10">
       <section className="overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 shadow-xl shadow-base-300/40">
-        <div className="grid gap-8 px-6 py-8 sm:px-8 sm:py-10 lg:grid-cols-[1.1fr_0.9fr] lg:px-10">
-          <div className="space-y-7">
+        <div className="grid items-stretch gap-8 px-6 py-8 sm:px-8 sm:py-10 lg:grid-cols-[1.1fr_0.9fr] lg:px-10">
+          <div className="flex h-full flex-col justify-between gap-8">
             <div className="space-y-4">
-              <div className="inline-flex items-center gap-2 rounded-full border border-warning/25 bg-warning/10 px-4 py-2 text-sm font-bold text-warning">
+              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.16em] text-amber-700">
                 <ClockIcon className="h-4 w-4" />
-                Coming soon
+                Soon
               </div>
               <p className="text-sm font-semibold uppercase tracking-[0.3em] text-base-content/50">Robolend</p>
               <h1 className="max-w-4xl text-4xl font-black tracking-tight text-base-content sm:text-5xl lg:text-6xl">
@@ -50,16 +50,16 @@ const RobolendPage = () => (
                 See the operator workflow
                 <ArrowRightIcon className="h-4 w-4" />
               </Link>
-              <Link href="/markets" className="btn btn-outline rounded-full sm:min-w-48">
-                View markets layer
+              <Link href="/products/robomarkets" className="btn btn-outline rounded-full sm:min-w-48">
+                Explore Robomarkets
               </Link>
             </div>
           </div>
 
-          <div className="rounded-[1.75rem] border border-base-300 bg-base-200/70 p-5 sm:p-6">
+          <div className="flex h-full flex-col rounded-[1.75rem] border border-base-300 bg-base-200/70 p-5 sm:p-6">
             <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">Capital Provider</p>
-            <div className="mt-5 space-y-4">
-              <div className="rounded-2xl border border-base-300 bg-base-100/80 p-4">
+            <div className="mt-5 flex flex-1 flex-col gap-4">
+              <div className="flex-1 rounded-2xl border border-base-300 bg-base-100/80 p-4">
                 <BuildingLibraryIcon className="h-6 w-6 text-primary" />
                 <h2 className="mt-3 text-lg font-black tracking-tight text-base-content">Designed for credit teams</h2>
                 <p className="mt-2 text-sm leading-relaxed text-base-content/70">
@@ -67,7 +67,7 @@ const RobolendPage = () => (
                   they need a generic asset marketplace.
                 </p>
               </div>
-              <div className="rounded-2xl border border-base-300 bg-base-100/80 p-4">
+              <div className="flex-1 rounded-2xl border border-base-300 bg-base-100/80 p-4">
                 <BellAlertIcon className="h-6 w-6 text-primary" />
                 <h2 className="mt-3 text-lg font-black tracking-tight text-base-content">Monitoring before trading</h2>
                 <p className="mt-2 text-sm leading-relaxed text-base-content/70">

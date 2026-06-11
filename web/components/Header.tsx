@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { hardhat } from "viem/chains";
-import { Bars3Icon, BugAntIcon, HomeIcon, RocketLaunchIcon } from "@heroicons/react/24/outline";
+import { Bars3Icon, BugAntIcon, RocketLaunchIcon } from "@heroicons/react/24/outline";
 import {
   BuildingStorefrontIcon,
   CubeTransparentIcon,
@@ -27,13 +27,8 @@ type HeaderMenuLink = {
 
 export const menuLinks: HeaderMenuLink[] = [
   {
-    label: "Home",
-    href: "/",
-    icon: <HomeIcon className="h-4 w-4" />,
-  },
-  {
-    label: "Markets",
-    href: "/markets",
+    label: "Robomarkets",
+    href: "/products/robomarkets",
     icon: <BuildingStorefrontIcon className="h-4 w-4" />,
   },
   {
@@ -75,15 +70,24 @@ const HeaderProductsMenu = () => {
         </summary>
         <ul className="rounded-box bg-base-100 p-2 shadow-lg">
           <li>
-            <Link href="/products/robomata" className="gap-2 rounded-xl text-sm">
+            <Link href="/products/robomata" className="justify-between gap-4 rounded-xl text-sm">
               <span>Robomata</span>
-              <span className="badge badge-primary badge-sm">Active</span>
+              <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-[0.12em] text-primary">
+                Active
+              </span>
             </Link>
           </li>
           <li>
-            <Link href="/products/robolend" className="gap-2 rounded-xl text-sm">
+            <Link href="/products/robomarkets" className="justify-between gap-4 rounded-xl text-sm">
+              <span>Robomarkets</span>
+            </Link>
+          </li>
+          <li>
+            <Link href="/products/robolend" className="justify-between gap-4 rounded-xl text-sm">
               <span>Robolend</span>
-              <span className="badge badge-warning badge-sm">Coming soon</span>
+              <span className="whitespace-nowrap rounded-full bg-amber-100 px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-[0.12em] text-amber-700">
+                Soon
+              </span>
             </Link>
           </li>
         </ul>
