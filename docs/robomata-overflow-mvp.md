@@ -64,7 +64,7 @@ The lender-facing output includes:
 - advance rate
 - concentration reserve
 - borrowing-base availability
-- agent diligence memo
+- deterministic LLM diligence memo
 - evidence commitment references
 
 ## Product Flow
@@ -428,6 +428,9 @@ This work follows the current repo policy:
 - Do not claim legal perfection of liens, collateral control, or custody.
 - Do not replace Alfa, Solifi, Vero, or lender system-of-record tools in v1.
 - Do not make LLM output the source of credit truth.
+- Do not conflate the deterministic LLM diligence memo with supervised agent
+  policies, runs, actions, or events. Current agents monitor, evaluate, propose
+  actions, and produce audit records; they do not execute Sui/EVM writes.
 - Do not expose raw Walrus, Seal, or Sui identifiers as the primary operator
   workflow. Technical identifiers belong behind `Advanced details`.
 - Do not treat Seal decryption UX, lender allowlists, or multi-party access

@@ -280,7 +280,10 @@ Verify:
   - edit allowed imported row fields
   - recompute submission
 - deterministic review output explains next steps
-- LLM/agent output is optional and subordinate to rules-based credit logic
+- deterministic LLM diligence memo output is optional and subordinate to
+  rules-based credit logic
+- supervised agent actions are separate policy/run/action records; they can
+  propose operator work but do not replace rules-based credit calculation
 
 ### 7. Generate Lender Packet
 
@@ -343,6 +346,81 @@ Verify:
   `invalid`, `superseded`, and `refresh_available`, plus facility statuses
   `packet_fresh`, `packet_stale`, and `needs_review`
 
+### 8b. Supervised Agent Lifecycle Preview
+
+Status: preview behind `ROBOMATA_AGENTS_ENABLED`,
+`NEXT_PUBLIC_ROBOMATA_AGENTS_ENABLED`, and
+`ROBOMATA_AGENT_MUTATIONS_ENABLED`.
+
+Tracking issue: `ROB-220`.
+
+Verify:
+
+- flag-off local smoke confirms agent policy, run, and action routes return
+  `404`
+- flag-off local smoke confirms the operator workspace does not render the
+  `Agent supervision` panel
+- default policies start paused, and manual run attempts fail with `409` until
+  the operator activates the policy
+- activating a policy allows a manual run against
+  `sub_seed_expired_observation`
+- the seeded expired-observation case proposes `evidence_review`,
+  `packet_refresh`, and `sui_root_review`
+- wrong-partner access is hidden for policy, run, and action decision routes
+- `approved`, `rejected`, `completed`, and `skipped` decisions persist in the
+  local agent store after reloading the run list
+- pausing the policy returns the submission to the expected `409` run-conflict
+  state
+- local smoke uses `ROBOMATA_AGENTS_FILE` as the ignored JSON fallback; shared
+  preview, release candidate, and production environments must use Postgres
+  when the agent flags are enabled
+
+### 8c. Scheduled Agent Tick Preview
+
+Status: preview behind `ROBOMATA_AGENTS_ENABLED` and
+`ROBOMATA_AGENT_REFRESH_ENABLED`.
+
+Tracking issue: `ROB-221`.
+
+Verify:
+
+- `POST /api/robomata/agents/tick` requires
+  `x-robomata-agent-tick-secret`
+- disabled agent flag, disabled refresh flag, missing configured secret,
+  missing header secret, and wrong header secret return distinct failures
+- zero active policies returns `{ count: 0, results: [] }`
+- a mixed batch with one valid active policy and one dangling active policy
+  returns per-policy `completed` and `failed` results without failing the route
+- repeated ticks leave `ROBOMATA_SUBMISSIONS_FILE` byte-for-byte unchanged
+- local smoke keeps Sui commit execution disabled while scheduled ticks run
+- scheduled tick actions remain `proposed` even when the policy has
+  `autoApproveActionTypes` configured
+- deployment scheduling remains caller-owned until a durable worker or
+  control-plane service is justified
+
+### 8d. Agent-First Trust Boundary
+
+Status: documented for the current supervised tranche.
+
+Tracking issue: `ROB-222`.
+
+Verify:
+
+- current agents are described as monitors, evaluators, action proposers, and
+  audit trail producers
+- deterministic LLM diligence memo output remains separate from supervised
+  policy/run/action state
+- operators still approve, reject, complete, or skip proposed actions
+- scheduled ticks do not approve their own work, mutate submissions, or execute
+  Sui/EVM writes
+- Sui commits remain operator-owned sponsored browser flow when configured, with
+  the direct server-signed path treated as legacy/test-only
+- EVM tokenization remains an explicit operator-signed `FacilityRegistry`
+  transaction
+- autonomous execution is deferred to the follow-on Linear project
+  `Robomata Agent-First Operating System`
+- default-off flags and known limitations remain explicit before release
+
 ### 9. Public `/robomata` Product Surface
 
 Status: passed.
@@ -353,7 +431,7 @@ Verify:
   privileges
 - `/robomata` does not call private submission APIs or accept
   `?submission=<id>` as an access mechanism
-- primary CTA sends operators to `/partner/submissions`
+- primary CTA sends operators to `/operator/submissions`
 - page presents product positioning, workflow steps, and evidence rails in
   customer-facing terms
 - page does not present demo-only controls such as `Keep Markets Live`,
@@ -514,7 +592,8 @@ Result:
   `/lender/packet/[token]`, and the protected share-link API routes.
 - `yarn robomata:local-smoke` passed using an isolated local Next runtime,
   temporary file-backed submission store, temporary file-backed share-link
-  store, mock Walrus evidence, and disabled Sui commit.
+  store, temporary file-backed monitoring and agent stores, mock Walrus
+  evidence, and disabled Sui commit.
 
 Non-secret local smoke result:
 
@@ -523,7 +602,49 @@ Non-secret local smoke result:
   "smokeProfile": "local",
   "publicRoutes": {
     "publicRobomataRoute": "passed",
-    "partnerSubmissionsRoute": "passed"
+    "operatorSubmissionsRoute": "passed"
+  },
+  "agentSupervision": {
+    "flagOff": {
+      "apiClosed": true,
+      "tickClosed": true,
+      "uiHidden": true
+    },
+    "durableLocalStore": {
+      "policyDefaultStatus": "paused",
+      "policyFinalStatus": "paused",
+      "pausedRunConflict": true,
+      "actionCount": 3,
+      "actionTypes": [
+        "evidence_review",
+        "packet_refresh",
+        "sui_root_review"
+      ],
+      "persistedActionStatuses": {
+        "approvedThenCompleted": "completed",
+        "rejected": "rejected",
+        "skipped": "skipped",
+        "approvedIntermediate": "approved"
+      },
+      "unauthorizedPartnerHidden": true
+    },
+    "scheduledTick": {
+      "disabledAgentStatus": "Robomata agents are not enabled.",
+      "disabledRefreshStatus": "Robomata agent refresh is not enabled.",
+      "missingConfiguredSecretStatus": "ROBOMATA_AGENT_TICK_SECRET is not configured.",
+      "missingHeaderSecretStatus": "Missing Robomata agent tick secret.",
+      "wrongHeaderSecretStatus": "Invalid Robomata agent tick secret.",
+      "zeroActivePolicyCount": 0,
+      "firstTickCount": 2,
+      "firstTickStatuses": [
+        "completed",
+        "failed"
+      ],
+      "repeatedTickCount": 2,
+      "scheduledActionsRemainProposed": true,
+      "submissionsUnchangedAfterRepeatedTicks": true,
+      "suiCommitExecutionDisabled": true
+    }
   },
   "submissionId": "sub_28b0e81f-f592-42bf-b295-bf126cc66bd7",
   "storageBackend": "walrus-mock",
@@ -558,6 +679,10 @@ Covered behavior:
 - Listing share links shows access count and last-access metadata.
 - Revocation persists `revoked` status and the API rejects the revoked link
   with `410`.
+- Agent routes stay closed and the operator panel stays hidden while agent
+  flags are off.
+- The local JSON-backed agent store persists policy activation, manual run
+  output, action decisions, and the final paused-policy conflict state.
 - A short-lived link derives `expired` status and the API rejects the expired
   link with `410`.
 - Walrus, Seal, Sui, digest, and transaction metadata remain outside the public
@@ -616,3 +741,17 @@ Reason:
 - release notes for this tranche are captured in
   `docs/releases/robomata-overflow-v0.1.7.md`
 - known limitations remain explicit and do not block the Overflow MVP release
+
+Agent-first release readiness notes:
+
+- agent policy, run, action, event, mutation, UI, refresh, and scheduled tick
+  paths remain default-off behind explicit environment flags
+- local JSON stores are development-only; shared previews, release candidates,
+  and production environments should use Postgres when agent flags are enabled
+- the current implementation is supervised: agents monitor, evaluate, propose
+  actions, and write audit records, while operators approve, reject, complete,
+  or skip
+- Sui and EVM execution remains outside agent autonomy; those writes are
+  operator-signed product paths or explicitly configured legacy/test paths
+- broader autonomous execution is a follow-on project, not a release gate for
+  the current live monitoring tranche

@@ -1,0 +1,83 @@
+import { NextRequest, NextResponse } from "next/server";
+import { isRobomataRentalInventoryEnabled, isRobomataWorkflowMutationEnabled } from "~~/lib/featureFlags";
+import type { FacilityInventoryManifest, RentalInventorySourceEvent } from "~~/lib/robomata/rentalInventory";
+import {
+  authorizedRentalFacilityAssetIds,
+  rentalManifestAccessError,
+  rentalStoredFacilityAccessError,
+} from "~~/lib/robomata/server/rentalInventoryAccess";
+import { RentalInventoryValidationError, getRentalInventoryStore } from "~~/lib/robomata/server/rentalInventoryStore";
+import { requirePartnerAddress } from "~~/lib/robomata/server/submissionAccess";
+
+export const runtime = "nodejs";
+
+function requireRentalInventory() {
+  if (isRobomataRentalInventoryEnabled()) return null;
+  return NextResponse.json({ error: "Robomata rental inventory is not enabled." }, { status: 404 });
+}
+
+function requireRobomataMutation() {
+  if (isRobomataWorkflowMutationEnabled()) return null;
+  return NextResponse.json({ error: "Robomata rental inventory writes are not enabled." }, { status: 403 });
+}
+
+function requireManifestFacilityAccess(manifest: FacilityInventoryManifest, partnerAddress: string) {
+  const error = rentalManifestAccessError(manifest, partnerAddress);
+  return error ? NextResponse.json({ error }, { status: 403 }) : null;
+}
+
+export async function GET(request: NextRequest) {
+  const featureError = requireRentalInventory();
+  if (featureError) return featureError;
+
+  const partnerAddress = await requirePartnerAddress(request);
+  if (partnerAddress instanceof NextResponse) return partnerAddress;
+
+  const facilityAssetId = request.nextUrl.searchParams.get("facilityAssetId")?.trim() || undefined;
+  if (facilityAssetId) {
+    const accessError = await rentalStoredFacilityAccessError(facilityAssetId, partnerAddress);
+    if (accessError) return NextResponse.json({ error: accessError }, { status: 403 });
+  }
+
+  const allowedFacilityAssetIds = facilityAssetId
+    ? new Set([facilityAssetId])
+    : await authorizedRentalFacilityAssetIds(partnerAddress);
+  const manifests = await getRentalInventoryStore().listManifests(facilityAssetId);
+  return NextResponse.json({
+    manifests: manifests.filter(manifest => allowedFacilityAssetIds.has(manifest.facilityAssetId)),
+  });
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const featureError = requireRentalInventory();
+    if (featureError) return featureError;
+    const mutationError = requireRobomataMutation();
+    if (mutationError) return mutationError;
+
+    const partnerAddress = await requirePartnerAddress(request);
+    if (partnerAddress instanceof NextResponse) return partnerAddress;
+
+    const body = (await request.json()) as {
+      manifest?: FacilityInventoryManifest;
+      sourceEvent?: RentalInventorySourceEvent;
+    };
+    if (!body.manifest || typeof body.manifest !== "object") {
+      return NextResponse.json({ error: "manifest must be provided." }, { status: 400 });
+    }
+    const accessError = requireManifestFacilityAccess(body.manifest, partnerAddress);
+    if (accessError) return accessError;
+
+    const result = await getRentalInventoryStore().upsertManifest(body.manifest, {
+      actor: partnerAddress,
+      sourceEvent: body.sourceEvent,
+      trigger: body.sourceEvent ? "registry_event" : "api_upload",
+    });
+    return NextResponse.json(result, { status: 201 });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to upsert rental inventory manifest." },
+      { status: error instanceof RentalInventoryValidationError ? 400 : 500 },
+    );
+  }
+}

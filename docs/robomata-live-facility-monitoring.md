@@ -132,10 +132,88 @@ Live facility monitoring is additive and default-off:
   to include monitoring freshness.
 - `NEXT_PUBLIC_ROBOMATA_LENDER_MONITORING_SHARE_ENABLED=true` reveals lender
   monitoring share controls.
+- `ROBOMATA_AGENTS_ENABLED=true` enables supervised agent policies, runs, and
+  proposed actions derived from monitoring state.
+- `NEXT_PUBLIC_ROBOMATA_AGENTS_ENABLED=true` reveals the operator-facing agent
+  supervision panel.
+- `ROBOMATA_AGENT_MUTATIONS_ENABLED=true` enables policy activation, manual
+  agent runs, and operator action decisions.
+- `ROBOMATA_AGENT_REFRESH_ENABLED=true` enables scheduled agent ticks at
+  `POST /api/robomata/agents/tick`; the route also requires
+  `ROBOMATA_AGENT_TICK_SECRET` and callers must send the same value in
+  `x-robomata-agent-tick-secret`.
+- `ROBOMATA_AGENTS_FILE=/local/path/agents.json` is an optional local-only JSON
+  fallback when `POSTGRES_URL` is not configured.
 
-When these flags are unset, `/robomata`, `/partner/submissions`, Robomata
+When these flags are unset, `/robomata`, `/operator/submissions`, Robomata
 submission APIs, protected packet sharing, Walrus/Seal storage, and Sui evidence
 commits must behave as they do today.
+
+## Supervised Agent Trust Boundary
+
+The first agent-first slice is intentionally supervised. The current agent role
+is to monitor the facility projection, evaluate freshness and readiness signals,
+propose operator-visible actions, and produce an audit trail through policy,
+run, action, and event records.
+
+Supervised agent actions are separate from the deterministic LLM diligence memo
+used in the borrowing-base workflow. The diligence memo can summarize the
+rules-based credit package, but it is not an agent policy, not an executable
+action queue, and not the source of credit truth.
+
+Operators remain the execution boundary. They activate or pause policy, trigger
+manual checks, and approve, reject, complete, or skip proposed actions. Scheduled
+ticks can create proposed actions, but they do not approve their own work, mutate
+submissions, or execute Sui/EVM writes.
+
+Sui and EVM writes remain explicit operator-signed product paths or separately
+configured legacy/test paths:
+
+- Sui evidence commits should use the operator-owned sponsored browser flow when
+  configured; the direct server-signed path is legacy/test-only.
+- EVM tokenization requires the operator to explicitly sign the configured
+  `FacilityRegistry` transaction.
+- Agent runs can recommend Sui-root review or tokenization readiness, but the
+  current monitoring tranche does not let agents submit those writes.
+
+Broader autonomous execution belongs to the follow-on Linear project
+`Robomata Agent-First Operating System`, not this live monitoring tranche.
+
+## Scheduled Agent Tick Route
+
+`POST /api/robomata/agents/tick` is an operator-controlled scheduling target,
+not a durable worker by itself. Cron, Vercel Cron, Linear automations, or a
+future control plane can call it, but the scheduling mechanism remains the
+caller concern until repeated production load justifies a dedicated worker or
+control-plane service.
+
+Required runtime gates:
+
+- `ROBOMATA_WORKFLOW_ENABLED=true`
+- `ROBOMATA_AGENTS_ENABLED=true`
+- `ROBOMATA_AGENT_REFRESH_ENABLED=true`
+- `ROBOMATA_AGENT_TICK_SECRET=<secret>`
+- request header `x-robomata-agent-tick-secret: <secret>`
+
+Expected guard failures:
+
+- workflow disabled: `404` with `Robomata workflow is not enabled.`
+- agent flag disabled: `404` with `Robomata agents are not enabled.`
+- refresh flag disabled: `403` with `Robomata agent refresh is not enabled.`
+- configured secret missing: `500` with
+  `ROBOMATA_AGENT_TICK_SECRET is not configured.`
+- header secret missing: `401` with `Missing Robomata agent tick secret.`
+- header secret wrong: `401` with `Invalid Robomata agent tick secret.`
+
+Successful ticks return `{ count, results }`. Each result is scoped to one
+active policy and reports `completed` with a `runId` and `actionCount`, or
+`failed` with an error. A dangling policy or failed facility does not fail the
+whole batch. If no active policies exist, the route succeeds with
+`{ count: 0, results: [] }`.
+
+Scheduled ticks do not execute approved actions, mutate submissions, or perform
+Sui/EVM writes. Tick-created actions are recorded as proposed even if a policy
+has auto-approval configured, so operator approval remains the handoff boundary.
 
 ## Sui Roots
 
