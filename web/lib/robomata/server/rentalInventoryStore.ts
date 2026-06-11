@@ -21,6 +21,7 @@ import {
   type RentalVehicleSetupChecklistKey,
   type RentalVehicleSetupValidationError,
 } from "~~/lib/robomata/rentalInventory";
+import { assertNoProhibitedRentalPersistenceFields } from "~~/lib/robomata/rentalPersistencePolicy";
 import { getRobomataPostgresSql } from "~~/lib/robomata/server/postgres";
 import { buildFacilityInventoryManifestRootPayload } from "~~/lib/robomata/server/rentalInventoryRoots";
 
@@ -188,6 +189,7 @@ function validateVehicle(vehicle: FacilityInventoryVehicle, manifest: FacilityIn
 }
 
 function validateManifest(manifest: FacilityInventoryManifest) {
+  assertNoProhibitedRentalPersistenceFields(manifest, "rental inventory manifest");
   if (manifest.version !== RENTAL_FACILITY_INVENTORY_MANIFEST_VERSION) {
     throw new RentalInventoryValidationError(`Unsupported rental inventory manifest version: ${manifest.version}.`);
   }
@@ -210,6 +212,10 @@ function validateManifest(manifest: FacilityInventoryManifest) {
     }
     platformVehicleIds.add(vehicle.platformVehicleId);
   }
+}
+
+function validateIngestionInput(input: RentalInventoryIngestionInput | undefined) {
+  assertNoProhibitedRentalPersistenceFields(input, "rental inventory ingestion input");
 }
 
 function buildManifestRef(manifest: FacilityInventoryManifest): FacilityInventoryManifestRef {
@@ -395,6 +401,7 @@ function vehicleWithSetup(
   input: RentalVehicleHostSetupUpdate,
   now: string,
 ): RentalVehicleRecord {
+  assertNoProhibitedRentalPersistenceFields(input, "rental vehicle setup update");
   const hostSetup = mergeVehicleSetup(vehicle.hostSetup, input, now);
   const operationalStatus =
     hostSetup.status === "complete" && vehicle.operationalStatus === "setup" ? "ready" : vehicle.operationalStatus;
@@ -435,6 +442,7 @@ function vehicleWithControls(
   input: RentalVehicleHostControlsUpdate,
   now: string,
 ): RentalVehicleRecord {
+  assertNoProhibitedRentalPersistenceFields(input, "rental vehicle controls update");
   if (input.pricing?.dailyRateCents !== undefined && !positiveNumber(input.pricing.dailyRateCents)) {
     throw new RentalInventoryValidationError("pricing.dailyRateCents must be positive when provided.");
   }
@@ -584,6 +592,7 @@ function createFileStore(): RentalInventoryStore {
       return fileStore.vehicles.filter(vehicle => vehicleMatchesInput(vehicle, input));
     },
     async recordIngestionRun(ingestionRun) {
+      assertNoProhibitedRentalPersistenceFields(ingestionRun, "rental inventory ingestion run");
       return withFileStoreWriteLock(filePath, async () => {
         const fileStore = await readFileStore(filePath);
         fileStore.ingestionRuns = [ingestionRun, ...fileStore.ingestionRuns.filter(run => run.id !== ingestionRun.id)];
@@ -637,6 +646,7 @@ function createFileStore(): RentalInventoryStore {
     },
     async upsertManifest(manifest, input) {
       return withFileStoreWriteLock(filePath, async () => {
+        validateIngestionInput(input);
         const startedAt = new Date().toISOString();
         const fileStore = await readFileStore(filePath);
         try {
@@ -792,6 +802,7 @@ function createPostgresStore(): RentalInventoryStore {
     },
     async recordIngestionRun(ingestionRun) {
       await ensurePostgresTables();
+      assertNoProhibitedRentalPersistenceFields(ingestionRun, "rental inventory ingestion run");
       await sql`
         INSERT INTO robomata_rental_inventory_ingestion_runs (
           id, facility_asset_id, manifest_id, manifest_digest, status, trigger, payload, started_at, completed_at
@@ -883,6 +894,7 @@ function createPostgresStore(): RentalInventoryStore {
     },
     async upsertManifest(manifest, input) {
       await ensurePostgresTables();
+      validateIngestionInput(input);
       const startedAt = new Date().toISOString();
       try {
         validateManifest(manifest);

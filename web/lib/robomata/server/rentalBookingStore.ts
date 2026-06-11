@@ -11,6 +11,7 @@ import {
   type RentalBookingRecord,
 } from "~~/lib/robomata/rentalBookings";
 import type { RentalBookingLifecycleState } from "~~/lib/robomata/rentalOperations";
+import { assertNoProhibitedRentalPersistenceFields } from "~~/lib/robomata/rentalPersistencePolicy";
 import { getRobomataPostgresSql } from "~~/lib/robomata/server/postgres";
 
 type RentalBookingFileStore = {
@@ -124,6 +125,7 @@ function bookingEvent(
 function createBookingRecord(
   input: Omit<RentalBookingRecord, "createdAt" | "events" | "id" | "updatedAt">,
 ): RentalBookingRecord {
+  assertNoProhibitedRentalPersistenceFields(input, "rental booking");
   const now = new Date().toISOString();
   const id = `rb_${randomUUID()}`;
   const events: RentalBookingEvent[] = [bookingEvent("checkout_started", id)];
@@ -184,6 +186,7 @@ function assertNoOverlappingActiveBooking(
 }
 
 function confirmedBooking(current: RentalBookingRecord, input: RentalBookingConfirmationInput): RentalBookingRecord {
+  assertNoProhibitedRentalPersistenceFields(input, "rental booking confirmation");
   const now = new Date().toISOString();
   const state = current.state === "host_review" || !input.hostReviewRequired ? "confirmed" : "host_review";
   const events = [
@@ -208,6 +211,7 @@ function bookingWithState(
     state: RentalBookingLifecycleState;
   },
 ): RentalBookingRecord {
+  assertNoProhibitedRentalPersistenceFields(input.payload, "rental booking event payload");
   return {
     ...current,
     state: input.state,
