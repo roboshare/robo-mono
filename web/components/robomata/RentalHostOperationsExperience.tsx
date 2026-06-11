@@ -257,6 +257,7 @@ export const RentalHostOperationsExperience = () => {
           : (selectedVehicle.display.imageUris ?? []);
       const existingPickupDropoff = selectedVehicle.hostSetup?.pickupDropoff;
       const existingSetupPricing = selectedVehicle.hostSetup?.pricing;
+      const existingSetupAvailability = selectedVehicle.hostSetup?.availability;
       const existingSetupRules = selectedVehicle.hostSetup?.rules;
       const primaryPhotoUri = setupPhotoUri.trim();
       const setup: RentalVehicleHostSetupUpdate = {
@@ -279,6 +280,7 @@ export const RentalHostOperationsExperience = () => {
           minimumTripDays: numberFromInput(setupMinimumTripDays),
         },
         availability: {
+          ...existingSetupAvailability,
           timezone: timezone.trim(),
           instantBookEnabled: instantBook,
           advanceNoticeHours: numberFromInput(setupAdvanceNoticeHours),
@@ -312,8 +314,10 @@ export const RentalHostOperationsExperience = () => {
     try {
       const existingControlsAvailability =
         selectedVehicle.hostControls?.availability ?? selectedVehicle.hostSetup?.availability ?? {};
+      const existingControlsPricing = selectedVehicle.hostControls?.pricing ?? selectedVehicle.hostSetup?.pricing;
       const controls: RentalVehicleHostControlsUpdate = {
         pricing: {
+          ...existingControlsPricing,
           currency: "USD",
           dailyRateCents: centsFromCurrency(controlDailyRate),
           minimumTripDays: numberFromInput(controlMinimumTripDays),

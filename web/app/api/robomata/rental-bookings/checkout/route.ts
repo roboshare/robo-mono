@@ -7,6 +7,7 @@ import {
   isRobomataWorkflowMutationEnabled,
 } from "~~/lib/featureFlags";
 import { defaultRentalCancellationPolicy } from "~~/lib/robomata/rentalBookings";
+import type { RentalVehicleRecord } from "~~/lib/robomata/rentalInventory";
 import { rentalMarketplaceListingFromVehicle } from "~~/lib/robomata/rentalMarketplace";
 import { buildRentalCheckoutPaymentPlan } from "~~/lib/robomata/rentalPayments";
 import { renterCheckoutEligibility } from "~~/lib/robomata/rentalRenters";
@@ -37,6 +38,36 @@ function requireBookingCheckout() {
   if (!isRobomataWorkflowMutationEnabled()) {
     return NextResponse.json({ error: "Robomata rental booking writes are not enabled." }, { status: 403 });
   }
+  return null;
+}
+
+function requestedTripDays(dateFrom: string, dateTo: string) {
+  return Math.max(1, Math.ceil((Date.parse(dateTo) - Date.parse(dateFrom)) / (24 * 60 * 60 * 1_000)));
+}
+
+function enforceBookingReviewLimits(vehicle: RentalVehicleRecord, body: CheckoutRequestBody) {
+  const bookingReview = vehicle.hostControls?.bookingReview;
+  if (!bookingReview || !body.dateFrom || !body.dateTo) return null;
+
+  const maxTripDays = bookingReview.maxTripDays;
+  if (maxTripDays !== undefined && requestedTripDays(body.dateFrom, body.dateTo) > maxTripDays) {
+    return NextResponse.json(
+      { error: `Requested trip exceeds the host maximum of ${maxTripDays} days.` },
+      { status: 409 },
+    );
+  }
+
+  const minimumNoticeHours = bookingReview.minimumNoticeHours;
+  if (minimumNoticeHours !== undefined) {
+    const noticeHours = (Date.parse(body.dateFrom) - Date.now()) / (60 * 60 * 1_000);
+    if (noticeHours < minimumNoticeHours) {
+      return NextResponse.json(
+        { error: `Requested trip starts inside the host minimum notice window of ${minimumNoticeHours} hours.` },
+        { status: 409 },
+      );
+    }
+  }
+
   return null;
 }
 
@@ -80,6 +111,8 @@ export async function POST(request: NextRequest) {
     if (!listing.tripEstimate) {
       return NextResponse.json({ error: "Rental vehicle does not have pricing configured." }, { status: 409 });
     }
+    const reviewLimitError = enforceBookingReviewLimits(vehicle, body);
+    if (reviewLimitError) return reviewLimitError;
 
     const paymentPlan = buildRentalCheckoutPaymentPlan({
       listing,

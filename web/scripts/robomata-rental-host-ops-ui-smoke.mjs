@@ -28,6 +28,12 @@ function nowIso(offsetDays = 0) {
   return date.toISOString();
 }
 
+function nowIsoHours(offsetHours = 0) {
+  const date = new Date();
+  date.setUTCHours(date.getUTCHours() + offsetHours);
+  return date.toISOString();
+}
+
 function createAccount() {
   return privateKeyToAccount(`0x${randomBytes(32).toString("hex")}`);
 }
@@ -165,6 +171,20 @@ async function requestJson({ authHeaders, authPath, body, headers = {}, method =
   return payload;
 }
 
+async function expectCheckoutRejection({ body, expectedMessage }) {
+  const { payload, response } = await fetchJsonResponse(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (response.status !== 409) {
+    throw new Error(`Expected checkout rejection 409, got ${response.status}: ${JSON.stringify(payload)}`);
+  }
+  if (!String(payload.error ?? "").includes(expectedMessage)) {
+    throw new Error(`Expected checkout rejection to mention "${expectedMessage}", got ${JSON.stringify(payload)}`);
+  }
+}
+
 async function verifyRouteShell() {
   const response = await fetch(`${baseUrl}/operator/rentals`);
   if (!response.ok) throw new Error(`/operator/rentals failed ${response.status}`);
@@ -264,11 +284,14 @@ async function main() {
           currency: "USD",
           dailyRateCents: 12900,
           minimumTripDays: 1,
+          weeklyDiscountBps: 500,
+          monthlyDiscountBps: 1200,
         },
         availability: {
           timezone: "America/Chicago",
           instantBookEnabled: true,
           advanceNoticeHours: 6,
+          minimumLeadTimeHours: 4,
         },
         rules: {
           mileageLimitPerDay: 250,
@@ -286,8 +309,19 @@ async function main() {
     method: "PATCH",
     requestPath: `/api/robomata/rental-inventory/vehicles/${platformVehicleId}/controls`,
     body: {
-      pricing: { currency: "USD", dailyRateCents: 13500, minimumTripDays: 2 },
-      availability: { timezone: "America/Chicago", instantBookEnabled: false, advanceNoticeHours: 12 },
+      pricing: {
+        currency: "USD",
+        dailyRateCents: 13500,
+        minimumTripDays: 2,
+        weeklyDiscountBps: 500,
+        monthlyDiscountBps: 1200,
+      },
+      availability: {
+        timezone: "America/Chicago",
+        instantBookEnabled: false,
+        advanceNoticeHours: 12,
+        minimumLeadTimeHours: 4,
+      },
       blackoutRanges: [
         {
           id: "blackout-smoke",
@@ -319,6 +353,15 @@ async function main() {
   if (controlsResponse.vehicle?.operationalStatus !== "listed") {
     throw new Error(`Expected listed vehicle, got ${controlsResponse.vehicle?.operationalStatus}`);
   }
+  if (controlsResponse.vehicle?.hostControls?.pricing?.weeklyDiscountBps !== 500) {
+    throw new Error("Expected controls save to preserve weekly discount basis points.");
+  }
+  if (controlsResponse.vehicle?.hostControls?.pricing?.monthlyDiscountBps !== 1200) {
+    throw new Error("Expected controls save to preserve monthly discount basis points.");
+  }
+  if (controlsResponse.vehicle?.hostControls?.availability?.minimumLeadTimeHours !== 4) {
+    throw new Error("Expected controls save to preserve minimum lead-time hours.");
+  }
 
   const vehiclesResponse = await requestJson({
     authHeaders,
@@ -349,6 +392,25 @@ async function main() {
       },
     });
   }
+
+  await expectCheckoutRejection({
+    body: {
+      renterId,
+      platformVehicleId,
+      dateFrom: nowIso(14),
+      dateTo: nowIso(30),
+    },
+    expectedMessage: "host maximum",
+  });
+  await expectCheckoutRejection({
+    body: {
+      renterId,
+      platformVehicleId,
+      dateFrom: nowIsoHours(2),
+      dateTo: nowIsoHours(30),
+    },
+    expectedMessage: "minimum notice",
+  });
 
   const checkoutResponse = await requestJson({
     method: "POST",
