@@ -167,6 +167,12 @@ function monotonicPaymentStatus(input: {
     return "requires_capture";
   }
   if (
+    input.existing.status === "requires_capture" &&
+    (input.nextStatus === "requires_payment_method" || input.nextStatus === "requires_confirmation")
+  ) {
+    return "requires_capture";
+  }
+  if (
     input.eventKind === "dispute_opened" &&
     input.disputeId &&
     input.existing.events.some(

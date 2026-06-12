@@ -138,6 +138,12 @@ export async function POST(request: NextRequest) {
         { status: 409 },
       );
     }
+    if (isRobomataRentalInventoryEnabled()) {
+      const vehicle = await getRentalInventoryStore().getVehicle(booking.platformVehicleId);
+      if (!vehicle || vehicle.operationalStatus !== "listed") {
+        return NextResponse.json({ error: "Rental vehicle is no longer available for payment." }, { status: 409 });
+      }
+    }
 
     const paymentStore = getRentalPaymentStore();
     const existingPayments = (

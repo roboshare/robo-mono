@@ -946,6 +946,38 @@ async function main() {
     throw new Error(`Expected authorization webhook to confirm booking, got ${JSON.stringify(authorizedBookingPayload)}`);
   }
 
+  const staleCreatedWebhookBody = JSON.stringify({
+    id: "evt_payment_created_after_authorization_smoke",
+    created: Math.floor(Date.now() / 1000) - 30,
+    type: "payment_intent.created",
+    data: {
+      object: {
+        id: paymentIntentId,
+        amount: paymentIntentPayload.payment.authorizedAmountCents,
+        amount_capturable: 0,
+        amount_received: 0,
+        capture_method: "manual",
+        currency: "usd",
+        latest_charge: "ch_stripe_smoke_actual",
+        metadata: { bookingId },
+        status: "requires_payment_method",
+      },
+    },
+  });
+  const staleCreatedPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/stripe/webhook`, {
+    body: staleCreatedWebhookBody,
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": stripeSignatureHeader(staleCreatedWebhookBody),
+    },
+    method: "POST",
+  });
+  if (staleCreatedPayload.payment?.status !== "requires_capture" || !staleCreatedPayload.payment.postingBlocked) {
+    throw new Error(
+      `Expected stale created webhook to preserve authorized status, got ${JSON.stringify(staleCreatedPayload)}`,
+    );
+  }
+
   const failedWebhookBody = JSON.stringify({
     id: "evt_payment_failed_smoke",
     created: Math.floor(Date.now() / 1000),
@@ -1869,6 +1901,24 @@ async function main() {
     throw new Error(`Expected unavailable guard booking, got ${JSON.stringify(unavailableCheckoutPayload)}`);
   }
 
+  const delistedPaymentIntentCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
+    body: JSON.stringify({
+      dateFrom: new Date(Date.now() + (6 * 24 + 12) * 60 * 60 * 1_000).toISOString(),
+      dateTo: new Date(Date.now() + (6 * 24 + 16) * 60 * 60 * 1_000).toISOString(),
+      platformVehicleId,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const delistedPaymentIntentBookingId = delistedPaymentIntentCheckoutPayload.booking?.id;
+  const delistedPaymentIntentCheckoutAccessToken = delistedPaymentIntentCheckoutPayload.checkoutAccessToken;
+  if (!delistedPaymentIntentBookingId || !delistedPaymentIntentCheckoutAccessToken) {
+    throw new Error(
+      `Expected delisted payment-intent guard booking, got ${JSON.stringify(delistedPaymentIntentCheckoutPayload)}`,
+    );
+  }
+
   const unavailablePaymentIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
     body: JSON.stringify({ bookingId: unavailableBookingId, checkoutAccessToken: unavailableCheckoutAccessToken, renterId }),
     headers: { "content-type": "application/json" },
@@ -1885,6 +1935,20 @@ async function main() {
     headers: await authHeaders("PATCH", controlsPath, { "content-type": "application/json" }),
     method: "PATCH",
   });
+  await expectJsonFailure(
+    `${baseUrl}/api/robomata/rental-payments/payment-intents`,
+    {
+      body: JSON.stringify({
+        bookingId: delistedPaymentIntentBookingId,
+        checkoutAccessToken: delistedPaymentIntentCheckoutAccessToken,
+        renterId,
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    },
+    409,
+    "Rental vehicle is no longer available for payment.",
+  );
   const unavailableCapturableWebhookBody = JSON.stringify({
     id: "evt_payment_unavailable_capturable_smoke",
     created: Math.floor(Date.now() / 1000),

@@ -3,6 +3,7 @@ import {
   isRobomataRentalBookingsEnabled,
   isRobomataRentalInventoryEnabled,
   isRobomataRentalPaymentsEnabled,
+  isRobomataWorkflowMutationEnabled,
 } from "~~/lib/featureFlags";
 import type { RentalBookingRecord } from "~~/lib/robomata/rentalBookings";
 import type { RentalPaymentProviderEventKind, RentalPaymentRecord } from "~~/lib/robomata/rentalPayments";
@@ -24,6 +25,9 @@ function requireRentalPayments() {
   }
   if (!isRobomataRentalPaymentsEnabled()) {
     return NextResponse.json({ error: "Robomata rental payments are not enabled." }, { status: 404 });
+  }
+  if (!isRobomataWorkflowMutationEnabled()) {
+    return NextResponse.json({ error: "Robomata rental payment writes are not enabled." }, { status: 403 });
   }
   return null;
 }
