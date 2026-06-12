@@ -101,5 +101,6 @@ Operational environment:
 - `ROBOMATA_RENTAL_INVENTORY_IPFS_GATEWAY` resolves `ipfs://` metadata URIs. The default is `https://ipfs.io/ipfs`.
 - `ROBOMATA_RENTAL_INVENTORY_METADATA_ALLOWED_ORIGINS` is a comma-separated allowlist for direct HTTPS `assetMetadataURI` and `rentalInventoryManifestUri` fetches.
 - `ROBOMATA_RENTAL_INVENTORY_FACILITY_OWNERS_JSON` maps facility asset IDs to partner addresses when production manifests are not source-attributed to the partner.
+- `ROBOMATA_FACILITY_REGISTRY_ADDRESSES_JSON` or target-chain `ROBOMATA_FACILITY_REGISTRY_ADDRESS_<chainId>` must resolve the FacilityRegistry used by scheduled sync when no generated deployment exists for the selected network.
 
 The first implementation dependency is `ROB-217`: define facility inventory manifest and rental inventory data placement.

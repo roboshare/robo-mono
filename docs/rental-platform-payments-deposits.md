@@ -41,6 +41,8 @@ Provider write routes:
 
 `payment-intents` creates a live Stripe `PaymentIntent` with `capture_method=manual` when `STRIPE_SECRET_KEY` is configured. Local and CI smoke tests can set `ROBOMATA_RENTAL_STRIPE_MOCK=true` to exercise the same platform persistence path without calling Stripe.
 
+Public paid-rental launch must leave `ROBOMATA_RENTAL_STRIPE_MOCK` unset or `false` in the target environment so checkout creates live Stripe PaymentIntents instead of `pi_mock_*` records.
+
 `stripe/webhook` verifies `STRIPE_WEBHOOK_SECRET` outside local development and stores selected provider IDs, statuses, amounts, timestamps, and event references only. It handles authorization, capture, payment failure, refund, dispute, and chargeback event shapes.
 
 `reconcile` re-fetches Stripe state by `paymentIntentId` and requires `x-robomata-payment-confirmation` with `ROBOMATA_RENTAL_PAYMENT_CONFIRMATION_SECRET` outside local development.
