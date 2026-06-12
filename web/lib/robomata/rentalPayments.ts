@@ -126,6 +126,7 @@ export type RentalPaymentRecord = {
   currency: RentalPaymentCurrency;
   authorizedAmountCents: number;
   capturedAmountCents: number;
+  revenueEligibleAmountCents: number;
   refundedAmountCents: number;
   status: RentalPaymentIntentStatus;
   authorizedAt?: string;

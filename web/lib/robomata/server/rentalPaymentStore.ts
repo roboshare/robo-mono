@@ -289,6 +289,10 @@ function paymentRecordFromEvent(
       refundId: reference.refundId ?? existing?.providerReference.refundId,
     },
     reconciliationCheckedAt: input.eventKind === "reconciliation_refetched" ? now : existing?.reconciliationCheckedAt,
+    revenueEligibleAmountCents:
+      existing?.revenueEligibleAmountCents ??
+      booking?.paymentPlan.rentalCharge.totalAuthorizeCents ??
+      Math.min(existing?.authorizedAmountCents ?? input.snapshot.amount, input.snapshot.amount),
     refundedAmountCents,
     status,
     updatedAt: now,

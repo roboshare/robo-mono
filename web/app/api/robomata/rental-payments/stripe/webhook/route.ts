@@ -9,6 +9,7 @@ import type { RentalPaymentProviderEventKind, RentalPaymentRecord } from "~~/lib
 import { getRentalBookingStore } from "~~/lib/robomata/server/rentalBookingStore";
 import { getRentalInventoryStore } from "~~/lib/robomata/server/rentalInventoryStore";
 import { getRentalPaymentStore } from "~~/lib/robomata/server/rentalPaymentStore";
+import type { StripePaymentIntentSnapshot } from "~~/lib/robomata/server/rentalPaymentStore";
 import {
   type StripeWebhookEvent,
   retrieveStripeRentalPaymentIntent,
@@ -39,6 +40,15 @@ function metadataBookingId(object: Record<string, unknown>): string | undefined 
   const metadata = object.metadata;
   if (!metadata || typeof metadata !== "object") return undefined;
   return stringField((metadata as Record<string, unknown>).bookingId);
+}
+
+function metadataFromObject(object: Record<string, unknown>): Record<string, string> | undefined {
+  const metadata = object.metadata;
+  if (!metadata || typeof metadata !== "object") return undefined;
+  const entries = Object.entries(metadata as Record<string, unknown>).flatMap(([key, value]) =>
+    typeof value === "string" ? [[key, value] as const] : [],
+  );
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
 function eventKindForStripeEvent(event: StripeWebhookEvent): RentalPaymentProviderEventKind | null {
@@ -102,13 +112,36 @@ function chargeIdFromEvent(event: StripeWebhookEvent): string | undefined {
 async function bookingForEvent(
   event: StripeWebhookEvent,
   paymentIntentId: string,
+  snapshot: StripePaymentIntentSnapshot,
 ): Promise<RentalBookingRecord | undefined> {
   const existingPayment = await getRentalPaymentStore().getPaymentByPaymentIntent(paymentIntentId);
   if (existingPayment) return undefined;
 
   const bookingId = metadataBookingId(event.data.object);
   if (!bookingId) return undefined;
-  return (await getRentalBookingStore().getBooking(bookingId)) ?? undefined;
+  const booking = (await getRentalBookingStore().getBooking(bookingId)) ?? undefined;
+  if (!booking) return undefined;
+  if (!snapshotMatchesBooking({ booking, paymentIntentId, snapshot })) {
+    throw new Error("Stripe PaymentIntent metadata does not match the rental booking.");
+  }
+  return booking;
+}
+
+function snapshotMatchesBooking(input: {
+  booking: RentalBookingRecord;
+  paymentIntentId: string;
+  snapshot: StripePaymentIntentSnapshot;
+}) {
+  const metadata = input.snapshot.metadata ?? {};
+  return (
+    metadata.bookingId === input.booking.id &&
+    metadata.facilityAssetId === input.booking.facilityAssetId &&
+    metadata.platformVehicleId === input.booking.platformVehicleId &&
+    (!input.booking.vehicleAssetId || metadata.vehicleAssetId === input.booking.vehicleAssetId) &&
+    input.snapshot.amount === input.booking.paymentPlan.totalDueAtAuthorizationCents &&
+    input.snapshot.currency.toUpperCase() === input.booking.paymentPlan.currency &&
+    input.snapshot.id === input.paymentIntentId
+  );
 }
 
 function failureReasonForEvent(event: StripeWebhookEvent): string | undefined {
@@ -131,6 +164,7 @@ async function advanceBookingAfterPaymentAuthorization(input: {
   let hostReviewRequired = false;
   if (isRobomataRentalInventoryEnabled()) {
     const vehicle = await getRentalInventoryStore().getVehicle(booking.platformVehicleId);
+    if (!vehicle || vehicle.operationalStatus !== "listed") return;
     hostReviewRequired = vehicle?.hostControls?.bookingReview.requireManualApproval === true;
   }
 
@@ -169,11 +203,12 @@ export async function POST(request: NextRequest) {
           customer: stringField(event.data.object.customer),
           id: paymentIntentId,
           latest_charge: stringField(event.data.object.latest_charge),
+          metadata: metadataFromObject(event.data.object),
           status: stringField(event.data.object.status) ?? "requires_payment_method",
         }
       : await retrieveStripeRentalPaymentIntent(paymentIntentId);
 
-    const booking = await bookingForEvent(event, paymentIntentId);
+    const booking = await bookingForEvent(event, paymentIntentId, snapshot);
     const payment = await getRentalPaymentStore().recordStripeEvent({
       booking,
       chargeId: chargeIdFromEvent(event),

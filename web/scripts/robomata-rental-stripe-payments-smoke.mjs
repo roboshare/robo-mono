@@ -358,6 +358,38 @@ async function main() {
     "metadata does not match",
   );
 
+  const orphanMismatchedWebhookBody = JSON.stringify({
+    id: "evt_payment_orphan_mismatch_smoke",
+    created: Math.floor(Date.now() / 1000),
+    type: "payment_intent.succeeded",
+    data: {
+      object: {
+        id: "pi_mock_orphan_mismatch",
+        amount: checkoutPayload.booking.paymentPlan.totalDueAtAuthorizationCents,
+        amount_capturable: 0,
+        amount_received: checkoutPayload.booking.paymentPlan.totalDueAtAuthorizationCents,
+        capture_method: "manual",
+        currency: "usd",
+        latest_charge: "ch_stripe_smoke_orphan_mismatch",
+        metadata: { bookingId, facilityAssetId: otherFacilityAssetId, platformVehicleId },
+        status: "succeeded",
+      },
+    },
+  });
+  await expectJsonFailure(
+    `${baseUrl}/api/robomata/rental-payments/stripe/webhook`,
+    {
+      body: orphanMismatchedWebhookBody,
+      headers: {
+        "content-type": "application/json",
+        "stripe-signature": stripeSignatureHeader(orphanMismatchedWebhookBody),
+      },
+      method: "POST",
+    },
+    400,
+    "metadata does not match",
+  );
+
   const paymentIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
     body: JSON.stringify({ bookingId, renterId }),
     headers: { "content-type": "application/json" },
@@ -997,6 +1029,78 @@ async function main() {
     throw new Error(
       `Expected reconciliation to preserve failed refund block, got ${JSON.stringify(
         failedRefundReconciliationPayload,
+      )}`,
+    );
+  }
+
+  const unavailableCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
+    body: JSON.stringify({
+      dateFrom: new Date(Date.now() + 5 * 24 * 60 * 60 * 1_000).toISOString(),
+      dateTo: new Date(Date.now() + 6 * 24 * 60 * 60 * 1_000).toISOString(),
+      platformVehicleId,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const unavailableBookingId = unavailableCheckoutPayload.booking?.id;
+  if (!unavailableBookingId || unavailableCheckoutPayload.booking.state !== "pending_payment_authorization") {
+    throw new Error(`Expected unavailable guard booking, got ${JSON.stringify(unavailableCheckoutPayload)}`);
+  }
+
+  const unavailablePaymentIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
+    body: JSON.stringify({ bookingId: unavailableBookingId, renterId }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const unavailablePaymentIntentId = unavailablePaymentIntentPayload.payment?.providerReference?.paymentIntentId;
+  if (!unavailablePaymentIntentId) {
+    throw new Error(`Expected unavailable guard PaymentIntent, got ${JSON.stringify(unavailablePaymentIntentPayload)}`);
+  }
+
+  const controlsPath = `/api/robomata/rental-inventory/vehicles/${platformVehicleId}/controls`;
+  await fetchJson(`${baseUrl}${controlsPath}`, {
+    body: JSON.stringify({ operationalStatus: "suspended" }),
+    headers: await authHeaders("PATCH", controlsPath, { "content-type": "application/json" }),
+    method: "PATCH",
+  });
+  const unavailableCapturableWebhookBody = JSON.stringify({
+    id: "evt_payment_unavailable_capturable_smoke",
+    created: Math.floor(Date.now() / 1000),
+    type: "payment_intent.amount_capturable_updated",
+    data: {
+      object: {
+        id: unavailablePaymentIntentId,
+        amount: unavailablePaymentIntentPayload.payment.authorizedAmountCents,
+        amount_capturable: unavailablePaymentIntentPayload.payment.authorizedAmountCents,
+        amount_received: 0,
+        capture_method: "manual",
+        currency: "usd",
+        latest_charge: "ch_stripe_smoke_unavailable",
+        metadata: { bookingId: unavailableBookingId },
+        status: "requires_capture",
+      },
+    },
+  });
+  await fetchJson(`${baseUrl}/api/robomata/rental-payments/stripe/webhook`, {
+    body: unavailableCapturableWebhookBody,
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": stripeSignatureHeader(unavailableCapturableWebhookBody),
+    },
+    method: "POST",
+  });
+  const unavailableBookingPayload = await fetchJson(
+    `${baseUrl}/api/robomata/rental-bookings/${unavailableBookingId}`,
+    {
+      headers: await authHeaders("GET", `/api/robomata/rental-bookings/${unavailableBookingId}`),
+      method: "GET",
+    },
+  );
+  if (unavailableBookingPayload.booking?.state !== "pending_payment_authorization") {
+    throw new Error(
+      `Expected unavailable vehicle authorization to leave booking pending, got ${JSON.stringify(
+        unavailableBookingPayload,
       )}`,
     );
   }

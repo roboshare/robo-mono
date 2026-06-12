@@ -62,7 +62,10 @@ function paymentCanBackPosting(payment: RentalPaymentRecord) {
 }
 
 function netCapturedAmountCents(payment: RentalPaymentRecord) {
-  return Math.max(payment.capturedAmountCents - payment.refundedAmountCents, 0);
+  return Math.max(
+    Math.min(payment.capturedAmountCents, payment.revenueEligibleAmountCents) - payment.refundedAmountCents,
+    0,
+  );
 }
 
 export async function POST(request: NextRequest) {
