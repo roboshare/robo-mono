@@ -13,8 +13,9 @@ features move beyond controlled preview.
 The current codebase provides the rental platform implementation, feature gates,
 privacy boundaries, and operational checklists. It does not provide legal advice
 or human approval of launch terms. Public or production enablement remains
-blocked until each required owner records an approval or an explicit open
-blocker here or in the linked Linear issue.
+blocked until each required owner records an approval. Open blockers may be
+recorded here or in the linked Linear issue for traceability, but recording a
+blocker does not satisfy the launch gate.
 
 ## Launch Decision
 
@@ -69,7 +70,7 @@ Provider and secret gates:
 
 | Area | Required owner | Required evidence | Current status |
 | --- | --- | --- | --- |
-| Legal terms | Legal | Approval of renter terms, host terms, cancellation/refund policy, claims policy, protection-plan wording, and deposit language for each launch jurisdiction | Pending |
+| Legal terms | Legal | Approval of renter terms, host terms, cancellation/refund policy, claims policy, protection-plan wording, deposit language, payment authorization/capture timing, refund/chargeback language, tax collection/remittance/invoice language, and host payout timing for each launch jurisdiction | Pending |
 | Privacy and retention | Privacy | Approval of renter verification notices, trip data handling, support/claims retention, deletion/access/correction handling, and raw-PII provider boundary | Pending |
 | Payments and deposits | Payments | Stripe authorization, capture, cancellation, refund, dispute, chargeback, tax, invoice, and deposit-hold validation for each launch jurisdiction | Pending |
 | Trust and safety | Trust | Approval of manual verification override, sanctions review, safety takedown, fraud review, claims evidence, and payout-hold workflows | Pending |
@@ -128,7 +129,12 @@ evidence and approved launch for the named environment and jurisdictions.
 
 - No legal approval has been recorded for renter terms, host terms,
   cancellation/refund policy, claims policy, protection-plan wording, privacy
-  policy, retention policy, or deposit language.
+  policy, retention policy, deposit language, payment authorization/capture
+  timing, refund/chargeback language, tax collection/remittance/invoice
+  language, or host payout timing.
+- No privacy approval has been recorded for renter verification notices, trip
+  data handling, support/claims retention, deletion/access/correction handling,
+  or the raw-PII provider boundary.
 - No payment owner approval has been recorded for live Stripe manual-capture,
   refund, dispute, chargeback, tax, invoice, or deposit-hold behavior in target
   launch jurisdictions.
@@ -136,6 +142,9 @@ evidence and approved launch for the named environment and jurisdictions.
   sanctions review, safety takedowns, claim evidence, or payout holds.
 - No investor-relations approval has been recorded for the separation between
   investor reporting and renter/host marketplace communications.
+- No Product Operations readiness approval has been recorded for failed
+  verification, failed authorization, incidents, disputes, safety takedowns,
+  payout holds, escalation paths, or rollback operations.
 - No final launch environment, jurisdiction list, enabled-flag set, or rollback
   plan has been recorded.
 
