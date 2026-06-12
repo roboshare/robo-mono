@@ -4,6 +4,7 @@ import {
   isRobomataRentalPaymentsEnabled,
   isRobomataWorkflowMutationEnabled,
 } from "~~/lib/featureFlags";
+import type { RentalPaymentRecord } from "~~/lib/robomata/rentalPayments";
 import { getRentalBookingStore } from "~~/lib/robomata/server/rentalBookingStore";
 import { getRentalPaymentStore } from "~~/lib/robomata/server/rentalPaymentStore";
 import {
@@ -41,6 +42,11 @@ function stripeManualCaptureWindowMs() {
   return Math.max(Number.isFinite(days) ? days : DEFAULT_STRIPE_MANUAL_CAPTURE_WINDOW_DAYS, 1) * 24 * 60 * 60 * 1_000;
 }
 
+function paymentUpdatedTime(payment: RentalPaymentRecord) {
+  const updatedAt = Date.parse(payment.updatedAt);
+  return Number.isFinite(updatedAt) ? updatedAt : 0;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const featureError = requireRentalPaymentWrites();
@@ -61,49 +67,60 @@ export async function POST(request: NextRequest) {
         { status: 409 },
       );
     }
-    const bookingStartMs = Date.parse(booking.dateFrom);
-    if (!Number.isFinite(bookingStartMs)) {
+    const bookingEndMs = Date.parse(booking.dateTo);
+    if (!Number.isFinite(bookingEndMs)) {
       return NextResponse.json(
-        { error: "Booking dateFrom must be valid before payment authorization." },
+        { error: "Booking dateTo must be valid before payment authorization." },
         { status: 400 },
       );
     }
-    if (bookingStartMs - Date.now() > stripeManualCaptureWindowMs()) {
+    if (bookingEndMs - Date.now() > stripeManualCaptureWindowMs()) {
       return NextResponse.json(
-        { error: "Booking starts outside Stripe manual-capture authorization window." },
+        { error: "Booking ends outside Stripe manual-capture authorization window." },
         { status: 409 },
       );
     }
 
-    const existingPayment = await getRentalPaymentStore().getPaymentByBooking(booking.id);
-    if (existingPayment?.providerReference.paymentIntentId) {
-      const paymentIntent = await retrieveStripeRentalPaymentIntent(existingPayment.providerReference.paymentIntentId);
-      if (existingPayment.status === "cancelled" || paymentIntent.status === "canceled") {
-        const replacementIntent = await createStripeRentalPaymentIntent({
-          booking,
-          idempotencyKey: `robomata-rental-booking-${booking.id}-replacement-${existingPayment.id}`,
-        });
-        const replacementPayment = await getRentalPaymentStore().recordStripeEvent({
-          booking,
-          eventKind: "payment_intent_created",
-          snapshot: replacementIntent,
-        });
-        return NextResponse.json(
-          {
-            clientSecret: replacementIntent.client_secret,
-            payment: replacementPayment,
-          },
-          { status: 201 },
-        );
-      }
+    const paymentStore = getRentalPaymentStore();
+    const existingPayments = (
+      await paymentStore.listPaymentsByReferences({
+        bookingIds: [booking.id],
+      })
+    )
+      .filter(payment => Boolean(payment.providerReference.paymentIntentId))
+      .sort((left, right) => paymentUpdatedTime(right) - paymentUpdatedTime(left));
+
+    for (const payment of existingPayments) {
+      if (payment.status === "cancelled") continue;
+      const paymentIntent = await retrieveStripeRentalPaymentIntent(payment.providerReference.paymentIntentId!);
+      if (paymentIntent.status === "canceled") continue;
       return NextResponse.json({
         clientSecret: paymentIntent.client_secret,
-        payment: existingPayment,
+        payment,
       });
     }
 
+    if (existingPayments.length > 0) {
+      const replacementIntent = await createStripeRentalPaymentIntent({
+        booking,
+        idempotencyKey: `robomata-rental-booking-${booking.id}-replacement-${existingPayments[0].id}`,
+      });
+      const replacementPayment = await paymentStore.recordStripeEvent({
+        booking,
+        eventKind: "payment_intent_created",
+        snapshot: replacementIntent,
+      });
+      return NextResponse.json(
+        {
+          clientSecret: replacementIntent.client_secret,
+          payment: replacementPayment,
+        },
+        { status: 201 },
+      );
+    }
+
     const paymentIntent = await createStripeRentalPaymentIntent({ booking });
-    const payment = await getRentalPaymentStore().recordStripeEvent({
+    const payment = await paymentStore.recordStripeEvent({
       booking,
       eventKind: "payment_intent_created",
       snapshot: paymentIntent,

@@ -18,6 +18,7 @@ const paymentConfirmationSecret = "stripe-smoke-payment-secret";
 const stripeWebhookSecret = "whsec_stripe_smoke";
 const partnerAccount = privateKeyToAccount("0x59c6995e998f97a5a0044966f094538b2920b4214d56109c94e3e5095b25b8a5");
 const platformVehicleId = "pv_stripe_smoke";
+const longTripPlatformVehicleId = "pv_stripe_smoke_long_trip";
 const facilityAssetId = "facility-stripe-smoke-asset";
 const otherFacilityAssetId = "facility-stripe-smoke-other";
 
@@ -207,6 +208,51 @@ async function seedInventory(filePath) {
             platformVehicleId,
             updatedAt: now,
           },
+          {
+            display: {
+              bodyType: "sedan",
+              fuelType: "hybrid",
+              imageUris: [],
+              make: "Toyota",
+              model: "Camry",
+              seats: 5,
+              transmission: "automatic",
+              year: 2026,
+            },
+            facilityAssetId,
+            facilityName: "Stripe Smoke Fleet",
+            hostControls: {
+              availability: { instantBookEnabled: true, timezone: "America/Chicago" },
+              blackoutRanges: [],
+              bookingReview: { autoAcceptEnabled: true },
+              maintenanceHolds: [],
+              pricing: { currency: "USD", dailyRateCents: 7900, minimumTripDays: 2 },
+              updatedAt: now,
+            },
+            hostSetup: {
+              checklist: {
+                availability: true,
+                description: true,
+                photos: true,
+                pickup_dropoff: true,
+                pricing: true,
+                rules: true,
+              },
+              completedAt: now,
+              photoUris: [],
+              pickupDropoff: { city: "Austin", country: "US", region: "TX" },
+              publicDescription: "Stripe smoke-test long-trip sedan.",
+              rules: { mileageLimitPerDay: 200, petsAllowed: false, smokingAllowed: false },
+              status: "complete",
+              updatedAt: now,
+              validationErrors: [],
+            },
+            inventoryManifestDigest: "0x4444444444444444444444444444444444444444444444444444444444444444",
+            operationalStatus: "listed",
+            operatorName: "Stripe Smoke Fleet",
+            platformVehicleId: longTripPlatformVehicleId,
+            updatedAt: now,
+          },
         ],
       },
       null,
@@ -294,8 +340,8 @@ async function main() {
 
   const unreconciledCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
     body: JSON.stringify({
-      dateFrom: new Date(Date.now() + 21 * 24 * 60 * 60 * 1_000).toISOString(),
-      dateTo: new Date(Date.now() + 23 * 24 * 60 * 60 * 1_000).toISOString(),
+      dateFrom: new Date(Date.now() + (4 * 24 + 6) * 60 * 60 * 1_000).toISOString(),
+      dateTo: new Date(Date.now() + (4 * 24 + 18) * 60 * 60 * 1_000).toISOString(),
       platformVehicleId,
       renterId,
     }),
@@ -305,6 +351,41 @@ async function main() {
   const unreconciledBookingId = unreconciledCheckoutPayload.booking?.id;
   if (!unreconciledBookingId || unreconciledCheckoutPayload.booking.state !== "pending_payment_authorization") {
     throw new Error(`Expected second payment-gated booking, got ${JSON.stringify(unreconciledCheckoutPayload)}`);
+  }
+
+  const reconciliationRecoveryCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
+    body: JSON.stringify({
+      dateFrom: new Date(Date.now() + (4 * 24 + 20) * 60 * 60 * 1_000).toISOString(),
+      dateTo: new Date(Date.now() + (4 * 24 + 23) * 60 * 60 * 1_000).toISOString(),
+      platformVehicleId,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const reconciliationRecoveryBookingId = reconciliationRecoveryCheckoutPayload.booking?.id;
+  if (
+    !reconciliationRecoveryBookingId ||
+    reconciliationRecoveryCheckoutPayload.booking.state !== "pending_payment_authorization"
+  ) {
+    throw new Error(
+      `Expected reconciliation recovery booking, got ${JSON.stringify(reconciliationRecoveryCheckoutPayload)}`,
+    );
+  }
+
+  const longTripCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
+    body: JSON.stringify({
+      dateFrom: new Date(Date.now() + 6 * 24 * 60 * 60 * 1_000).toISOString(),
+      dateTo: new Date(Date.now() + 9 * 24 * 60 * 60 * 1_000).toISOString(),
+      platformVehicleId: longTripPlatformVehicleId,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const longTripBookingId = longTripCheckoutPayload.booking?.id;
+  if (!longTripBookingId || longTripCheckoutPayload.booking.state !== "pending_payment_authorization") {
+    throw new Error(`Expected long-trip payment-gated booking, got ${JSON.stringify(longTripCheckoutPayload)}`);
   }
 
   const longLeadCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
@@ -337,6 +418,17 @@ async function main() {
     `${baseUrl}/api/robomata/rental-payments/payment-intents`,
     {
       body: JSON.stringify({ bookingId: longLeadBookingId, renterId }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    },
+    409,
+    "outside Stripe manual-capture authorization window",
+  );
+
+  await expectJsonFailure(
+    `${baseUrl}/api/robomata/rental-payments/payment-intents`,
+    {
+      body: JSON.stringify({ bookingId: longTripBookingId, renterId }),
       headers: { "content-type": "application/json" },
       method: "POST",
     },
@@ -457,7 +549,45 @@ async function main() {
       `Expected canceled PaymentIntent to be replaced, got ${JSON.stringify(replacementPaymentIntentPayload)}`,
     );
   }
+  const canceledPaymentIntentId = paymentIntentId;
   paymentIntentId = replacementPaymentIntentId;
+
+  const delayedCanceledWebhookBody = JSON.stringify({
+    id: "evt_payment_canceled_delayed_smoke",
+    created: Math.floor(Date.now() / 1000),
+    type: "payment_intent.canceled",
+    data: {
+      object: {
+        id: canceledPaymentIntentId,
+        amount: paymentIntentPayload.payment.authorizedAmountCents,
+        amount_capturable: 0,
+        amount_received: 0,
+        capture_method: "manual",
+        currency: "usd",
+        latest_charge: "ch_stripe_smoke_cancelled_stale",
+        metadata: { bookingId },
+        status: "canceled",
+      },
+    },
+  });
+  await fetchJson(`${baseUrl}/api/robomata/rental-payments/stripe/webhook`, {
+    body: delayedCanceledWebhookBody,
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": stripeSignatureHeader(delayedCanceledWebhookBody),
+    },
+    method: "POST",
+  });
+  const staleCanceledReusePayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
+    body: JSON.stringify({ bookingId, renterId }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  if (staleCanceledReusePayload.payment?.providerReference?.paymentIntentId !== replacementPaymentIntentId) {
+    throw new Error(
+      `Expected stale canceled intent to reuse active replacement, got ${JSON.stringify(staleCanceledReusePayload)}`,
+    );
+  }
 
   const capturableWebhookBody = JSON.stringify({
     id: "evt_payment_capturable_smoke",
@@ -631,6 +761,48 @@ async function main() {
     409,
     "Captured payment reconciliation is required before rental revenue posting.",
   );
+
+  const reconciliationRecoveryIntentPayload = await fetchJson(
+    `${baseUrl}/api/robomata/rental-payments/payment-intents`,
+    {
+      body: JSON.stringify({ bookingId: reconciliationRecoveryBookingId, renterId }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    },
+  );
+  const reconciliationRecoveryPaymentIntentId =
+    reconciliationRecoveryIntentPayload.payment?.providerReference?.paymentIntentId;
+  if (!reconciliationRecoveryPaymentIntentId) {
+    throw new Error(
+      `Expected reconciliation recovery PaymentIntent, got ${JSON.stringify(reconciliationRecoveryIntentPayload)}`,
+    );
+  }
+  await fetchJson(`${baseUrl}/api/robomata/rental-payments/reconcile`, {
+    body: JSON.stringify({ paymentIntentId: reconciliationRecoveryPaymentIntentId }),
+    headers: {
+      "content-type": "application/json",
+      "x-robomata-payment-confirmation": paymentConfirmationSecret,
+    },
+    method: "POST",
+  });
+  const reconciliationRecoveryBookingPayload = await fetchJson(
+    `${baseUrl}/api/robomata/rental-bookings/${reconciliationRecoveryBookingId}`,
+    {
+      headers: await authHeaders("GET", `/api/robomata/rental-bookings/${reconciliationRecoveryBookingId}`),
+      method: "GET",
+    },
+  );
+  if (
+    reconciliationRecoveryBookingPayload.booking?.state !== "confirmed" ||
+    reconciliationRecoveryBookingPayload.booking.paymentProviderReference?.paymentIntentId !==
+      reconciliationRecoveryPaymentIntentId
+  ) {
+    throw new Error(
+      `Expected reconciliation to confirm recovered booking, got ${JSON.stringify(
+        reconciliationRecoveryBookingPayload,
+      )}`,
+    );
+  }
 
   const reconciliationPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/reconcile`, {
     body: JSON.stringify({ paymentIntentId }),
