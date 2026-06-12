@@ -56,6 +56,8 @@ function eventKindForStripeEvent(event: StripeWebhookEvent): RentalPaymentProvid
     case "charge.refunded":
       return "refund_succeeded";
     case "charge.refund.updated":
+    case "refund.failed":
+    case "refund.updated":
       if (event.data.object.status === "failed") return "refund_failed";
       if (event.data.object.status === "succeeded") return "refund_succeeded";
       return null;
@@ -74,6 +76,7 @@ function eventKindForStripeEvent(event: StripeWebhookEvent): RentalPaymentProvid
 function refundAmountForEvent(event: StripeWebhookEvent): number | undefined {
   if (event.type === "charge.refunded") return numberField(event.data.object.amount_refunded);
   if (event.type.startsWith("charge.refund.")) return numberField(event.data.object.amount);
+  if (event.type.startsWith("refund.")) return numberField(event.data.object.amount);
   return undefined;
 }
 
@@ -86,7 +89,11 @@ function paymentIntentIdFromEvent(event: StripeWebhookEvent): string | undefined
 function chargeIdFromEvent(event: StripeWebhookEvent): string | undefined {
   const object = event.data.object;
   if (event.type.startsWith("payment_intent.")) return stringField(object.latest_charge);
-  if (event.type.startsWith("charge.refund.") || event.type.startsWith("charge.dispute.")) {
+  if (
+    event.type.startsWith("charge.refund.") ||
+    event.type.startsWith("charge.dispute.") ||
+    event.type.startsWith("refund.")
+  ) {
     return stringField(object.charge);
   }
   return stringField(object.id);
@@ -176,7 +183,10 @@ export async function POST(request: NextRequest) {
       occurredAt: event.created ? new Date(event.created * 1_000).toISOString() : undefined,
       providerEventId: event.id,
       refundAmountCents: refundAmountForEvent(event),
-      refundId: event.type.startsWith("charge.refund.") ? stringField(event.data.object.id) : undefined,
+      refundId:
+        event.type.startsWith("charge.refund.") || event.type.startsWith("refund.")
+          ? stringField(event.data.object.id)
+          : undefined,
       snapshot,
     });
     await advanceBookingAfterPaymentAuthorization({ eventKind, payment });

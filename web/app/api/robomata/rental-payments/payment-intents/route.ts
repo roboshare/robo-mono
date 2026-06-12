@@ -13,6 +13,8 @@ import {
 
 export const runtime = "nodejs";
 
+const DEFAULT_STRIPE_MANUAL_CAPTURE_WINDOW_DAYS = 7;
+
 type CreatePaymentIntentBody = {
   bookingId?: string;
   renterId?: string;
@@ -29,6 +31,14 @@ function requireRentalPaymentWrites() {
     return NextResponse.json({ error: "Robomata rental payment writes are not enabled." }, { status: 403 });
   }
   return null;
+}
+
+function stripeManualCaptureWindowMs() {
+  const days = Number.parseInt(
+    process.env.ROBOMATA_RENTAL_STRIPE_CAPTURE_WINDOW_DAYS ?? String(DEFAULT_STRIPE_MANUAL_CAPTURE_WINDOW_DAYS),
+    10,
+  );
+  return Math.max(Number.isFinite(days) ? days : DEFAULT_STRIPE_MANUAL_CAPTURE_WINDOW_DAYS, 1) * 24 * 60 * 60 * 1_000;
 }
 
 export async function POST(request: NextRequest) {
@@ -48,6 +58,19 @@ export async function POST(request: NextRequest) {
     if (booking.state !== "pending_payment_authorization") {
       return NextResponse.json(
         { error: `Booking cannot create a PaymentIntent from state ${booking.state}.` },
+        { status: 409 },
+      );
+    }
+    const bookingStartMs = Date.parse(booking.dateFrom);
+    if (!Number.isFinite(bookingStartMs)) {
+      return NextResponse.json(
+        { error: "Booking dateFrom must be valid before payment authorization." },
+        { status: 400 },
+      );
+    }
+    if (bookingStartMs - Date.now() > stripeManualCaptureWindowMs()) {
+      return NextResponse.json(
+        { error: "Booking starts outside Stripe manual-capture authorization window." },
         { status: 409 },
       );
     }

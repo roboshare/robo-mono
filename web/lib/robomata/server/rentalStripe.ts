@@ -58,6 +58,12 @@ function mockPaymentIntent(input: {
     currency: "usd",
     id,
     latest_charge: `ch_mock_${input.booking.id}`,
+    metadata: {
+      bookingId: input.booking.id,
+      facilityAssetId: input.booking.facilityAssetId,
+      platformVehicleId: input.booking.platformVehicleId,
+      ...(input.booking.vehicleAssetId ? { vehicleAssetId: input.booking.vehicleAssetId } : {}),
+    },
     status: input.status ?? "requires_capture",
   };
 }
@@ -77,6 +83,7 @@ function stripePaymentIntentFromJson(value: unknown): StripePaymentIntentSnapsho
     customer: intent.customer,
     id: intent.id,
     latest_charge: intent.latest_charge,
+    metadata: intent.metadata,
     status: intent.status,
   };
 }
@@ -130,6 +137,7 @@ export async function retrieveStripeRentalPaymentIntent(paymentIntentId: string)
   if (isStripeMockEnabled()) {
     const status = process.env.ROBOMATA_RENTAL_STRIPE_MOCK_RECONCILE_STATUS ?? "requires_capture";
     const amount = 1_000;
+    const bookingId = /^pi_mock_(rb_[0-9a-f-]+)(?:_[0-9a-f]{10})?$/.exec(paymentIntentId)?.[1];
     return {
       amount,
       amount_capturable: status === "requires_capture" ? amount : 0,
@@ -139,6 +147,7 @@ export async function retrieveStripeRentalPaymentIntent(paymentIntentId: string)
       currency: "usd",
       id: paymentIntentId,
       latest_charge: `ch_mock_${paymentIntentId}`,
+      metadata: bookingId ? { bookingId } : undefined,
       status,
     };
   }

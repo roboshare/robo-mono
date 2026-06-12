@@ -33,6 +33,7 @@ type RentalRevenueStore = {
     protocolRequest: ReturnType<typeof buildProtocolEarningsDistributionRequest> | null;
   }>;
   getPostingBatch: (batchId: string) => Promise<RentalRevenuePostingBatch | null>;
+  listActivePaymentBackedLedgerEntries: () => Promise<RentalRevenueLedgerEntry[]>;
   markPostingBatchPosted: (batchId: string, protocolTxHash: string) => Promise<RentalRevenuePostingBatch | null>;
 };
 
@@ -176,6 +177,17 @@ function createFileStore(): RentalRevenueStore {
       const fileStore = await readFileStore(filePath);
       return fileStore.batches.find(batch => batch.id === batchId) ?? null;
     },
+    async listActivePaymentBackedLedgerEntries() {
+      const fileStore = await readFileStore(filePath);
+      const activeEntryIds = new Set(
+        fileStore.batches
+          .filter(batch => batch.status === "ready" || batch.status === "posting" || batch.status === "posted")
+          .flatMap(batch => batch.entryIds),
+      );
+      return fileStore.ledgerEntries.filter(
+        entry => activeEntryIds.has(entry.id) && (entry.source.bookingId || entry.source.paymentIntentId),
+      );
+    },
     async markPostingBatchPosted(batchId, protocolTxHash) {
       return withFileStoreWriteLock(filePath, async () => {
         const fileStore = await readFileStore(filePath);
@@ -275,6 +287,22 @@ function createPostgresStore(): RentalRevenueStore {
         LIMIT 1;
       `) as Array<{ payload: RentalRevenuePostingBatch }>;
       return rows[0]?.payload ?? null;
+    },
+    async listActivePaymentBackedLedgerEntries() {
+      await ensurePostgresTables();
+      const batchRows = (await sql`
+        SELECT payload
+        FROM robomata_rental_revenue_posting_batches
+        WHERE status = ANY(${["ready", "posting", "posted"]});
+      `) as Array<{ payload: RentalRevenuePostingBatch }>;
+      const activeEntryIds = [...new Set(batchRows.flatMap(row => row.payload.entryIds))];
+      if (activeEntryIds.length === 0) return [];
+      const entryRows = (await sql`
+        SELECT payload
+        FROM robomata_rental_revenue_ledger_entries
+        WHERE id = ANY(${activeEntryIds});
+      `) as Array<{ payload: RentalRevenueLedgerEntry }>;
+      return entryRows.map(row => row.payload).filter(entry => entry.source.bookingId || entry.source.paymentIntentId);
     },
     async markPostingBatchPosted(batchId, protocolTxHash) {
       await ensurePostgresTables();

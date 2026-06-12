@@ -24,6 +24,7 @@ export type StripePaymentIntentSnapshot = {
   currency: string;
   customer?: string | null;
   latest_charge?: string | { id?: string } | null;
+  metadata?: Record<string, string>;
   status: string;
 };
 
@@ -155,7 +156,9 @@ function monotonicPaymentStatus(input: {
 }): RentalPaymentIntentStatus {
   if (!input.existing) return input.nextStatus;
   if (
-    (input.existing.status === "disputed" || input.existing.status === "refunded") &&
+    (input.existing.status === "disputed" ||
+      input.existing.status === "refunded" ||
+      (input.existing.status === "failed" && input.existing.events[0]?.kind === "refund_failed")) &&
     input.eventKind === "reconciliation_refetched"
   ) {
     return input.existing.status;

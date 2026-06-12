@@ -279,8 +279,8 @@ async function main() {
 
   const checkoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
     body: JSON.stringify({
-      dateFrom: new Date(Date.now() + 7 * 24 * 60 * 60 * 1_000).toISOString(),
-      dateTo: new Date(Date.now() + 10 * 24 * 60 * 60 * 1_000).toISOString(),
+      dateFrom: new Date(Date.now() + 2 * 24 * 60 * 60 * 1_000).toISOString(),
+      dateTo: new Date(Date.now() + 4 * 24 * 60 * 60 * 1_000).toISOString(),
       platformVehicleId,
       renterId,
     }),
@@ -307,6 +307,21 @@ async function main() {
     throw new Error(`Expected second payment-gated booking, got ${JSON.stringify(unreconciledCheckoutPayload)}`);
   }
 
+  const longLeadCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
+    body: JSON.stringify({
+      dateFrom: new Date(Date.now() + 30 * 24 * 60 * 60 * 1_000).toISOString(),
+      dateTo: new Date(Date.now() + 32 * 24 * 60 * 60 * 1_000).toISOString(),
+      platformVehicleId,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const longLeadBookingId = longLeadCheckoutPayload.booking?.id;
+  if (!longLeadBookingId || longLeadCheckoutPayload.booking.state !== "pending_payment_authorization") {
+    throw new Error(`Expected long-lead payment-gated booking, got ${JSON.stringify(longLeadCheckoutPayload)}`);
+  }
+
   await expectJsonFailure(
     `${baseUrl}/api/robomata/rental-payments/payment-intents`,
     {
@@ -316,6 +331,31 @@ async function main() {
     },
     400,
     "renterId must be provided",
+  );
+
+  await expectJsonFailure(
+    `${baseUrl}/api/robomata/rental-payments/payment-intents`,
+    {
+      body: JSON.stringify({ bookingId: longLeadBookingId, renterId }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    },
+    409,
+    "outside Stripe manual-capture authorization window",
+  );
+
+  await expectJsonFailure(
+    `${baseUrl}/api/robomata/rental-payments/reconcile`,
+    {
+      body: JSON.stringify({ bookingId, paymentIntentId: "pi_mock_rb_wrong" }),
+      headers: {
+        "content-type": "application/json",
+        "x-robomata-payment-confirmation": paymentConfirmationSecret,
+      },
+      method: "POST",
+    },
+    409,
+    "metadata does not match",
   );
 
   const paymentIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
@@ -671,6 +711,28 @@ async function main() {
     throw new Error(`Expected posting batch after reconciliation, got ${JSON.stringify(postingPayload)}`);
   }
 
+  await expectJsonFailure(
+    `${baseUrl}${postingPath}`,
+    {
+      body: JSON.stringify({
+        ...postingBody,
+        entries: [
+          {
+            ...postingBody.entries[0],
+            id: "rle_stripe_smoke_prior_posting_reuse",
+            source: { bookingId, paymentIntentId },
+          },
+        ],
+        periodEnd: new Date(Date.now() + 36 * 60 * 60 * 1_000).toISOString(),
+        periodStart: new Date(Date.now() + 24 * 60 * 60 * 1_000).toISOString(),
+      }),
+      headers: await authHeaders("POST", postingPath, { "content-type": "application/json" }),
+      method: "POST",
+    },
+    409,
+    "Payment-backed revenue exceeds captured payment amount.",
+  );
+
   const disputeWebhookBody = JSON.stringify({
     id: "evt_payment_dispute_smoke",
     created: Math.floor(Date.now() / 1000),
@@ -831,26 +893,72 @@ async function main() {
     409,
     "Payment-backed revenue exceeds captured payment amount.",
   );
-  const refundAdjustedPostingPayload = await fetchJson(`${baseUrl}${postingPath}`, {
-    body: JSON.stringify({
-      ...postingBody,
-      entries: [
-        {
-          ...postingBody.entries[0],
-          amountCents: 450,
-          id: "rle_stripe_smoke_refund_adjusted",
-          source: { bookingId, paymentIntentId },
-        },
-      ],
-      periodEnd: new Date(Date.now() + 12 * 60 * 60 * 1_000).toISOString(),
-      periodStart: new Date(Date.now() - 12 * 60 * 60 * 1_000).toISOString(),
-    }),
-    headers: await authHeaders("POST", postingPath, { "content-type": "application/json" }),
+  await expectJsonFailure(
+    `${baseUrl}${postingPath}`,
+    {
+      body: JSON.stringify({
+        ...postingBody,
+        entries: [
+          {
+            ...postingBody.entries[0],
+            amountCents: 450,
+            id: "rle_stripe_smoke_refund_adjusted",
+            source: { bookingId, paymentIntentId },
+          },
+        ],
+        periodEnd: new Date(Date.now() + 12 * 60 * 60 * 1_000).toISOString(),
+        periodStart: new Date(Date.now() - 12 * 60 * 60 * 1_000).toISOString(),
+      }),
+      headers: await authHeaders("POST", postingPath, { "content-type": "application/json" }),
+      method: "POST",
+    },
+    409,
+    "Payment-backed revenue exceeds captured payment amount.",
+  );
+
+  const refundFailedWebhookBody = JSON.stringify({
+    id: "evt_payment_refund_failed_smoke",
+    created: Math.floor(Date.now() / 1000),
+    type: "refund.failed",
+    data: {
+      object: {
+        id: "re_stripe_smoke_failed",
+        amount: 125,
+        charge: "ch_stripe_smoke_actual",
+        currency: "usd",
+        payment_intent: paymentIntentId,
+        status: "failed",
+      },
+    },
+  });
+  const refundFailedPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/stripe/webhook`, {
+    body: refundFailedWebhookBody,
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": stripeSignatureHeader(refundFailedWebhookBody),
+    },
     method: "POST",
   });
-  if (refundAdjustedPostingPayload.batch?.status !== "ready") {
+  if (!refundFailedPayload.payment?.postingBlocked || refundFailedPayload.payment.status !== "failed") {
+    throw new Error(`Expected refund.failed to block posting, got ${JSON.stringify(refundFailedPayload)}`);
+  }
+
+  const failedRefundReconciliationPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/reconcile`, {
+    body: JSON.stringify({ paymentIntentId }),
+    headers: {
+      "content-type": "application/json",
+      "x-robomata-payment-confirmation": paymentConfirmationSecret,
+    },
+    method: "POST",
+  });
+  if (
+    !failedRefundReconciliationPayload.payment?.postingBlocked ||
+    failedRefundReconciliationPayload.payment.status !== "failed"
+  ) {
     throw new Error(
-      `Expected refund-adjusted posting to pass captured cap, got ${JSON.stringify(refundAdjustedPostingPayload)}`,
+      `Expected reconciliation to preserve failed refund block, got ${JSON.stringify(
+        failedRefundReconciliationPayload,
+      )}`,
     );
   }
 

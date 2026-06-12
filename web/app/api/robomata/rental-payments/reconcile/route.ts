@@ -4,8 +4,10 @@ import {
   isRobomataRentalPaymentsEnabled,
   isRobomataWorkflowMutationEnabled,
 } from "~~/lib/featureFlags";
+import type { RentalBookingRecord } from "~~/lib/robomata/rentalBookings";
 import { getRentalBookingStore } from "~~/lib/robomata/server/rentalBookingStore";
 import { getRentalPaymentStore } from "~~/lib/robomata/server/rentalPaymentStore";
+import type { StripePaymentIntentSnapshot } from "~~/lib/robomata/server/rentalPaymentStore";
 import { retrieveStripeRentalPaymentIntent } from "~~/lib/robomata/server/rentalStripe";
 
 export const runtime = "nodejs";
@@ -38,6 +40,23 @@ function requireRentalPaymentReconciliation(request: NextRequest) {
   );
 }
 
+function snapshotMatchesBooking(input: {
+  booking: RentalBookingRecord;
+  paymentIntentId: string;
+  snapshot: StripePaymentIntentSnapshot;
+}) {
+  const metadata = input.snapshot.metadata ?? {};
+  return (
+    metadata.bookingId === input.booking.id &&
+    metadata.facilityAssetId === input.booking.facilityAssetId &&
+    metadata.platformVehicleId === input.booking.platformVehicleId &&
+    (!input.booking.vehicleAssetId || metadata.vehicleAssetId === input.booking.vehicleAssetId) &&
+    input.snapshot.amount === input.booking.paymentPlan.totalDueAtAuthorizationCents &&
+    input.snapshot.currency.toUpperCase() === input.booking.paymentPlan.currency &&
+    input.snapshot.id === input.paymentIntentId
+  );
+}
+
 export async function POST(request: NextRequest) {
   try {
     const featureError = requireRentalPaymentReconciliation(request);
@@ -54,6 +73,15 @@ export async function POST(request: NextRequest) {
         ? undefined
         : ((await getRentalBookingStore().getBooking(body.bookingId)) ?? undefined);
     const snapshot = await retrieveStripeRentalPaymentIntent(body.paymentIntentId);
+    if (!existingPayment && body.bookingId?.trim()) {
+      if (!booking) return NextResponse.json({ error: "Rental booking not found." }, { status: 404 });
+      if (!snapshotMatchesBooking({ booking, paymentIntentId: body.paymentIntentId, snapshot })) {
+        return NextResponse.json(
+          { error: "Stripe PaymentIntent metadata does not match the rental booking." },
+          { status: 409 },
+        );
+      }
+    }
     const payment = await getRentalPaymentStore().recordStripeEvent({
       booking,
       eventKind: "reconciliation_refetched",

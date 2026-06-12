@@ -139,6 +139,17 @@ export async function POST(request: NextRequest) {
         current.entries.push(entry);
         paymentBackedTotals.set(payment.id, current);
       }
+      const incomingEntryIds = new Set(paymentBackedEntries.map(entry => entry.id));
+      const existingPaymentBackedEntries = await getRentalRevenueStore().listActivePaymentBackedLedgerEntries();
+      for (const entry of existingPaymentBackedEntries) {
+        if (incomingEntryIds.has(entry.id)) continue;
+        const payment = paymentForEntry(referencedPayments, entry);
+        if (!payment) continue;
+        const current = paymentBackedTotals.get(payment.id) ?? { amountCents: 0, entries: [], payment };
+        current.amountCents += entry.amountCents;
+        current.entries.push(entry);
+        paymentBackedTotals.set(payment.id, current);
+      }
       const overCapturedPayment = [...paymentBackedTotals.values()].find(
         item => item.amountCents > netCapturedAmountCents(item.payment),
       );
