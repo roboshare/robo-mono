@@ -59,6 +59,7 @@
     "robomata:rental-host-ops-ui-smoke": "yarn workspace web robomata:rental-host-ops-ui-smoke",
     "robomata:rental-persistence:bootstrap": "yarn workspace web robomata:rental-persistence:bootstrap",
     "robomata:rental-verification-providers-smoke": "yarn workspace web robomata:rental-verification-providers-smoke",
+    "robomata:rental-stripe-payments-smoke": "yarn workspace web robomata:rental-stripe-payments-smoke",
     "robomata:tokenization-api-test": "yarn workspace web robomata:tokenization-api-test",
     "robomata:testnet-smoke": "yarn workspace web robomata:testnet-smoke",
     "web:build": "yarn workspace web build",
