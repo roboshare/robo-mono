@@ -160,6 +160,9 @@ function monotonicPaymentStatus(input: {
   if (input.existing.status === "refunded" && input.eventKind === "refund_failed") {
     return "refunded";
   }
+  if (input.existing.status === "requires_capture" && input.eventKind === "payment_failed") {
+    return "requires_capture";
+  }
   if (
     input.eventKind === "dispute_opened" &&
     input.disputeId &&
@@ -168,6 +171,9 @@ function monotonicPaymentStatus(input: {
     )
   ) {
     return input.existing.status;
+  }
+  if (input.existing.status === "disputed" && input.eventKind !== "dispute_closed") {
+    return "disputed";
   }
   if (
     (input.existing.status === "disputed" ||

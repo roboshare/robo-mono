@@ -564,22 +564,6 @@ async function main() {
     throw new Error(`Expected mock PaymentIntent and client secret, got ${JSON.stringify(paymentIntentPayload)}`);
   }
 
-  const repeatedPaymentIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
-    body: JSON.stringify({ bookingId, checkoutAccessToken, renterId }),
-    headers: { "content-type": "application/json" },
-    method: "POST",
-  });
-  if (
-    repeatedPaymentIntentPayload.payment?.providerReference?.paymentIntentId !== paymentIntentId ||
-    !repeatedPaymentIntentPayload.clientSecret
-  ) {
-    throw new Error(
-      `Expected repeated PaymentIntent creation to return existing intent and client secret, got ${JSON.stringify(
-        repeatedPaymentIntentPayload,
-      )}`,
-    );
-  }
-
   const missedWebhookCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
     body: JSON.stringify({
       dateFrom: new Date(Date.now() + (3 * 24 + 6) * 60 * 60 * 1_000).toISOString(),
@@ -649,6 +633,78 @@ async function main() {
     throw new Error(
       `Expected reused successful PaymentIntent to confirm booking, got ${JSON.stringify(
         missedWebhookBookingPayload,
+      )}`,
+    );
+  }
+
+  const cachedAuthorizedCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
+    body: JSON.stringify({
+      dateFrom: new Date(Date.now() + (3 * 24 + 20) * 60 * 60 * 1_000).toISOString(),
+      dateTo: new Date(Date.now() + (3 * 24 + 22) * 60 * 60 * 1_000).toISOString(),
+      platformVehicleId: longTripPlatformVehicleId,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const cachedAuthorizedBookingId = cachedAuthorizedCheckoutPayload.booking?.id;
+  const cachedAuthorizedCheckoutAccessToken = cachedAuthorizedCheckoutPayload.checkoutAccessToken;
+  if (!cachedAuthorizedBookingId || !cachedAuthorizedCheckoutAccessToken) {
+    throw new Error(`Expected cached-authorized booking, got ${JSON.stringify(cachedAuthorizedCheckoutPayload)}`);
+  }
+  const cachedAuthorizedIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
+    body: JSON.stringify({
+      bookingId: cachedAuthorizedBookingId,
+      checkoutAccessToken: cachedAuthorizedCheckoutAccessToken,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const cachedAuthorizedPaymentIntentId = cachedAuthorizedIntentPayload.payment?.providerReference?.paymentIntentId;
+  if (!cachedAuthorizedPaymentIntentId) {
+    throw new Error(`Expected cached-authorized PaymentIntent, got ${JSON.stringify(cachedAuthorizedIntentPayload)}`);
+  }
+  await updateStoredPayment(env.ROBOMATA_RENTAL_PAYMENTS_FILE, cachedAuthorizedPaymentIntentId, payment => ({
+    ...payment,
+    postingBlocked: true,
+    postingBlockReason: "Smoke cached authorization not yet advanced.",
+    status: "requires_capture",
+  }));
+  const cachedAuthorizedReusePayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
+    body: JSON.stringify({
+      bookingId: cachedAuthorizedBookingId,
+      checkoutAccessToken: cachedAuthorizedCheckoutAccessToken,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  if (
+    cachedAuthorizedReusePayload.payment?.providerReference?.paymentIntentId !== cachedAuthorizedPaymentIntentId ||
+    cachedAuthorizedReusePayload.payment.status !== "requires_capture" ||
+    !cachedAuthorizedReusePayload.clientSecret
+  ) {
+    throw new Error(
+      `Expected cached successful PaymentIntent to be reused with a client secret, got ${JSON.stringify(
+        cachedAuthorizedReusePayload,
+      )}`,
+    );
+  }
+  const cachedAuthorizedBookingPayload = await fetchJson(
+    `${baseUrl}/api/robomata/rental-bookings/${cachedAuthorizedBookingId}`,
+    {
+      headers: await authHeaders("GET", `/api/robomata/rental-bookings/${cachedAuthorizedBookingId}`),
+      method: "GET",
+    },
+  );
+  if (
+    cachedAuthorizedBookingPayload.booking?.state !== "confirmed" ||
+    cachedAuthorizedBookingPayload.booking.paymentProviderReference?.paymentIntentId !== cachedAuthorizedPaymentIntentId
+  ) {
+    throw new Error(
+      `Expected cached successful PaymentIntent to advance booking, got ${JSON.stringify(
+        cachedAuthorizedBookingPayload,
       )}`,
     );
   }
@@ -1102,6 +1158,82 @@ async function main() {
     );
   }
 
+  const authorizedThenFailedCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
+    body: JSON.stringify({
+      dateFrom: new Date(Date.now() + (4 * 24 + 0) * 60 * 60 * 1_000).toISOString(),
+      dateTo: new Date(Date.now() + (4 * 24 + 2) * 60 * 60 * 1_000).toISOString(),
+      platformVehicleId: longTripPlatformVehicleId,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const authorizedThenFailedBookingId = authorizedThenFailedCheckoutPayload.booking?.id;
+  const authorizedThenFailedCheckoutAccessToken = authorizedThenFailedCheckoutPayload.checkoutAccessToken;
+  if (!authorizedThenFailedBookingId || !authorizedThenFailedCheckoutAccessToken) {
+    throw new Error(
+      `Expected authorized-then-failed booking, got ${JSON.stringify(authorizedThenFailedCheckoutPayload)}`,
+    );
+  }
+  const authorizedThenFailedIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
+    body: JSON.stringify({
+      bookingId: authorizedThenFailedBookingId,
+      checkoutAccessToken: authorizedThenFailedCheckoutAccessToken,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const authorizedThenFailedPaymentIntentId =
+    authorizedThenFailedIntentPayload.payment?.providerReference?.paymentIntentId;
+  if (!authorizedThenFailedPaymentIntentId) {
+    throw new Error(
+      `Expected authorized-then-failed PaymentIntent, got ${JSON.stringify(authorizedThenFailedIntentPayload)}`,
+    );
+  }
+  await updateStoredPayment(env.ROBOMATA_RENTAL_PAYMENTS_FILE, authorizedThenFailedPaymentIntentId, payment => ({
+    ...payment,
+    postingBlocked: true,
+    postingBlockReason: "Smoke cached authorization under manual capture.",
+    status: "requires_capture",
+  }));
+  const delayedAuthorizedFailureWebhookBody = JSON.stringify({
+    id: "evt_payment_authorized_failure_delayed_smoke",
+    created: Math.floor(Date.now() / 1000) - 45,
+    type: "payment_intent.payment_failed",
+    data: {
+      object: {
+        id: authorizedThenFailedPaymentIntentId,
+        amount: authorizedThenFailedIntentPayload.payment.authorizedAmountCents,
+        currency: "usd",
+        last_payment_error: { message: "Delayed earlier authorization failure in smoke." },
+        metadata: { bookingId: authorizedThenFailedBookingId },
+        status: "requires_payment_method",
+      },
+    },
+  });
+  const delayedAuthorizedFailurePayload = await fetchJson(
+    `${baseUrl}/api/robomata/rental-payments/stripe/webhook`,
+    {
+      body: delayedAuthorizedFailureWebhookBody,
+      headers: {
+        "content-type": "application/json",
+        "stripe-signature": stripeSignatureHeader(delayedAuthorizedFailureWebhookBody),
+      },
+      method: "POST",
+    },
+  );
+  if (
+    !delayedAuthorizedFailurePayload.payment?.postingBlocked ||
+    delayedAuthorizedFailurePayload.payment.status !== "requires_capture"
+  ) {
+    throw new Error(
+      `Expected delayed failure to preserve authorized status, got ${JSON.stringify(
+        delayedAuthorizedFailurePayload,
+      )}`,
+    );
+  }
+
   await expectJsonFailure(
     `${baseUrl}${postingPath}`,
     {
@@ -1234,6 +1366,46 @@ async function main() {
   });
   if (!disputePayload.payment?.postingBlocked || disputePayload.payment.status !== "disputed") {
     throw new Error(`Expected dispute webhook to block posting, got ${JSON.stringify(disputePayload)}`);
+  }
+
+  const delayedSuccessAfterDisputeWebhookBody = JSON.stringify({
+    id: "evt_payment_success_after_dispute_smoke",
+    created: Math.floor(Date.now() / 1000) - 30,
+    type: "payment_intent.succeeded",
+    data: {
+      object: {
+        id: paymentIntentId,
+        amount: paymentIntentPayload.payment.authorizedAmountCents,
+        amount_capturable: 0,
+        amount_received: paymentIntentPayload.payment.authorizedAmountCents,
+        capture_method: "manual",
+        currency: "usd",
+        latest_charge: "ch_stripe_smoke_actual",
+        metadata: { bookingId },
+        status: "succeeded",
+      },
+    },
+  });
+  const delayedSuccessAfterDisputePayload = await fetchJson(
+    `${baseUrl}/api/robomata/rental-payments/stripe/webhook`,
+    {
+      body: delayedSuccessAfterDisputeWebhookBody,
+      headers: {
+        "content-type": "application/json",
+        "stripe-signature": stripeSignatureHeader(delayedSuccessAfterDisputeWebhookBody),
+      },
+      method: "POST",
+    },
+  );
+  if (
+    !delayedSuccessAfterDisputePayload.payment?.postingBlocked ||
+    delayedSuccessAfterDisputePayload.payment.status !== "disputed"
+  ) {
+    throw new Error(
+      `Expected delayed success webhook to preserve dispute block, got ${JSON.stringify(
+        delayedSuccessAfterDisputePayload,
+      )}`,
+    );
   }
 
   const disputedReconciliationPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/reconcile`, {

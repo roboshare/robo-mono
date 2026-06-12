@@ -172,6 +172,13 @@ export async function POST(request: NextRequest) {
           payment: refreshedPayment,
         });
       }
+      if (successfulProviderStatus(paymentIntent)) {
+        await advanceBookingAfterRetrievedPayment({
+          bookingId: booking.id,
+          payment,
+          snapshot: paymentIntent,
+        });
+      }
       return NextResponse.json({
         clientSecret: paymentIntent.client_secret,
         payment,
