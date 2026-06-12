@@ -35,11 +35,13 @@ type RentalRevenueStore = {
   getPostingBatch: (batchId: string) => Promise<RentalRevenuePostingBatch | null>;
   listActivePaymentBackedLedgerEntries: () => Promise<RentalRevenueLedgerEntry[]>;
   markPostingBatchPosted: (batchId: string, protocolTxHash: string) => Promise<RentalRevenuePostingBatch | null>;
+  withPaymentBackedPostingLock: <T>(paymentIds: string[], operation: () => Promise<T>) => Promise<T>;
 };
 
 let ensuredPostgresTables = false;
 let storeSingleton: RentalRevenueStore | null = null;
 const fileStoreLocks = new Map<string, Promise<void>>();
+const paymentPostingLocks = new Map<string, Promise<void>>();
 
 function protocolRequestForBatch(batch: RentalRevenuePostingBatch) {
   return batch.status === "ready" || batch.status === "failed" ? buildProtocolEarningsDistributionRequest(batch) : null;
@@ -47,6 +49,29 @@ function protocolRequestForBatch(batch: RentalRevenuePostingBatch) {
 
 function advisoryLockKey(batchId: string): string {
   return `robomata:rental-revenue:${batchId}`;
+}
+
+function paymentAdvisoryLockKey(paymentId: string): string {
+  return `robomata:rental-revenue-payment:${paymentId}`;
+}
+
+async function withAsyncLock<T>(
+  locks: Map<string, Promise<void>>,
+  lockKey: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const previous = locks.get(lockKey) ?? Promise.resolve();
+  let release: () => void = () => undefined;
+  const current = previous.then(() => new Promise<void>(resolve => (release = resolve)));
+  locks.set(lockKey, current);
+
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (locks.get(lockKey) === current) locks.delete(lockKey);
+  }
 }
 
 function assertMatchingBatchId(existingBatch: RentalRevenuePostingBatch | undefined, batch: RentalRevenuePostingBatch) {
@@ -99,18 +124,15 @@ async function writeFileStore(filePath: string, fileStore: RentalRevenueFileStor
 }
 
 async function withFileStoreWriteLock<T>(filePath: string, operation: () => Promise<T>): Promise<T> {
-  const previous = fileStoreLocks.get(filePath) ?? Promise.resolve();
-  let release: () => void = () => undefined;
-  const current = previous.then(() => new Promise<void>(resolve => (release = resolve)));
-  fileStoreLocks.set(filePath, current);
+  return withAsyncLock(fileStoreLocks, filePath, operation);
+}
 
-  await previous;
-  try {
-    return await operation();
-  } finally {
-    release();
-    if (fileStoreLocks.get(filePath) === current) fileStoreLocks.delete(filePath);
-  }
+async function withFilePaymentPostingLocks<T>(paymentIds: string[], operation: () => Promise<T>): Promise<T> {
+  const uniqueIds = [...new Set(paymentIds.filter(Boolean))].sort();
+  return uniqueIds.reduceRight(
+    (next, paymentId) => () => withAsyncLock(paymentPostingLocks, paymentId, next),
+    operation,
+  )();
 }
 
 function upsertEntries(
@@ -187,6 +209,9 @@ function createFileStore(): RentalRevenueStore {
       return fileStore.ledgerEntries.filter(
         entry => activeEntryIds.has(entry.id) && (entry.source.bookingId || entry.source.paymentIntentId),
       );
+    },
+    async withPaymentBackedPostingLock<T>(paymentIds: string[], operation: () => Promise<T>): Promise<T> {
+      return withFilePaymentPostingLocks(paymentIds, operation);
     },
     async markPostingBatchPosted(batchId, protocolTxHash) {
       return withFileStoreWriteLock(filePath, async () => {
@@ -303,6 +328,18 @@ function createPostgresStore(): RentalRevenueStore {
         WHERE id = ANY(${activeEntryIds});
       `) as Array<{ payload: RentalRevenueLedgerEntry }>;
       return entryRows.map(row => row.payload).filter(entry => entry.source.bookingId || entry.source.paymentIntentId);
+    },
+    async withPaymentBackedPostingLock<T>(paymentIds: string[], operation: () => Promise<T>): Promise<T> {
+      await ensurePostgresTables();
+      const uniqueIds = [...new Set(paymentIds.filter(Boolean))].sort();
+      if (uniqueIds.length === 0) return operation();
+      const result = await sql.begin(async tx => {
+        for (const paymentId of uniqueIds) {
+          await tx`SELECT pg_advisory_xact_lock(hashtext(${paymentAdvisoryLockKey(paymentId)}));`;
+        }
+        return operation();
+      });
+      return result as T;
     },
     async markPostingBatchPosted(batchId, protocolTxHash) {
       await ensurePostgresTables();

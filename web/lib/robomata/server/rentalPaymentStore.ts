@@ -163,7 +163,12 @@ function monotonicPaymentStatus(input: {
   ) {
     return input.existing.status;
   }
-  if (input.existing.status === "captured" && input.nextStatus !== "disputed" && input.nextStatus !== "refunded") {
+  if (
+    input.existing.status === "captured" &&
+    input.eventKind !== "refund_failed" &&
+    input.nextStatus !== "disputed" &&
+    input.nextStatus !== "refunded"
+  ) {
     return "captured";
   }
   return input.nextStatus;

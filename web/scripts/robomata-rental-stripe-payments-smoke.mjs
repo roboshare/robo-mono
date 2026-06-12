@@ -538,6 +538,25 @@ async function main() {
   await expectJsonFailure(
     `${baseUrl}${postingPath}`,
     {
+      body: JSON.stringify({
+        ...postingBody,
+        entries: [
+          {
+            ...postingBody.entries[0],
+            id: "rle_stripe_smoke_missing_payment_reference",
+            source: {},
+          },
+        ],
+      }),
+      headers: await authHeaders("POST", postingPath, { "content-type": "application/json" }),
+      method: "POST",
+    },
+    400,
+    "Payment-backed revenue entries must include source.bookingId or source.paymentIntentId.",
+  );
+  await expectJsonFailure(
+    `${baseUrl}${postingPath}`,
+    {
       body: JSON.stringify(postingBody),
       headers: await authHeaders("POST", postingPath, { "content-type": "application/json" }),
       method: "POST",
@@ -694,6 +713,26 @@ async function main() {
           postingAssetId: otherFacilityAssetId,
           postingAssetKind: "facility",
         },
+      }),
+      headers: await authHeaders("POST", postingPath, { "content-type": "application/json" }),
+      method: "POST",
+    },
+    409,
+    "Captured payment reconciliation is required before rental revenue posting.",
+  );
+  await expectJsonFailure(
+    `${baseUrl}${postingPath}`,
+    {
+      body: JSON.stringify({
+        ...postingBody,
+        entries: [
+          {
+            ...postingBody.entries[0],
+            id: "rle_stripe_smoke_wrong_platform_vehicle",
+            platformVehicleId: "pv_stripe_smoke_other",
+            source: { bookingId, paymentIntentId },
+          },
+        ],
       }),
       headers: await authHeaders("POST", postingPath, { "content-type": "application/json" }),
       method: "POST",
