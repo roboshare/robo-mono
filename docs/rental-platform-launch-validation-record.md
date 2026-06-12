@@ -65,6 +65,8 @@ Provider and secret gates:
 - `ROBOMATA_RENTER_SANCTIONS_PROVIDER`
 - `CRON_SECRET`
 - `ROBOMATA_RENTAL_INVENTORY_SYNC_SECRET`
+- `ROBOMATA_RENTAL_INVENTORY_METADATA_ALLOWED_ORIGINS`
+- `ROBOMATA_RENTAL_INVENTORY_FACILITY_OWNERS_JSON`
 
 ## Required Sign-Off Matrix
 
@@ -76,7 +78,7 @@ Provider and secret gates:
 | Trust and safety | Trust | Approval of manual verification override, sanctions review, safety takedown, fraud review, claims evidence, and payout-hold workflows | Pending |
 | Revenue operations | Revenue Operations | Approval of recognized revenue policy, posting-batch caps, pass-through exclusions, retry behavior, and protocol transaction reconciliation | Pending |
 | Investor communications | Investor Relations | Approval that investor reporting and copy exclude renter identity, claim narratives, support-sensitive data, and guaranteed yield language | Pending |
-| Operations readiness | Product Operations | Escalation paths for failed verification, failed authorization, incidents, disputes, safety takedowns, payout holds, and rollback | Pending |
+| Operations readiness | Product Operations + Engineering | Escalation paths for failed verification, failed authorization, incidents, disputes, safety takedowns, payout holds, rollback, Postgres schema bootstrap, backup/restore readiness, inventory metadata origin allowlist, and facility ownership/source-attribution configuration | Pending |
 | Product launch scope | Product | Final launch environment, jurisdictions, enabled flags, known limitations, support model, and rollback plan | Pending |
 
 ## Evidence Sources
@@ -150,6 +152,17 @@ evidence and approved launch for the named environment and jurisdictions.
 - No Product Operations readiness approval has been recorded for failed
   verification, failed authorization, incidents, disputes, safety takedowns,
   payout holds, escalation paths, or rollback operations.
+- No Engineering/Product Operations approval has been recorded that
+  `POSTGRES_URL` is provisioned, `yarn robomata:rental-persistence:bootstrap`
+  has run successfully in the target environment, and rental table
+  backup/restore/replay readiness has been validated.
+- No inventory metadata origin allowlist has been recorded for HTTPS
+  `assetMetadataURI` or `rentalInventoryManifestUri` values used by scheduled
+  FacilityRegistry sync.
+- No facility ownership plan has been recorded for production inventory access:
+  each launch facility must either have `ROBOMATA_RENTAL_INVENTORY_FACILITY_OWNERS_JSON`
+  configured for the authorized partner or ingest manifests whose `sourceId`
+  matches that partner.
 - No final launch environment, launch date, jurisdiction list, enabled-flag set,
   approved policy versions, known limitations, support model, or rollback plan
   has been recorded.
