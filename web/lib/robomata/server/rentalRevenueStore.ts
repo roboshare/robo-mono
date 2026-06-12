@@ -33,7 +33,16 @@ type RentalRevenueStore = {
     protocolRequest: ReturnType<typeof buildProtocolEarningsDistributionRequest> | null;
   }>;
   getPostingBatch: (batchId: string) => Promise<RentalRevenuePostingBatch | null>;
-  markPostingBatchPosted: (batchId: string, protocolTxHash: string) => Promise<RentalRevenuePostingBatch | null>;
+  markPostingBatchFailed: (batchId: string, errorMessage: string) => Promise<RentalRevenuePostingBatch | null>;
+  markPostingBatchPosted: (
+    batchId: string,
+    input: {
+      chainId: number;
+      confirmationMode: "operator_confirmed" | "submitted";
+      confirmedBy?: string;
+      protocolTxHash: string;
+    },
+  ) => Promise<RentalRevenuePostingBatch | null>;
 };
 
 let ensuredPostgresTables = false;
@@ -176,20 +185,44 @@ function createFileStore(): RentalRevenueStore {
       const fileStore = await readFileStore(filePath);
       return fileStore.batches.find(batch => batch.id === batchId) ?? null;
     },
-    async markPostingBatchPosted(batchId, protocolTxHash) {
+    async markPostingBatchFailed(batchId, errorMessage) {
       return withFileStoreWriteLock(filePath, async () => {
         const fileStore = await readFileStore(filePath);
         const current = fileStore.batches.find(batch => batch.id === batchId);
         if (!current) return null;
         if (current.status === "posted") {
-          if (current.protocolTxHash === protocolTxHash) return current;
+          throw new Error(`Posting batch ${batchId} is already posted and cannot be marked failed.`);
+        }
+        const batch: RentalRevenuePostingBatch = {
+          ...current,
+          status: "failed",
+          errorMessage,
+        };
+        fileStore.batches = [batch, ...fileStore.batches.filter(candidate => candidate.id !== batch.id)];
+        await writeFileStore(filePath, fileStore);
+        return batch;
+      });
+    },
+    async markPostingBatchPosted(batchId, input) {
+      return withFileStoreWriteLock(filePath, async () => {
+        const fileStore = await readFileStore(filePath);
+        const current = fileStore.batches.find(batch => batch.id === batchId);
+        if (!current) return null;
+        if (current.status === "posted") {
+          if (current.protocolTxHash === input.protocolTxHash && current.protocolTxChainId === input.chainId) {
+            return current;
+          }
           throw new Error(`Posting batch ${batchId} is already posted with a different protocol transaction.`);
         }
         const batch: RentalRevenuePostingBatch = {
           ...current,
           status: "posted",
           postedAt: new Date().toISOString(),
-          protocolTxHash,
+          protocolTxChainId: input.chainId,
+          protocolTxConfirmationMode: input.confirmationMode,
+          protocolTxConfirmedBy: input.confirmedBy,
+          protocolTxHash: input.protocolTxHash,
+          errorMessage: undefined,
         };
         fileStore.batches = [batch, ...fileStore.batches.filter(candidate => candidate.id !== batch.id)];
         await writeFileStore(filePath, fileStore);
@@ -276,7 +309,7 @@ function createPostgresStore(): RentalRevenueStore {
       `) as Array<{ payload: RentalRevenuePostingBatch }>;
       return rows[0]?.payload ?? null;
     },
-    async markPostingBatchPosted(batchId, protocolTxHash) {
+    async markPostingBatchFailed(batchId, errorMessage) {
       await ensurePostgresTables();
       return sql.begin(async tx => {
         await tx`SELECT pg_advisory_xact_lock(hashtext(${advisoryLockKey(batchId)}));`;
@@ -289,7 +322,42 @@ function createPostgresStore(): RentalRevenueStore {
         const current = currentRows[0]?.payload;
         if (!current) return null;
         if (current.status === "posted") {
-          if (current.protocolTxHash === protocolTxHash) return current;
+          throw new Error(`Posting batch ${batchId} is already posted and cannot be marked failed.`);
+        }
+        const updatedAt = new Date().toISOString();
+        const batch: RentalRevenuePostingBatch = {
+          ...current,
+          status: "failed",
+          errorMessage,
+        };
+        const updatedRows = (await tx`
+          UPDATE robomata_rental_revenue_posting_batches
+          SET status = ${batch.status},
+              payload = ${JSON.stringify(batch)}::jsonb,
+              updated_at = ${updatedAt}::timestamptz
+          WHERE id = ${batchId}
+            AND status != 'posted'
+          RETURNING payload;
+        `) as Array<{ payload: RentalRevenuePostingBatch }>;
+        return updatedRows[0]?.payload ?? batch;
+      });
+    },
+    async markPostingBatchPosted(batchId, input) {
+      await ensurePostgresTables();
+      return sql.begin(async tx => {
+        await tx`SELECT pg_advisory_xact_lock(hashtext(${advisoryLockKey(batchId)}));`;
+        const currentRows = (await tx`
+          SELECT payload
+          FROM robomata_rental_revenue_posting_batches
+          WHERE id = ${batchId}
+          LIMIT 1;
+        `) as Array<{ payload: RentalRevenuePostingBatch }>;
+        const current = currentRows[0]?.payload;
+        if (!current) return null;
+        if (current.status === "posted") {
+          if (current.protocolTxHash === input.protocolTxHash && current.protocolTxChainId === input.chainId) {
+            return current;
+          }
           throw new Error(`Posting batch ${batchId} is already posted with a different protocol transaction.`);
         }
         const postedAt = new Date().toISOString();
@@ -297,7 +365,11 @@ function createPostgresStore(): RentalRevenueStore {
           ...current,
           status: "posted",
           postedAt,
-          protocolTxHash,
+          protocolTxChainId: input.chainId,
+          protocolTxConfirmationMode: input.confirmationMode,
+          protocolTxConfirmedBy: input.confirmedBy,
+          protocolTxHash: input.protocolTxHash,
+          errorMessage: undefined,
         };
         const updatedRows = (await tx`
           UPDATE robomata_rental_revenue_posting_batches

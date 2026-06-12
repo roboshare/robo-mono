@@ -187,6 +187,42 @@ async function main() {
           status: "posted",
           totalRecognizedRevenueCents: 7000,
         },
+        {
+          id: "rpb-investor-smoke-failed",
+          attestation: {
+            attestationId: "rra-investor-smoke-failed",
+            batchId: "rpb-investor-smoke-failed",
+            createdAt: "2026-06-11T12:30:00.000Z",
+            createdBy: "0x0000000000000000000000000000000000000001",
+            currency: "USD",
+            ledgerEntryCount: 1,
+            ledgerEntryIds: ["rle-investor-smoke-2"],
+            ledgerEntriesDigest: "0x5555555555555555555555555555555555555555555555555555555555555555",
+            periodEnd,
+            periodStart,
+            platformBoundary: "Aggregate facility and permitted vehicle KPI data only.",
+            postingAssetId: "facility-investor-smoke",
+            postingAssetKind: "facility",
+            protocolBoundary: "Protocol receives finalized distribution amount and attestation reference.",
+            rolloutMode: "metadata_only",
+            schema: "robomata.rental_revenue_attestation",
+            sourceSystem: "robomata-rental-platform",
+            totalRecognizedRevenueCents: 5000,
+            version: "v1",
+          },
+          createdAt: "2026-06-11T12:30:00.000Z",
+          currency: "USD",
+          entryIds: ["rle-investor-smoke-2"],
+          errorMessage: "Simulated executor revert",
+          facilityAssetId: "facility-investor-smoke",
+          idempotencyKey: "rpb-investor-smoke-failed",
+          periodEnd,
+          periodStart,
+          postingAssetId: "facility-investor-smoke",
+          postingAssetKind: "facility",
+          status: "failed",
+          totalRecognizedRevenueCents: 5000,
+        },
       ],
     }),
     headers: { "content-type": "application/json" },
@@ -206,6 +242,16 @@ async function main() {
   }
   if (dashboard.varianceReport.attestations[0]?.attestationId !== "rra-investor-smoke") {
     throw new Error("Expected posting batch attestation to be surfaced.");
+  }
+  if (dashboard.varianceReport.settlementStatus !== "stale_or_incomplete") {
+    throw new Error(`Expected failed batch to mark settlement incomplete, got ${dashboard.varianceReport.settlementStatus}`);
+  }
+  if (!dashboard.varianceReport.staleOrIncompleteReasons.some(reason => reason.includes("Simulated executor revert"))) {
+    throw new Error(
+      `Expected failed batch reason to be surfaced, got ${JSON.stringify(
+        dashboard.varianceReport.staleOrIncompleteReasons,
+      )}`,
+    );
   }
 
   console.log(

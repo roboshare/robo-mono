@@ -54,6 +54,7 @@
     "lint": "yarn web:lint && yarn evm:lint",
     "robomata:local-smoke": "yarn workspace web robomata:local-smoke",
     "robomata:rental-investor-ui-smoke": "yarn workspace web robomata:rental-investor-ui-smoke",
+    "robomata:rental-earnings-executor-smoke": "yarn workspace web robomata:rental-earnings-executor-smoke",
     "robomata:rental-marketplace-ui-smoke": "yarn workspace web robomata:rental-marketplace-ui-smoke",
     "robomata:rental-host-ops-ui-smoke": "yarn workspace web robomata:rental-host-ops-ui-smoke",
     "robomata:rental-persistence:bootstrap": "yarn workspace web robomata:rental-persistence:bootstrap",
