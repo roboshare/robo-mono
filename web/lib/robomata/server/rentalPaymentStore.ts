@@ -153,8 +153,22 @@ function monotonicPaymentStatus(input: {
   eventKind: RentalPaymentProviderEventKind;
   existing?: RentalPaymentRecord;
   nextStatus: RentalPaymentIntentStatus;
+  refundId?: string;
+  disputeId?: string;
 }): RentalPaymentIntentStatus {
   if (!input.existing) return input.nextStatus;
+  if (input.existing.status === "refunded" && input.eventKind === "refund_failed") {
+    return "refunded";
+  }
+  if (
+    input.eventKind === "dispute_opened" &&
+    input.disputeId &&
+    input.existing.events.some(
+      event => event.kind === "dispute_closed" && event.providerReference.disputeId === input.disputeId,
+    )
+  ) {
+    return input.existing.status;
+  }
   if (
     (input.existing.status === "disputed" ||
       input.existing.status === "refunded" ||
@@ -221,6 +235,7 @@ function refundedAmountFromEvent(
   status: RentalPaymentIntentStatus,
 ) {
   if (status !== "refunded") return existing?.refundedAmountCents ?? 0;
+  if (input.eventKind !== "refund_succeeded") return existing?.refundedAmountCents ?? 0;
   const refundAmount = Math.max(input.refundAmountCents ?? 0, 0);
   const existingTotal = existing?.refundedAmountCents ?? 0;
   if (!input.refundId) return Math.max(existingTotal, refundAmount);
@@ -246,7 +261,13 @@ function paymentRecordFromEvent(
 
   const now = new Date().toISOString();
   const nextStatus = statusFromStripe(input);
-  const status = monotonicPaymentStatus({ eventKind: input.eventKind, existing, nextStatus });
+  const status = monotonicPaymentStatus({
+    disputeId: input.disputeId,
+    eventKind: input.eventKind,
+    existing,
+    nextStatus,
+    refundId: input.refundId,
+  });
   const reference = providerReference(input);
   const capturedAmountCents =
     status === "captured" || status === "partially_captured"

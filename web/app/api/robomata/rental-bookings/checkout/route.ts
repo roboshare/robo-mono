@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHash, randomBytes } from "node:crypto";
 import {
   isRobomataRentalBookingsEnabled,
   isRobomataRentalInventoryEnabled,
@@ -23,6 +24,14 @@ type CheckoutRequestBody = {
   platformVehicleId?: string;
   renterId?: string;
 };
+
+function createCheckoutAccessToken() {
+  const token = randomBytes(32).toString("base64url");
+  return {
+    token,
+    tokenHash: createHash("sha256").update(token).digest("hex"),
+  };
+}
 
 function requireBookingCheckout() {
   if (!isRobomataRentalBookingsEnabled()) {
@@ -119,6 +128,7 @@ export async function POST(request: NextRequest) {
       tripEstimate: listing.tripEstimate,
     });
     const eligibility = renterCheckoutEligibility(renter);
+    const checkoutAccess = createCheckoutAccessToken();
     const booking = await getRentalBookingStore().createBooking({
       renterId: renter.id,
       platformVehicleId: listing.platformVehicleId,
@@ -127,11 +137,15 @@ export async function POST(request: NextRequest) {
       dateFrom: body.dateFrom,
       dateTo: body.dateTo,
       state: eligibility.eligible ? "pending_payment_authorization" : "pending_renter_verification",
+      checkoutAccessTokenHash: checkoutAccess.tokenHash,
       paymentPlan,
       cancellationPolicy: defaultRentalCancellationPolicy(body.dateFrom),
     });
 
-    return NextResponse.json({ booking, checkoutEligibility: eligibility }, { status: 201 });
+    return NextResponse.json(
+      { booking, checkoutAccessToken: checkoutAccess.token, checkoutEligibility: eligibility },
+      { status: 201 },
+    );
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to start rental booking checkout." },

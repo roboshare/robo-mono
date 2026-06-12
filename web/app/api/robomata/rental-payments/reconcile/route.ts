@@ -59,6 +59,12 @@ function snapshotMatchesBooking(input: {
   );
 }
 
+function bookingStillAllowsPaymentAuthorization(booking: RentalBookingRecord) {
+  const dateFrom = Date.parse(booking.dateFrom);
+  const dateTo = Date.parse(booking.dateTo);
+  return Number.isFinite(dateFrom) && Number.isFinite(dateTo) && dateTo > dateFrom && dateFrom > Date.now();
+}
+
 async function advanceBookingAfterReconciliation(input: {
   booking?: RentalBookingRecord;
   paymentIntentId: string;
@@ -72,6 +78,7 @@ async function advanceBookingAfterReconciliation(input: {
       (await getRentalPaymentStore().getPaymentByPaymentIntent(input.paymentIntentId))?.bookingId ?? "",
     ));
   if (!booking || booking.state !== "pending_payment_authorization") return;
+  if (!bookingStillAllowsPaymentAuthorization(booking)) return;
 
   let hostReviewRequired = false;
   if (isRobomataRentalInventoryEnabled()) {

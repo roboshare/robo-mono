@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { createHmac } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -277,6 +277,12 @@ async function approveRenterVerification(renterId) {
   }
 }
 
+async function updateStoredBooking(filePath, bookingId, update) {
+  const fileStore = JSON.parse(await readFile(filePath, "utf8"));
+  fileStore.bookings = fileStore.bookings.map(booking => (booking.id === bookingId ? update(booking) : booking));
+  await writeFile(filePath, JSON.stringify(fileStore, null, 2), "utf8");
+}
+
 async function main() {
   tempDir = await mkdtemp(path.join(tmpdir(), "robomata-rental-stripe-smoke-"));
   const inventoryFile = path.join(tempDir, "inventory.json");
@@ -334,9 +340,11 @@ async function main() {
     method: "POST",
   });
   const bookingId = checkoutPayload.booking?.id;
+  const checkoutAccessToken = checkoutPayload.checkoutAccessToken;
   if (!bookingId || checkoutPayload.booking.state !== "pending_payment_authorization") {
     throw new Error(`Expected payment-gated booking, got ${JSON.stringify(checkoutPayload)}`);
   }
+  if (!checkoutAccessToken) throw new Error(`Expected checkout access token, got ${JSON.stringify(checkoutPayload)}`);
 
   const unreconciledCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
     body: JSON.stringify({
@@ -364,9 +372,11 @@ async function main() {
     method: "POST",
   });
   const reconciliationRecoveryBookingId = reconciliationRecoveryCheckoutPayload.booking?.id;
+  const reconciliationRecoveryCheckoutAccessToken = reconciliationRecoveryCheckoutPayload.checkoutAccessToken;
   if (
     !reconciliationRecoveryBookingId ||
-    reconciliationRecoveryCheckoutPayload.booking.state !== "pending_payment_authorization"
+    reconciliationRecoveryCheckoutPayload.booking.state !== "pending_payment_authorization" ||
+    !reconciliationRecoveryCheckoutAccessToken
   ) {
     throw new Error(
       `Expected reconciliation recovery booking, got ${JSON.stringify(reconciliationRecoveryCheckoutPayload)}`,
@@ -384,7 +394,12 @@ async function main() {
     method: "POST",
   });
   const longTripBookingId = longTripCheckoutPayload.booking?.id;
-  if (!longTripBookingId || longTripCheckoutPayload.booking.state !== "pending_payment_authorization") {
+  const longTripCheckoutAccessToken = longTripCheckoutPayload.checkoutAccessToken;
+  if (
+    !longTripBookingId ||
+    longTripCheckoutPayload.booking.state !== "pending_payment_authorization" ||
+    !longTripCheckoutAccessToken
+  ) {
     throw new Error(`Expected long-trip payment-gated booking, got ${JSON.stringify(longTripCheckoutPayload)}`);
   }
 
@@ -399,7 +414,12 @@ async function main() {
     method: "POST",
   });
   const longLeadBookingId = longLeadCheckoutPayload.booking?.id;
-  if (!longLeadBookingId || longLeadCheckoutPayload.booking.state !== "pending_payment_authorization") {
+  const longLeadCheckoutAccessToken = longLeadCheckoutPayload.checkoutAccessToken;
+  if (
+    !longLeadBookingId ||
+    longLeadCheckoutPayload.booking.state !== "pending_payment_authorization" ||
+    !longLeadCheckoutAccessToken
+  ) {
     throw new Error(`Expected long-lead payment-gated booking, got ${JSON.stringify(longLeadCheckoutPayload)}`);
   }
 
@@ -417,7 +437,11 @@ async function main() {
   await expectJsonFailure(
     `${baseUrl}/api/robomata/rental-payments/payment-intents`,
     {
-      body: JSON.stringify({ bookingId: longLeadBookingId, renterId }),
+      body: JSON.stringify({
+        bookingId: longLeadBookingId,
+        checkoutAccessToken: longLeadCheckoutAccessToken,
+        renterId,
+      }),
       headers: { "content-type": "application/json" },
       method: "POST",
     },
@@ -428,7 +452,11 @@ async function main() {
   await expectJsonFailure(
     `${baseUrl}/api/robomata/rental-payments/payment-intents`,
     {
-      body: JSON.stringify({ bookingId: longTripBookingId, renterId }),
+      body: JSON.stringify({
+        bookingId: longTripBookingId,
+        checkoutAccessToken: longTripCheckoutAccessToken,
+        renterId,
+      }),
       headers: { "content-type": "application/json" },
       method: "POST",
     },
@@ -483,7 +511,7 @@ async function main() {
   );
 
   const paymentIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
-    body: JSON.stringify({ bookingId, renterId }),
+    body: JSON.stringify({ bookingId, checkoutAccessToken, renterId }),
     headers: { "content-type": "application/json" },
     method: "POST",
   });
@@ -493,7 +521,7 @@ async function main() {
   }
 
   const repeatedPaymentIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
-    body: JSON.stringify({ bookingId, renterId }),
+    body: JSON.stringify({ bookingId, checkoutAccessToken, renterId }),
     headers: { "content-type": "application/json" },
     method: "POST",
   });
@@ -507,6 +535,16 @@ async function main() {
       )}`,
     );
   }
+  await expectJsonFailure(
+    `${baseUrl}/api/robomata/rental-payments/payment-intents`,
+    {
+      body: JSON.stringify({ bookingId, checkoutAccessToken: "wrong-checkout-token", renterId }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    },
+    403,
+    "Invalid checkout authorization token",
+  );
 
   const canceledWebhookBody = JSON.stringify({
     id: "evt_payment_canceled_smoke",
@@ -539,7 +577,7 @@ async function main() {
   }
 
   const replacementPaymentIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
-    body: JSON.stringify({ bookingId, renterId }),
+    body: JSON.stringify({ bookingId, checkoutAccessToken, renterId }),
     headers: { "content-type": "application/json" },
     method: "POST",
   });
@@ -579,7 +617,7 @@ async function main() {
     method: "POST",
   });
   const staleCanceledReusePayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
-    body: JSON.stringify({ bookingId, renterId }),
+    body: JSON.stringify({ bookingId, checkoutAccessToken, renterId }),
     headers: { "content-type": "application/json" },
     method: "POST",
   });
@@ -587,6 +625,69 @@ async function main() {
     throw new Error(
       `Expected stale canceled intent to reuse active replacement, got ${JSON.stringify(staleCanceledReusePayload)}`,
     );
+  }
+
+  const staleCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
+    body: JSON.stringify({
+      dateFrom: new Date(Date.now() + (5 * 24 + 6) * 60 * 60 * 1_000).toISOString(),
+      dateTo: new Date(Date.now() + (5 * 24 + 18) * 60 * 60 * 1_000).toISOString(),
+      platformVehicleId: longTripPlatformVehicleId,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const staleBookingId = staleCheckoutPayload.booking?.id;
+  const staleCheckoutAccessToken = staleCheckoutPayload.checkoutAccessToken;
+  if (!staleBookingId || !staleCheckoutAccessToken) {
+    throw new Error(`Expected stale-date guard booking, got ${JSON.stringify(staleCheckoutPayload)}`);
+  }
+  const stalePaymentIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
+    body: JSON.stringify({ bookingId: staleBookingId, checkoutAccessToken: staleCheckoutAccessToken, renterId }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const stalePaymentIntentId = stalePaymentIntentPayload.payment?.providerReference?.paymentIntentId;
+  if (!stalePaymentIntentId) {
+    throw new Error(`Expected stale-date guard PaymentIntent, got ${JSON.stringify(stalePaymentIntentPayload)}`);
+  }
+  await updateStoredBooking(env.ROBOMATA_RENTAL_BOOKINGS_FILE, staleBookingId, booking => ({
+    ...booking,
+    dateFrom: new Date(Date.now() - 2 * 60 * 60 * 1_000).toISOString(),
+    dateTo: new Date(Date.now() - 60 * 60 * 1_000).toISOString(),
+  }));
+  const staleCapturableWebhookBody = JSON.stringify({
+    id: "evt_payment_stale_booking_capturable_smoke",
+    created: Math.floor(Date.now() / 1000),
+    type: "payment_intent.amount_capturable_updated",
+    data: {
+      object: {
+        id: stalePaymentIntentId,
+        amount: stalePaymentIntentPayload.payment.authorizedAmountCents,
+        amount_capturable: stalePaymentIntentPayload.payment.authorizedAmountCents,
+        amount_received: 0,
+        capture_method: "manual",
+        currency: "usd",
+        latest_charge: "ch_stripe_smoke_stale_booking",
+        metadata: { bookingId: staleBookingId },
+        status: "requires_capture",
+      },
+    },
+  });
+  await fetchJson(`${baseUrl}/api/robomata/rental-payments/stripe/webhook`, {
+    body: staleCapturableWebhookBody,
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": stripeSignatureHeader(staleCapturableWebhookBody),
+    },
+    method: "POST",
+  });
+  const staleBookingPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/${staleBookingId}`, {
+    headers: await authHeaders("GET", `/api/robomata/rental-bookings/${staleBookingId}`),
+    method: "GET",
+  });
+  if (staleBookingPayload.booking?.state !== "pending_payment_authorization") {
+    throw new Error(`Expected stale booking to remain pending, got ${JSON.stringify(staleBookingPayload)}`);
   }
 
   const capturableWebhookBody = JSON.stringify({
@@ -765,7 +866,11 @@ async function main() {
   const reconciliationRecoveryIntentPayload = await fetchJson(
     `${baseUrl}/api/robomata/rental-payments/payment-intents`,
     {
-      body: JSON.stringify({ bookingId: reconciliationRecoveryBookingId, renterId }),
+      body: JSON.stringify({
+        bookingId: reconciliationRecoveryBookingId,
+        checkoutAccessToken: reconciliationRecoveryCheckoutAccessToken,
+        renterId,
+      }),
       headers: { "content-type": "application/json" },
       method: "POST",
     },
@@ -1047,6 +1152,21 @@ async function main() {
   if (disputeClosedPayload.payment?.postingBlocked || disputeClosedPayload.payment.status !== "captured") {
     throw new Error(`Expected closed dispute to clear posting block, got ${JSON.stringify(disputeClosedPayload)}`);
   }
+  const staleDisputeOpenPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/stripe/webhook`, {
+    body: disputeWebhookBody,
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": stripeSignatureHeader(disputeWebhookBody),
+    },
+    method: "POST",
+  });
+  if (staleDisputeOpenPayload.payment?.postingBlocked || staleDisputeOpenPayload.payment.status !== "captured") {
+    throw new Error(
+      `Expected stale dispute-open webhook after close to preserve captured status, got ${JSON.stringify(
+        staleDisputeOpenPayload,
+      )}`,
+    );
+  }
 
   const refundWebhookBody = JSON.stringify({
     id: "evt_payment_refund_smoke",
@@ -1117,6 +1237,41 @@ async function main() {
     );
   }
 
+  const staleRefundFailedWebhookBody = JSON.stringify({
+    id: "evt_payment_refund_failed_stale_smoke",
+    created: Math.floor(Date.now() / 1000),
+    type: "refund.failed",
+    data: {
+      object: {
+        id: "re_stripe_smoke_stale_failed",
+        amount: 125,
+        charge: "ch_stripe_smoke_actual",
+        currency: "usd",
+        payment_intent: paymentIntentId,
+        status: "failed",
+      },
+    },
+  });
+  const staleRefundFailedPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/stripe/webhook`, {
+    body: staleRefundFailedWebhookBody,
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": stripeSignatureHeader(staleRefundFailedWebhookBody),
+    },
+    method: "POST",
+  });
+  if (
+    staleRefundFailedPayload.payment?.postingBlocked ||
+    staleRefundFailedPayload.payment.status !== "refunded" ||
+    staleRefundFailedPayload.payment.refundedAmountCents !== 550
+  ) {
+    throw new Error(
+      `Expected stale refund.failed after success to preserve refunded state, got ${JSON.stringify(
+        staleRefundFailedPayload,
+      )}`,
+    );
+  }
+
   await expectJsonFailure(
     `${baseUrl}${postingPath}`,
     {
@@ -1182,8 +1337,12 @@ async function main() {
     },
     method: "POST",
   });
-  if (!refundFailedPayload.payment?.postingBlocked || refundFailedPayload.payment.status !== "failed") {
-    throw new Error(`Expected refund.failed to block posting, got ${JSON.stringify(refundFailedPayload)}`);
+  if (
+    refundFailedPayload.payment?.postingBlocked ||
+    refundFailedPayload.payment.status !== "refunded" ||
+    refundFailedPayload.payment.refundedAmountCents !== 550
+  ) {
+    throw new Error(`Expected stale refund.failed to preserve refund success, got ${JSON.stringify(refundFailedPayload)}`);
   }
 
   const failedRefundReconciliationPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/reconcile`, {
@@ -1195,11 +1354,11 @@ async function main() {
     method: "POST",
   });
   if (
-    !failedRefundReconciliationPayload.payment?.postingBlocked ||
-    failedRefundReconciliationPayload.payment.status !== "failed"
+    failedRefundReconciliationPayload.payment?.postingBlocked ||
+    failedRefundReconciliationPayload.payment.status !== "refunded"
   ) {
     throw new Error(
-      `Expected reconciliation to preserve failed refund block, got ${JSON.stringify(
+      `Expected reconciliation to preserve refunded state after stale failed refund, got ${JSON.stringify(
         failedRefundReconciliationPayload,
       )}`,
     );
@@ -1216,12 +1375,17 @@ async function main() {
     method: "POST",
   });
   const unavailableBookingId = unavailableCheckoutPayload.booking?.id;
-  if (!unavailableBookingId || unavailableCheckoutPayload.booking.state !== "pending_payment_authorization") {
+  const unavailableCheckoutAccessToken = unavailableCheckoutPayload.checkoutAccessToken;
+  if (
+    !unavailableBookingId ||
+    unavailableCheckoutPayload.booking.state !== "pending_payment_authorization" ||
+    !unavailableCheckoutAccessToken
+  ) {
     throw new Error(`Expected unavailable guard booking, got ${JSON.stringify(unavailableCheckoutPayload)}`);
   }
 
   const unavailablePaymentIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
-    body: JSON.stringify({ bookingId: unavailableBookingId, renterId }),
+    body: JSON.stringify({ bookingId: unavailableBookingId, checkoutAccessToken: unavailableCheckoutAccessToken, renterId }),
     headers: { "content-type": "application/json" },
     method: "POST",
   });

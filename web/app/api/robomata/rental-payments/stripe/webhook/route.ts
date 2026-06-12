@@ -153,6 +153,12 @@ function failureReasonForEvent(event: StripeWebhookEvent): string | undefined {
   return stringField(object.failure_message) ?? stringField(object.reason);
 }
 
+function bookingStillAllowsPaymentAuthorization(booking: RentalBookingRecord) {
+  const dateFrom = Date.parse(booking.dateFrom);
+  const dateTo = Date.parse(booking.dateTo);
+  return Number.isFinite(dateFrom) && Number.isFinite(dateTo) && dateTo > dateFrom && dateFrom > Date.now();
+}
+
 async function advanceBookingAfterPaymentAuthorization(input: {
   eventKind: RentalPaymentProviderEventKind;
   payment: RentalPaymentRecord;
@@ -160,6 +166,7 @@ async function advanceBookingAfterPaymentAuthorization(input: {
   if (input.eventKind !== "authorization_succeeded" && input.eventKind !== "capture_succeeded") return;
   const booking = await getRentalBookingStore().getBooking(input.payment.bookingId);
   if (!booking || booking.state !== "pending_payment_authorization") return;
+  if (!bookingStillAllowsPaymentAuthorization(booking)) return;
 
   let hostReviewRequired = false;
   if (isRobomataRentalInventoryEnabled()) {

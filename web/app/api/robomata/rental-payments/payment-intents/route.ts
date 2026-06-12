@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import {
   isRobomataRentalBookingsEnabled,
   isRobomataRentalPaymentsEnabled,
@@ -18,6 +19,7 @@ const DEFAULT_STRIPE_MANUAL_CAPTURE_WINDOW_DAYS = 7;
 
 type CreatePaymentIntentBody = {
   bookingId?: string;
+  checkoutAccessToken?: string;
   renterId?: string;
 };
 
@@ -47,6 +49,10 @@ function paymentUpdatedTime(payment: RentalPaymentRecord) {
   return Number.isFinite(updatedAt) ? updatedAt : 0;
 }
 
+function checkoutAccessTokenHash(token: string) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
 export async function POST(request: NextRequest) {
   try {
     const featureError = requireRentalPaymentWrites();
@@ -55,11 +61,20 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as CreatePaymentIntentBody;
     if (!body.bookingId?.trim()) return NextResponse.json({ error: "bookingId must be provided." }, { status: 400 });
     if (!body.renterId?.trim()) return NextResponse.json({ error: "renterId must be provided." }, { status: 400 });
+    if (!body.checkoutAccessToken?.trim()) {
+      return NextResponse.json({ error: "checkoutAccessToken must be provided." }, { status: 400 });
+    }
 
     const booking = await getRentalBookingStore().getBooking(body.bookingId);
     if (!booking) return NextResponse.json({ error: "Rental booking not found." }, { status: 404 });
     if (body.renterId.trim() !== booking.renterId) {
       return NextResponse.json({ error: "Renter does not match booking." }, { status: 403 });
+    }
+    if (!booking.checkoutAccessTokenHash) {
+      return NextResponse.json({ error: "Booking checkout authorization is not available." }, { status: 409 });
+    }
+    if (checkoutAccessTokenHash(body.checkoutAccessToken.trim()) !== booking.checkoutAccessTokenHash) {
+      return NextResponse.json({ error: "Invalid checkout authorization token." }, { status: 403 });
     }
     if (booking.state !== "pending_payment_authorization") {
       return NextResponse.json(
