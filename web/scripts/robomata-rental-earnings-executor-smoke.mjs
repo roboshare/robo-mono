@@ -212,7 +212,12 @@ async function main() {
       ],
       periodEnd: nowIso(1),
       periodStart: nowIso(-1),
-      target: { facilityAssetId: "101", postingAssetId: "101", postingAssetKind: "facility" },
+      target: {
+        facilityAssetId: "101",
+        postingAssetId: "101",
+        postingAssetKind: "facility",
+        protocolInvestorShareBps: 10000,
+      },
     },
   });
   const facilityCall = facilityPayload.protocolRequest?.protocolCall;
@@ -306,12 +311,47 @@ async function main() {
         facilityAssetId: "101",
         postingAssetId: "203",
         postingAssetKind: "vehicle",
+        protocolInvestorShareBps: 10000,
         vehicleAssetId: "203",
       },
     },
   });
   if (vehiclePayload.protocolRequest?.protocolCall?.args.assetId !== "203") {
     throw new Error(`Expected executable vehicle protocol call, got ${JSON.stringify(vehiclePayload)}`);
+  }
+
+  const belowInvestorMinimumPayload = await requestJson({
+    authHeaders,
+    method: "POST",
+    requestPath: postingPath,
+    expectedStatus: 201,
+    body: {
+      entries: [
+        ledgerEntry({
+          amountCents: 2500,
+          facilityAssetId: "101",
+          id: "rle_executor_below_investor_minimum",
+          platformVehicleId: "platform-executor-below-investor-minimum",
+          postingAssetId: "205",
+          postingAssetKind: "vehicle",
+          vehicleAssetId: "205",
+        }),
+      ],
+      periodEnd: nowIso(6),
+      periodStart: nowIso(-1),
+      target: {
+        facilityAssetId: "101",
+        postingAssetId: "205",
+        postingAssetKind: "vehicle",
+        protocolInvestorShareBps: 100,
+        vehicleAssetId: "205",
+      },
+    },
+  });
+  if (belowInvestorMinimumPayload.protocolRequest?.protocolCall) {
+    throw new Error(
+      `Expected below-minimum investor slice to be metadata-only, got ${JSON.stringify(belowInvestorMinimumPayload)}`,
+    );
   }
 
   const evenAssetPayload = await requestJson({

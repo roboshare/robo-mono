@@ -4,6 +4,7 @@ import type { PlatformVehicleId, ProtocolAssetId } from "~~/lib/robomata/rentalI
 
 const PROTOCOL_PAYMENT_TOKEN_DECIMALS = 6;
 const MIN_PROTOCOL_FEE_BASE_UNITS = 1_000_000n;
+const PROTOCOL_BPS_PRECISION = 10_000n;
 const EARNINGS_MANAGER_DISTRIBUTE_EARNINGS_ABI = [
   {
     inputs: [
@@ -25,6 +26,7 @@ export type RentalFinancingTarget = {
   vehicleAssetId?: ProtocolAssetId;
   postingAssetId: ProtocolAssetId;
   postingAssetKind: "facility" | "vehicle";
+  protocolInvestorShareBps?: number;
 };
 
 export type RecognizedRevenueInputs = {
@@ -159,15 +161,27 @@ function centsToPaymentTokenBaseUnits(amountCents: number): bigint {
   return BigInt(amountCents) * 10n ** BigInt(PROTOCOL_PAYMENT_TOKEN_DECIMALS - 2);
 }
 
+function protocolInvestorShareBps(value: number | undefined): bigint | null {
+  if (value === undefined) return null;
+  if (!Number.isInteger(value) || value < 0 || value > Number(PROTOCOL_BPS_PRECISION)) {
+    throw new Error("Protocol investor share must be an integer basis-point value between 0 and 10000.");
+  }
+  return BigInt(value);
+}
+
 export function buildProtocolEarningsDistributionCall(input: {
   amountCents: number;
   postingAssetId: ProtocolAssetId;
+  protocolInvestorShareBps?: number;
   tryAutoRelease?: boolean;
 }): RentalProtocolEarningsDistributionCall | null {
   const assetId = protocolAssetId(input.postingAssetId);
   if (assetId === null) return null;
   const totalRevenue = centsToPaymentTokenBaseUnits(input.amountCents);
-  if (totalRevenue < MIN_PROTOCOL_FEE_BASE_UNITS) return null;
+  const investorShareBps = protocolInvestorShareBps(input.protocolInvestorShareBps);
+  if (investorShareBps === null) return null;
+  const estimatedInvestorAmount = (totalRevenue * investorShareBps) / PROTOCOL_BPS_PRECISION;
+  if (estimatedInvestorAmount < MIN_PROTOCOL_FEE_BASE_UNITS) return null;
   const tryAutoRelease = input.tryAutoRelease ?? false;
   return {
     contractName: "EarningsManager",
@@ -429,6 +443,7 @@ export function buildProtocolEarningsDistributionRequest(
       buildProtocolEarningsDistributionCall({
         amountCents: batch.totalRecognizedRevenueCents,
         postingAssetId: batch.postingAssetId,
+        protocolInvestorShareBps: batch.protocolInvestorShareBps,
       }) ?? undefined,
     provenance: {
       periodStart: batch.periodStart,

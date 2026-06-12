@@ -52,11 +52,15 @@ The service emits a `distributeEarnings` request shape with:
 
 The request is the handoff to the protocol execution layer. `mark-posted` records the protocol transaction hash after execution.
 
-When `postingAssetId` is a uint256-compatible odd protocol asset ID, the request also includes an executable
-`protocolCall` payload for `EarningsManager.distributeEarnings(uint256,uint256,bool)`, which is the current deployed
-execution path for posting earnings into Treasury accounting. Amounts are converted from USD cents into 6-decimal
-payment-token base units. Zero-net, sub-dollar, nonnumeric, and even revenue-token IDs are metadata-only and do not emit
-executable calldata because the protocol call would revert.
+When `postingAssetId` is a uint256-compatible odd protocol asset ID and the posting target includes a validated
+`protocolInvestorShareBps`, the request also includes an executable `protocolCall` payload for
+`EarningsManager.distributeEarnings(uint256,uint256,bool)`, which is the current deployed execution path for posting
+earnings into Treasury accounting. Amounts are converted from USD cents into 6-decimal payment-token base units.
+
+`protocolInvestorShareBps` must represent the effective investor slice from protocol asset metadata: the lower of the
+asset revenue-share cap and the currently investor-held revenue-token supply share. If that metadata is absent, or if the
+estimated investor amount is below the protocol 1 USDC minimum, the batch remains metadata-only. Zero-net, sub-minimum,
+nonnumeric, and even revenue-token IDs do not emit executable calldata because the protocol call would revert.
 
 The platform does not submit protocol transactions implicitly. The signer boundary is:
 
