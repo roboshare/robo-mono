@@ -2,12 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "node:crypto";
 import {
   isRobomataRentalBookingsEnabled,
+  isRobomataRentalInventoryEnabled,
   isRobomataRentalPaymentsEnabled,
   isRobomataWorkflowMutationEnabled,
 } from "~~/lib/featureFlags";
 import type { RentalPaymentRecord } from "~~/lib/robomata/rentalPayments";
 import { getRentalBookingStore } from "~~/lib/robomata/server/rentalBookingStore";
+import { getRentalInventoryStore } from "~~/lib/robomata/server/rentalInventoryStore";
 import { getRentalPaymentStore } from "~~/lib/robomata/server/rentalPaymentStore";
+import type { StripePaymentIntentSnapshot } from "~~/lib/robomata/server/rentalPaymentStore";
 import {
   createStripeRentalPaymentIntent,
   retrieveStripeRentalPaymentIntent,
@@ -53,6 +56,40 @@ function checkoutAccessTokenHash(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
+function successfulProviderStatus(snapshot: StripePaymentIntentSnapshot) {
+  return snapshot.status === "requires_capture" || snapshot.status === "succeeded";
+}
+
+function bookingStillAllowsPaymentAuthorization(booking: { dateFrom: string; dateTo: string }) {
+  const dateFrom = Date.parse(booking.dateFrom);
+  const dateTo = Date.parse(booking.dateTo);
+  return Number.isFinite(dateFrom) && Number.isFinite(dateTo) && dateTo > dateFrom && dateFrom > Date.now();
+}
+
+async function advanceBookingAfterRetrievedPayment(input: {
+  bookingId: string;
+  payment: RentalPaymentRecord;
+  snapshot: StripePaymentIntentSnapshot;
+}) {
+  if (!successfulProviderStatus(input.snapshot)) return;
+  const booking = await getRentalBookingStore().getBooking(input.bookingId);
+  if (!booking || booking.state !== "pending_payment_authorization") return;
+  if (!bookingStillAllowsPaymentAuthorization(booking)) return;
+
+  let hostReviewRequired = false;
+  if (isRobomataRentalInventoryEnabled()) {
+    const vehicle = await getRentalInventoryStore().getVehicle(booking.platformVehicleId);
+    if (!vehicle || vehicle.operationalStatus !== "listed") return;
+    hostReviewRequired = vehicle.hostControls?.bookingReview.requireManualApproval === true;
+  }
+
+  await getRentalBookingStore().confirmBooking(booking.id, {
+    hostReviewRequired,
+    paymentAuthorized: true,
+    paymentProviderReference: input.payment.providerReference,
+  });
+}
+
 export async function POST(request: NextRequest) {
   try {
     const featureError = requireRentalPaymentWrites();
@@ -79,6 +116,12 @@ export async function POST(request: NextRequest) {
     if (booking.state !== "pending_payment_authorization") {
       return NextResponse.json(
         { error: `Booking cannot create a PaymentIntent from state ${booking.state}.` },
+        { status: 409 },
+      );
+    }
+    if (!bookingStillAllowsPaymentAuthorization(booking)) {
+      return NextResponse.json(
+        { error: "Booking dates are no longer valid for payment authorization." },
         { status: 409 },
       );
     }
@@ -109,6 +152,26 @@ export async function POST(request: NextRequest) {
       if (payment.status === "cancelled") continue;
       const paymentIntent = await retrieveStripeRentalPaymentIntent(payment.providerReference.paymentIntentId!);
       if (paymentIntent.status === "canceled") continue;
+      if (
+        successfulProviderStatus(paymentIntent) &&
+        payment.status !== "requires_capture" &&
+        payment.status !== "captured"
+      ) {
+        const refreshedPayment = await paymentStore.recordStripeEvent({
+          booking,
+          eventKind: paymentIntent.status === "succeeded" ? "capture_succeeded" : "authorization_succeeded",
+          snapshot: paymentIntent,
+        });
+        await advanceBookingAfterRetrievedPayment({
+          bookingId: booking.id,
+          payment: refreshedPayment,
+          snapshot: paymentIntent,
+        });
+        return NextResponse.json({
+          clientSecret: paymentIntent.client_secret,
+          payment: refreshedPayment,
+        });
+      }
       return NextResponse.json({
         clientSecret: paymentIntent.client_secret,
         payment,

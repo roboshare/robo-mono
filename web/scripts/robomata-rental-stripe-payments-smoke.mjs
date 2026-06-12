@@ -283,6 +283,14 @@ async function updateStoredBooking(filePath, bookingId, update) {
   await writeFile(filePath, JSON.stringify(fileStore, null, 2), "utf8");
 }
 
+async function updateStoredPayment(filePath, paymentIntentId, update) {
+  const fileStore = JSON.parse(await readFile(filePath, "utf8"));
+  fileStore.payments = fileStore.payments.map(payment =>
+    payment.providerReference?.paymentIntentId === paymentIntentId ? update(payment) : payment,
+  );
+  await writeFile(filePath, JSON.stringify(fileStore, null, 2), "utf8");
+}
+
 async function main() {
   tempDir = await mkdtemp(path.join(tmpdir(), "robomata-rental-stripe-smoke-"));
   const inventoryFile = path.join(tempDir, "inventory.json");
@@ -423,6 +431,41 @@ async function main() {
     throw new Error(`Expected long-lead payment-gated booking, got ${JSON.stringify(longLeadCheckoutPayload)}`);
   }
 
+  const staleNoIntentCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
+    body: JSON.stringify({
+      dateFrom: new Date(Date.now() + (2 * 24 + 6) * 60 * 60 * 1_000).toISOString(),
+      dateTo: new Date(Date.now() + (2 * 24 + 18) * 60 * 60 * 1_000).toISOString(),
+      platformVehicleId: longTripPlatformVehicleId,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const staleNoIntentBookingId = staleNoIntentCheckoutPayload.booking?.id;
+  const staleNoIntentCheckoutAccessToken = staleNoIntentCheckoutPayload.checkoutAccessToken;
+  if (!staleNoIntentBookingId || !staleNoIntentCheckoutAccessToken) {
+    throw new Error(`Expected stale no-intent guard booking, got ${JSON.stringify(staleNoIntentCheckoutPayload)}`);
+  }
+  await updateStoredBooking(env.ROBOMATA_RENTAL_BOOKINGS_FILE, staleNoIntentBookingId, booking => ({
+    ...booking,
+    dateFrom: new Date(Date.now() - 2 * 60 * 60 * 1_000).toISOString(),
+    dateTo: new Date(Date.now() - 60 * 60 * 1_000).toISOString(),
+  }));
+  await expectJsonFailure(
+    `${baseUrl}/api/robomata/rental-payments/payment-intents`,
+    {
+      body: JSON.stringify({
+        bookingId: staleNoIntentBookingId,
+        checkoutAccessToken: staleNoIntentCheckoutAccessToken,
+        renterId,
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    },
+    409,
+    "Booking dates are no longer valid for payment authorization",
+  );
+
   await expectJsonFailure(
     `${baseUrl}/api/robomata/rental-payments/payment-intents`,
     {
@@ -535,6 +578,80 @@ async function main() {
       )}`,
     );
   }
+
+  const missedWebhookCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
+    body: JSON.stringify({
+      dateFrom: new Date(Date.now() + (3 * 24 + 6) * 60 * 60 * 1_000).toISOString(),
+      dateTo: new Date(Date.now() + (3 * 24 + 18) * 60 * 60 * 1_000).toISOString(),
+      platformVehicleId: longTripPlatformVehicleId,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const missedWebhookBookingId = missedWebhookCheckoutPayload.booking?.id;
+  const missedWebhookCheckoutAccessToken = missedWebhookCheckoutPayload.checkoutAccessToken;
+  if (!missedWebhookBookingId || !missedWebhookCheckoutAccessToken) {
+    throw new Error(`Expected missed-webhook recovery booking, got ${JSON.stringify(missedWebhookCheckoutPayload)}`);
+  }
+  const missedWebhookIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
+    body: JSON.stringify({
+      bookingId: missedWebhookBookingId,
+      checkoutAccessToken: missedWebhookCheckoutAccessToken,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const missedWebhookPaymentIntentId = missedWebhookIntentPayload.payment?.providerReference?.paymentIntentId;
+  if (!missedWebhookPaymentIntentId) {
+    throw new Error(`Expected missed-webhook PaymentIntent, got ${JSON.stringify(missedWebhookIntentPayload)}`);
+  }
+  await updateStoredPayment(env.ROBOMATA_RENTAL_PAYMENTS_FILE, missedWebhookPaymentIntentId, payment => ({
+    ...payment,
+    capturedAmountCents: 0,
+    postingBlocked: true,
+    postingBlockReason: "Smoke simulated missed provider webhook.",
+    status: "requires_payment_method",
+  }));
+  const missedWebhookReusePayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
+    body: JSON.stringify({
+      bookingId: missedWebhookBookingId,
+      checkoutAccessToken: missedWebhookCheckoutAccessToken,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  if (
+    missedWebhookReusePayload.payment?.providerReference?.paymentIntentId !== missedWebhookPaymentIntentId ||
+    missedWebhookReusePayload.payment.status !== "captured" ||
+    missedWebhookReusePayload.payment.postingBlocked
+  ) {
+    throw new Error(
+      `Expected reused successful PaymentIntent to refresh local payment, got ${JSON.stringify(
+        missedWebhookReusePayload,
+      )}`,
+    );
+  }
+  const missedWebhookBookingPayload = await fetchJson(
+    `${baseUrl}/api/robomata/rental-bookings/${missedWebhookBookingId}`,
+    {
+      headers: await authHeaders("GET", `/api/robomata/rental-bookings/${missedWebhookBookingId}`),
+      method: "GET",
+    },
+  );
+  if (
+    missedWebhookBookingPayload.booking?.state !== "confirmed" ||
+    missedWebhookBookingPayload.booking.paymentProviderReference?.paymentIntentId !== missedWebhookPaymentIntentId
+  ) {
+    throw new Error(
+      `Expected reused successful PaymentIntent to confirm booking, got ${JSON.stringify(
+        missedWebhookBookingPayload,
+      )}`,
+    );
+  }
+
   await expectJsonFailure(
     `${baseUrl}/api/robomata/rental-payments/payment-intents`,
     {

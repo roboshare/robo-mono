@@ -270,7 +270,7 @@ function paymentRecordFromEvent(
   });
   const reference = providerReference(input);
   const capturedAmountCents =
-    status === "captured" || status === "partially_captured"
+    status === "captured" || status === "partially_captured" || status === "refunded"
       ? Math.max(input.snapshot.amount_received ?? 0, existing?.capturedAmountCents ?? 0, 0)
       : (existing?.capturedAmountCents ?? 0);
   const refundedAmountCents = refundedAmountFromEvent(existing, input, status);
