@@ -157,6 +157,9 @@ function monotonicPaymentStatus(input: {
   disputeId?: string;
 }): RentalPaymentIntentStatus {
   if (!input.existing) return input.nextStatus;
+  if (input.existing.status === "cancelled") {
+    return "cancelled";
+  }
   if (input.existing.status === "refunded" && input.eventKind === "refund_failed") {
     return "refunded";
   }
@@ -192,6 +195,12 @@ function monotonicPaymentStatus(input: {
     return "captured";
   }
   return input.nextStatus;
+}
+
+function revenueEligibleAmountFromBooking(booking: RentalBookingRecord | undefined): number | undefined {
+  if (!booking) return undefined;
+  const rentalCharge = booking.paymentPlan.rentalCharge;
+  return Math.max(rentalCharge.totalAuthorizeCents - rentalCharge.taxesCents - rentalCharge.protectionPlanCents, 0);
 }
 
 function paymentPostingBlock(input: {
@@ -324,7 +333,7 @@ function paymentRecordFromEvent(
     reconciliationCheckedAt: input.eventKind === "reconciliation_refetched" ? now : existing?.reconciliationCheckedAt,
     revenueEligibleAmountCents:
       existing?.revenueEligibleAmountCents ??
-      booking?.paymentPlan.rentalCharge.totalAuthorizeCents ??
+      revenueEligibleAmountFromBooking(booking) ??
       Math.min(existing?.authorizedAmountCents ?? input.snapshot.amount, input.snapshot.amount),
     refundedAmountCents,
     status,

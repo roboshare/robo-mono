@@ -117,7 +117,7 @@ async function bookingForEvent(
   const existingPayment = await getRentalPaymentStore().getPaymentByPaymentIntent(paymentIntentId);
   if (existingPayment) return undefined;
 
-  const bookingId = metadataBookingId(event.data.object);
+  const bookingId = metadataBookingId(event.data.object) ?? snapshot.metadata?.bookingId;
   if (!bookingId) return undefined;
   const booking = (await getRentalBookingStore().getBooking(bookingId)) ?? undefined;
   if (!booking) return undefined;
@@ -164,6 +164,7 @@ async function advanceBookingAfterPaymentAuthorization(input: {
   payment: RentalPaymentRecord;
 }) {
   if (input.eventKind !== "authorization_succeeded" && input.eventKind !== "capture_succeeded") return;
+  if (input.payment.status !== "requires_capture" && input.payment.status !== "captured") return;
   const booking = await getRentalBookingStore().getBooking(input.payment.bookingId);
   if (!booking || booking.state !== "pending_payment_authorization") return;
   if (!bookingStillAllowsPaymentAuthorization(booking)) return;

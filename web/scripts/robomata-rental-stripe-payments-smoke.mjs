@@ -750,6 +750,46 @@ async function main() {
     throw new Error(`Expected canceled PaymentIntent to be blocked, got ${JSON.stringify(canceledPayload)}`);
   }
 
+  const staleCapturableAfterCancelWebhookBody = JSON.stringify({
+    id: "evt_payment_capturable_after_cancel_smoke",
+    created: Math.floor(Date.now() / 1000) - 30,
+    type: "payment_intent.amount_capturable_updated",
+    data: {
+      object: {
+        id: paymentIntentId,
+        amount: paymentIntentPayload.payment.authorizedAmountCents,
+        amount_capturable: paymentIntentPayload.payment.authorizedAmountCents,
+        amount_received: 0,
+        capture_method: "manual",
+        currency: "usd",
+        latest_charge: "ch_stripe_smoke_cancelled",
+        metadata: { bookingId },
+        status: "requires_capture",
+      },
+    },
+  });
+  const staleCapturableAfterCancelPayload = await fetchJson(
+    `${baseUrl}/api/robomata/rental-payments/stripe/webhook`,
+    {
+      body: staleCapturableAfterCancelWebhookBody,
+      headers: {
+        "content-type": "application/json",
+        "stripe-signature": stripeSignatureHeader(staleCapturableAfterCancelWebhookBody),
+      },
+      method: "POST",
+    },
+  );
+  if (
+    staleCapturableAfterCancelPayload.payment?.status !== "cancelled" ||
+    !staleCapturableAfterCancelPayload.payment.postingBlocked
+  ) {
+    throw new Error(
+      `Expected stale capturable webhook after cancel to preserve cancelled status, got ${JSON.stringify(
+        staleCapturableAfterCancelPayload,
+      )}`,
+    );
+  }
+
   const replacementPaymentIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
     body: JSON.stringify({ bookingId, checkoutAccessToken, renterId }),
     headers: { "content-type": "application/json" },
@@ -948,6 +988,117 @@ async function main() {
   }
 
   const postingPath = "/api/robomata/rental-revenue/posting-batches";
+  const passThroughCapCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
+    body: JSON.stringify({
+      dateFrom: new Date(Date.now() + (6 * 24 + 6) * 60 * 60 * 1_000).toISOString(),
+      dateTo: new Date(Date.now() + (6 * 24 + 10) * 60 * 60 * 1_000).toISOString(),
+      platformVehicleId,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const passThroughCapBookingId = passThroughCapCheckoutPayload.booking?.id;
+  const passThroughCapCheckoutAccessToken = passThroughCapCheckoutPayload.checkoutAccessToken;
+  if (!passThroughCapBookingId || !passThroughCapCheckoutAccessToken) {
+    throw new Error(`Expected pass-through cap booking, got ${JSON.stringify(passThroughCapCheckoutPayload)}`);
+  }
+  const passThroughTaxCents = 125;
+  const passThroughProtectionCents = 75;
+  await updateStoredBooking(env.ROBOMATA_RENTAL_BOOKINGS_FILE, passThroughCapBookingId, booking => ({
+    ...booking,
+    paymentPlan: {
+      ...booking.paymentPlan,
+      rentalCharge: {
+        ...booking.paymentPlan.rentalCharge,
+        protectionPlanCents: passThroughProtectionCents,
+        taxesCents: passThroughTaxCents,
+      },
+    },
+  }));
+  const passThroughCapIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
+    body: JSON.stringify({
+      bookingId: passThroughCapBookingId,
+      checkoutAccessToken: passThroughCapCheckoutAccessToken,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const passThroughCapPaymentIntentId = passThroughCapIntentPayload.payment?.providerReference?.paymentIntentId;
+  const passThroughCapAuthorizedAmount = passThroughCapIntentPayload.payment?.authorizedAmountCents;
+  const passThroughCapEligibleAmount =
+    passThroughCapIntentPayload.payment?.revenueEligibleAmountCents ??
+    passThroughCapAuthorizedAmount - passThroughTaxCents - passThroughProtectionCents;
+  if (
+    !passThroughCapPaymentIntentId ||
+    typeof passThroughCapAuthorizedAmount !== "number" ||
+    typeof passThroughCapEligibleAmount !== "number" ||
+    passThroughCapEligibleAmount >= passThroughCapAuthorizedAmount
+  ) {
+    throw new Error(`Expected pass-through capped PaymentIntent, got ${JSON.stringify(passThroughCapIntentPayload)}`);
+  }
+  const passThroughCaptureWebhookBody = JSON.stringify({
+    id: "evt_payment_pass_through_capture_smoke",
+    created: Math.floor(Date.now() / 1000),
+    type: "payment_intent.succeeded",
+    data: {
+      object: {
+        id: passThroughCapPaymentIntentId,
+        amount: passThroughCapAuthorizedAmount,
+        amount_capturable: 0,
+        amount_received: passThroughCapAuthorizedAmount,
+        capture_method: "manual",
+        currency: "usd",
+        latest_charge: "ch_stripe_smoke_pass_through",
+        metadata: { bookingId: passThroughCapBookingId },
+        status: "succeeded",
+      },
+    },
+  });
+  await fetchJson(`${baseUrl}/api/robomata/rental-payments/stripe/webhook`, {
+    body: passThroughCaptureWebhookBody,
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": stripeSignatureHeader(passThroughCaptureWebhookBody),
+    },
+    method: "POST",
+  });
+  const passThroughPostingBody = {
+    entries: [
+      {
+        id: "rle_stripe_smoke_pass_through_cap",
+        amountCents: passThroughCapEligibleAmount + 1,
+        createdAt: new Date().toISOString(),
+        currency: "USD",
+        facilityAssetId,
+        kind: "recognized_revenue",
+        occurredAt: new Date().toISOString(),
+        platformVehicleId,
+        postingAssetId: facilityAssetId,
+        postingAssetKind: "facility",
+        source: { bookingId: passThroughCapBookingId, paymentIntentId: passThroughCapPaymentIntentId },
+      },
+    ],
+    periodEnd: new Date(Date.now() + 30 * 60 * 60 * 1_000).toISOString(),
+    periodStart: new Date(Date.now() + 26 * 60 * 60 * 1_000).toISOString(),
+    target: {
+      facilityAssetId,
+      postingAssetId: facilityAssetId,
+      postingAssetKind: "facility",
+    },
+  };
+  await expectJsonFailure(
+    `${baseUrl}${postingPath}`,
+    {
+      body: JSON.stringify(passThroughPostingBody),
+      headers: await authHeaders("POST", postingPath, { "content-type": "application/json" }),
+      method: "POST",
+    },
+    409,
+    "Payment-backed revenue exceeds captured payment amount.",
+  );
+
   const postingBody = {
     entries: [
       {
