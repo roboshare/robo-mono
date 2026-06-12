@@ -70,7 +70,7 @@ Provider and secret gates:
 
 | Area | Required owner | Required evidence | Current status |
 | --- | --- | --- | --- |
-| Legal terms | Legal | Approval of renter terms, host terms, cancellation/refund policy, claims policy, protection-plan wording, deposit language, payment authorization/capture timing, refund/chargeback language, tax collection/remittance/invoice language, and host payout timing for each launch jurisdiction | Pending |
+| Legal terms | Legal | Approval of renter terms, host terms, cancellation/refund policy, claims policy, protection-plan wording, deposit language, payment authorization/capture timing, refund/chargeback language, tax collection/remittance/invoice language, host payout timing, securities-adjacent disclosure overlap, partner classification and payout structure, investment-disclosure separation, and utilization/yield/revenue claim language for each launch jurisdiction | Pending |
 | Privacy and retention | Privacy | Approval of renter verification notices, trip data handling, support/claims retention, deletion/access/correction handling, and raw-PII provider boundary | Pending |
 | Payments and deposits | Payments | Stripe authorization, capture, cancellation, refund, dispute, chargeback, tax, invoice, and deposit-hold validation for each launch jurisdiction | Pending |
 | Trust and safety | Trust | Approval of manual verification override, sanctions review, safety takedown, fraud review, claims evidence, and payout-hold workflows | Pending |
@@ -131,7 +131,9 @@ evidence and approved launch for the named environment and jurisdictions.
   cancellation/refund policy, claims policy, protection-plan wording, privacy
   policy, retention policy, deposit language, payment authorization/capture
   timing, refund/chargeback language, tax collection/remittance/invoice
-  language, or host payout timing.
+  language, host payout timing, securities-adjacent disclosure overlap, partner
+  classification and payout structure, investment-disclosure separation, or
+  utilization/yield/revenue claim language.
 - No privacy approval has been recorded for renter verification notices, trip
   data handling, support/claims retention, deletion/access/correction handling,
   or the raw-PII provider boundary.
@@ -140,13 +142,17 @@ evidence and approved launch for the named environment and jurisdictions.
   launch jurisdictions.
 - No trust/safety approval has been recorded for manual verification overrides,
   sanctions review, safety takedowns, claim evidence, or payout holds.
+- No Revenue Operations approval has been recorded for recognized revenue
+  policy, posting-batch caps, pass-through exclusions, retry behavior, or
+  protocol transaction reconciliation.
 - No investor-relations approval has been recorded for the separation between
   investor reporting and renter/host marketplace communications.
 - No Product Operations readiness approval has been recorded for failed
   verification, failed authorization, incidents, disputes, safety takedowns,
   payout holds, escalation paths, or rollback operations.
-- No final launch environment, jurisdiction list, enabled-flag set, or rollback
-  plan has been recorded.
+- No final launch environment, launch date, jurisdiction list, enabled-flag set,
+  approved policy versions, known limitations, support model, or rollback plan
+  has been recorded.
 
 ## Completion Rule
 
