@@ -6,6 +6,7 @@ import {
   isRobomataWorkflowMutationEnabled,
 } from "~~/lib/featureFlags";
 import type { RentalBookingRecord } from "~~/lib/robomata/rentalBookings";
+import type { RentalPaymentRecord } from "~~/lib/robomata/rentalPayments";
 import { getRentalBookingStore } from "~~/lib/robomata/server/rentalBookingStore";
 import { getRentalInventoryStore } from "~~/lib/robomata/server/rentalInventoryStore";
 import { getRentalPaymentStore } from "~~/lib/robomata/server/rentalPaymentStore";
@@ -67,10 +68,17 @@ function bookingStillAllowsPaymentAuthorization(booking: RentalBookingRecord) {
 
 async function advanceBookingAfterReconciliation(input: {
   booking?: RentalBookingRecord;
+  payment: RentalPaymentRecord;
   paymentIntentId: string;
   snapshot: StripePaymentIntentSnapshot;
 }) {
   if (input.snapshot.status !== "requires_capture" && input.snapshot.status !== "succeeded") return;
+  if (
+    input.payment.postingBlocked ||
+    (input.payment.status !== "requires_capture" && input.payment.status !== "captured")
+  ) {
+    return;
+  }
 
   const booking =
     input.booking ??
@@ -133,7 +141,7 @@ export async function POST(request: NextRequest) {
       eventKind: "reconciliation_refetched",
       snapshot,
     });
-    await advanceBookingAfterReconciliation({ booking, paymentIntentId, snapshot });
+    await advanceBookingAfterReconciliation({ booking, payment, paymentIntentId, snapshot });
     return NextResponse.json({ payment });
   } catch (error) {
     return NextResponse.json(

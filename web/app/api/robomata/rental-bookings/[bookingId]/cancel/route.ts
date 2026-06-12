@@ -76,7 +76,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     const input = (await request.json()) as RentalCancellationInput;
-    const cancelledPayments = await cancelOpenPaymentIntents(booking);
     const result = await getRentalSupportStore().recordCancellation(booking, input);
     const updatedBooking = await getRentalBookingStore().updateBookingState(booking.id, {
       eventKind: "booking_cancelled",
@@ -91,6 +90,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       const operationalStatus = ["in_trip", "return_pending"].includes(booking.state) ? "suspended" : "listed";
       await getRentalInventoryStore().updateVehicleControls(booking.platformVehicleId, { operationalStatus });
     }
+    const cancelledPayments = await cancelOpenPaymentIntents(booking);
     return NextResponse.json({
       auditEvent: result.auditEvent,
       booking: updatedBooking,

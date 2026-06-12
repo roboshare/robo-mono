@@ -1560,6 +1560,28 @@ async function main() {
         entries: [
           {
             ...postingBody.entries[0],
+            amountCents: 1,
+            source: { bookingId, paymentIntentId },
+          },
+        ],
+        periodEnd: new Date(Date.now() + 32 * 60 * 60 * 1_000).toISOString(),
+        periodStart: new Date(Date.now() + 28 * 60 * 60 * 1_000).toISOString(),
+      }),
+      headers: await authHeaders("POST", postingPath, { "content-type": "application/json" }),
+      method: "POST",
+    },
+    409,
+    "Payment-backed revenue exceeds captured payment amount.",
+  );
+
+  await expectJsonFailure(
+    `${baseUrl}${postingPath}`,
+    {
+      body: JSON.stringify({
+        ...postingBody,
+        entries: [
+          {
+            ...postingBody.entries[0],
             id: "rle_stripe_smoke_prior_posting_reuse",
             source: { bookingId, paymentIntentId },
           },
