@@ -212,7 +212,13 @@ function createFileStore(): RentalRevenueStore {
       const fileStore = await readFileStore(filePath);
       const activeEntryIds = new Set(
         fileStore.batches
-          .filter(batch => batch.status === "ready" || batch.status === "posting" || batch.status === "posted")
+          .filter(
+            batch =>
+              batch.status === "ready" ||
+              batch.status === "posting" ||
+              batch.status === "posted" ||
+              batch.status === "failed",
+          )
           .flatMap(batch => batch.entryIds),
       );
       return fileStore.ledgerEntries.filter(
@@ -351,7 +357,7 @@ function createPostgresStore(): RentalRevenueStore {
       const batchRows = (await sql`
         SELECT payload
         FROM robomata_rental_revenue_posting_batches
-        WHERE status = ANY(${["ready", "posting", "posted"]});
+        WHERE status = ANY(${["ready", "posting", "posted", "failed"]});
       `) as Array<{ payload: RentalRevenuePostingBatch }>;
       const activeEntryIds = [...new Set(batchRows.flatMap(row => row.payload.entryIds))];
       if (activeEntryIds.length === 0) return [];

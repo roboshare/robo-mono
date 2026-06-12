@@ -323,6 +323,7 @@ async function main() {
     ROBOMATA_RENTER_ACCOUNTS_FILE: path.join(tempDir, "renters.json"),
     ROBOMATA_WORKFLOW_MUTATIONS_ENABLED: "true",
     STRIPE_WEBHOOK_SECRET: stripeWebhookSecret,
+    STRIPE_WEBHOOK_TOLERANCE_SECONDS: "not-a-number",
   };
 
   await startServer(env);
@@ -1176,6 +1177,16 @@ async function main() {
     throw new Error(`Expected posting batch after reconciliation, got ${JSON.stringify(postingPayload)}`);
   }
 
+  const markFailedPath = `${postingPath}/${postingPayload.batch.id}/mark-failed`;
+  const failedPostingPayload = await fetchJson(`${baseUrl}${markFailedPath}`, {
+    body: JSON.stringify({ errorMessage: "Smoke retryable posting failure." }),
+    headers: await authHeaders("POST", markFailedPath, { "content-type": "application/json" }),
+    method: "POST",
+  });
+  if (failedPostingPayload.batch?.status !== "failed") {
+    throw new Error(`Expected posting batch to be marked failed, got ${JSON.stringify(failedPostingPayload)}`);
+  }
+
   await expectJsonFailure(
     `${baseUrl}${postingPath}`,
     {
@@ -1308,6 +1319,40 @@ async function main() {
   });
   if (refundPayload.payment?.status !== "refunded" || refundPayload.payment.refundedAmountCents !== 250) {
     throw new Error(`Expected partial refund amount to persist, got ${JSON.stringify(refundPayload)}`);
+  }
+
+  const duplicateRefundWebhookBody = JSON.stringify({
+    id: "evt_payment_refund_duplicate_smoke",
+    created: Math.floor(Date.now() / 1000),
+    type: "refund.updated",
+    data: {
+      object: {
+        id: "re_stripe_smoke_first",
+        amount: 250,
+        charge: "ch_stripe_smoke_actual",
+        currency: "usd",
+        payment_intent: paymentIntentId,
+        status: "succeeded",
+      },
+    },
+  });
+  const duplicateRefundPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/stripe/webhook`, {
+    body: duplicateRefundWebhookBody,
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": stripeSignatureHeader(duplicateRefundWebhookBody),
+    },
+    method: "POST",
+  });
+  if (
+    duplicateRefundPayload.payment?.status !== "refunded" ||
+    duplicateRefundPayload.payment.refundedAmountCents !== 250
+  ) {
+    throw new Error(
+      `Expected duplicate refund object webhook not to double-count charge refund, got ${JSON.stringify(
+        duplicateRefundPayload,
+      )}`,
+    );
   }
 
   const secondRefundWebhookBody = JSON.stringify({

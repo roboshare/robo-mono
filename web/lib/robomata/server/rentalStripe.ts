@@ -173,6 +173,14 @@ function parseStripeSignatureHeader(header: string): { signatures: string[]; tim
   return { signatures, timestamp };
 }
 
+function stripeWebhookToleranceSeconds() {
+  const parsed = Number.parseInt(
+    process.env.STRIPE_WEBHOOK_TOLERANCE_SECONDS ?? String(DEFAULT_STRIPE_WEBHOOK_TOLERANCE_SECONDS),
+    10,
+  );
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_STRIPE_WEBHOOK_TOLERANCE_SECONDS;
+}
+
 export function verifyStripeWebhookPayload(input: {
   payload: string;
   signatureHeader: string | null;
@@ -184,10 +192,7 @@ export function verifyStripeWebhookPayload(input: {
 
   const { signatures, timestamp } = parseStripeSignatureHeader(input.signatureHeader);
   const timestampSeconds = Number.parseInt(timestamp, 10);
-  const toleranceSeconds = Number.parseInt(
-    process.env.STRIPE_WEBHOOK_TOLERANCE_SECONDS ?? String(DEFAULT_STRIPE_WEBHOOK_TOLERANCE_SECONDS),
-    10,
-  );
+  const toleranceSeconds = stripeWebhookToleranceSeconds();
   const nowSeconds = Math.floor(Date.now() / 1_000);
   if (!Number.isFinite(timestampSeconds) || timestampSeconds <= 0) {
     throw new Error("Invalid Stripe webhook signature timestamp.");

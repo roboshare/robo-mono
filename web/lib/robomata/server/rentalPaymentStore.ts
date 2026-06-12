@@ -240,14 +240,20 @@ function refundedAmountFromEvent(
   const existingTotal = existing?.refundedAmountCents ?? 0;
   if (!input.refundId) return Math.max(existingTotal, refundAmount);
 
-  let existingRefundAmount = 0;
+  let cumulativeChargeRefundAmount = 0;
+  const refundAmountsById = new Map<string, number>();
   for (const event of existing?.events ?? []) {
     const refundId = event.providerReference.refundId;
-    if (event.kind === "refund_succeeded" && refundId === input.refundId) {
-      existingRefundAmount = Math.max(existingRefundAmount, event.amountCents ?? 0);
+    if (event.kind !== "refund_succeeded") continue;
+    if (!refundId) {
+      cumulativeChargeRefundAmount = Math.max(cumulativeChargeRefundAmount, event.amountCents ?? 0);
+      continue;
     }
+    refundAmountsById.set(refundId, Math.max(refundAmountsById.get(refundId) ?? 0, event.amountCents ?? 0));
   }
-  return existingTotal - existingRefundAmount + Math.max(existingRefundAmount, refundAmount);
+  refundAmountsById.set(input.refundId, Math.max(refundAmountsById.get(input.refundId) ?? 0, refundAmount));
+  const distinctRefundTotal = [...refundAmountsById.values()].reduce((sum, amount) => sum + amount, 0);
+  return Math.max(cumulativeChargeRefundAmount, distinctRefundTotal);
 }
 
 function paymentRecordFromEvent(
