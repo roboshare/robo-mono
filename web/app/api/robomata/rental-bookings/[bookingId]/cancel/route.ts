@@ -71,7 +71,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const accessError = await requireRentalBookingAccess(booking, partnerAddress);
     if (accessError) return accessError;
 
-    if (["cancelled", "closed", "completed", "disputed"].includes(booking.state)) {
+    if (booking.state === "cancelled") {
+      const cancelledPayments = await cancelOpenPaymentIntents(booking);
+      return NextResponse.json({ booking, payments: cancelledPayments });
+    }
+    if (["closed", "completed", "disputed"].includes(booking.state)) {
       return NextResponse.json({ error: `Booking cannot be cancelled from state ${booking.state}.` }, { status: 409 });
     }
 

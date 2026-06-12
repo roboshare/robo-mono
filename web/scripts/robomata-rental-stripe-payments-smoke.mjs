@@ -890,6 +890,17 @@ async function main() {
   if (storedCancelledPayment?.status !== "cancelled" || !storedCancelledPayment.postingBlocked) {
     throw new Error(`Expected stored route-cancel payment to be cancelled, got ${JSON.stringify(storedCancelledPayment)}`);
   }
+  const routeCancelRetryPayload = await fetchJson(`${baseUrl}${routeCancelPath}`, {
+    body: JSON.stringify({
+      actor: { id: "stripe-smoke-host", role: "host" },
+      reason: "host_cancelled",
+    }),
+    headers: await authHeaders("POST", routeCancelPath, { "content-type": "application/json" }),
+    method: "POST",
+  });
+  if (routeCancelRetryPayload.booking?.state !== "cancelled" || !Array.isArray(routeCancelRetryPayload.payments)) {
+    throw new Error(`Expected cancelled booking route retry to remain idempotent, got ${JSON.stringify(routeCancelRetryPayload)}`);
+  }
 
   const staleCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
     body: JSON.stringify({
