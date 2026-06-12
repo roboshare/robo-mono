@@ -291,6 +291,11 @@ async function updateStoredPayment(filePath, paymentIntentId, update) {
   await writeFile(filePath, JSON.stringify(fileStore, null, 2), "utf8");
 }
 
+async function readStoredPayment(filePath, paymentIntentId) {
+  const fileStore = JSON.parse(await readFile(filePath, "utf8"));
+  return fileStore.payments.find(payment => payment.providerReference?.paymentIntentId === paymentIntentId);
+}
+
 async function main() {
   tempDir = await mkdtemp(path.join(tmpdir(), "robomata-rental-stripe-smoke-"));
   const inventoryFile = path.join(tempDir, "inventory.json");
@@ -839,6 +844,51 @@ async function main() {
     throw new Error(
       `Expected stale canceled intent to reuse active replacement, got ${JSON.stringify(staleCanceledReusePayload)}`,
     );
+  }
+
+  const routeCancelCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
+    body: JSON.stringify({
+      dateFrom: new Date(Date.now() + (4 * 24 + 3) * 60 * 60 * 1_000).toISOString(),
+      dateTo: new Date(Date.now() + (4 * 24 + 5) * 60 * 60 * 1_000).toISOString(),
+      platformVehicleId: longTripPlatformVehicleId,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const routeCancelBookingId = routeCancelCheckoutPayload.booking?.id;
+  const routeCancelCheckoutAccessToken = routeCancelCheckoutPayload.checkoutAccessToken;
+  if (!routeCancelBookingId || !routeCancelCheckoutAccessToken) {
+    throw new Error(`Expected route-cancel booking, got ${JSON.stringify(routeCancelCheckoutPayload)}`);
+  }
+  const routeCancelPaymentIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
+    body: JSON.stringify({ bookingId: routeCancelBookingId, checkoutAccessToken: routeCancelCheckoutAccessToken, renterId }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const routeCancelPaymentIntentId = routeCancelPaymentIntentPayload.payment?.providerReference?.paymentIntentId;
+  if (!routeCancelPaymentIntentId) {
+    throw new Error(`Expected route-cancel PaymentIntent, got ${JSON.stringify(routeCancelPaymentIntentPayload)}`);
+  }
+  const routeCancelPath = `/api/robomata/rental-bookings/${routeCancelBookingId}/cancel`;
+  const routeCancelPayload = await fetchJson(`${baseUrl}${routeCancelPath}`, {
+    body: JSON.stringify({
+      actor: { id: "stripe-smoke-host", role: "host" },
+      reason: "host_cancelled",
+    }),
+    headers: await authHeaders("POST", routeCancelPath, { "content-type": "application/json" }),
+    method: "POST",
+  });
+  if (
+    routeCancelPayload.booking?.state !== "cancelled" ||
+    routeCancelPayload.payments?.[0]?.providerReference?.paymentIntentId !== routeCancelPaymentIntentId ||
+    routeCancelPayload.payments?.[0]?.status !== "cancelled"
+  ) {
+    throw new Error(`Expected booking cancel route to cancel Stripe hold, got ${JSON.stringify(routeCancelPayload)}`);
+  }
+  const storedCancelledPayment = await readStoredPayment(env.ROBOMATA_RENTAL_PAYMENTS_FILE, routeCancelPaymentIntentId);
+  if (storedCancelledPayment?.status !== "cancelled" || !storedCancelledPayment.postingBlocked) {
+    throw new Error(`Expected stored route-cancel payment to be cancelled, got ${JSON.stringify(storedCancelledPayment)}`);
   }
 
   const staleCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
@@ -1710,6 +1760,33 @@ async function main() {
     );
   }
 
+  const refundCreatedWebhookBody = JSON.stringify({
+    id: "evt_payment_refund_created_smoke",
+    created: Math.floor(Date.now() / 1000),
+    type: "refund.created",
+    data: {
+      object: {
+        id: "re_stripe_smoke_created",
+        amount: 250,
+        charge: "ch_stripe_smoke_actual",
+        currency: "usd",
+        payment_intent: paymentIntentId,
+        status: "succeeded",
+      },
+    },
+  });
+  const refundCreatedPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/stripe/webhook`, {
+    body: refundCreatedWebhookBody,
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": stripeSignatureHeader(refundCreatedWebhookBody),
+    },
+    method: "POST",
+  });
+  if (refundCreatedPayload.payment?.status !== "refunded" || refundCreatedPayload.payment.refundedAmountCents !== 500) {
+    throw new Error(`Expected successful refund.created to be recorded, got ${JSON.stringify(refundCreatedPayload)}`);
+  }
+
   const secondRefundWebhookBody = JSON.stringify({
     id: "evt_payment_refund_second_smoke",
     created: Math.floor(Date.now() / 1000),
@@ -1717,7 +1794,7 @@ async function main() {
     data: {
       object: {
         id: "re_stripe_smoke_second",
-        amount: 300,
+        amount: 50,
         charge: "ch_stripe_smoke_actual",
         currency: "usd",
         payment_intent: paymentIntentId,

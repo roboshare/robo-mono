@@ -133,6 +133,22 @@ export async function createStripeRentalPaymentIntent(input: {
   return stripePaymentIntentFromJson(payload);
 }
 
+export async function cancelStripeRentalPaymentIntent(paymentIntentId: string): Promise<StripePaymentIntentSnapshot> {
+  if (isStripeMockEnabled()) {
+    const snapshot = await retrieveStripeRentalPaymentIntent(paymentIntentId);
+    return {
+      ...snapshot,
+      amount_capturable: 0,
+      status: "canceled",
+    };
+  }
+  const payload = await stripeRequest(`/payment_intents/${encodeURIComponent(paymentIntentId)}/cancel`, {
+    headers: stripeJsonHeaders(),
+    method: "POST",
+  });
+  return stripePaymentIntentFromJson(payload);
+}
+
 export async function retrieveStripeRentalPaymentIntent(paymentIntentId: string): Promise<StripePaymentIntentSnapshot> {
   if (isStripeMockEnabled()) {
     const status = process.env.ROBOMATA_RENTAL_STRIPE_MOCK_RECONCILE_STATUS ?? "requires_capture";

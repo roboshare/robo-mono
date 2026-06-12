@@ -70,6 +70,7 @@ function eventKindForStripeEvent(event: StripeWebhookEvent): RentalPaymentProvid
     case "charge.refunded":
       return "refund_succeeded";
     case "charge.refund.updated":
+    case "refund.created":
     case "refund.failed":
     case "refund.updated":
       if (event.data.object.status === "failed") return "refund_failed";
