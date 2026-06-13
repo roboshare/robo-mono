@@ -292,7 +292,9 @@ export async function POST(request: NextRequest) {
           priorBridgePayments.splice(
             0,
             priorBridgePayments.length,
-            ...replacementPayments.filter(payment => payment.provider === "bridge"),
+            ...replacementPayments
+              .filter(payment => payment.provider === "bridge")
+              .sort((left, right) => paymentUpdatedTime(right) - paymentUpdatedTime(left)),
           );
         } else {
           return NextResponse.json(

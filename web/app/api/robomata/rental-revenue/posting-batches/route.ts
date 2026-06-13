@@ -53,6 +53,13 @@ function paymentForEntry(payments: RentalPaymentRecord[], entry: RentalRevenueLe
     .filter(payment => paymentMatchesEntry(payment, entry))
     .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
   if (entry.source.paymentIntentId) return candidates[0];
+  const fundedCandidate = candidates.find(
+    payment =>
+      !payment.postingBlocked &&
+      (payment.status === "captured" || payment.status === "partially_captured") &&
+      netCapturedAmountCents(payment) > 0,
+  );
+  if (fundedCandidate) return fundedCandidate;
   return candidates.find(payment => !payment.postingBlocked) ?? candidates[0];
 }
 

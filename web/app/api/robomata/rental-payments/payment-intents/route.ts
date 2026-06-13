@@ -6,10 +6,12 @@ import {
   isRobomataRentalPaymentsEnabled,
   isRobomataWorkflowMutationEnabled,
 } from "~~/lib/featureFlags";
-import type { RentalPaymentRecord } from "~~/lib/robomata/rentalPayments";
+import type { RentalBookingRecord } from "~~/lib/robomata/rentalBookings";
+import type { RentalPaymentProviderEventKind, RentalPaymentRecord } from "~~/lib/robomata/rentalPayments";
 import { getRentalBookingStore } from "~~/lib/robomata/server/rentalBookingStore";
+import { retrieveBridgeRentalTransfer } from "~~/lib/robomata/server/rentalBridge";
 import { getRentalInventoryStore } from "~~/lib/robomata/server/rentalInventoryStore";
-import { getRentalPaymentStore } from "~~/lib/robomata/server/rentalPaymentStore";
+import { type BridgeTransferSnapshot, getRentalPaymentStore } from "~~/lib/robomata/server/rentalPaymentStore";
 import type { StripePaymentIntentSnapshot } from "~~/lib/robomata/server/rentalPaymentStore";
 import {
   createStripeRentalPaymentIntent,
@@ -69,6 +71,55 @@ function bridgePaymentBlocksCardCheckout(payment: RentalPaymentRecord) {
   );
 }
 
+function normalizedBridgeAmountCents(value: string | undefined): number | undefined {
+  if (!value || !/^\d+(\.\d{1,6})?$/.test(value)) return undefined;
+  const [whole, fraction = ""] = value.split(".");
+  return Number(whole) * 100 + Number(fraction.padEnd(2, "0").slice(0, 2));
+}
+
+function bridgeEventKindForTransfer(snapshot: BridgeTransferSnapshot): RentalPaymentProviderEventKind {
+  switch (snapshot.state) {
+    case "awaiting_funds":
+      return "stablecoin_transfer_awaiting_funds";
+    case "funds_received":
+      return "stablecoin_transfer_funds_received";
+    case "payment_submitted":
+    case "in_review":
+      return "stablecoin_transfer_submitted";
+    case "payment_processed":
+      return "stablecoin_transfer_processed";
+    case "canceled":
+      return "stablecoin_transfer_cancelled";
+    case "returned":
+    case "refund_in_flight":
+      return "stablecoin_transfer_return_in_flight";
+    case "refunded":
+      return "stablecoin_transfer_returned";
+    case "undeliverable":
+      return "payment_failed";
+    case "refund_failed":
+      return "refund_failed";
+    case "error":
+    case "missing_return_policy":
+      return "stablecoin_transfer_exception";
+    default:
+      return "stablecoin_transfer_created";
+  }
+}
+
+function bridgePostingBlockReasonForCardRetry(input: {
+  booking: RentalBookingRecord;
+  eventKind: RentalPaymentProviderEventKind;
+  snapshot: BridgeTransferSnapshot;
+}) {
+  if (input.eventKind !== "stablecoin_transfer_processed") return undefined;
+  const finalAmountCents = normalizedBridgeAmountCents(input.snapshot.receipt?.final_amount);
+  if (finalAmountCents !== undefined && finalAmountCents < input.booking.paymentPlan.totalDueAtAuthorizationCents) {
+    return "Bridge transfer settled below the booking authorization amount; reconcile or return manually.";
+  }
+  return undefined;
+}
+
 function bookingStillAllowsPaymentAuthorization(booking: { dateFrom: string; dateTo: string }) {
   const dateFrom = Date.parse(booking.dateFrom);
   const dateTo = Date.parse(booking.dateTo);
@@ -97,6 +148,68 @@ async function advanceBookingAfterRetrievedPayment(input: {
     paymentAuthorized: true,
     paymentProviderReference: input.payment.providerReference,
   });
+}
+
+async function advanceBookingAfterBridgeRetry(input: {
+  booking: RentalBookingRecord;
+  eventKind: RentalPaymentProviderEventKind;
+  payment: RentalPaymentRecord;
+}) {
+  if (input.eventKind !== "stablecoin_transfer_processed") return;
+  if (input.payment.status !== "captured" || input.payment.postingBlocked) return;
+  const booking = await getRentalBookingStore().getBooking(input.booking.id);
+  if (!booking || booking.state !== "pending_payment_authorization") return;
+  if (!bookingStillAllowsPaymentAuthorization(booking)) return;
+
+  let hostReviewRequired = false;
+  if (isRobomataRentalInventoryEnabled()) {
+    const vehicle = await getRentalInventoryStore().getVehicle(booking.platformVehicleId);
+    if (!vehicle || vehicle.operationalStatus !== "listed") return;
+    hostReviewRequired = vehicle.hostControls?.bookingReview.requireManualApproval === true;
+  }
+
+  await getRentalBookingStore().confirmBooking(booking.id, {
+    hostReviewRequired,
+    paymentAuthorized: true,
+    paymentProviderReference: input.payment.providerReference,
+  });
+}
+
+async function refreshedBridgePayments(input: {
+  booking: RentalBookingRecord;
+  paymentStore: ReturnType<typeof getRentalPaymentStore>;
+  payments: RentalPaymentRecord[];
+}) {
+  const refreshedPayments = [...input.payments];
+  for (const payment of input.payments) {
+    if (payment.provider !== "bridge" || !bridgePaymentBlocksCardCheckout(payment)) continue;
+    const transferId = payment.providerReference.transferId;
+    if (!transferId) continue;
+    try {
+      const transfer = await retrieveBridgeRentalTransfer(transferId);
+      const eventKind = bridgeEventKindForTransfer(transfer);
+      const refreshedPayment = await input.paymentStore.recordBridgeEvent({
+        booking: input.booking,
+        eventKind,
+        postingBlockReason: bridgePostingBlockReasonForCardRetry({
+          booking: input.booking,
+          eventKind,
+          snapshot: transfer,
+        }),
+        snapshot: transfer,
+      });
+      await advanceBookingAfterBridgeRetry({
+        booking: input.booking,
+        eventKind,
+        payment: refreshedPayment,
+      });
+      const index = refreshedPayments.findIndex(candidate => candidate.id === refreshedPayment.id);
+      if (index >= 0) refreshedPayments[index] = refreshedPayment;
+    } catch {
+      // Keep the persisted blocker if Bridge is unavailable; card checkout remains safely blocked.
+    }
+  }
+  return refreshedPayments;
 }
 
 export async function POST(request: NextRequest) {
@@ -193,7 +306,12 @@ export async function POST(request: NextRequest) {
       const bookingPayments = await paymentStore.listPaymentsByReferences({
         bookingIds: [lockedBooking.id],
       });
-      const activeBridgePayments = bookingPayments.filter(
+      const reconciledBookingPayments = await refreshedBridgePayments({
+        booking: lockedBooking,
+        paymentStore,
+        payments: bookingPayments,
+      });
+      const activeBridgePayments = reconciledBookingPayments.filter(
         payment => payment.provider === "bridge" && bridgePaymentBlocksCardCheckout(payment),
       );
       if (activeBridgePayments.length > 0) {
@@ -207,7 +325,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const existingPayments = bookingPayments
+      const existingPayments = reconciledBookingPayments
         .filter(payment => payment.provider === "stripe" && Boolean(payment.providerReference.paymentIntentId))
         .sort((left, right) => paymentUpdatedTime(right) - paymentUpdatedTime(left));
 
