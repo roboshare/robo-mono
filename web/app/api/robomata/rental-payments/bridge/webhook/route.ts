@@ -134,8 +134,10 @@ async function bookingForNewBridgeTransfer(snapshot: BridgeTransferSnapshot): Pr
 async function bridgeConfirmationBlockReason(input: {
   booking: RentalBookingRecord | undefined;
   eventKind: RentalPaymentProviderEventKind;
+  existingPayment: RentalPaymentRecord | undefined;
 }): Promise<string | undefined> {
   if (input.eventKind !== "stablecoin_transfer_processed") return undefined;
+  if (input.existingPayment?.status === "captured" && !input.existingPayment.postingBlocked) return undefined;
   if (!input.booking) return undefined;
   if (input.booking.state !== "pending_payment_authorization") {
     return `Bridge transfer settled while booking state is ${input.booking.state}; return or reconcile manually.`;
@@ -226,7 +228,11 @@ export async function POST(request: NextRequest) {
       eventKind,
       failureReason: failureReasonForBridgeTransfer(snapshot),
       occurredAt: event.event_created_at,
-      postingBlockReason: await bridgeConfirmationBlockReason({ booking, eventKind }),
+      postingBlockReason: await bridgeConfirmationBlockReason({
+        booking,
+        eventKind,
+        existingPayment: existingPayment ?? undefined,
+      }),
       providerEventId: event.event_id,
       snapshot,
     });

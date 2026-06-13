@@ -187,9 +187,15 @@ export async function POST(request: NextRequest) {
         .sort((left, right) => paymentUpdatedTime(right) - paymentUpdatedTime(left));
 
       for (const payment of existingPayments) {
-        if (payment.status === "cancelled" || payment.status === "failed") continue;
+        if (payment.status === "cancelled") continue;
         const paymentIntent = await retrieveStripeRentalPaymentIntent(payment.providerReference.paymentIntentId!);
         if (paymentIntent.status === "canceled") continue;
+        if (payment.status === "failed") {
+          return NextResponse.json({
+            clientSecret: paymentIntent.client_secret,
+            payment,
+          });
+        }
         if (
           successfulProviderStatus(paymentIntent) &&
           payment.status !== "requires_capture" &&

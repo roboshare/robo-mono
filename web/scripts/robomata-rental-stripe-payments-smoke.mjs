@@ -1102,6 +1102,21 @@ async function main() {
   ) {
     throw new Error(`Expected processed Bridge webhook to capture with receipt hash, got ${JSON.stringify(processedBridgePayload)}`);
   }
+  const duplicateProcessedBridgePayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/webhook`, {
+    body: processedBridgeWebhookBody,
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  if (
+    duplicateProcessedBridgePayload.payment?.status !== "captured" ||
+    duplicateProcessedBridgePayload.payment.postingBlocked
+  ) {
+    throw new Error(
+      `Expected duplicate processed Bridge webhook to remain unblocked, got ${JSON.stringify(
+        duplicateProcessedBridgePayload,
+      )}`,
+    );
+  }
   const storedBridgePayment = await readStoredPayment(env.ROBOMATA_RENTAL_PAYMENTS_FILE, bridgeTransferId);
   if (
     storedBridgePayment?.providerReference?.destinationTxHash !== "0xbridgeDestinationReceiptSmoke" ||
@@ -1382,6 +1397,31 @@ async function main() {
   ) {
     throw new Error(`Expected late Bridge settlement to be captured but posting-blocked, got ${JSON.stringify(lateBridgeSettlementPayload)}`);
   }
+  const staleLateBridgeCreatedPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/webhook`, {
+    body: JSON.stringify({
+      event_category: "transfer",
+      event_created_at: new Date().toISOString(),
+      event_id: "evt_bridge_late_stale_created_smoke",
+      event_object: {
+        ...lateBridgeTransferPayload.transfer,
+        state: "awaiting_funds",
+        updated_at: new Date().toISOString(),
+      },
+      event_type: "updated",
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  if (
+    staleLateBridgeCreatedPayload.payment?.status !== "captured" ||
+    !staleLateBridgeCreatedPayload.payment.postingBlocked
+  ) {
+    throw new Error(
+      `Expected stale late Bridge webhook to preserve posting block, got ${JSON.stringify(
+        staleLateBridgeCreatedPayload,
+      )}`,
+    );
+  }
 
   const failedStripeBeforeBridgeCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
     body: JSON.stringify({
@@ -1453,7 +1493,7 @@ async function main() {
     409,
     "active Stripe PaymentIntent",
   );
-  const failedStripeReplacementIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
+  const failedStripeRetryIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
     body: JSON.stringify({
       bookingId: failedStripeBeforeBridgeBookingId,
       checkoutAccessToken: failedStripeBeforeBridgeToken,
@@ -1462,11 +1502,9 @@ async function main() {
     headers: { "content-type": "application/json" },
     method: "POST",
   });
-  if (failedStripeReplacementIntentPayload.payment?.providerReference?.paymentIntentId === failedStripeInitialIntentId) {
+  if (failedStripeRetryIntentPayload.payment?.providerReference?.paymentIntentId !== failedStripeInitialIntentId) {
     throw new Error(
-      `Expected failed Stripe retry to create replacement intent, got ${JSON.stringify(
-        failedStripeReplacementIntentPayload,
-      )}`,
+      `Expected failed Stripe retry to reuse the original intent, got ${JSON.stringify(failedStripeRetryIntentPayload)}`,
     );
   }
 
@@ -1517,6 +1555,21 @@ async function main() {
   if (failedBridgePayload.payment?.status !== "failed" || !failedBridgePayload.payment.postingBlocked) {
     throw new Error(`Expected failed Bridge transfer to block posting, got ${JSON.stringify(failedBridgePayload)}`);
   }
+  await expectJsonFailure(
+    `${baseUrl}/api/robomata/rental-payments/bridge/transfers`,
+    {
+      body: JSON.stringify({
+        bookingId: failedBridgeCardFallbackBookingId,
+        checkoutAccessToken: failedBridgeCardFallbackToken,
+        fromAddress: "0xbridgeSmokeRenter",
+        renterId,
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    },
+    409,
+    "active Bridge transfer",
+  );
   await expectJsonFailure(
     `${baseUrl}/api/robomata/rental-payments/payment-intents`,
     {

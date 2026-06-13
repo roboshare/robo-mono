@@ -518,7 +518,14 @@ function paymentRecordFromBridgeEvent(
   const computedPostingBlock = paymentPostingBlock({ failureReason: input.failureReason, status });
   const postingBlock = input.postingBlockReason
     ? { postingBlocked: true, postingBlockReason: input.postingBlockReason }
-    : computedPostingBlock;
+    : existing?.postingBlocked &&
+        existing.status === "captured" &&
+        status === "captured" &&
+        input.eventKind !== "stablecoin_transfer_return_in_flight" &&
+        input.eventKind !== "stablecoin_transfer_returned" &&
+        input.eventKind !== "reconciliation_refetched"
+      ? { postingBlocked: true, postingBlockReason: existing.postingBlockReason }
+      : computedPostingBlock;
   const event = {
     amountCents: input.refundAmountCents ?? authorizedAmountCents,
     failureReason: input.failureReason,

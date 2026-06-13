@@ -8,10 +8,12 @@ import {
   isRobomataWorkflowMutationEnabled,
 } from "~~/lib/featureFlags";
 import type { RentalBookingRecord } from "~~/lib/robomata/rentalBookings";
+import type { RentalPaymentRecord } from "~~/lib/robomata/rentalPayments";
 import { getRentalBookingStore } from "~~/lib/robomata/server/rentalBookingStore";
 import { createBridgeRentalTransfer } from "~~/lib/robomata/server/rentalBridge";
 import { getRentalInventoryStore } from "~~/lib/robomata/server/rentalInventoryStore";
 import { getRentalPaymentStore } from "~~/lib/robomata/server/rentalPaymentStore";
+import { retrieveStripeRentalPaymentIntent } from "~~/lib/robomata/server/rentalStripe";
 
 export const runtime = "nodejs";
 
@@ -68,8 +70,37 @@ function activeStripePaymentStatus(status: string) {
   );
 }
 
-function activeBridgePaymentStatus(status: string) {
-  return status === "awaiting_funds" || status === "processing" || status === "captured";
+function bridgePaymentBlocksBridgeCheckout(payment: RentalPaymentRecord) {
+  return (
+    payment.status === "awaiting_funds" ||
+    payment.status === "processing" ||
+    payment.status === "captured" ||
+    (payment.status === "failed" && payment.postingBlocked)
+  );
+}
+
+async function stripePaymentsBlockingBridgeCheckout(input: {
+  booking: RentalBookingRecord;
+  payments: RentalPaymentRecord[];
+  paymentStore: ReturnType<typeof getRentalPaymentStore>;
+}) {
+  const blockers = [];
+  for (const payment of input.payments) {
+    if (payment.provider !== "stripe" || !activeStripePaymentStatus(payment.status)) continue;
+    const paymentIntentId = payment.providerReference.paymentIntentId;
+    if (!paymentIntentId) continue;
+    const snapshot = await retrieveStripeRentalPaymentIntent(paymentIntentId);
+    if (snapshot.status === "canceled") {
+      await input.paymentStore.recordStripeEvent({
+        booking: input.booking,
+        eventKind: "payment_cancelled",
+        snapshot,
+      });
+      continue;
+    }
+    blockers.push(payment);
+  }
+  return blockers;
 }
 
 export async function POST(request: NextRequest) {
@@ -132,9 +163,11 @@ export async function POST(request: NextRequest) {
       }
 
       const bookingPayments = await paymentStore.listPaymentsByReferences({ bookingIds: [lockedBooking.id] });
-      const activeStripePayments = bookingPayments.filter(
-        payment => payment.provider === "stripe" && activeStripePaymentStatus(payment.status),
-      );
+      const activeStripePayments = await stripePaymentsBlockingBridgeCheckout({
+        booking: lockedBooking,
+        paymentStore,
+        payments: bookingPayments,
+      });
       if (activeStripePayments.length > 0) {
         return NextResponse.json(
           {
@@ -149,7 +182,7 @@ export async function POST(request: NextRequest) {
       const priorBridgePayments = bookingPayments
         .filter(payment => payment.provider === "bridge")
         .sort((left, right) => paymentUpdatedTime(right) - paymentUpdatedTime(left));
-      const activeBridgePayments = priorBridgePayments.filter(payment => activeBridgePaymentStatus(payment.status));
+      const activeBridgePayments = priorBridgePayments.filter(bridgePaymentBlocksBridgeCheckout);
       if (activeBridgePayments.length > 0) {
         return NextResponse.json(
           {
