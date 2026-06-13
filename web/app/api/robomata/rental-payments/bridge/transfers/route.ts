@@ -53,6 +53,15 @@ function cleanAddress(value: string | undefined) {
   return value?.trim() || undefined;
 }
 
+function activeStripePaymentStatus(status: string) {
+  return (
+    status === "requires_payment_method" ||
+    status === "requires_confirmation" ||
+    status === "requires_capture" ||
+    status === "captured"
+  );
+}
+
 export async function POST(request: NextRequest) {
   try {
     const featureError = requireBridgePaymentWrites();
@@ -92,12 +101,28 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const paymentStore = getRentalPaymentStore();
+    const bookingPayments = await paymentStore.listPaymentsByReferences({ bookingIds: [booking.id] });
+    const activeStripePayments = bookingPayments.filter(
+      payment => payment.provider === "stripe" && activeStripePaymentStatus(payment.status),
+    );
+    if (activeStripePayments.length > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "Booking has an active Stripe PaymentIntent. Cancel or reconcile the card payment before Bridge checkout.",
+          payments: activeStripePayments,
+        },
+        { status: 409 },
+      );
+    }
+
     const transfer = await createBridgeRentalTransfer({
       booking,
       fromAddress: cleanAddress(body.fromAddress),
       returnAddress: cleanAddress(body.returnAddress) ?? cleanAddress(body.fromAddress),
     });
-    const payment = await getRentalPaymentStore().recordBridgeEvent({
+    const payment = await paymentStore.recordBridgeEvent({
       booking,
       eventKind:
         transfer.state === "awaiting_funds" ? "stablecoin_transfer_awaiting_funds" : "stablecoin_transfer_created",

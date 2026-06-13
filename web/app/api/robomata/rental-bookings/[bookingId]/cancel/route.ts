@@ -36,7 +36,7 @@ function cancellableStripePaymentStatus(status: string) {
 }
 
 function cancellableBridgePaymentStatus(status: string) {
-  return status === "awaiting_funds" || status === "processing";
+  return status === "awaiting_funds" || status === "processing" || status === "captured";
 }
 
 async function bridgePaymentsBlockingCancellation(booking: RentalBookingRecord) {

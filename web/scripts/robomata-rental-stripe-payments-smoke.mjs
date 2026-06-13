@@ -1057,6 +1057,21 @@ async function main() {
   ) {
     throw new Error(`Expected processed Bridge transfer to confirm booking, got ${JSON.stringify(bridgeBookingPayload)}`);
   }
+  await expectJsonFailure(
+    `${baseUrl}/api/robomata/rental-bookings/${bridgeBookingId}/cancel`,
+    {
+      body: JSON.stringify({
+        actor: { id: "bridge-smoke-host", role: "host" },
+        reason: "host_cancelled",
+      }),
+      headers: await authHeaders("POST", `/api/robomata/rental-bookings/${bridgeBookingId}/cancel`, {
+        "content-type": "application/json",
+      }),
+      method: "POST",
+    },
+    409,
+    "in-flight Bridge transfer",
+  );
   const refundInFlightBridgeWebhookBody = JSON.stringify({
     event_category: "transfer",
     event_created_at: new Date().toISOString(),
@@ -1114,6 +1129,16 @@ async function main() {
     returnedBridgePayload.payment.refundedAmountCents !== 0
   ) {
     throw new Error(`Expected returned Bridge transfer to remain blocked, got ${JSON.stringify(returnedBridgePayload)}`);
+  }
+  const staleProcessedBridgePayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/webhook`, {
+    body: processedBridgeWebhookBody,
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  if (staleProcessedBridgePayload.payment?.status !== "processing" || !staleProcessedBridgePayload.payment.postingBlocked) {
+    throw new Error(
+      `Expected stale processed Bridge transfer to preserve return block, got ${JSON.stringify(staleProcessedBridgePayload)}`,
+    );
   }
 
   const bridgeBlockedCancelCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
@@ -1220,6 +1245,46 @@ async function main() {
     },
     400,
     "does not match the rental booking",
+  );
+
+  const stripeFirstBridgeCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
+    body: JSON.stringify({
+      dateFrom: new Date(Date.now() + (6 * 24 + 22) * 60 * 60 * 1_000).toISOString(),
+      dateTo: new Date(Date.now() + (6 * 24 + 23) * 60 * 60 * 1_000).toISOString(),
+      platformVehicleId: bridgePlatformVehicleId,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const stripeFirstBridgeBookingId = stripeFirstBridgeCheckoutPayload.booking?.id;
+  const stripeFirstBridgeToken = stripeFirstBridgeCheckoutPayload.checkoutAccessToken;
+  if (!stripeFirstBridgeBookingId || !stripeFirstBridgeToken) {
+    throw new Error(`Expected Stripe-first Bridge guard booking, got ${JSON.stringify(stripeFirstBridgeCheckoutPayload)}`);
+  }
+  await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
+    body: JSON.stringify({
+      bookingId: stripeFirstBridgeBookingId,
+      checkoutAccessToken: stripeFirstBridgeToken,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  await expectJsonFailure(
+    `${baseUrl}/api/robomata/rental-payments/bridge/transfers`,
+    {
+      body: JSON.stringify({
+        bookingId: stripeFirstBridgeBookingId,
+        checkoutAccessToken: stripeFirstBridgeToken,
+        fromAddress: "0xbridgeSmokeRenter",
+        renterId,
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    },
+    409,
+    "active Stripe PaymentIntent",
   );
 
   const staleCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {

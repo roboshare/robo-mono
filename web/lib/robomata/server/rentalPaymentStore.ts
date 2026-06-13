@@ -268,6 +268,15 @@ function monotonicPaymentStatus(input: {
     return "processing";
   }
   if (
+    input.existing.status === "processing" &&
+    input.existing.events[0]?.kind === "stablecoin_transfer_return_in_flight" &&
+    input.eventKind !== "stablecoin_transfer_return_in_flight" &&
+    input.eventKind !== "stablecoin_transfer_returned" &&
+    input.eventKind !== "refund_failed"
+  ) {
+    return "processing";
+  }
+  if (
     (input.existing.status === "disputed" ||
       input.existing.status === "refunded" ||
       (input.existing.status === "failed" && input.existing.events[0]?.kind === "refund_failed")) &&
