@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   isRobomataRentalBookingsEnabled,
-  isRobomataRentalBridgePaymentsEnabled,
   isRobomataRentalInventoryEnabled,
   isRobomataRentalPaymentsEnabled,
   isRobomataWorkflowMutationEnabled,
@@ -21,9 +20,6 @@ function requireBridgePayments() {
   }
   if (!isRobomataRentalPaymentsEnabled()) {
     return NextResponse.json({ error: "Robomata rental payments are not enabled." }, { status: 404 });
-  }
-  if (!isRobomataRentalBridgePaymentsEnabled()) {
-    return NextResponse.json({ error: "Robomata Bridge rental payments are not enabled." }, { status: 404 });
   }
   if (!isRobomataWorkflowMutationEnabled()) {
     return NextResponse.json({ error: "Robomata rental payment writes are not enabled." }, { status: 403 });
@@ -233,22 +229,34 @@ export async function POST(request: NextRequest) {
       : await bookingForNewBridgeTransfer(snapshot);
     if (!existingPayment && !booking) return NextResponse.json({ ignored: true });
 
-    const payment = await paymentStore.recordBridgeEvent({
-      booking,
-      eventKind,
-      failureReason: failureReasonForBridgeTransfer(snapshot),
-      occurredAt: event.event_created_at,
-      postingBlockReason: await bridgeConfirmationBlockReason({
-        booking,
+    const bookingId = booking?.id ?? existingPayment?.bookingId;
+    if (!bookingId) return NextResponse.json({ ignored: true });
+    return await paymentStore.withBookingPaymentRailLock(bookingId, async () => {
+      const lockedExistingPayment = await paymentStore.getPaymentByPaymentIntent(snapshot.id);
+      const lockedBooking = lockedExistingPayment
+        ? ((await getRentalBookingStore().getBooking(lockedExistingPayment.bookingId)) ?? undefined)
+        : booking
+          ? ((await getRentalBookingStore().getBooking(booking.id)) ?? undefined)
+          : undefined;
+      if (!lockedExistingPayment && !lockedBooking) return NextResponse.json({ ignored: true });
+
+      const payment = await paymentStore.recordBridgeEvent({
+        booking: lockedBooking,
         eventKind,
-        existingPayment: existingPayment ?? undefined,
+        failureReason: failureReasonForBridgeTransfer(snapshot),
+        occurredAt: event.event_created_at,
+        postingBlockReason: await bridgeConfirmationBlockReason({
+          booking: lockedBooking,
+          eventKind,
+          existingPayment: lockedExistingPayment ?? undefined,
+          snapshot,
+        }),
+        providerEventId: event.event_id,
         snapshot,
-      }),
-      providerEventId: event.event_id,
-      snapshot,
+      });
+      await advanceBookingAfterBridgePayment({ eventKind, payment });
+      return NextResponse.json({ payment });
     });
-    await advanceBookingAfterBridgePayment({ eventKind, payment });
-    return NextResponse.json({ payment });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to process Bridge rental webhook." },

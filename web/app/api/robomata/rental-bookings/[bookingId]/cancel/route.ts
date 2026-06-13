@@ -8,6 +8,7 @@ import {
 import type { RentalBookingRecord } from "~~/lib/robomata/rentalBookings";
 import type { RentalCancellationInput } from "~~/lib/robomata/rentalSupport";
 import { getRentalBookingStore } from "~~/lib/robomata/server/rentalBookingStore";
+import { cancelBridgeRentalTransfer } from "~~/lib/robomata/server/rentalBridge";
 import { getRentalInventoryStore } from "~~/lib/robomata/server/rentalInventoryStore";
 import { getRentalPaymentStore } from "~~/lib/robomata/server/rentalPaymentStore";
 import { requireRentalBookingAccess } from "~~/lib/robomata/server/rentalRouteAccess";
@@ -37,10 +38,6 @@ function cancellableStripePaymentStatus(status: string) {
 
 function blockingBridgePaymentStatus(status: string) {
   return status === "processing" || status === "captured";
-}
-
-function bridgeAmountFromCents(amountCents: number) {
-  return (amountCents / 100).toFixed(2);
 }
 
 async function bridgePaymentsBlockingCancellation(booking: RentalBookingRecord) {
@@ -76,17 +73,16 @@ async function cancelOpenPaymentIntents(booking: RentalBookingRecord) {
     if (payment.provider === "bridge") {
       const transferId = payment.providerReference.transferId;
       if (!transferId || payment.status !== "awaiting_funds") continue;
+      const snapshot = await cancelBridgeRentalTransfer({
+        amountCents: payment.authorizedAmountCents,
+        bookingId: booking.id,
+        transferId,
+      });
       cancelled.push(
         await paymentStore.recordBridgeEvent({
           booking,
           eventKind: "stablecoin_transfer_cancelled",
-          snapshot: {
-            amount: bridgeAmountFromCents(payment.authorizedAmountCents),
-            client_reference_id: booking.id,
-            currency: "usd",
-            id: transferId,
-            state: "canceled",
-          },
+          snapshot,
         }),
       );
     }

@@ -72,7 +72,8 @@ function bridgeHeaders(idempotencyKey?: string) {
 
 async function bridgeRequest(path: string, init?: RequestInit): Promise<unknown> {
   const response = await fetch(`${bridgeApiBase()}${path}`, init);
-  const payload = (await response.json()) as BridgeApiError | unknown;
+  const text = await response.text();
+  const payload = text ? (JSON.parse(text) as BridgeApiError | unknown) : undefined;
   if (!response.ok) {
     const message =
       typeof payload === "object" && payload
@@ -146,6 +147,21 @@ function mockBridgeTransfer(input: {
   };
 }
 
+function mockCancelledBridgeTransfer(input: {
+  amountCents?: number;
+  bookingId?: string;
+  transferId: string;
+}): BridgeTransferSnapshot {
+  return {
+    amount: input.amountCents ? centsToDecimal(input.amountCents) : undefined,
+    client_reference_id: input.bookingId,
+    currency: "usd",
+    id: input.transferId,
+    state: "canceled",
+    updated_at: new Date().toISOString(),
+  };
+}
+
 export async function createBridgeRentalTransfer(input: {
   booking: RentalBookingRecord;
   fromAddress?: string;
@@ -197,6 +213,31 @@ export async function createBridgeRentalTransfer(input: {
     method: "POST",
   });
   return bridgeTransferFromJson(transfer);
+}
+
+export async function cancelBridgeRentalTransfer(input: {
+  amountCents?: number;
+  bookingId?: string;
+  transferId: string;
+}): Promise<BridgeTransferSnapshot> {
+  if (isBridgeMockEnabled()) {
+    return mockCancelledBridgeTransfer(input);
+  }
+
+  const transfer = await bridgeRequest(`/transfers/${encodeURIComponent(input.transferId)}`, {
+    headers: bridgeHeaders(),
+    method: "DELETE",
+  });
+  return transfer
+    ? bridgeTransferFromJson(transfer)
+    : {
+        amount: input.amountCents ? centsToDecimal(input.amountCents) : undefined,
+        client_reference_id: input.bookingId,
+        currency: "usd",
+        id: input.transferId,
+        state: "canceled",
+        updated_at: new Date().toISOString(),
+      };
 }
 
 function parseBridgeSignatureHeader(header: string): { signature: string; timestamp: string } {
