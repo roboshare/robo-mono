@@ -971,6 +971,20 @@ async function main() {
   if (!bridgeBookingId || !bridgeCheckoutAccessToken) {
     throw new Error(`Expected Bridge booking, got ${JSON.stringify(bridgeCheckoutPayload)}`);
   }
+  await expectJsonFailure(
+    `${baseUrl}/api/robomata/rental-payments/bridge/transfers`,
+    {
+      body: JSON.stringify({
+        bookingId: bridgeBookingId,
+        checkoutAccessToken: bridgeCheckoutAccessToken,
+        renterId,
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    },
+    400,
+    "fromAddress",
+  );
   const bridgeTransferPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/transfers`, {
     body: JSON.stringify({
       bookingId: bridgeBookingId,
@@ -1041,6 +1055,36 @@ async function main() {
   ) {
     throw new Error(`Expected processed Bridge transfer to confirm booking, got ${JSON.stringify(bridgeBookingPayload)}`);
   }
+  const refundInFlightBridgeWebhookBody = JSON.stringify({
+    event_category: "transfer",
+    event_created_at: new Date().toISOString(),
+    event_id: "evt_bridge_refund_in_flight_smoke",
+    event_object: {
+      ...bridgeTransferPayload.transfer,
+      receipt: {
+        destination_tx_hash: "0xbridgeDestinationReceiptSmoke",
+        final_amount: bridgeTransferPayload.transfer.amount,
+        source_tx_hash: "0xbridgeSourceReceiptSmoke",
+      },
+      state: "refund_in_flight",
+      updated_at: new Date().toISOString(),
+    },
+    event_type: "transfer.updated",
+  });
+  const refundInFlightBridgePayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/webhook`, {
+    body: refundInFlightBridgeWebhookBody,
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  if (
+    refundInFlightBridgePayload.payment?.status !== "processing" ||
+    !refundInFlightBridgePayload.payment.postingBlocked ||
+    refundInFlightBridgePayload.payment.refundedAmountCents !== 0
+  ) {
+    throw new Error(
+      `Expected refund-in-flight Bridge transfer to remain blocked, got ${JSON.stringify(refundInFlightBridgePayload)}`,
+    );
+  }
   const returnedBridgeWebhookBody = JSON.stringify({
     event_category: "transfer",
     event_created_at: new Date().toISOString(),
@@ -1085,12 +1129,27 @@ async function main() {
   if (!bridgeBlockedCancelBookingId || !bridgeBlockedCancelToken) {
     throw new Error(`Expected Bridge cancellation-block booking, got ${JSON.stringify(bridgeBlockedCancelCheckoutPayload)}`);
   }
-  await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/transfers`, {
+  const bridgeBlockedCancelTransferPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/transfers`, {
     body: JSON.stringify({
       bookingId: bridgeBlockedCancelBookingId,
       checkoutAccessToken: bridgeBlockedCancelToken,
       fromAddress: "0xbridgeSmokeRenter",
       renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/webhook`, {
+    body: JSON.stringify({
+      event_category: "transfer",
+      event_created_at: new Date().toISOString(),
+      event_id: "evt_bridge_funds_received_cancel_block_smoke",
+      event_object: {
+        ...bridgeBlockedCancelTransferPayload.transfer,
+        state: "funds_received",
+        updated_at: new Date().toISOString(),
+      },
+      event_type: "transfer.updated",
     }),
     headers: { "content-type": "application/json" },
     method: "POST",
@@ -1108,7 +1167,7 @@ async function main() {
       method: "POST",
     },
     409,
-    "awaiting-funds Bridge transfer",
+    "in-flight Bridge transfer",
   );
 
   const underpaidBridgeCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {

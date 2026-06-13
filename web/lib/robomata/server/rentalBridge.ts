@@ -39,6 +39,10 @@ function bridgeCustomerId() {
   return process.env.ROBOMATA_RENTAL_BRIDGE_CUSTOMER_ID?.trim();
 }
 
+function allowAnyBridgeSourceAddress() {
+  return process.env.ROBOMATA_RENTAL_BRIDGE_ALLOW_ANY_FROM_ADDRESS === "true";
+}
+
 function configuredRail(key: string, fallback: string) {
   return process.env[key]?.trim() || fallback;
 }
@@ -145,6 +149,14 @@ export async function createBridgeRentalTransfer(input: {
   returnAddress?: string;
 }): Promise<BridgeTransferSnapshot> {
   const idempotencyKey = input.idempotencyKey ?? `robomata-rental-booking-${input.booking.id}-bridge`;
+  const sourceRail = configuredRail("ROBOMATA_RENTAL_BRIDGE_SOURCE_RAIL", "base");
+  const sourceCurrency = configuredRail("ROBOMATA_RENTAL_BRIDGE_SOURCE_CURRENCY", "usdc");
+  const destinationRail = configuredRail("ROBOMATA_RENTAL_BRIDGE_DESTINATION_RAIL", sourceRail);
+  const destinationCurrency = configuredRail("ROBOMATA_RENTAL_BRIDGE_DESTINATION_CURRENCY", sourceCurrency);
+  const allowAnyFromAddress = allowAnyBridgeSourceAddress();
+  if (!input.fromAddress && !allowAnyFromAddress) {
+    throw new Error("Bridge rental transfers require fromAddress unless allow-any-from-address is explicitly enabled.");
+  }
   if (isBridgeMockEnabled()) {
     return mockBridgeTransfer({ booking: input.booking, fromAddress: input.fromAddress, idempotencyKey });
   }
@@ -157,10 +169,6 @@ export async function createBridgeRentalTransfer(input: {
     throw new Error("ROBOMATA_RENTAL_BRIDGE_DESTINATION_ADDRESS is required for Bridge rental transfers.");
   }
 
-  const sourceRail = configuredRail("ROBOMATA_RENTAL_BRIDGE_SOURCE_RAIL", "base");
-  const sourceCurrency = configuredRail("ROBOMATA_RENTAL_BRIDGE_SOURCE_CURRENCY", "usdc");
-  const destinationRail = configuredRail("ROBOMATA_RENTAL_BRIDGE_DESTINATION_RAIL", sourceRail);
-  const destinationCurrency = configuredRail("ROBOMATA_RENTAL_BRIDGE_DESTINATION_CURRENCY", sourceCurrency);
   const payload = {
     amount: centsToDecimal(input.booking.paymentPlan.totalDueAtAuthorizationCents),
     client_reference_id: input.booking.id,
@@ -169,6 +177,7 @@ export async function createBridgeRentalTransfer(input: {
       payment_rail: destinationRail,
       to_address: destinationAddress,
     },
+    features: allowAnyFromAddress ? { allow_any_from_address: true } : undefined,
     on_behalf_of: customerId,
     return_instructions: input.returnAddress ? { address: input.returnAddress } : undefined,
     source: {

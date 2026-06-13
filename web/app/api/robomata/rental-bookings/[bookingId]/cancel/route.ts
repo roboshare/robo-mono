@@ -36,7 +36,7 @@ function cancellableStripePaymentStatus(status: string) {
 }
 
 function cancellableBridgePaymentStatus(status: string) {
-  return status === "awaiting_funds";
+  return status === "awaiting_funds" || status === "processing";
 }
 
 async function bridgePaymentsBlockingCancellation(booking: RentalBookingRecord) {
@@ -101,7 +101,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json(
         {
           error:
-            "Booking has an awaiting-funds Bridge transfer. Cancel or return the Bridge transfer before cancelling the booking.",
+            "Booking has an in-flight Bridge transfer. Cancel or return the Bridge transfer before cancelling the booking.",
           payments: blockingBridgePayments,
         },
         { status: 409 },
