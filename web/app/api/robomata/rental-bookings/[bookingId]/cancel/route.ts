@@ -110,6 +110,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const accessError = await requireRentalBookingAccess(booking, partnerAddress);
     if (accessError) return accessError;
 
+    const input = (await request.json()) as RentalCancellationInput;
+
     const runCancellation = async () => {
       const lockedBooking = await getRentalBookingStore().getBooking(booking.id);
       if (!lockedBooking) return NextResponse.json({ error: "Rental booking not found." }, { status: 404 });
@@ -126,7 +128,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
           { status: 409 },
         );
       }
-      const cancelledPayments = await cancelOpenPaymentIntents(lockedBooking);
       const blockingBridgePayments = await bridgePaymentsBlockingCancellation(lockedBooking);
       if (blockingBridgePayments.length > 0) {
         return NextResponse.json(
@@ -139,7 +140,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
         );
       }
 
-      const input = (await request.json()) as RentalCancellationInput;
       const result = await getRentalSupportStore().recordCancellation(lockedBooking, input);
       const updatedBooking = await getRentalBookingStore().updateBookingState(lockedBooking.id, {
         eventKind: "booking_cancelled",
@@ -154,6 +154,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         const operationalStatus = ["in_trip", "return_pending"].includes(lockedBooking.state) ? "suspended" : "listed";
         await getRentalInventoryStore().updateVehicleControls(lockedBooking.platformVehicleId, { operationalStatus });
       }
+      const cancelledPayments = await cancelOpenPaymentIntents(lockedBooking);
       return NextResponse.json({
         auditEvent: result.auditEvent,
         booking: updatedBooking,

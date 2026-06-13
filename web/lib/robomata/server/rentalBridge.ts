@@ -222,7 +222,9 @@ function bridgeWebhookToleranceMs() {
 }
 
 function bridgeWebhookPublicKey() {
-  return process.env.BRIDGE_WEBHOOK_PUBLIC_KEY?.trim() || process.env.ROBOMATA_RENTAL_BRIDGE_WEBHOOK_PUBLIC_KEY?.trim();
+  const publicKey =
+    process.env.BRIDGE_WEBHOOK_PUBLIC_KEY?.trim() || process.env.ROBOMATA_RENTAL_BRIDGE_WEBHOOK_PUBLIC_KEY?.trim();
+  return publicKey?.replace(/\\n/g, "\n");
 }
 
 export function verifyBridgeWebhookPayload(input: {

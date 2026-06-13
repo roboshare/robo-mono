@@ -49,6 +49,10 @@ function normalizedString(value: string | undefined) {
   return value?.trim().toLowerCase();
 }
 
+function normalizedBridgeWebhookEventType(eventType: string) {
+  return eventType.startsWith("transfer.") ? eventType.slice("transfer.".length) : eventType;
+}
+
 function configuredString(key: string) {
   return process.env[key]?.trim();
 }
@@ -215,7 +219,8 @@ export async function POST(request: NextRequest) {
       signatureHeader: request.headers.get("x-webhook-signature"),
     });
     if (event.event_category !== "transfer") return NextResponse.json({ ignored: true });
-    if (!["created", "updated", "updated.status_transitioned"].includes(event.event_type)) {
+    const eventType = normalizedBridgeWebhookEventType(event.event_type);
+    if (!["created", "updated", "updated.status_transitioned", "status_transitioned"].includes(eventType)) {
       return NextResponse.json({ ignored: true });
     }
 

@@ -1099,7 +1099,7 @@ async function main() {
       state: "payment_processed",
       updated_at: new Date().toISOString(),
     },
-    event_type: "updated",
+    event_type: "transfer.updated",
   });
   const processedBridgePayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/webhook`, {
     body: processedBridgeWebhookBody,
@@ -1291,7 +1291,7 @@ async function main() {
   if (!abandonedBridgeBookingId || !abandonedBridgeToken) {
     throw new Error(`Expected abandoned Bridge booking, got ${JSON.stringify(abandonedBridgeCheckoutPayload)}`);
   }
-  await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/transfers`, {
+  const abandonedBridgeTransferPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/transfers`, {
     body: JSON.stringify({
       bookingId: abandonedBridgeBookingId,
       checkoutAccessToken: abandonedBridgeToken,
@@ -1301,6 +1301,34 @@ async function main() {
     headers: { "content-type": "application/json" },
     method: "POST",
   });
+  await expectJsonFailure(
+    `${baseUrl}/api/robomata/rental-bookings/${abandonedBridgeBookingId}/cancel`,
+    {
+      body: JSON.stringify({
+        actor: { id: "bridge-smoke-ops", role: "ops" },
+        cancelledAt: new Date(Date.now() + 60 * 60 * 1_000).toISOString(),
+        reason: "host_cancelled",
+        supportCaseId: "case_bridge_invalid_cancel_smoke",
+      }),
+      headers: await authHeaders("POST", `/api/robomata/rental-bookings/${abandonedBridgeBookingId}/cancel`, {
+        "content-type": "application/json",
+      }),
+      method: "POST",
+    },
+    400,
+    "cancelledAt cannot be in the future",
+  );
+  const abandonedBridgePaymentAfterInvalidCancel = await readStoredPayment(
+    env.ROBOMATA_RENTAL_PAYMENTS_FILE,
+    abandonedBridgeTransferPayload.payment.providerReference.transferId,
+  );
+  if (abandonedBridgePaymentAfterInvalidCancel?.status !== "awaiting_funds") {
+    throw new Error(
+      `Expected invalid cancellation to leave awaiting-funds Bridge transfer usable, got ${JSON.stringify(
+        abandonedBridgePaymentAfterInvalidCancel,
+      )}`,
+    );
+  }
   const abandonedBridgeCancellationPayload = await fetchJson(
     `${baseUrl}/api/robomata/rental-bookings/${abandonedBridgeBookingId}/cancel`,
     {
