@@ -378,6 +378,30 @@ function bridgeAmountCents(value: string | undefined): number | undefined {
   return Number(dollars) * 100 + Number(cents.padEnd(2, "0").slice(0, 2));
 }
 
+const SAFE_BRIDGE_SOURCE_DEPOSIT_INSTRUCTION_KEYS = new Set([
+  "address",
+  "amount",
+  "blockchain_memo",
+  "chain",
+  "currency",
+  "deposit_address",
+  "memo",
+  "payment_rail",
+  "to_address",
+]);
+
+function safeBridgeSourceDepositInstructions(
+  instructions: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!instructions) return undefined;
+  const safeEntries = Object.entries(instructions).filter(
+    ([key, value]) =>
+      SAFE_BRIDGE_SOURCE_DEPOSIT_INSTRUCTION_KEYS.has(key) &&
+      (typeof value === "string" || typeof value === "number" || typeof value === "boolean"),
+  );
+  return safeEntries.length > 0 ? Object.fromEntries(safeEntries) : undefined;
+}
+
 function bridgeProviderReference(input: RentalBridgePaymentProviderEventInput): RentalPaymentProviderReference {
   return {
     provider: "bridge",
@@ -390,7 +414,7 @@ function bridgeProviderReference(input: RentalBridgePaymentProviderEventInput): 
       input.snapshot.receipt?.transaction_hash ??
       input.snapshot.destination?.transaction_id ??
       input.snapshot.source?.transaction_id,
-    sourceDepositInstructions: input.snapshot.source_deposit_instructions,
+    sourceDepositInstructions: safeBridgeSourceDepositInstructions(input.snapshot.source_deposit_instructions),
     transferId: input.snapshot.id,
   };
 }
@@ -820,7 +844,7 @@ function createPostgresStore(): RentalPaymentStore {
       const lockKey = `robomata-rental-payment-rail:${bookingId}`;
       try {
         await lockSql`SELECT pg_advisory_lock(hashtext(${lockKey}));`;
-        return operation();
+        return await operation();
       } finally {
         try {
           await lockSql`SELECT pg_advisory_unlock(hashtext(${lockKey}));`;

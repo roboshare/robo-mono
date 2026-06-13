@@ -35,8 +35,12 @@ function cancellableStripePaymentStatus(status: string) {
   return status === "requires_payment_method" || status === "requires_confirmation" || status === "requires_capture";
 }
 
-function cancellableBridgePaymentStatus(status: string) {
-  return status === "awaiting_funds" || status === "processing" || status === "captured";
+function blockingBridgePaymentStatus(status: string) {
+  return status === "processing" || status === "captured";
+}
+
+function bridgeAmountFromCents(amountCents: number) {
+  return (amountCents / 100).toFixed(2);
 }
 
 async function bridgePaymentsBlockingCancellation(booking: RentalBookingRecord) {
@@ -46,7 +50,7 @@ async function bridgePaymentsBlockingCancellation(booking: RentalBookingRecord) 
     payment =>
       payment.provider === "bridge" &&
       payment.providerReference.transferId &&
-      cancellableBridgePaymentStatus(payment.status),
+      blockingBridgePaymentStatus(payment.status),
   );
 }
 
@@ -68,6 +72,23 @@ async function cancelOpenPaymentIntents(booking: RentalBookingRecord) {
         }),
       );
       continue;
+    }
+    if (payment.provider === "bridge") {
+      const transferId = payment.providerReference.transferId;
+      if (!transferId || payment.status !== "awaiting_funds") continue;
+      cancelled.push(
+        await paymentStore.recordBridgeEvent({
+          booking,
+          eventKind: "stablecoin_transfer_cancelled",
+          snapshot: {
+            amount: bridgeAmountFromCents(payment.authorizedAmountCents),
+            client_reference_id: booking.id,
+            currency: "usd",
+            id: transferId,
+            state: "canceled",
+          },
+        }),
+      );
     }
   }
   return cancelled;
@@ -105,6 +126,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           { status: 409 },
         );
       }
+      const cancelledPayments = await cancelOpenPaymentIntents(lockedBooking);
       const blockingBridgePayments = await bridgePaymentsBlockingCancellation(lockedBooking);
       if (blockingBridgePayments.length > 0) {
         return NextResponse.json(
@@ -132,7 +154,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
         const operationalStatus = ["in_trip", "return_pending"].includes(lockedBooking.state) ? "suspended" : "listed";
         await getRentalInventoryStore().updateVehicleControls(lockedBooking.platformVehicleId, { operationalStatus });
       }
-      const cancelledPayments = await cancelOpenPaymentIntents(lockedBooking);
       return NextResponse.json({
         auditEvent: result.auditEvent,
         booking: updatedBooking,

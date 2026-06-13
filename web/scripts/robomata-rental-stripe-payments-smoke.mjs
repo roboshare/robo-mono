@@ -1276,6 +1276,55 @@ async function main() {
     );
   }
 
+  const abandonedBridgeCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
+    body: JSON.stringify({
+      dateFrom: new Date(Date.now() + (5 * 24 + 4.1) * 60 * 60 * 1_000).toISOString(),
+      dateTo: new Date(Date.now() + (5 * 24 + 4.5) * 60 * 60 * 1_000).toISOString(),
+      platformVehicleId: bridgePlatformVehicleId,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const abandonedBridgeBookingId = abandonedBridgeCheckoutPayload.booking?.id;
+  const abandonedBridgeToken = abandonedBridgeCheckoutPayload.checkoutAccessToken;
+  if (!abandonedBridgeBookingId || !abandonedBridgeToken) {
+    throw new Error(`Expected abandoned Bridge booking, got ${JSON.stringify(abandonedBridgeCheckoutPayload)}`);
+  }
+  await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/transfers`, {
+    body: JSON.stringify({
+      bookingId: abandonedBridgeBookingId,
+      checkoutAccessToken: abandonedBridgeToken,
+      fromAddress: "0xbridgeSmokeRenter",
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const abandonedBridgeCancellationPayload = await fetchJson(
+    `${baseUrl}/api/robomata/rental-bookings/${abandonedBridgeBookingId}/cancel`,
+    {
+      body: JSON.stringify({
+        actor: { id: "bridge-smoke-host", role: "host" },
+        reason: "host_cancelled",
+      }),
+      headers: await authHeaders("POST", `/api/robomata/rental-bookings/${abandonedBridgeBookingId}/cancel`, {
+        "content-type": "application/json",
+      }),
+      method: "POST",
+    },
+  );
+  if (
+    abandonedBridgeCancellationPayload.booking?.state !== "cancelled" ||
+    abandonedBridgeCancellationPayload.payments?.[0]?.status !== "cancelled"
+  ) {
+    throw new Error(
+      `Expected abandoned awaiting-funds Bridge transfer to be cancelled with booking, got ${JSON.stringify(
+        abandonedBridgeCancellationPayload,
+      )}`,
+    );
+  }
+
   const bridgeBlockedCancelCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
     body: JSON.stringify({
       dateFrom: new Date(Date.now() + (5 * 24 + 5) * 60 * 60 * 1_000).toISOString(),
