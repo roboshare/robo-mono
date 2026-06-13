@@ -1003,14 +1003,16 @@ async function main() {
   ) {
     throw new Error(`Expected Bridge transfer without Stripe PaymentIntent id, got ${JSON.stringify(bridgeTransferPayload)}`);
   }
-  const fallbackStripePayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
-    body: JSON.stringify({ bookingId: bridgeBookingId, checkoutAccessToken: bridgeCheckoutAccessToken, renterId }),
-    headers: { "content-type": "application/json" },
-    method: "POST",
-  });
-  if (!fallbackStripePayload.payment?.providerReference?.paymentIntentId || fallbackStripePayload.payment.provider !== "stripe") {
-    throw new Error(`Expected card fallback to create a Stripe PaymentIntent, got ${JSON.stringify(fallbackStripePayload)}`);
-  }
+  await expectJsonFailure(
+    `${baseUrl}/api/robomata/rental-payments/payment-intents`,
+    {
+      body: JSON.stringify({ bookingId: bridgeBookingId, checkoutAccessToken: bridgeCheckoutAccessToken, renterId }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    },
+    409,
+    "in-flight Bridge transfer",
+  );
   const processedBridgeWebhookBody = JSON.stringify({
     event_category: "transfer",
     event_created_at: new Date().toISOString(),
@@ -1025,7 +1027,7 @@ async function main() {
       state: "payment_processed",
       updated_at: new Date().toISOString(),
     },
-    event_type: "transfer.updated",
+    event_type: "updated",
   });
   const processedBridgePayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/webhook`, {
     body: processedBridgeWebhookBody,
@@ -1069,7 +1071,7 @@ async function main() {
       state: "refund_in_flight",
       updated_at: new Date().toISOString(),
     },
-    event_type: "transfer.updated",
+    event_type: "updated",
   });
   const refundInFlightBridgePayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/webhook`, {
     body: refundInFlightBridgeWebhookBody,
@@ -1099,7 +1101,7 @@ async function main() {
       state: "returned",
       updated_at: new Date().toISOString(),
     },
-    event_type: "transfer.updated",
+    event_type: "updated",
   });
   const returnedBridgePayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/webhook`, {
     body: returnedBridgeWebhookBody,
@@ -1149,7 +1151,7 @@ async function main() {
         state: "funds_received",
         updated_at: new Date().toISOString(),
       },
-      event_type: "transfer.updated",
+      event_type: "updated",
     }),
     headers: { "content-type": "application/json" },
     method: "POST",
@@ -1211,7 +1213,7 @@ async function main() {
           state: "payment_processed",
           updated_at: new Date().toISOString(),
         },
-        event_type: "transfer.updated",
+        event_type: "updated",
       }),
       headers: { "content-type": "application/json" },
       method: "POST",

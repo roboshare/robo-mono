@@ -60,6 +60,10 @@ function successfulProviderStatus(snapshot: StripePaymentIntentSnapshot) {
   return snapshot.status === "requires_capture" || snapshot.status === "succeeded";
 }
 
+function activeBridgePaymentStatus(status: RentalPaymentRecord["status"]) {
+  return status === "awaiting_funds" || status === "processing" || status === "captured";
+}
+
 function bookingStillAllowsPaymentAuthorization(booking: { dateFrom: string; dateTo: string }) {
   const dateFrom = Date.parse(booking.dateFrom);
   const dateTo = Date.parse(booking.dateTo);
@@ -146,11 +150,23 @@ export async function POST(request: NextRequest) {
     }
 
     const paymentStore = getRentalPaymentStore();
-    const existingPayments = (
-      await paymentStore.listPaymentsByReferences({
-        bookingIds: [booking.id],
-      })
-    )
+    const bookingPayments = await paymentStore.listPaymentsByReferences({
+      bookingIds: [booking.id],
+    });
+    const activeBridgePayments = bookingPayments.filter(
+      payment => payment.provider === "bridge" && activeBridgePaymentStatus(payment.status),
+    );
+    if (activeBridgePayments.length > 0) {
+      return NextResponse.json(
+        {
+          error: "Booking has an in-flight Bridge transfer. Cancel or return the Bridge transfer before card checkout.",
+          payments: activeBridgePayments,
+        },
+        { status: 409 },
+      );
+    }
+
+    const existingPayments = bookingPayments
       .filter(payment => payment.provider === "stripe" && Boolean(payment.providerReference.paymentIntentId))
       .sort((left, right) => paymentUpdatedTime(right) - paymentUpdatedTime(left));
 

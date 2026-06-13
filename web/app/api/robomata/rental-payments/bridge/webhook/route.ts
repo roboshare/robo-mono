@@ -92,8 +92,9 @@ function eventKindForBridgeTransfer(snapshot: BridgeTransferSnapshot): RentalPay
     case "refunded":
       return "stablecoin_transfer_returned";
     case "undeliverable":
-    case "refund_failed":
       return "payment_failed";
+    case "refund_failed":
+      return "refund_failed";
     case "error":
     case "missing_return_policy":
       return "stablecoin_transfer_exception";
@@ -189,8 +190,10 @@ export async function POST(request: NextRequest) {
       payload: rawPayload,
       signatureHeader: request.headers.get("x-webhook-signature"),
     });
-    if (event.event_category && event.event_category !== "transfer") return NextResponse.json({ ignored: true });
-    if (!event.event_type.startsWith("transfer.")) return NextResponse.json({ ignored: true });
+    if (event.event_category !== "transfer") return NextResponse.json({ ignored: true });
+    if (!["created", "updated", "updated.status_transitioned"].includes(event.event_type)) {
+      return NextResponse.json({ ignored: true });
+    }
 
     const snapshot = bridgeTransferSnapshot(event);
     const eventKind = eventKindForBridgeTransfer(snapshot);
