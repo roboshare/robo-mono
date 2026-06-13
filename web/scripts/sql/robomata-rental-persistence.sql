@@ -190,7 +190,7 @@ COMMENT ON TABLE robomata_rental_bookings IS
   'Rental booking records retain checkout, lifecycle, cancellation policy, and provider reference IDs; raw payment method data and client secrets are prohibited.';
 
 COMMENT ON TABLE robomata_rental_payments IS
-  'Rental payment records retain Stripe provider IDs, statuses, amounts, timestamps, posting block state, and event references only; raw payment method data and client secrets stay with Stripe.';
+  'Rental payment records retain payment-provider IDs, statuses, amounts, timestamps, posting block state, event references, and Bridge tx hashes only; raw payment method data, client secrets, and provider payloads stay with the provider.';
 
 COMMENT ON TABLE robomata_rental_claims IS
   'Rental claims retain evidence references, digests, notes, and payout holds; raw evidence blobs and documents stay in controlled object/provider storage.';

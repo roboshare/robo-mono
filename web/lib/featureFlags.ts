@@ -104,6 +104,10 @@ export function isRobomataRentalPaymentsEnabled(): boolean {
   return isEnabled(process.env.ROBOMATA_RENTAL_PAYMENTS_ENABLED);
 }
 
+export function isRobomataRentalBridgePaymentsEnabled(): boolean {
+  return isEnabled(process.env.ROBOMATA_RENTAL_BRIDGE_ENABLED);
+}
+
 export function isRobomataRentalRenterAccountsEnabled(): boolean {
   return isEnabled(process.env.ROBOMATA_RENTER_ACCOUNTS_ENABLED);
 }

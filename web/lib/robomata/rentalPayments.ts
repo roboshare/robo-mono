@@ -1,11 +1,13 @@
 import type { PlatformVehicleId, ProtocolAssetId } from "~~/lib/robomata/rentalInventory";
 import type { RentalMarketplaceListing, RentalMarketplaceTripEstimate } from "~~/lib/robomata/rentalMarketplace";
 
-export type RentalPaymentProvider = "stripe";
+export type RentalPaymentProvider = "stripe" | "bridge";
 
 export type RentalPaymentCurrency = "USD";
 
 export type RentalPaymentIntentStatus =
+  | "awaiting_funds"
+  | "processing"
   | "requires_payment_method"
   | "requires_confirmation"
   | "requires_capture"
@@ -20,6 +22,15 @@ export type RentalPaymentProviderEventKind =
   | "payment_intent_created"
   | "authorization_required"
   | "authorization_succeeded"
+  | "stablecoin_transfer_created"
+  | "stablecoin_transfer_awaiting_funds"
+  | "stablecoin_transfer_funds_received"
+  | "stablecoin_transfer_submitted"
+  | "stablecoin_transfer_processed"
+  | "stablecoin_transfer_cancelled"
+  | "stablecoin_transfer_return_in_flight"
+  | "stablecoin_transfer_returned"
+  | "stablecoin_transfer_exception"
   | "payment_cancelled"
   | "capture_succeeded"
   | "payment_failed"
@@ -42,9 +53,9 @@ export type RentalDepositHoldStatus =
 
 export type RentalPaymentStackDecision = {
   provider: RentalPaymentProvider;
-  processor: "Stripe";
-  captureModel: "manual_capture";
-  depositModel: "card_authorization";
+  processor: "Stripe" | "Bridge";
+  captureModel: "manual_capture" | "stablecoin_transfer";
+  depositModel: "card_authorization" | "stablecoin_prepayment";
   rationale: string[];
   constraints: string[];
 };
@@ -102,6 +113,10 @@ export type RentalPaymentProviderReference = {
   chargeId?: string;
   refundId?: string;
   disputeId?: string;
+  transferId?: string;
+  sourceTxHash?: string;
+  destinationTxHash?: string;
+  sourceDepositInstructions?: Record<string, unknown>;
 };
 
 export type RentalPaymentProviderEvent = {
@@ -148,6 +163,19 @@ export type RentalStripeAuthorizationRequest = {
   amountCents: number;
   currency: "usd";
   captureMethod: "manual";
+  metadata: {
+    bookingId?: string;
+    platformVehicleId: PlatformVehicleId;
+    facilityAssetId: ProtocolAssetId;
+    vehicleAssetId?: ProtocolAssetId;
+  };
+};
+
+export type RentalBridgeTransferRequest = {
+  provider: "bridge";
+  mode: "stablecoin_transfer";
+  amountCents: number;
+  currency: "usd";
   metadata: {
     bookingId?: string;
     platformVehicleId: PlatformVehicleId;
@@ -244,6 +272,21 @@ export function buildStripeAuthorizationRequest(plan: RentalCheckoutPaymentPlan)
     amountCents: plan.totalDueAtAuthorizationCents,
     currency: plan.currency.toLowerCase() as "usd",
     captureMethod: "manual",
+    metadata: {
+      bookingId: plan.bookingId,
+      platformVehicleId: plan.platformVehicleId,
+      facilityAssetId: plan.facilityAssetId,
+      vehicleAssetId: plan.vehicleAssetId,
+    },
+  };
+}
+
+export function buildBridgeTransferRequest(plan: RentalCheckoutPaymentPlan): RentalBridgeTransferRequest {
+  return {
+    provider: "bridge",
+    mode: "stablecoin_transfer",
+    amountCents: plan.totalDueAtAuthorizationCents,
+    currency: plan.currency.toLowerCase() as "usd",
     metadata: {
       bookingId: plan.bookingId,
       platformVehicleId: plan.platformVehicleId,

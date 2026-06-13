@@ -39,7 +39,9 @@ function nonEmptyString(value: unknown): value is string {
 function paymentMatchesEntry(payment: RentalPaymentRecord, entry: RentalRevenueLedgerEntry) {
   const bookingMatches = !entry.source.bookingId || payment.bookingId === entry.source.bookingId;
   const intentMatches =
-    !entry.source.paymentIntentId || payment.providerReference.paymentIntentId === entry.source.paymentIntentId;
+    !entry.source.paymentIntentId ||
+    payment.providerReference.paymentIntentId === entry.source.paymentIntentId ||
+    payment.providerReference.transferId === entry.source.paymentIntentId;
   const facilityMatches = payment.facilityAssetId === entry.facilityAssetId;
   const platformVehicleMatches = payment.platformVehicleId === entry.platformVehicleId;
   const vehicleMatches = !entry.vehicleAssetId || payment.vehicleAssetId === entry.vehicleAssetId;
@@ -51,6 +53,13 @@ function paymentForEntry(payments: RentalPaymentRecord[], entry: RentalRevenueLe
     .filter(payment => paymentMatchesEntry(payment, entry))
     .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
   if (entry.source.paymentIntentId) return candidates[0];
+  const fundedCandidate = candidates.find(
+    payment =>
+      !payment.postingBlocked &&
+      (payment.status === "captured" || payment.status === "partially_captured") &&
+      netCapturedAmountCents(payment) > 0,
+  );
+  if (fundedCandidate) return fundedCandidate;
   return candidates.find(payment => !payment.postingBlocked) ?? candidates[0];
 }
 
@@ -127,7 +136,10 @@ export async function POST(request: NextRequest) {
                 blockingPayments: blockedEntries.map(({ entry, payment }) => ({
                   bookingId: entry.source.bookingId,
                   id: entry.id,
-                  paymentIntentId: entry.source.paymentIntentId ?? payment?.providerReference.paymentIntentId,
+                  paymentIntentId:
+                    entry.source.paymentIntentId ??
+                    payment?.providerReference.paymentIntentId ??
+                    payment?.providerReference.transferId,
                   postingBlockReason: payment?.postingBlockReason,
                   status: payment?.status,
                 })),
@@ -191,7 +203,9 @@ export async function POST(request: NextRequest) {
                   bookingId: overCapturedPayment.payment.bookingId,
                   capturedAmountCents: overCapturedPayment.payment.capturedAmountCents,
                   netCapturedAmountCents: netCapturedAmountCents(overCapturedPayment.payment),
-                  paymentIntentId: overCapturedPayment.payment.providerReference.paymentIntentId,
+                  paymentIntentId:
+                    overCapturedPayment.payment.providerReference.paymentIntentId ??
+                    overCapturedPayment.payment.providerReference.transferId,
                   refundedAmountCents: overCapturedPayment.payment.refundedAmountCents,
                   status: overCapturedPayment.payment.status,
                 },

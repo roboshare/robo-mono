@@ -6,10 +6,12 @@ import {
   isRobomataRentalPaymentsEnabled,
   isRobomataWorkflowMutationEnabled,
 } from "~~/lib/featureFlags";
-import type { RentalPaymentRecord } from "~~/lib/robomata/rentalPayments";
+import type { RentalBookingRecord } from "~~/lib/robomata/rentalBookings";
+import type { RentalPaymentProviderEventKind, RentalPaymentRecord } from "~~/lib/robomata/rentalPayments";
 import { getRentalBookingStore } from "~~/lib/robomata/server/rentalBookingStore";
+import { retrieveBridgeRentalTransfer } from "~~/lib/robomata/server/rentalBridge";
 import { getRentalInventoryStore } from "~~/lib/robomata/server/rentalInventoryStore";
-import { getRentalPaymentStore } from "~~/lib/robomata/server/rentalPaymentStore";
+import { type BridgeTransferSnapshot, getRentalPaymentStore } from "~~/lib/robomata/server/rentalPaymentStore";
 import type { StripePaymentIntentSnapshot } from "~~/lib/robomata/server/rentalPaymentStore";
 import {
   createStripeRentalPaymentIntent,
@@ -60,6 +62,64 @@ function successfulProviderStatus(snapshot: StripePaymentIntentSnapshot) {
   return snapshot.status === "requires_capture" || snapshot.status === "succeeded";
 }
 
+function bridgePaymentBlocksCardCheckout(payment: RentalPaymentRecord) {
+  return (
+    payment.status === "awaiting_funds" ||
+    payment.status === "processing" ||
+    payment.status === "captured" ||
+    (payment.status === "failed" && payment.postingBlocked)
+  );
+}
+
+function normalizedBridgeAmountCents(value: string | undefined): number | undefined {
+  if (!value || !/^\d+(\.\d{1,6})?$/.test(value)) return undefined;
+  const [whole, fraction = ""] = value.split(".");
+  return Number(whole) * 100 + Number(fraction.padEnd(2, "0").slice(0, 2));
+}
+
+function bridgeEventKindForTransfer(snapshot: BridgeTransferSnapshot): RentalPaymentProviderEventKind {
+  switch (snapshot.state) {
+    case "awaiting_funds":
+      return "stablecoin_transfer_awaiting_funds";
+    case "funds_received":
+      return "stablecoin_transfer_funds_received";
+    case "payment_submitted":
+    case "in_review":
+      return "stablecoin_transfer_submitted";
+    case "payment_processed":
+      return "stablecoin_transfer_processed";
+    case "canceled":
+      return "stablecoin_transfer_cancelled";
+    case "returned":
+    case "refund_in_flight":
+      return "stablecoin_transfer_return_in_flight";
+    case "refunded":
+      return "stablecoin_transfer_returned";
+    case "undeliverable":
+      return "payment_failed";
+    case "refund_failed":
+      return "refund_failed";
+    case "error":
+    case "missing_return_policy":
+      return "stablecoin_transfer_exception";
+    default:
+      return "stablecoin_transfer_created";
+  }
+}
+
+function bridgePostingBlockReasonForCardRetry(input: {
+  booking: RentalBookingRecord;
+  eventKind: RentalPaymentProviderEventKind;
+  snapshot: BridgeTransferSnapshot;
+}) {
+  if (input.eventKind !== "stablecoin_transfer_processed") return undefined;
+  const finalAmountCents = normalizedBridgeAmountCents(input.snapshot.receipt?.final_amount);
+  if (finalAmountCents !== undefined && finalAmountCents < input.booking.paymentPlan.totalDueAtAuthorizationCents) {
+    return "Bridge transfer settled below the booking authorization amount; reconcile or return manually.";
+  }
+  return undefined;
+}
+
 function bookingStillAllowsPaymentAuthorization(booking: { dateFrom: string; dateTo: string }) {
   const dateFrom = Date.parse(booking.dateFrom);
   const dateTo = Date.parse(booking.dateTo);
@@ -88,6 +148,68 @@ async function advanceBookingAfterRetrievedPayment(input: {
     paymentAuthorized: true,
     paymentProviderReference: input.payment.providerReference,
   });
+}
+
+async function advanceBookingAfterBridgeRetry(input: {
+  booking: RentalBookingRecord;
+  eventKind: RentalPaymentProviderEventKind;
+  payment: RentalPaymentRecord;
+}) {
+  if (input.eventKind !== "stablecoin_transfer_processed") return;
+  if (input.payment.status !== "captured" || input.payment.postingBlocked) return;
+  const booking = await getRentalBookingStore().getBooking(input.booking.id);
+  if (!booking || booking.state !== "pending_payment_authorization") return;
+  if (!bookingStillAllowsPaymentAuthorization(booking)) return;
+
+  let hostReviewRequired = false;
+  if (isRobomataRentalInventoryEnabled()) {
+    const vehicle = await getRentalInventoryStore().getVehicle(booking.platformVehicleId);
+    if (!vehicle || vehicle.operationalStatus !== "listed") return;
+    hostReviewRequired = vehicle.hostControls?.bookingReview.requireManualApproval === true;
+  }
+
+  await getRentalBookingStore().confirmBooking(booking.id, {
+    hostReviewRequired,
+    paymentAuthorized: true,
+    paymentProviderReference: input.payment.providerReference,
+  });
+}
+
+async function refreshedBridgePayments(input: {
+  booking: RentalBookingRecord;
+  paymentStore: ReturnType<typeof getRentalPaymentStore>;
+  payments: RentalPaymentRecord[];
+}) {
+  const refreshedPayments = [...input.payments];
+  for (const payment of input.payments) {
+    if (payment.provider !== "bridge" || !bridgePaymentBlocksCardCheckout(payment)) continue;
+    const transferId = payment.providerReference.transferId;
+    if (!transferId) continue;
+    try {
+      const transfer = await retrieveBridgeRentalTransfer(transferId);
+      const eventKind = bridgeEventKindForTransfer(transfer);
+      const refreshedPayment = await input.paymentStore.recordBridgeEvent({
+        booking: input.booking,
+        eventKind,
+        postingBlockReason: bridgePostingBlockReasonForCardRetry({
+          booking: input.booking,
+          eventKind,
+          snapshot: transfer,
+        }),
+        snapshot: transfer,
+      });
+      await advanceBookingAfterBridgeRetry({
+        booking: input.booking,
+        eventKind,
+        payment: refreshedPayment,
+      });
+      const index = refreshedPayments.findIndex(candidate => candidate.id === refreshedPayment.id);
+      if (index >= 0) refreshedPayments[index] = refreshedPayment;
+    } catch {
+      // Keep the persisted blocker if Bridge is unavailable; card checkout remains safely blocked.
+    }
+  }
+  return refreshedPayments;
 }
 
 export async function POST(request: NextRequest) {
@@ -146,83 +268,143 @@ export async function POST(request: NextRequest) {
     }
 
     const paymentStore = getRentalPaymentStore();
-    const existingPayments = (
-      await paymentStore.listPaymentsByReferences({
-        bookingIds: [booking.id],
-      })
-    )
-      .filter(payment => Boolean(payment.providerReference.paymentIntentId))
-      .sort((left, right) => paymentUpdatedTime(right) - paymentUpdatedTime(left));
+    return await paymentStore.withBookingPaymentRailLock(booking.id, async () => {
+      const lockedBooking = await getRentalBookingStore().getBooking(booking.id);
+      if (!lockedBooking) return NextResponse.json({ error: "Rental booking not found." }, { status: 404 });
+      if (lockedBooking.state !== "pending_payment_authorization") {
+        return NextResponse.json(
+          { error: `Booking cannot create a PaymentIntent from state ${lockedBooking.state}.` },
+          { status: 409 },
+        );
+      }
+      if (!bookingStillAllowsPaymentAuthorization(lockedBooking)) {
+        return NextResponse.json(
+          { error: "Booking dates are no longer valid for payment authorization." },
+          { status: 409 },
+        );
+      }
+      const lockedBookingEndMs = Date.parse(lockedBooking.dateTo);
+      if (!Number.isFinite(lockedBookingEndMs)) {
+        return NextResponse.json(
+          { error: "Booking dateTo must be valid before payment authorization." },
+          { status: 400 },
+        );
+      }
+      if (lockedBookingEndMs - Date.now() > stripeManualCaptureWindowMs()) {
+        return NextResponse.json(
+          { error: "Booking ends outside Stripe manual-capture authorization window." },
+          { status: 409 },
+        );
+      }
+      if (isRobomataRentalInventoryEnabled()) {
+        const vehicle = await getRentalInventoryStore().getVehicle(lockedBooking.platformVehicleId);
+        if (!vehicle || vehicle.operationalStatus !== "listed") {
+          return NextResponse.json({ error: "Rental vehicle is no longer available for payment." }, { status: 409 });
+        }
+      }
 
-    for (const payment of existingPayments) {
-      if (payment.status === "cancelled") continue;
-      const paymentIntent = await retrieveStripeRentalPaymentIntent(payment.providerReference.paymentIntentId!);
-      if (paymentIntent.status === "canceled") continue;
-      if (
-        successfulProviderStatus(paymentIntent) &&
-        payment.status !== "requires_capture" &&
-        payment.status !== "captured"
-      ) {
-        const refreshedPayment = await paymentStore.recordStripeEvent({
-          booking,
-          eventKind: paymentIntent.status === "succeeded" ? "capture_succeeded" : "authorization_succeeded",
-          snapshot: paymentIntent,
-        });
-        await advanceBookingAfterRetrievedPayment({
-          bookingId: booking.id,
-          payment: refreshedPayment,
-          snapshot: paymentIntent,
-        });
+      const bookingPayments = await paymentStore.listPaymentsByReferences({
+        bookingIds: [lockedBooking.id],
+      });
+      const reconciledBookingPayments = await refreshedBridgePayments({
+        booking: lockedBooking,
+        paymentStore,
+        payments: bookingPayments,
+      });
+      const activeBridgePayments = reconciledBookingPayments.filter(
+        payment => payment.provider === "bridge" && bridgePaymentBlocksCardCheckout(payment),
+      );
+      if (activeBridgePayments.length > 0) {
+        return NextResponse.json(
+          {
+            error:
+              "Booking has an in-flight Bridge transfer. Cancel or return the Bridge transfer before card checkout.",
+            payments: activeBridgePayments,
+          },
+          { status: 409 },
+        );
+      }
+
+      const existingPayments = reconciledBookingPayments
+        .filter(payment => payment.provider === "stripe" && Boolean(payment.providerReference.paymentIntentId))
+        .sort((left, right) => paymentUpdatedTime(right) - paymentUpdatedTime(left));
+
+      for (const payment of existingPayments) {
+        if (payment.status === "cancelled") continue;
+        const paymentIntent = await retrieveStripeRentalPaymentIntent(payment.providerReference.paymentIntentId!);
+        if (paymentIntent.status === "canceled") continue;
+        if (
+          successfulProviderStatus(paymentIntent) &&
+          payment.status !== "requires_capture" &&
+          payment.status !== "captured"
+        ) {
+          const refreshedPayment = await paymentStore.recordStripeEvent({
+            booking: lockedBooking,
+            eventKind: paymentIntent.status === "succeeded" ? "capture_succeeded" : "authorization_succeeded",
+            snapshot: paymentIntent,
+          });
+          await advanceBookingAfterRetrievedPayment({
+            bookingId: booking.id,
+            payment: refreshedPayment,
+            snapshot: paymentIntent,
+          });
+          return NextResponse.json({
+            clientSecret: paymentIntent.client_secret,
+            payment: refreshedPayment,
+          });
+        }
+        if (payment.status === "failed") {
+          return NextResponse.json({
+            clientSecret: paymentIntent.client_secret,
+            payment,
+          });
+        }
+        if (successfulProviderStatus(paymentIntent)) {
+          await advanceBookingAfterRetrievedPayment({
+            bookingId: booking.id,
+            payment,
+            snapshot: paymentIntent,
+          });
+        }
         return NextResponse.json({
           clientSecret: paymentIntent.client_secret,
-          payment: refreshedPayment,
-        });
-      }
-      if (successfulProviderStatus(paymentIntent)) {
-        await advanceBookingAfterRetrievedPayment({
-          bookingId: booking.id,
           payment,
-          snapshot: paymentIntent,
         });
       }
-      return NextResponse.json({
-        clientSecret: paymentIntent.client_secret,
-        payment,
-      });
-    }
 
-    if (existingPayments.length > 0) {
-      const replacementIntent = await createStripeRentalPaymentIntent({
-        booking,
-        idempotencyKey: `robomata-rental-booking-${booking.id}-replacement-${existingPayments[0].id}`,
-      });
-      const replacementPayment = await paymentStore.recordStripeEvent({
-        booking,
+      if (existingPayments.length > 0) {
+        const replacementIntent = await createStripeRentalPaymentIntent({
+          booking: lockedBooking,
+          idempotencyKey: `robomata-rental-booking-${lockedBooking.id}-replacement-${existingPayments[0].id}`,
+        });
+        const replacementPayment = await paymentStore.recordStripeEvent({
+          booking: lockedBooking,
+          eventKind: "payment_intent_created",
+          snapshot: replacementIntent,
+        });
+        return NextResponse.json(
+          {
+            clientSecret: replacementIntent.client_secret,
+            payment: replacementPayment,
+          },
+          { status: 201 },
+        );
+      }
+
+      const paymentIntent = await createStripeRentalPaymentIntent({ booking: lockedBooking });
+      const payment = await paymentStore.recordStripeEvent({
+        booking: lockedBooking,
         eventKind: "payment_intent_created",
-        snapshot: replacementIntent,
+        snapshot: paymentIntent,
       });
       return NextResponse.json(
         {
-          clientSecret: replacementIntent.client_secret,
-          payment: replacementPayment,
+          clientSecret: paymentIntent.client_secret,
+          payment,
         },
         { status: 201 },
       );
-    }
-
-    const paymentIntent = await createStripeRentalPaymentIntent({ booking });
-    const payment = await paymentStore.recordStripeEvent({
-      booking,
-      eventKind: "payment_intent_created",
-      snapshot: paymentIntent,
     });
-    return NextResponse.json(
-      {
-        clientSecret: paymentIntent.client_secret,
-        payment,
-      },
-      { status: 201 },
-    );
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to create rental PaymentIntent." },
