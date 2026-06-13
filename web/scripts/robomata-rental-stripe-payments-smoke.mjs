@@ -1555,6 +1555,36 @@ async function main() {
   if (failedBridgePayload.payment?.status !== "failed" || !failedBridgePayload.payment.postingBlocked) {
     throw new Error(`Expected failed Bridge transfer to block posting, got ${JSON.stringify(failedBridgePayload)}`);
   }
+  const staleProcessedAfterFailedBridgePayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/webhook`, {
+    body: JSON.stringify({
+      event_category: "transfer",
+      event_created_at: new Date().toISOString(),
+      event_id: "evt_bridge_stale_processed_after_failed_smoke",
+      event_object: {
+        ...failedBridgeCardFallbackTransferPayload.transfer,
+        receipt: {
+          destination_tx_hash: "0xbridgeFailedDestinationReceiptSmoke",
+          final_amount: failedBridgeCardFallbackTransferPayload.transfer.amount,
+          source_tx_hash: "0xbridgeFailedSourceReceiptSmoke",
+        },
+        state: "payment_processed",
+        updated_at: new Date().toISOString(),
+      },
+      event_type: "updated",
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  if (
+    staleProcessedAfterFailedBridgePayload.payment?.status !== "failed" ||
+    !staleProcessedAfterFailedBridgePayload.payment.postingBlocked
+  ) {
+    throw new Error(
+      `Expected stale processed Bridge webhook to preserve failed block, got ${JSON.stringify(
+        staleProcessedAfterFailedBridgePayload,
+      )}`,
+    );
+  }
   await expectJsonFailure(
     `${baseUrl}/api/robomata/rental-payments/bridge/transfers`,
     {

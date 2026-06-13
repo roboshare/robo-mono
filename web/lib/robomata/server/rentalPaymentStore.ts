@@ -288,6 +288,15 @@ function monotonicPaymentStatus(input: {
     return "processing";
   }
   if (
+    input.existing.provider === "bridge" &&
+    input.existing.status === "failed" &&
+    input.eventKind !== "stablecoin_transfer_return_in_flight" &&
+    input.eventKind !== "stablecoin_transfer_returned" &&
+    input.eventKind !== "reconciliation_refetched"
+  ) {
+    return "failed";
+  }
+  if (
     (input.existing.status === "disputed" ||
       input.existing.status === "refunded" ||
       (input.existing.status === "failed" && input.existing.events[0]?.kind === "refund_failed")) &&
@@ -503,13 +512,10 @@ function paymentRecordFromBridgeEvent(
     existing?.authorizedAmountCents ??
     booking?.paymentPlan.totalDueAtAuthorizationCents ??
     0;
+  const receiptFinalAmountCents = bridgeAmountCents(input.snapshot.receipt?.final_amount);
   const capturedAmountCents =
     status === "captured" || status === "partially_captured" || status === "refunded"
-      ? Math.max(
-          bridgeAmountCents(input.snapshot.receipt?.final_amount) ?? authorizedAmountCents,
-          existing?.capturedAmountCents ?? 0,
-          0,
-        )
+      ? (receiptFinalAmountCents ?? Math.max(existing?.capturedAmountCents ?? 0, authorizedAmountCents, 0))
       : (existing?.capturedAmountCents ?? 0);
   const refundedAmountCents =
     status === "refunded"

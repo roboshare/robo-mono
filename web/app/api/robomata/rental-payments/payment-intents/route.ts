@@ -164,6 +164,31 @@ export async function POST(request: NextRequest) {
           { status: 409 },
         );
       }
+      if (!bookingStillAllowsPaymentAuthorization(lockedBooking)) {
+        return NextResponse.json(
+          { error: "Booking dates are no longer valid for payment authorization." },
+          { status: 409 },
+        );
+      }
+      const lockedBookingEndMs = Date.parse(lockedBooking.dateTo);
+      if (!Number.isFinite(lockedBookingEndMs)) {
+        return NextResponse.json(
+          { error: "Booking dateTo must be valid before payment authorization." },
+          { status: 400 },
+        );
+      }
+      if (lockedBookingEndMs - Date.now() > stripeManualCaptureWindowMs()) {
+        return NextResponse.json(
+          { error: "Booking ends outside Stripe manual-capture authorization window." },
+          { status: 409 },
+        );
+      }
+      if (isRobomataRentalInventoryEnabled()) {
+        const vehicle = await getRentalInventoryStore().getVehicle(lockedBooking.platformVehicleId);
+        if (!vehicle || vehicle.operationalStatus !== "listed") {
+          return NextResponse.json({ error: "Rental vehicle is no longer available for payment." }, { status: 409 });
+        }
+      }
 
       const bookingPayments = await paymentStore.listPaymentsByReferences({
         bookingIds: [lockedBooking.id],
@@ -190,12 +215,6 @@ export async function POST(request: NextRequest) {
         if (payment.status === "cancelled") continue;
         const paymentIntent = await retrieveStripeRentalPaymentIntent(payment.providerReference.paymentIntentId!);
         if (paymentIntent.status === "canceled") continue;
-        if (payment.status === "failed") {
-          return NextResponse.json({
-            clientSecret: paymentIntent.client_secret,
-            payment,
-          });
-        }
         if (
           successfulProviderStatus(paymentIntent) &&
           payment.status !== "requires_capture" &&
@@ -214,6 +233,12 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({
             clientSecret: paymentIntent.client_secret,
             payment: refreshedPayment,
+          });
+        }
+        if (payment.status === "failed") {
+          return NextResponse.json({
+            clientSecret: paymentIntent.client_secret,
+            payment,
           });
         }
         if (successfulProviderStatus(paymentIntent)) {
