@@ -1423,6 +1423,79 @@ async function main() {
     );
   }
 
+  const underfundedBridgeCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
+    body: JSON.stringify({
+      dateFrom: new Date(Date.now() + (5 * 24 + 16.25) * 60 * 60 * 1_000).toISOString(),
+      dateTo: new Date(Date.now() + (5 * 24 + 16.75) * 60 * 60 * 1_000).toISOString(),
+      platformVehicleId: bridgePlatformVehicleId,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const underfundedBridgeBookingId = underfundedBridgeCheckoutPayload.booking?.id;
+  const underfundedBridgeToken = underfundedBridgeCheckoutPayload.checkoutAccessToken;
+  if (!underfundedBridgeBookingId || !underfundedBridgeToken) {
+    throw new Error(`Expected underfunded Bridge booking, got ${JSON.stringify(underfundedBridgeCheckoutPayload)}`);
+  }
+  const underfundedBridgeTransferPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/transfers`, {
+    body: JSON.stringify({
+      bookingId: underfundedBridgeBookingId,
+      checkoutAccessToken: underfundedBridgeToken,
+      fromAddress: "0xbridgeSmokeRenter",
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const underfundedFinalAmount = (
+    Number(underfundedBridgeTransferPayload.transfer.amount) - 0.01
+  ).toFixed(2);
+  const underfundedBridgeSettlementPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/webhook`, {
+    body: JSON.stringify({
+      event_category: "transfer",
+      event_created_at: new Date().toISOString(),
+      event_id: "evt_bridge_underfunded_processed_smoke",
+      event_object: {
+        ...underfundedBridgeTransferPayload.transfer,
+        receipt: {
+          destination_tx_hash: "0xbridgeUnderfundedDestinationReceiptSmoke",
+          final_amount: underfundedFinalAmount,
+          source_tx_hash: "0xbridgeUnderfundedSourceReceiptSmoke",
+        },
+        state: "payment_processed",
+        updated_at: new Date().toISOString(),
+      },
+      event_type: "updated",
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  if (
+    underfundedBridgeSettlementPayload.payment?.status !== "captured" ||
+    !underfundedBridgeSettlementPayload.payment.postingBlocked
+  ) {
+    throw new Error(
+      `Expected underfunded Bridge settlement to be captured but posting-blocked, got ${JSON.stringify(
+        underfundedBridgeSettlementPayload,
+      )}`,
+    );
+  }
+  const underfundedBridgeBookingPayload = await fetchJson(
+    `${baseUrl}/api/robomata/rental-bookings/${underfundedBridgeBookingId}`,
+    {
+      headers: await authHeaders("GET", `/api/robomata/rental-bookings/${underfundedBridgeBookingId}`),
+      method: "GET",
+    },
+  );
+  if (underfundedBridgeBookingPayload.booking?.state !== "pending_payment_authorization") {
+    throw new Error(
+      `Expected underfunded Bridge settlement to leave booking pending, got ${JSON.stringify(
+        underfundedBridgeBookingPayload,
+      )}`,
+    );
+  }
+
   const failedStripeBeforeBridgeCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
     body: JSON.stringify({
       dateFrom: new Date(Date.now() + (5 * 24 + 17) * 60 * 60 * 1_000).toISOString(),
