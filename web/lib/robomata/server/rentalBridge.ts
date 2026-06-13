@@ -43,6 +43,10 @@ function allowAnyBridgeSourceAddress() {
   return process.env.ROBOMATA_RENTAL_BRIDGE_ALLOW_ANY_FROM_ADDRESS === "true";
 }
 
+function bridgeSourceRequiresFromAddress(sourceRail: string) {
+  return !new Set(["ach", "ach_push", "wire", "wire_transfer", "sepa", "swift"]).has(sourceRail.trim().toLowerCase());
+}
+
 function configuredRail(key: string, fallback: string) {
   return process.env[key]?.trim() || fallback;
 }
@@ -154,7 +158,7 @@ export async function createBridgeRentalTransfer(input: {
   const destinationRail = configuredRail("ROBOMATA_RENTAL_BRIDGE_DESTINATION_RAIL", sourceRail);
   const destinationCurrency = configuredRail("ROBOMATA_RENTAL_BRIDGE_DESTINATION_CURRENCY", sourceCurrency);
   const allowAnyFromAddress = allowAnyBridgeSourceAddress();
-  if (!input.fromAddress && !allowAnyFromAddress) {
+  if (bridgeSourceRequiresFromAddress(sourceRail) && !input.fromAddress && !allowAnyFromAddress) {
     throw new Error("Bridge rental transfers require fromAddress unless allow-any-from-address is explicitly enabled.");
   }
   if (isBridgeMockEnabled()) {

@@ -1383,6 +1383,155 @@ async function main() {
     throw new Error(`Expected late Bridge settlement to be captured but posting-blocked, got ${JSON.stringify(lateBridgeSettlementPayload)}`);
   }
 
+  const failedStripeBeforeBridgeCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
+    body: JSON.stringify({
+      dateFrom: new Date(Date.now() + (5 * 24 + 17) * 60 * 60 * 1_000).toISOString(),
+      dateTo: new Date(Date.now() + (5 * 24 + 20) * 60 * 60 * 1_000).toISOString(),
+      platformVehicleId: bridgePlatformVehicleId,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const failedStripeBeforeBridgeBookingId = failedStripeBeforeBridgeCheckoutPayload.booking?.id;
+  const failedStripeBeforeBridgeToken = failedStripeBeforeBridgeCheckoutPayload.checkoutAccessToken;
+  if (!failedStripeBeforeBridgeBookingId || !failedStripeBeforeBridgeToken) {
+    throw new Error(`Expected failed-Stripe-before-Bridge booking, got ${JSON.stringify(failedStripeBeforeBridgeCheckoutPayload)}`);
+  }
+  const failedStripeInitialIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
+    body: JSON.stringify({
+      bookingId: failedStripeBeforeBridgeBookingId,
+      checkoutAccessToken: failedStripeBeforeBridgeToken,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const failedStripeInitialIntentId = failedStripeInitialIntentPayload.payment?.providerReference?.paymentIntentId;
+  if (!failedStripeInitialIntentId) {
+    throw new Error(`Expected failed Stripe initial intent, got ${JSON.stringify(failedStripeInitialIntentPayload)}`);
+  }
+  await updateStoredPayment(env.ROBOMATA_RENTAL_PAYMENTS_FILE, failedStripeInitialIntentId, payment => ({
+    ...payment,
+    status: "requires_payment_method",
+  }));
+  const failedStripeBeforeBridgeWebhookBody = JSON.stringify({
+    id: "evt_failed_stripe_before_bridge_smoke",
+    created: Math.floor(Date.now() / 1000),
+    type: "payment_intent.payment_failed",
+    data: {
+      object: {
+        id: failedStripeInitialIntentId,
+        amount: failedStripeInitialIntentPayload.payment.authorizedAmountCents,
+        currency: "usd",
+        last_payment_error: { message: "Card declined before Bridge fallback." },
+        metadata: { bookingId: failedStripeBeforeBridgeBookingId },
+        status: "requires_payment_method",
+      },
+    },
+  });
+  await fetchJson(`${baseUrl}/api/robomata/rental-payments/stripe/webhook`, {
+    body: failedStripeBeforeBridgeWebhookBody,
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": stripeSignatureHeader(failedStripeBeforeBridgeWebhookBody),
+    },
+    method: "POST",
+  });
+  await expectJsonFailure(
+    `${baseUrl}/api/robomata/rental-payments/bridge/transfers`,
+    {
+      body: JSON.stringify({
+        bookingId: failedStripeBeforeBridgeBookingId,
+        checkoutAccessToken: failedStripeBeforeBridgeToken,
+        fromAddress: "0xbridgeSmokeRenter",
+        renterId,
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    },
+    409,
+    "active Stripe PaymentIntent",
+  );
+  const failedStripeReplacementIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
+    body: JSON.stringify({
+      bookingId: failedStripeBeforeBridgeBookingId,
+      checkoutAccessToken: failedStripeBeforeBridgeToken,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  if (failedStripeReplacementIntentPayload.payment?.providerReference?.paymentIntentId === failedStripeInitialIntentId) {
+    throw new Error(
+      `Expected failed Stripe retry to create replacement intent, got ${JSON.stringify(
+        failedStripeReplacementIntentPayload,
+      )}`,
+    );
+  }
+
+  const failedBridgeCardFallbackCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
+    body: JSON.stringify({
+      dateFrom: new Date(Date.now() + (5 * 24 + 21) * 60 * 60 * 1_000).toISOString(),
+      dateTo: new Date(Date.now() + (6 * 24) * 60 * 60 * 1_000).toISOString(),
+      platformVehicleId: bridgePlatformVehicleId,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const failedBridgeCardFallbackBookingId = failedBridgeCardFallbackCheckoutPayload.booking?.id;
+  const failedBridgeCardFallbackToken = failedBridgeCardFallbackCheckoutPayload.checkoutAccessToken;
+  if (!failedBridgeCardFallbackBookingId || !failedBridgeCardFallbackToken) {
+    throw new Error(`Expected failed Bridge card fallback booking, got ${JSON.stringify(failedBridgeCardFallbackCheckoutPayload)}`);
+  }
+  const failedBridgeCardFallbackTransferPayload = await fetchJson(
+    `${baseUrl}/api/robomata/rental-payments/bridge/transfers`,
+    {
+      body: JSON.stringify({
+        bookingId: failedBridgeCardFallbackBookingId,
+        checkoutAccessToken: failedBridgeCardFallbackToken,
+        fromAddress: "0xbridgeSmokeRenter",
+        renterId,
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    },
+  );
+  const failedBridgeWebhookBody = JSON.stringify({
+    event_category: "transfer",
+    event_created_at: new Date().toISOString(),
+    event_id: "evt_bridge_undeliverable_card_block_smoke",
+    event_object: {
+      ...failedBridgeCardFallbackTransferPayload.transfer,
+      state: "undeliverable",
+      updated_at: new Date().toISOString(),
+    },
+    event_type: "updated",
+  });
+  const failedBridgePayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/webhook`, {
+    body: failedBridgeWebhookBody,
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  if (failedBridgePayload.payment?.status !== "failed" || !failedBridgePayload.payment.postingBlocked) {
+    throw new Error(`Expected failed Bridge transfer to block posting, got ${JSON.stringify(failedBridgePayload)}`);
+  }
+  await expectJsonFailure(
+    `${baseUrl}/api/robomata/rental-payments/payment-intents`,
+    {
+      body: JSON.stringify({
+        bookingId: failedBridgeCardFallbackBookingId,
+        checkoutAccessToken: failedBridgeCardFallbackToken,
+        renterId,
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    },
+    409,
+    "Bridge transfer",
+  );
+
   const underpaidBridgeCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
     body: JSON.stringify({
       dateFrom: new Date(Date.now() + (6 * 24 + 18) * 60 * 60 * 1_000).toISOString(),

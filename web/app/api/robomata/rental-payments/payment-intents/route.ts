@@ -60,8 +60,13 @@ function successfulProviderStatus(snapshot: StripePaymentIntentSnapshot) {
   return snapshot.status === "requires_capture" || snapshot.status === "succeeded";
 }
 
-function activeBridgePaymentStatus(status: RentalPaymentRecord["status"]) {
-  return status === "awaiting_funds" || status === "processing" || status === "captured";
+function bridgePaymentBlocksCardCheckout(payment: RentalPaymentRecord) {
+  return (
+    payment.status === "awaiting_funds" ||
+    payment.status === "processing" ||
+    payment.status === "captured" ||
+    (payment.status === "failed" && payment.postingBlocked)
+  );
 }
 
 function bookingStillAllowsPaymentAuthorization(booking: { dateFrom: string; dateTo: string }) {
@@ -151,11 +156,20 @@ export async function POST(request: NextRequest) {
 
     const paymentStore = getRentalPaymentStore();
     return await paymentStore.withBookingPaymentRailLock(booking.id, async () => {
+      const lockedBooking = await getRentalBookingStore().getBooking(booking.id);
+      if (!lockedBooking) return NextResponse.json({ error: "Rental booking not found." }, { status: 404 });
+      if (lockedBooking.state !== "pending_payment_authorization") {
+        return NextResponse.json(
+          { error: `Booking cannot create a PaymentIntent from state ${lockedBooking.state}.` },
+          { status: 409 },
+        );
+      }
+
       const bookingPayments = await paymentStore.listPaymentsByReferences({
-        bookingIds: [booking.id],
+        bookingIds: [lockedBooking.id],
       });
       const activeBridgePayments = bookingPayments.filter(
-        payment => payment.provider === "bridge" && activeBridgePaymentStatus(payment.status),
+        payment => payment.provider === "bridge" && bridgePaymentBlocksCardCheckout(payment),
       );
       if (activeBridgePayments.length > 0) {
         return NextResponse.json(
@@ -173,7 +187,7 @@ export async function POST(request: NextRequest) {
         .sort((left, right) => paymentUpdatedTime(right) - paymentUpdatedTime(left));
 
       for (const payment of existingPayments) {
-        if (payment.status === "cancelled") continue;
+        if (payment.status === "cancelled" || payment.status === "failed") continue;
         const paymentIntent = await retrieveStripeRentalPaymentIntent(payment.providerReference.paymentIntentId!);
         if (paymentIntent.status === "canceled") continue;
         if (
@@ -182,7 +196,7 @@ export async function POST(request: NextRequest) {
           payment.status !== "captured"
         ) {
           const refreshedPayment = await paymentStore.recordStripeEvent({
-            booking,
+            booking: lockedBooking,
             eventKind: paymentIntent.status === "succeeded" ? "capture_succeeded" : "authorization_succeeded",
             snapshot: paymentIntent,
           });
@@ -211,11 +225,11 @@ export async function POST(request: NextRequest) {
 
       if (existingPayments.length > 0) {
         const replacementIntent = await createStripeRentalPaymentIntent({
-          booking,
-          idempotencyKey: `robomata-rental-booking-${booking.id}-replacement-${existingPayments[0].id}`,
+          booking: lockedBooking,
+          idempotencyKey: `robomata-rental-booking-${lockedBooking.id}-replacement-${existingPayments[0].id}`,
         });
         const replacementPayment = await paymentStore.recordStripeEvent({
-          booking,
+          booking: lockedBooking,
           eventKind: "payment_intent_created",
           snapshot: replacementIntent,
         });
@@ -228,9 +242,9 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const paymentIntent = await createStripeRentalPaymentIntent({ booking });
+      const paymentIntent = await createStripeRentalPaymentIntent({ booking: lockedBooking });
       const payment = await paymentStore.recordStripeEvent({
-        booking,
+        booking: lockedBooking,
         eventKind: "payment_intent_created",
         snapshot: paymentIntent,
       });

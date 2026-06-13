@@ -63,7 +63,8 @@ function activeStripePaymentStatus(status: string) {
     status === "requires_payment_method" ||
     status === "requires_confirmation" ||
     status === "requires_capture" ||
-    status === "captured"
+    status === "captured" ||
+    status === "failed"
   );
 }
 
@@ -112,7 +113,25 @@ export async function POST(request: NextRequest) {
 
     const paymentStore = getRentalPaymentStore();
     return await paymentStore.withBookingPaymentRailLock(booking.id, async () => {
-      const bookingPayments = await paymentStore.listPaymentsByReferences({ bookingIds: [booking.id] });
+      const lockedBooking = await getRentalBookingStore().getBooking(booking.id);
+      if (!lockedBooking) return NextResponse.json({ error: "Rental booking not found." }, { status: 404 });
+      if (lockedBooking.state !== "pending_payment_authorization") {
+        return NextResponse.json(
+          { error: `Booking cannot create a Bridge transfer from state ${lockedBooking.state}.` },
+          { status: 409 },
+        );
+      }
+      if (!bookingStillAllowsStablecoinPayment(lockedBooking)) {
+        return NextResponse.json({ error: "Booking dates are no longer valid for payment." }, { status: 409 });
+      }
+      if (isRobomataRentalInventoryEnabled()) {
+        const vehicle = await getRentalInventoryStore().getVehicle(lockedBooking.platformVehicleId);
+        if (!vehicle || vehicle.operationalStatus !== "listed") {
+          return NextResponse.json({ error: "Rental vehicle is no longer available for payment." }, { status: 409 });
+        }
+      }
+
+      const bookingPayments = await paymentStore.listPaymentsByReferences({ bookingIds: [lockedBooking.id] });
       const activeStripePayments = bookingPayments.filter(
         payment => payment.provider === "stripe" && activeStripePaymentStatus(payment.status),
       );
@@ -143,16 +162,16 @@ export async function POST(request: NextRequest) {
       }
 
       const transfer = await createBridgeRentalTransfer({
-        booking,
+        booking: lockedBooking,
         fromAddress: cleanAddress(body.fromAddress),
         idempotencyKey:
           priorBridgePayments.length > 0
-            ? `robomata-rental-booking-${booking.id}-bridge-replacement-${priorBridgePayments[0].id}`
+            ? `robomata-rental-booking-${lockedBooking.id}-bridge-replacement-${priorBridgePayments[0].id}`
             : undefined,
         returnAddress: cleanAddress(body.returnAddress) ?? cleanAddress(body.fromAddress),
       });
       const payment = await paymentStore.recordBridgeEvent({
-        booking,
+        booking: lockedBooking,
         eventKind:
           transfer.state === "awaiting_funds" ? "stablecoin_transfer_awaiting_funds" : "stablecoin_transfer_created",
         snapshot: transfer,

@@ -89,47 +89,62 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const accessError = await requireRentalBookingAccess(booking, partnerAddress);
     if (accessError) return accessError;
 
-    if (booking.state === "cancelled") {
-      const cancelledPayments = await cancelOpenPaymentIntents(booking);
-      return NextResponse.json({ booking, payments: cancelledPayments });
-    }
-    if (["closed", "completed", "disputed"].includes(booking.state)) {
-      return NextResponse.json({ error: `Booking cannot be cancelled from state ${booking.state}.` }, { status: 409 });
-    }
-    const blockingBridgePayments = await bridgePaymentsBlockingCancellation(booking);
-    if (blockingBridgePayments.length > 0) {
-      return NextResponse.json(
-        {
-          error:
-            "Booking has an in-flight Bridge transfer. Cancel or return the Bridge transfer before cancelling the booking.",
-          payments: blockingBridgePayments,
-        },
-        { status: 409 },
-      );
-    }
+    const runCancellation = async () => {
+      const lockedBooking = await getRentalBookingStore().getBooking(booking.id);
+      if (!lockedBooking) return NextResponse.json({ error: "Rental booking not found." }, { status: 404 });
+      const lockedAccessError = await requireRentalBookingAccess(lockedBooking, partnerAddress);
+      if (lockedAccessError) return lockedAccessError;
 
-    const input = (await request.json()) as RentalCancellationInput;
-    const result = await getRentalSupportStore().recordCancellation(booking, input);
-    const updatedBooking = await getRentalBookingStore().updateBookingState(booking.id, {
-      eventKind: "booking_cancelled",
-      payload: {
-        auditEventId: result.auditEvent.id,
-        cancellationFeeCents: result.outcome.cancellationFeeCents,
-        refundableAmountCents: result.outcome.refundableAmountCents,
-      },
-      state: "cancelled",
-    });
-    if (isRobomataRentalInventoryEnabled()) {
-      const operationalStatus = ["in_trip", "return_pending"].includes(booking.state) ? "suspended" : "listed";
-      await getRentalInventoryStore().updateVehicleControls(booking.platformVehicleId, { operationalStatus });
-    }
-    const cancelledPayments = await cancelOpenPaymentIntents(booking);
-    return NextResponse.json({
-      auditEvent: result.auditEvent,
-      booking: updatedBooking,
-      cancellation: result.outcome,
-      payments: cancelledPayments,
-    });
+      if (lockedBooking.state === "cancelled") {
+        const cancelledPayments = await cancelOpenPaymentIntents(lockedBooking);
+        return NextResponse.json({ booking: lockedBooking, payments: cancelledPayments });
+      }
+      if (["closed", "completed", "disputed"].includes(lockedBooking.state)) {
+        return NextResponse.json(
+          { error: `Booking cannot be cancelled from state ${lockedBooking.state}.` },
+          { status: 409 },
+        );
+      }
+      const blockingBridgePayments = await bridgePaymentsBlockingCancellation(lockedBooking);
+      if (blockingBridgePayments.length > 0) {
+        return NextResponse.json(
+          {
+            error:
+              "Booking has an in-flight Bridge transfer. Cancel or return the Bridge transfer before cancelling the booking.",
+            payments: blockingBridgePayments,
+          },
+          { status: 409 },
+        );
+      }
+
+      const input = (await request.json()) as RentalCancellationInput;
+      const result = await getRentalSupportStore().recordCancellation(lockedBooking, input);
+      const updatedBooking = await getRentalBookingStore().updateBookingState(lockedBooking.id, {
+        eventKind: "booking_cancelled",
+        payload: {
+          auditEventId: result.auditEvent.id,
+          cancellationFeeCents: result.outcome.cancellationFeeCents,
+          refundableAmountCents: result.outcome.refundableAmountCents,
+        },
+        state: "cancelled",
+      });
+      if (isRobomataRentalInventoryEnabled()) {
+        const operationalStatus = ["in_trip", "return_pending"].includes(lockedBooking.state) ? "suspended" : "listed";
+        await getRentalInventoryStore().updateVehicleControls(lockedBooking.platformVehicleId, { operationalStatus });
+      }
+      const cancelledPayments = await cancelOpenPaymentIntents(lockedBooking);
+      return NextResponse.json({
+        auditEvent: result.auditEvent,
+        booking: updatedBooking,
+        cancellation: result.outcome,
+        payments: cancelledPayments,
+      });
+    };
+
+    const paymentStore = isRobomataRentalPaymentsEnabled() ? getRentalPaymentStore() : undefined;
+    return await (paymentStore
+      ? paymentStore.withBookingPaymentRailLock(booking.id, runCancellation)
+      : runCancellation());
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to cancel rental booking." },
