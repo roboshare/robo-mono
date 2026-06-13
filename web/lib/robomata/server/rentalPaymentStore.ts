@@ -12,7 +12,7 @@ import type {
   RentalPaymentRecord,
 } from "~~/lib/robomata/rentalPayments";
 import { assertNoProhibitedRentalPersistenceFields } from "~~/lib/robomata/rentalPersistencePolicy";
-import { getRobomataPostgresSql } from "~~/lib/robomata/server/postgres";
+import { createRobomataPostgresSql, getRobomataPostgresSql } from "~~/lib/robomata/server/postgres";
 
 export type StripePaymentIntentSnapshot = {
   id: string;
@@ -254,6 +254,13 @@ function monotonicPaymentStatus(input: {
   if (input.existing.status === "refunded" && input.eventKind === "refund_failed") {
     return "refunded";
   }
+  if (
+    input.existing.provider === "bridge" &&
+    input.existing.status === "refunded" &&
+    input.eventKind !== "reconciliation_refetched"
+  ) {
+    return "refunded";
+  }
   if (input.existing.status === "requires_capture" && input.eventKind === "payment_failed") {
     return "requires_capture";
   }
@@ -383,6 +390,7 @@ function bridgeProviderReference(input: RentalBridgePaymentProviderEventInput): 
       input.snapshot.receipt?.transaction_hash ??
       input.snapshot.destination?.transaction_id ??
       input.snapshot.source?.transaction_id,
+    sourceDepositInstructions: input.snapshot.source_deposit_instructions,
     transferId: input.snapshot.id,
   };
 }
@@ -565,6 +573,8 @@ function paymentRecordFromBridgeEvent(
       ...existing?.providerReference,
       ...reference,
       destinationTxHash: reference.destinationTxHash ?? existing?.providerReference.destinationTxHash,
+      sourceDepositInstructions:
+        reference.sourceDepositInstructions ?? existing?.providerReference.sourceDepositInstructions,
       sourceTxHash: reference.sourceTxHash ?? existing?.providerReference.sourceTxHash,
       transferId: reference.transferId ?? existing?.providerReference.transferId,
     },
@@ -806,10 +816,18 @@ function createPostgresStore(): RentalPaymentStore {
     },
     async withBookingPaymentRailLock<T>(bookingId: string, operation: () => Promise<T>): Promise<T> {
       await ensurePostgresTables();
-      return (await sql.begin(async transaction => {
-        await transaction`SELECT pg_advisory_xact_lock(hashtext(${`robomata-rental-payment-rail:${bookingId}`}));`;
+      const lockSql = createRobomataPostgresSql();
+      const lockKey = `robomata-rental-payment-rail:${bookingId}`;
+      try {
+        await lockSql`SELECT pg_advisory_lock(hashtext(${lockKey}));`;
         return operation();
-      })) as T;
+      } finally {
+        try {
+          await lockSql`SELECT pg_advisory_unlock(hashtext(${lockKey}));`;
+        } finally {
+          await lockSql.end({ timeout: 5 });
+        }
+      }
     },
   };
 }

@@ -1027,7 +1027,7 @@ async function main() {
   ) {
     throw new Error(`Expected Bridge transfer without Stripe PaymentIntent id, got ${JSON.stringify(bridgeTransferPayload)}`);
   }
-  await expectJsonFailure(
+  const activeBridgeRetryPayload = await expectJsonFailure(
     `${baseUrl}/api/robomata/rental-payments/bridge/transfers`,
     {
       body: JSON.stringify({
@@ -1042,6 +1042,16 @@ async function main() {
     409,
     "active Bridge transfer",
   );
+  if (
+    JSON.stringify(activeBridgeRetryPayload.sourceDepositInstructions) !==
+    JSON.stringify(bridgeTransferPayload.transfer.source_deposit_instructions)
+  ) {
+    throw new Error(
+      `Expected active Bridge retry to return original deposit instructions, got ${JSON.stringify(
+        activeBridgeRetryPayload,
+      )}`,
+    );
+  }
   await expectJsonFailure(
     `${baseUrl}/api/robomata/rental-payments/payment-intents`,
     {
@@ -1215,6 +1225,54 @@ async function main() {
   if (staleProcessedBridgePayload.payment?.status !== "processing" || !staleProcessedBridgePayload.payment.postingBlocked) {
     throw new Error(
       `Expected stale processed Bridge transfer to preserve return block, got ${JSON.stringify(staleProcessedBridgePayload)}`,
+    );
+  }
+  const refundedBridgePayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/webhook`, {
+    body: JSON.stringify({
+      event_category: "transfer",
+      event_created_at: new Date().toISOString(),
+      event_id: "evt_bridge_refunded_smoke",
+      event_object: {
+        ...bridgeTransferPayload.transfer,
+        receipt: {
+          destination_tx_hash: "0xbridgeDestinationReceiptSmoke",
+          final_amount: bridgeTransferPayload.transfer.amount,
+          source_tx_hash: "0xbridgeSourceReceiptSmoke",
+        },
+        state: "refunded",
+        updated_at: new Date().toISOString(),
+      },
+      event_type: "updated",
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  if (refundedBridgePayload.payment?.status !== "refunded" || refundedBridgePayload.payment.postingBlocked) {
+    throw new Error(`Expected refunded Bridge transfer to close the return, got ${JSON.stringify(refundedBridgePayload)}`);
+  }
+  const staleFundsReceivedAfterRefundPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/webhook`, {
+    body: JSON.stringify({
+      event_category: "transfer",
+      event_created_at: new Date().toISOString(),
+      event_id: "evt_bridge_funds_received_after_refund_smoke",
+      event_object: {
+        ...bridgeTransferPayload.transfer,
+        state: "funds_received",
+        updated_at: new Date().toISOString(),
+      },
+      event_type: "updated",
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  if (
+    staleFundsReceivedAfterRefundPayload.payment?.status !== "refunded" ||
+    staleFundsReceivedAfterRefundPayload.payment.postingBlocked
+  ) {
+    throw new Error(
+      `Expected stale Bridge webhook to preserve refunded state, got ${JSON.stringify(
+        staleFundsReceivedAfterRefundPayload,
+      )}`,
     );
   }
 

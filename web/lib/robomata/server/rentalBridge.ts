@@ -241,8 +241,9 @@ export function verifyBridgeWebhookPayload(input: {
     throw new Error("Bridge webhook signature timestamp is outside the allowed tolerance.");
   }
 
+  const digest = createHash("sha256").update(`${timestamp}.${input.payload}`).digest();
   const verifier = createVerify("RSA-SHA256");
-  verifier.update(`${timestamp}.${input.payload}`);
+  verifier.update(digest);
   if (!verifier.verify(publicKey, signature, "base64")) throw new Error("Invalid Bridge webhook signature.");
   return JSON.parse(input.payload) as BridgeWebhookEvent;
 }

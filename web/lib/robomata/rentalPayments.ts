@@ -116,6 +116,7 @@ export type RentalPaymentProviderReference = {
   transferId?: string;
   sourceTxHash?: string;
   destinationTxHash?: string;
+  sourceDepositInstructions?: Record<string, unknown>;
 };
 
 export type RentalPaymentProviderEvent = {

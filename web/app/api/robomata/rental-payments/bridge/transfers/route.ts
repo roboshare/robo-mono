@@ -184,11 +184,13 @@ export async function POST(request: NextRequest) {
         .sort((left, right) => paymentUpdatedTime(right) - paymentUpdatedTime(left));
       const activeBridgePayments = priorBridgePayments.filter(bridgePaymentBlocksBridgeCheckout);
       if (activeBridgePayments.length > 0) {
+        const activeBridgePayment = activeBridgePayments[0];
         return NextResponse.json(
           {
             error:
               "Booking has an active Bridge transfer. Cancel or return the Bridge transfer before retrying checkout.",
             payments: activeBridgePayments,
+            sourceDepositInstructions: activeBridgePayment?.providerReference.sourceDepositInstructions,
           },
           { status: 409 },
         );
