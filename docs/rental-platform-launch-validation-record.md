@@ -41,6 +41,7 @@ Server-side launch gates:
 - `ROBOMATA_RENTAL_INVENTORY_ENABLED`
 - `ROBOMATA_RENTAL_INVENTORY_SCHEDULED_SYNC_ENABLED`
 - `ROBOMATA_RENTAL_PAYMENTS_ENABLED`
+- `ROBOMATA_RENTAL_BRIDGE_ENABLED`
 - `ROBOMATA_RENTER_ACCOUNTS_ENABLED`
 - `ROBOMATA_RENTAL_BOOKINGS_ENABLED`
 - `ROBOMATA_RENTAL_REVENUE_POSTING_ENABLED`
@@ -58,6 +59,14 @@ Provider and secret gates:
 - `POSTGRES_URL`
 - `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`
+- `BRIDGE_API_KEY`
+- `BRIDGE_WEBHOOK_PUBLIC_KEY` or `ROBOMATA_RENTAL_BRIDGE_WEBHOOK_PUBLIC_KEY`
+- `ROBOMATA_RENTAL_BRIDGE_CUSTOMER_ID`
+- `ROBOMATA_RENTAL_BRIDGE_SOURCE_RAIL`
+- `ROBOMATA_RENTAL_BRIDGE_SOURCE_CURRENCY`
+- `ROBOMATA_RENTAL_BRIDGE_DESTINATION_RAIL`
+- `ROBOMATA_RENTAL_BRIDGE_DESTINATION_CURRENCY`
+- `ROBOMATA_RENTAL_BRIDGE_DESTINATION_ADDRESS`
 - `ROBOMATA_RENTAL_PAYMENT_CONFIRMATION_SECRET`
 - `ROBOMATA_RENTER_VERIFICATION_SECRET`
 - `ROBOMATA_RENTER_IDENTITY_PROVIDER`
@@ -71,6 +80,7 @@ Provider and secret gates:
 - `NEXT_PUBLIC_PRIVY_APP_ID`
 - `PRIVY_APP_SECRET`
 - `ROBOMATA_RENTAL_STRIPE_MOCK` must be unset or `false` for public paid-rental launch
+- `ROBOMATA_RENTAL_BRIDGE_MOCK` must be unset or `false` for public paid-rental launch when Bridge is enabled
 
 ## Required Sign-Off Matrix
 
@@ -78,7 +88,7 @@ Provider and secret gates:
 | --- | --- | --- | --- |
 | Legal terms | Legal | Approval of renter terms, host terms, cancellation/refund policy, claims policy, protection-plan wording, deposit language, payment authorization/capture timing, refund/chargeback language, tax collection/remittance/invoice language, host payout timing, securities-adjacent disclosure overlap, partner classification and payout structure, investment-disclosure separation, and utilization/yield/revenue claim language for each launch jurisdiction | Pending |
 | Privacy and retention | Privacy | Approval of renter verification notices, trip data handling, support/claims retention, deletion/access/correction handling, and raw-PII provider boundary | Pending |
-| Payments and deposits | Payments | Stripe authorization, capture, cancellation, refund, dispute, chargeback, tax, invoice, deposit-hold validation, and confirmation that `ROBOMATA_RENTAL_STRIPE_MOCK` is unset or `false` in each launch environment | Pending |
+| Payments and deposits | Payments | Stripe authorization, capture, cancellation, refund, dispute, chargeback, tax, invoice, deposit-hold validation, optional Bridge stablecoin transfer/refund/return handling, and confirmation that provider mock modes are unset or `false` in each launch environment | Pending |
 | Trust and safety | Trust | Approval of manual verification override, sanctions review, safety takedown, fraud review, claims evidence, and payout-hold workflows | Pending |
 | Revenue operations | Revenue Operations | Approval of recognized revenue policy, posting-batch caps, pass-through exclusions, retry behavior, and protocol transaction reconciliation | Pending |
 | Investor communications | Investor Relations | Approval that investor reporting and copy exclude renter identity, claim narratives, support-sensitive data, and guaranteed yield language | Pending |
@@ -119,6 +129,7 @@ Code and configuration evidence:
 - `web/lib/robomata/rentalRenters.ts`
 - `web/lib/robomata/rentalRevenue.ts`
 - `web/lib/robomata/server/rentalStripe.ts`
+- `web/lib/robomata/server/rentalBridge.ts`
 - `web/scripts/sql/robomata-rental-persistence.sql`
 - `web/scripts/robomata-rental-stripe-payments-smoke.mjs`
 
@@ -149,6 +160,13 @@ evidence and approved launch for the named environment and jurisdictions.
 - No payment owner approval has been recorded that
   `ROBOMATA_RENTAL_STRIPE_MOCK` is unset or `false` in every public paid-rental
   launch environment.
+- No payment owner approval has been recorded that Bridge stablecoin transfer
+  routes, refund/return handling, supported rails, customer onboarding,
+  sanctions/travel-rule obligations, and stablecoin deposit/prepayment terms are
+  ready for public paid-rental launch.
+- No payment owner approval has been recorded that
+  `ROBOMATA_RENTAL_BRIDGE_MOCK` is unset or `false` in every public paid-rental
+  launch environment where `ROBOMATA_RENTAL_BRIDGE_ENABLED=true`.
 - No trust/safety approval has been recorded for manual verification overrides,
   sanctions review, safety takedowns, claim evidence, or payout holds.
 - No Revenue Operations approval has been recorded for recognized revenue

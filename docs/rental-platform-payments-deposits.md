@@ -6,7 +6,9 @@ Owner: Product + Revenue Operations
 
 ## Summary
 
-MVP renter checkout uses an offchain card payment processor. The selected provider is Stripe, with manual authorization and capture for trip charges plus card authorization for security deposit holds.
+MVP renter checkout uses an offchain card payment processor. The selected primary provider is Stripe, with manual authorization and capture for trip charges plus card authorization for security deposit holds.
+
+Bridge can be enabled as an optional stablecoin transfer rail for crypto-native renters or operator-controlled preview flows. Bridge is not a card authorization-hold equivalent: it behaves as stablecoin prepayment and only confirms the booking after the transfer reaches a settled provider state.
 
 Renter checkout must not require an onchain wallet. Protocol contracts receive only reconciled earnings later through the revenue posting flow.
 
@@ -21,6 +23,16 @@ Stripe is the MVP processor because it supports:
 - refund and dispute workflows
 - provider webhooks for reconciliation
 - Vercel Marketplace provisioning for sandbox keys and webhook secrets
+
+Bridge is a secondary processor because it supports:
+
+- USDC/stablecoin payment routes for crypto-native renters
+- Bridge-hosted orchestration for source and destination rails
+- provider deposit instructions for awaiting-funds transfers
+- webhook-based transfer reconciliation
+- clean lockbox-style evidence for stablecoin receipts
+
+Bridge must stay optional until customer onboarding, supported routes, refunds/returns, sanctions/travel-rule handling, and stablecoin deposit terms are approved for the launch environment.
 
 The implementation exposes a quote-only payment-plan route:
 
@@ -37,6 +49,8 @@ Provider write routes:
 
 - `POST /api/robomata/rental-payments/payment-intents`
 - `POST /api/robomata/rental-payments/stripe/webhook`
+- `POST /api/robomata/rental-payments/bridge/transfers`
+- `POST /api/robomata/rental-payments/bridge/webhook`
 - `POST /api/robomata/rental-payments/reconcile`
 
 `payment-intents` creates a live Stripe `PaymentIntent` with `capture_method=manual` when `STRIPE_SECRET_KEY` is configured. Local and CI smoke tests can set `ROBOMATA_RENTAL_STRIPE_MOCK=true` to exercise the same platform persistence path without calling Stripe.
@@ -44,6 +58,20 @@ Provider write routes:
 Public paid-rental launch must leave `ROBOMATA_RENTAL_STRIPE_MOCK` unset or `false` in the target environment so checkout creates live Stripe PaymentIntents instead of `pi_mock_*` records.
 
 `stripe/webhook` verifies `STRIPE_WEBHOOK_SECRET` outside local development and stores selected provider IDs, statuses, amounts, timestamps, and event references only. It handles authorization, capture, payment failure, refund, dispute, and chargeback event shapes.
+
+`bridge/transfers` requires `ROBOMATA_RENTAL_BRIDGE_ENABLED=true` and creates a Bridge transfer using:
+
+- `BRIDGE_API_KEY`
+- `ROBOMATA_RENTAL_BRIDGE_CUSTOMER_ID`
+- `ROBOMATA_RENTAL_BRIDGE_SOURCE_RAIL`
+- `ROBOMATA_RENTAL_BRIDGE_SOURCE_CURRENCY`
+- `ROBOMATA_RENTAL_BRIDGE_DESTINATION_RAIL`
+- `ROBOMATA_RENTAL_BRIDGE_DESTINATION_CURRENCY`
+- `ROBOMATA_RENTAL_BRIDGE_DESTINATION_ADDRESS`
+
+Local and CI smoke tests can set `ROBOMATA_RENTAL_BRIDGE_MOCK=true` to exercise the same payment persistence path without calling Bridge.
+
+`bridge/webhook` verifies Bridge's `X-Webhook-Signature` using `BRIDGE_WEBHOOK_PUBLIC_KEY` or `ROBOMATA_RENTAL_BRIDGE_WEBHOOK_PUBLIC_KEY` outside local development. It stores selected transfer IDs, states, amounts, timestamps, event references, and transaction hashes only. It handles awaiting-funds, in-review, funds-received, submitted, processed, cancelled, returned, refunded, and failed transfer states.
 
 `reconcile` re-fetches Stripe state by `paymentIntentId` and requires `x-robomata-payment-confirmation` with `ROBOMATA_RENTAL_PAYMENT_CONFIRMATION_SECRET` outside local development.
 
@@ -53,9 +81,10 @@ Public paid-rental launch must leave `ROBOMATA_RENTAL_STRIPE_MOCK` unset or `fal
 2. Platform builds a marketplace listing and trip estimate from host controls.
 3. Payment plan computes trip charge, platform fees, protection-plan amount, taxes, and deposit hold.
 4. Provider authorization request is prepared with manual capture semantics.
-5. Provider-write route creates a Stripe payment intent and records provider IDs.
-6. Booking can move from `pending_payment_authorization` to host review or confirmation after authorization succeeds.
-7. At trip completion, the platform captures the final authorized charge, releases or captures the deposit outcome, and creates immutable revenue ledger entries.
+5. Provider-write route creates a Stripe payment intent or Bridge transfer and records provider IDs.
+6. Stripe bookings can move from `pending_payment_authorization` to host review or confirmation after authorization succeeds.
+7. Bridge bookings can move from `pending_payment_authorization` to host review or confirmation only after the transfer is processed.
+8. At trip completion, the platform captures the final authorized charge, releases or captures the deposit outcome, and creates immutable revenue ledger entries. For Bridge, deposit handling is prepayment/refund/capture policy rather than card authorization release.
 
 ## Deposit Model
 
@@ -69,6 +98,8 @@ Default policy:
 - maximum hold: 150,000 cents
 
 The deposit may be released after clean checkout, partially captured for approved claims, or fully captured for severe damage/loss outcomes. Deposit captures require attributable support, claims, or dispute references before revenue recognition.
+
+Bridge deposit handling is a stablecoin prepayment model. It requires explicit legal copy and operational policy for refund timing, returned funds, disputed claims, and partial retention. Until those approvals are recorded, Bridge should be limited to controlled preview or zero-deposit stablecoin payment experiments.
 
 ## Refunds, Disputes, And Chargebacks
 
@@ -86,10 +117,11 @@ Failed payment, failed refund, dispute, and chargeback states set `postingBlocke
 ## Compliance And Legal Constraints
 
 - Sensitive payment method data stays with Stripe.
-- The platform stores provider IDs, statuses, amounts, timestamps, and audit references only.
+- Sensitive stablecoin orchestration, KYC/KYB, and travel-rule payloads stay with Bridge.
+- The platform stores provider IDs, statuses, amounts, timestamps, transaction hashes, and audit references only.
 - Deposit language, authorization duration, capture reasons, cancellation policies, and tax handling require legal review before launch.
 - Authorization windows vary by card network and payment method, so capture/release jobs must monitor expiration.
-- Stablecoin escrow, programmable refunds, and onchain renter deposits are future optional rails, not MVP dependencies.
+- Stablecoin escrow, programmable refunds, and onchain renter deposits remain optional rails; Bridge transfer support is the first offchain stablecoin orchestration rail.
 
 ## Failure And Outage Assumptions
 

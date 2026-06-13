@@ -42,6 +42,7 @@ async function cancelOpenPaymentIntents(booking: RentalBookingRecord) {
   const cancelled = [];
   for (const payment of payments) {
     const paymentIntentId = payment.providerReference.paymentIntentId;
+    if (payment.provider !== "stripe") continue;
     if (!paymentIntentId || !cancellablePaymentStatus(payment.status)) continue;
     const snapshot = await cancelStripeRentalPaymentIntent(paymentIntentId);
     cancelled.push(

@@ -28,7 +28,38 @@ export type StripePaymentIntentSnapshot = {
   status: string;
 };
 
-export type RentalPaymentProviderEventInput = {
+export type BridgeTransferSnapshot = {
+  id: string;
+  amount?: string;
+  client_reference_id?: string;
+  created_at?: string;
+  currency?: string;
+  destination?: {
+    currency?: string;
+    payment_rail?: string;
+    to_address?: string;
+    transaction_id?: string;
+  };
+  on_behalf_of?: string;
+  receipt?: {
+    final_amount?: string;
+    initial_amount?: string;
+    source_tx_hash?: string;
+    transaction_hash?: string;
+  };
+  source?: {
+    currency?: string;
+    from_address?: string;
+    payment_rail?: string;
+    payment_received_rail?: string;
+    transaction_id?: string;
+  };
+  source_deposit_instructions?: Record<string, unknown>;
+  state: string;
+  updated_at?: string;
+};
+
+export type RentalStripePaymentProviderEventInput = {
   booking?: RentalBookingRecord;
   chargeId?: string;
   disputeId?: string;
@@ -39,6 +70,17 @@ export type RentalPaymentProviderEventInput = {
   refundAmountCents?: number;
   refundId?: string;
   snapshot: StripePaymentIntentSnapshot;
+};
+
+export type RentalBridgePaymentProviderEventInput = {
+  booking?: RentalBookingRecord;
+  eventKind: RentalPaymentProviderEventKind;
+  failureReason?: string;
+  occurredAt?: string;
+  providerEventId?: string;
+  refundAmountCents?: number;
+  refundId?: string;
+  snapshot: BridgeTransferSnapshot;
 };
 
 type RentalPaymentFileStore = {
@@ -56,7 +98,8 @@ type RentalPaymentStore = {
     bookingIds?: string[];
     paymentIntentIds?: string[];
   }) => Promise<RentalPaymentRecord[]>;
-  recordStripeEvent: (input: RentalPaymentProviderEventInput) => Promise<RentalPaymentRecord>;
+  recordBridgeEvent: (input: RentalBridgePaymentProviderEventInput) => Promise<RentalPaymentRecord>;
+  recordStripeEvent: (input: RentalStripePaymentProviderEventInput) => Promise<RentalPaymentRecord>;
 };
 
 let ensuredPostgresTables = false;
@@ -149,6 +192,38 @@ function statusFromStripe(input: {
   }
 }
 
+function statusFromBridge(input: {
+  eventKind: RentalPaymentProviderEventKind;
+  failureReason?: string;
+  snapshot: BridgeTransferSnapshot;
+}): RentalPaymentIntentStatus {
+  if (input.eventKind === "stablecoin_transfer_cancelled") return "cancelled";
+  if (input.eventKind === "stablecoin_transfer_returned") return "refunded";
+  if (input.eventKind === "refund_failed" || input.eventKind === "payment_failed") return "failed";
+
+  switch (input.snapshot.state) {
+    case "awaiting_funds":
+      return "awaiting_funds";
+    case "in_review":
+    case "funds_received":
+    case "payment_submitted":
+    case "refund_in_flight":
+      return "processing";
+    case "payment_processed":
+      return "captured";
+    case "canceled":
+      return "cancelled";
+    case "returned":
+    case "refunded":
+      return "refunded";
+    case "undeliverable":
+    case "refund_failed":
+      return "failed";
+    default:
+      return input.failureReason ? "failed" : "awaiting_funds";
+  }
+}
+
 function monotonicPaymentStatus(input: {
   eventKind: RentalPaymentProviderEventKind;
   existing?: RentalPaymentRecord;
@@ -226,6 +301,8 @@ function paymentPostingBlock(input: {
     };
   }
   if (
+    input.status === "awaiting_funds" ||
+    input.status === "processing" ||
     input.status === "requires_payment_method" ||
     input.status === "requires_confirmation" ||
     input.status === "requires_capture" ||
@@ -239,7 +316,7 @@ function paymentPostingBlock(input: {
   return { postingBlocked: false, postingBlockReason: undefined };
 }
 
-function providerReference(input: RentalPaymentProviderEventInput): RentalPaymentProviderReference {
+function providerReference(input: RentalStripePaymentProviderEventInput): RentalPaymentProviderReference {
   return {
     provider: "stripe",
     chargeId: input.chargeId ?? latestChargeId(input.snapshot),
@@ -250,9 +327,28 @@ function providerReference(input: RentalPaymentProviderEventInput): RentalPaymen
   };
 }
 
+function bridgeAmountCents(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  if (!/^\d+(\.\d{1,6})?$/.test(value)) return undefined;
+  const [dollars, cents = ""] = value.split(".");
+  return Number(dollars) * 100 + Number(cents.padEnd(2, "0").slice(0, 2));
+}
+
+function bridgeProviderReference(input: RentalBridgePaymentProviderEventInput): RentalPaymentProviderReference {
+  return {
+    provider: "bridge",
+    customerId: input.snapshot.on_behalf_of,
+    paymentIntentId: input.snapshot.id,
+    refundId: input.refundId,
+    sourceTxHash: input.snapshot.receipt?.source_tx_hash ?? input.snapshot.receipt?.transaction_hash,
+    destinationTxHash: input.snapshot.destination?.transaction_id ?? input.snapshot.source?.transaction_id,
+    transferId: input.snapshot.id,
+  };
+}
+
 function refundedAmountFromEvent(
   existing: RentalPaymentRecord | undefined,
-  input: RentalPaymentProviderEventInput,
+  input: RentalStripePaymentProviderEventInput,
   status: RentalPaymentIntentStatus,
 ) {
   if (status !== "refunded") return existing?.refundedAmountCents ?? 0;
@@ -279,7 +375,7 @@ function refundedAmountFromEvent(
 
 function paymentRecordFromEvent(
   existing: RentalPaymentRecord | undefined,
-  input: RentalPaymentProviderEventInput,
+  input: RentalStripePaymentProviderEventInput,
 ): RentalPaymentRecord {
   const booking = input.booking;
   if (!existing && !booking) {
@@ -352,6 +448,98 @@ function paymentRecordFromEvent(
   return payment;
 }
 
+function paymentRecordFromBridgeEvent(
+  existing: RentalPaymentRecord | undefined,
+  input: RentalBridgePaymentProviderEventInput,
+): RentalPaymentRecord {
+  const booking = input.booking;
+  if (!existing && !booking) {
+    throw new Error(`Bridge transfer ${input.snapshot.id} is not linked to a known rental booking.`);
+  }
+
+  const now = new Date().toISOString();
+  const nextStatus = statusFromBridge(input);
+  const status = monotonicPaymentStatus({
+    eventKind: input.eventKind,
+    existing,
+    nextStatus,
+    refundId: input.refundId,
+  });
+  const reference = bridgeProviderReference(input);
+  const authorizedAmountCents =
+    bridgeAmountCents(input.snapshot.amount) ??
+    existing?.authorizedAmountCents ??
+    booking?.paymentPlan.totalDueAtAuthorizationCents ??
+    0;
+  const capturedAmountCents =
+    status === "captured" || status === "partially_captured" || status === "refunded"
+      ? Math.max(
+          bridgeAmountCents(input.snapshot.receipt?.final_amount) ?? authorizedAmountCents,
+          existing?.capturedAmountCents ?? 0,
+          0,
+        )
+      : (existing?.capturedAmountCents ?? 0);
+  const refundedAmountCents =
+    status === "refunded"
+      ? Math.max(input.refundAmountCents ?? authorizedAmountCents, existing?.refundedAmountCents ?? 0, 0)
+      : (existing?.refundedAmountCents ?? 0);
+  const postingBlock = paymentPostingBlock({ failureReason: input.failureReason, status });
+  const event = {
+    amountCents: input.refundAmountCents ?? authorizedAmountCents,
+    failureReason: input.failureReason,
+    id: `rpe_${randomUUID()}`,
+    kind: input.eventKind,
+    occurredAt: input.occurredAt ?? input.snapshot.updated_at ?? now,
+    providerEventId: input.providerEventId,
+    providerReference: reference,
+    status,
+  };
+
+  const payment: RentalPaymentRecord = {
+    authorizedAmountCents,
+    authorizedAt:
+      status === "awaiting_funds" || status === "processing" || status === "captured"
+        ? (existing?.authorizedAt ?? now)
+        : existing?.authorizedAt,
+    cancelledAt: status === "cancelled" ? (existing?.cancelledAt ?? now) : existing?.cancelledAt,
+    capturedAmountCents,
+    capturedAt: status === "captured" ? (existing?.capturedAt ?? now) : existing?.capturedAt,
+    captureBefore: existing?.captureBefore,
+    createdAt: existing?.createdAt ?? input.snapshot.created_at ?? now,
+    currency: "USD",
+    events: [event, ...(existing?.events ?? [])],
+    facilityAssetId: existing?.facilityAssetId ?? booking!.facilityAssetId,
+    failureReason: input.failureReason ?? existing?.failureReason,
+    id: existing?.id ?? `rpay_${randomUUID()}`,
+    platformVehicleId: existing?.platformVehicleId ?? booking!.platformVehicleId,
+    provider: "bridge",
+    providerReference: {
+      ...existing?.providerReference,
+      ...reference,
+      destinationTxHash: reference.destinationTxHash ?? existing?.providerReference.destinationTxHash,
+      sourceTxHash: reference.sourceTxHash ?? existing?.providerReference.sourceTxHash,
+      transferId: reference.transferId ?? existing?.providerReference.transferId,
+    },
+    reconciliationCheckedAt: input.eventKind === "reconciliation_refetched" ? now : existing?.reconciliationCheckedAt,
+    revenueEligibleAmountCents:
+      existing?.revenueEligibleAmountCents ??
+      revenueEligibleAmountFromBooking(booking) ??
+      Math.min(existing?.authorizedAmountCents ?? authorizedAmountCents, authorizedAmountCents),
+    refundedAmountCents,
+    status,
+    updatedAt: now,
+    vehicleAssetId: existing?.vehicleAssetId ?? booking?.vehicleAssetId,
+    bookingId: existing?.bookingId ?? booking!.id,
+    ...postingBlock,
+  };
+  assertNoProhibitedRentalPersistenceFields(payment, "rental payment record");
+  return payment;
+}
+
+function providerPaymentReferenceId(payment: RentalPaymentRecord): string | undefined {
+  return payment.providerReference.paymentIntentId ?? payment.providerReference.transferId;
+}
+
 async function ensurePostgresTables() {
   if (ensuredPostgresTables) return;
   const sql = getRobomataPostgresSql();
@@ -384,7 +572,13 @@ function createFileStore(): RentalPaymentStore {
     },
     async getPaymentByPaymentIntent(paymentIntentId) {
       const fileStore = await readFileStore(filePath);
-      return fileStore.payments.find(payment => payment.providerReference.paymentIntentId === paymentIntentId) ?? null;
+      return (
+        fileStore.payments.find(
+          payment =>
+            payment.providerReference.paymentIntentId === paymentIntentId ||
+            payment.providerReference.transferId === paymentIntentId,
+        ) ?? null
+      );
     },
     async listBlockingPaymentsByReferences(input) {
       const payments = await this.listPaymentsByReferences(input);
@@ -396,10 +590,23 @@ function createFileStore(): RentalPaymentStore {
       const fileStore = await readFileStore(filePath);
       return fileStore.payments.filter(
         payment =>
-          (payment.providerReference.paymentIntentId &&
-            paymentIntentIds.has(payment.providerReference.paymentIntentId)) ||
+          (providerPaymentReferenceId(payment) && paymentIntentIds.has(providerPaymentReferenceId(payment)!)) ||
           bookingIds.has(payment.bookingId),
       );
+    },
+    async recordBridgeEvent(input) {
+      return withFileStoreWriteLock(filePath, async () => {
+        const fileStore = await readFileStore(filePath);
+        const existing = fileStore.payments.find(
+          payment =>
+            payment.providerReference.transferId === input.snapshot.id ||
+            payment.providerReference.paymentIntentId === input.snapshot.id,
+        );
+        const payment = paymentRecordFromBridgeEvent(existing, input);
+        fileStore.payments = [payment, ...fileStore.payments.filter(candidate => candidate.id !== payment.id)];
+        await writeFileStore(filePath, fileStore);
+        return payment;
+      });
     },
     async recordStripeEvent(input) {
       return withFileStoreWriteLock(filePath, async () => {
@@ -438,7 +645,14 @@ function createPostgresStore(): RentalPaymentStore {
         WHERE provider_payment_intent_id = ${paymentIntentId}
         LIMIT 1;
       `) as Array<{ payload: RentalPaymentRecord }>;
-      return rows[0]?.payload ?? null;
+      if (rows[0]?.payload) return rows[0].payload;
+      const fallbackRows = (await sql`
+        SELECT payload
+        FROM robomata_rental_payments
+        WHERE payload->'providerReference'->>'transferId' = ${paymentIntentId}
+        LIMIT 1;
+      `) as Array<{ payload: RentalPaymentRecord }>;
+      return fallbackRows[0]?.payload ?? null;
     },
     async listBlockingPaymentsByReferences(input) {
       const payments = await this.listPaymentsByReferences(input);
@@ -454,7 +668,8 @@ function createPostgresStore(): RentalPaymentStore {
           ? ((await sql`
               SELECT payload
               FROM robomata_rental_payments
-              WHERE provider_payment_intent_id = ANY(${paymentIntentIds});
+              WHERE provider_payment_intent_id = ANY(${paymentIntentIds})
+                 OR payload->'providerReference'->>'transferId' = ANY(${paymentIntentIds});
             `) as Array<{ payload: RentalPaymentRecord }>)
           : [];
       const bookingRows =
@@ -468,6 +683,44 @@ function createPostgresStore(): RentalPaymentStore {
       const payments = [...paymentIntentRows, ...bookingRows].map(row => row.payload);
       return [...new Map(payments.map(payment => [payment.id, payment])).values()];
     },
+    async recordBridgeEvent(input) {
+      await ensurePostgresTables();
+      return sql.begin(async transaction => {
+        await transaction`SELECT pg_advisory_xact_lock(hashtext(${input.snapshot.id}));`;
+        const rows = (await transaction`
+          SELECT payload
+          FROM robomata_rental_payments
+          WHERE provider_payment_intent_id = ${input.snapshot.id}
+             OR payload->'providerReference'->>'transferId' = ${input.snapshot.id}
+          FOR UPDATE;
+        `) as Array<{ payload: RentalPaymentRecord }>;
+        const payment = paymentRecordFromBridgeEvent(rows[0]?.payload, input);
+        const providerReferenceId = providerPaymentReferenceId(payment);
+        if (!providerReferenceId) throw new Error("Rental payment record requires a provider payment reference ID.");
+        await transaction`
+          INSERT INTO robomata_rental_payments (
+            id, booking_id, provider, provider_payment_intent_id, status, posting_blocked, payload, created_at, updated_at
+          )
+          VALUES (
+            ${payment.id},
+            ${payment.bookingId},
+            ${payment.provider},
+            ${providerReferenceId},
+            ${payment.status},
+            ${payment.postingBlocked},
+            ${JSON.stringify(payment)}::jsonb,
+            ${payment.createdAt}::timestamptz,
+            ${payment.updatedAt}::timestamptz
+          )
+          ON CONFLICT (provider_payment_intent_id) DO UPDATE
+          SET status = EXCLUDED.status,
+              posting_blocked = EXCLUDED.posting_blocked,
+              payload = EXCLUDED.payload,
+              updated_at = EXCLUDED.updated_at;
+        `;
+        return payment;
+      });
+    },
     async recordStripeEvent(input) {
       await ensurePostgresTables();
       return sql.begin(async transaction => {
@@ -479,7 +732,7 @@ function createPostgresStore(): RentalPaymentStore {
           FOR UPDATE;
         `) as Array<{ payload: RentalPaymentRecord }>;
         const payment = paymentRecordFromEvent(rows[0]?.payload, input);
-        const paymentIntentId = payment.providerReference.paymentIntentId;
+        const paymentIntentId = providerPaymentReferenceId(payment);
         if (!paymentIntentId) throw new Error("Rental payment record requires a provider PaymentIntent ID.");
         await transaction`
           INSERT INTO robomata_rental_payments (
