@@ -79,6 +79,7 @@ export type RentalBridgePaymentProviderEventInput = {
   eventKind: RentalPaymentProviderEventKind;
   failureReason?: string;
   occurredAt?: string;
+  postingBlockReason?: string;
   providerEventId?: string;
   refundAmountCents?: number;
   refundId?: string;
@@ -102,11 +103,13 @@ type RentalPaymentStore = {
   }) => Promise<RentalPaymentRecord[]>;
   recordBridgeEvent: (input: RentalBridgePaymentProviderEventInput) => Promise<RentalPaymentRecord>;
   recordStripeEvent: (input: RentalStripePaymentProviderEventInput) => Promise<RentalPaymentRecord>;
+  withBookingPaymentRailLock: <T>(bookingId: string, operation: () => Promise<T>) => Promise<T>;
 };
 
 let ensuredPostgresTables = false;
 let storeSingleton: RentalPaymentStore | null = null;
 const fileStoreLocks = new Map<string, Promise<void>>();
+const paymentRailLocks = new Map<string, Promise<void>>();
 
 function hasPostgresConfig() {
   return Boolean(process.env.POSTGRES_URL);
@@ -148,17 +151,25 @@ async function writeFileStore(filePath: string, fileStore: RentalPaymentFileStor
 }
 
 async function withFileStoreWriteLock<T>(filePath: string, operation: () => Promise<T>): Promise<T> {
-  const previous = fileStoreLocks.get(filePath) ?? Promise.resolve();
+  return withAsyncLock(fileStoreLocks, filePath, operation);
+}
+
+async function withAsyncLock<T>(
+  locks: Map<string, Promise<void>>,
+  lockKey: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const previous = locks.get(lockKey) ?? Promise.resolve();
   let release: () => void = () => undefined;
   const current = previous.then(() => new Promise<void>(resolve => (release = resolve)));
-  fileStoreLocks.set(filePath, current);
+  locks.set(lockKey, current);
 
   await previous;
   try {
     return await operation();
   } finally {
     release();
-    if (fileStoreLocks.get(filePath) === current) fileStoreLocks.delete(filePath);
+    if (locks.get(lockKey) === current) locks.delete(lockKey);
   }
 }
 
@@ -504,7 +515,10 @@ function paymentRecordFromBridgeEvent(
     status === "refunded"
       ? Math.max(input.refundAmountCents ?? authorizedAmountCents, existing?.refundedAmountCents ?? 0, 0)
       : (existing?.refundedAmountCents ?? 0);
-  const postingBlock = paymentPostingBlock({ failureReason: input.failureReason, status });
+  const computedPostingBlock = paymentPostingBlock({ failureReason: input.failureReason, status });
+  const postingBlock = input.postingBlockReason
+    ? { postingBlocked: true, postingBlockReason: input.postingBlockReason }
+    : computedPostingBlock;
   const event = {
     amountCents: input.refundAmountCents ?? authorizedAmountCents,
     failureReason: input.failureReason,
@@ -636,6 +650,9 @@ function createFileStore(): RentalPaymentStore {
         await writeFileStore(filePath, fileStore);
         return payment;
       });
+    },
+    async withBookingPaymentRailLock(bookingId, operation) {
+      return withAsyncLock(paymentRailLocks, `${filePath}:payment-rail:${bookingId}`, operation);
     },
   };
 }
@@ -773,6 +790,13 @@ function createPostgresStore(): RentalPaymentStore {
         `;
         return payment;
       });
+    },
+    async withBookingPaymentRailLock<T>(bookingId: string, operation: () => Promise<T>): Promise<T> {
+      await ensurePostgresTables();
+      return (await sql.begin(async transaction => {
+        await transaction`SELECT pg_advisory_xact_lock(hashtext(${`robomata-rental-payment-rail:${bookingId}`}));`;
+        return operation();
+      })) as T;
     },
   };
 }

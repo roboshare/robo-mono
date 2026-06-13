@@ -179,7 +179,7 @@ export async function createBridgeRentalTransfer(input: {
     },
     features: allowAnyFromAddress ? { allow_any_from_address: true } : undefined,
     on_behalf_of: customerId,
-    return_instructions: input.returnAddress ? { address: input.returnAddress } : undefined,
+    return_instructions: input.returnAddress ? { return_address: input.returnAddress } : undefined,
     source: {
       currency: sourceCurrency,
       from_address: input.fromAddress,

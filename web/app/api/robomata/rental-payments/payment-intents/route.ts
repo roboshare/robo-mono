@@ -150,95 +150,98 @@ export async function POST(request: NextRequest) {
     }
 
     const paymentStore = getRentalPaymentStore();
-    const bookingPayments = await paymentStore.listPaymentsByReferences({
-      bookingIds: [booking.id],
-    });
-    const activeBridgePayments = bookingPayments.filter(
-      payment => payment.provider === "bridge" && activeBridgePaymentStatus(payment.status),
-    );
-    if (activeBridgePayments.length > 0) {
-      return NextResponse.json(
-        {
-          error: "Booking has an in-flight Bridge transfer. Cancel or return the Bridge transfer before card checkout.",
-          payments: activeBridgePayments,
-        },
-        { status: 409 },
+    return await paymentStore.withBookingPaymentRailLock(booking.id, async () => {
+      const bookingPayments = await paymentStore.listPaymentsByReferences({
+        bookingIds: [booking.id],
+      });
+      const activeBridgePayments = bookingPayments.filter(
+        payment => payment.provider === "bridge" && activeBridgePaymentStatus(payment.status),
       );
-    }
+      if (activeBridgePayments.length > 0) {
+        return NextResponse.json(
+          {
+            error:
+              "Booking has an in-flight Bridge transfer. Cancel or return the Bridge transfer before card checkout.",
+            payments: activeBridgePayments,
+          },
+          { status: 409 },
+        );
+      }
 
-    const existingPayments = bookingPayments
-      .filter(payment => payment.provider === "stripe" && Boolean(payment.providerReference.paymentIntentId))
-      .sort((left, right) => paymentUpdatedTime(right) - paymentUpdatedTime(left));
+      const existingPayments = bookingPayments
+        .filter(payment => payment.provider === "stripe" && Boolean(payment.providerReference.paymentIntentId))
+        .sort((left, right) => paymentUpdatedTime(right) - paymentUpdatedTime(left));
 
-    for (const payment of existingPayments) {
-      if (payment.status === "cancelled") continue;
-      const paymentIntent = await retrieveStripeRentalPaymentIntent(payment.providerReference.paymentIntentId!);
-      if (paymentIntent.status === "canceled") continue;
-      if (
-        successfulProviderStatus(paymentIntent) &&
-        payment.status !== "requires_capture" &&
-        payment.status !== "captured"
-      ) {
-        const refreshedPayment = await paymentStore.recordStripeEvent({
-          booking,
-          eventKind: paymentIntent.status === "succeeded" ? "capture_succeeded" : "authorization_succeeded",
-          snapshot: paymentIntent,
-        });
-        await advanceBookingAfterRetrievedPayment({
-          bookingId: booking.id,
-          payment: refreshedPayment,
-          snapshot: paymentIntent,
-        });
+      for (const payment of existingPayments) {
+        if (payment.status === "cancelled") continue;
+        const paymentIntent = await retrieveStripeRentalPaymentIntent(payment.providerReference.paymentIntentId!);
+        if (paymentIntent.status === "canceled") continue;
+        if (
+          successfulProviderStatus(paymentIntent) &&
+          payment.status !== "requires_capture" &&
+          payment.status !== "captured"
+        ) {
+          const refreshedPayment = await paymentStore.recordStripeEvent({
+            booking,
+            eventKind: paymentIntent.status === "succeeded" ? "capture_succeeded" : "authorization_succeeded",
+            snapshot: paymentIntent,
+          });
+          await advanceBookingAfterRetrievedPayment({
+            bookingId: booking.id,
+            payment: refreshedPayment,
+            snapshot: paymentIntent,
+          });
+          return NextResponse.json({
+            clientSecret: paymentIntent.client_secret,
+            payment: refreshedPayment,
+          });
+        }
+        if (successfulProviderStatus(paymentIntent)) {
+          await advanceBookingAfterRetrievedPayment({
+            bookingId: booking.id,
+            payment,
+            snapshot: paymentIntent,
+          });
+        }
         return NextResponse.json({
           clientSecret: paymentIntent.client_secret,
-          payment: refreshedPayment,
-        });
-      }
-      if (successfulProviderStatus(paymentIntent)) {
-        await advanceBookingAfterRetrievedPayment({
-          bookingId: booking.id,
           payment,
-          snapshot: paymentIntent,
         });
       }
-      return NextResponse.json({
-        clientSecret: paymentIntent.client_secret,
-        payment,
-      });
-    }
 
-    if (existingPayments.length > 0) {
-      const replacementIntent = await createStripeRentalPaymentIntent({
-        booking,
-        idempotencyKey: `robomata-rental-booking-${booking.id}-replacement-${existingPayments[0].id}`,
-      });
-      const replacementPayment = await paymentStore.recordStripeEvent({
+      if (existingPayments.length > 0) {
+        const replacementIntent = await createStripeRentalPaymentIntent({
+          booking,
+          idempotencyKey: `robomata-rental-booking-${booking.id}-replacement-${existingPayments[0].id}`,
+        });
+        const replacementPayment = await paymentStore.recordStripeEvent({
+          booking,
+          eventKind: "payment_intent_created",
+          snapshot: replacementIntent,
+        });
+        return NextResponse.json(
+          {
+            clientSecret: replacementIntent.client_secret,
+            payment: replacementPayment,
+          },
+          { status: 201 },
+        );
+      }
+
+      const paymentIntent = await createStripeRentalPaymentIntent({ booking });
+      const payment = await paymentStore.recordStripeEvent({
         booking,
         eventKind: "payment_intent_created",
-        snapshot: replacementIntent,
+        snapshot: paymentIntent,
       });
       return NextResponse.json(
         {
-          clientSecret: replacementIntent.client_secret,
-          payment: replacementPayment,
+          clientSecret: paymentIntent.client_secret,
+          payment,
         },
         { status: 201 },
       );
-    }
-
-    const paymentIntent = await createStripeRentalPaymentIntent({ booking });
-    const payment = await paymentStore.recordStripeEvent({
-      booking,
-      eventKind: "payment_intent_created",
-      snapshot: paymentIntent,
     });
-    return NextResponse.json(
-      {
-        clientSecret: paymentIntent.client_secret,
-        payment,
-      },
-      { status: 201 },
-    );
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to create rental PaymentIntent." },

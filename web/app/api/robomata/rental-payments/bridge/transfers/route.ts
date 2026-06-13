@@ -53,6 +53,11 @@ function cleanAddress(value: string | undefined) {
   return value?.trim() || undefined;
 }
 
+function paymentUpdatedTime(payment: { updatedAt: string }) {
+  const updatedAt = Date.parse(payment.updatedAt);
+  return Number.isFinite(updatedAt) ? updatedAt : 0;
+}
+
 function activeStripePaymentStatus(status: string) {
   return (
     status === "requires_payment_method" ||
@@ -60,6 +65,10 @@ function activeStripePaymentStatus(status: string) {
     status === "requires_capture" ||
     status === "captured"
   );
+}
+
+function activeBridgePaymentStatus(status: string) {
+  return status === "awaiting_funds" || status === "processing" || status === "captured";
 }
 
 export async function POST(request: NextRequest) {
@@ -102,40 +111,61 @@ export async function POST(request: NextRequest) {
     }
 
     const paymentStore = getRentalPaymentStore();
-    const bookingPayments = await paymentStore.listPaymentsByReferences({ bookingIds: [booking.id] });
-    const activeStripePayments = bookingPayments.filter(
-      payment => payment.provider === "stripe" && activeStripePaymentStatus(payment.status),
-    );
-    if (activeStripePayments.length > 0) {
+    return await paymentStore.withBookingPaymentRailLock(booking.id, async () => {
+      const bookingPayments = await paymentStore.listPaymentsByReferences({ bookingIds: [booking.id] });
+      const activeStripePayments = bookingPayments.filter(
+        payment => payment.provider === "stripe" && activeStripePaymentStatus(payment.status),
+      );
+      if (activeStripePayments.length > 0) {
+        return NextResponse.json(
+          {
+            error:
+              "Booking has an active Stripe PaymentIntent. Cancel or reconcile the card payment before Bridge checkout.",
+            payments: activeStripePayments,
+          },
+          { status: 409 },
+        );
+      }
+
+      const priorBridgePayments = bookingPayments
+        .filter(payment => payment.provider === "bridge")
+        .sort((left, right) => paymentUpdatedTime(right) - paymentUpdatedTime(left));
+      const activeBridgePayments = priorBridgePayments.filter(payment => activeBridgePaymentStatus(payment.status));
+      if (activeBridgePayments.length > 0) {
+        return NextResponse.json(
+          {
+            error:
+              "Booking has an active Bridge transfer. Cancel or return the Bridge transfer before retrying checkout.",
+            payments: activeBridgePayments,
+          },
+          { status: 409 },
+        );
+      }
+
+      const transfer = await createBridgeRentalTransfer({
+        booking,
+        fromAddress: cleanAddress(body.fromAddress),
+        idempotencyKey:
+          priorBridgePayments.length > 0
+            ? `robomata-rental-booking-${booking.id}-bridge-replacement-${priorBridgePayments[0].id}`
+            : undefined,
+        returnAddress: cleanAddress(body.returnAddress) ?? cleanAddress(body.fromAddress),
+      });
+      const payment = await paymentStore.recordBridgeEvent({
+        booking,
+        eventKind:
+          transfer.state === "awaiting_funds" ? "stablecoin_transfer_awaiting_funds" : "stablecoin_transfer_created",
+        snapshot: transfer,
+      });
       return NextResponse.json(
         {
-          error:
-            "Booking has an active Stripe PaymentIntent. Cancel or reconcile the card payment before Bridge checkout.",
-          payments: activeStripePayments,
+          payment,
+          sourceDepositInstructions: transfer.source_deposit_instructions,
+          transfer,
         },
-        { status: 409 },
+        { status: 201 },
       );
-    }
-
-    const transfer = await createBridgeRentalTransfer({
-      booking,
-      fromAddress: cleanAddress(body.fromAddress),
-      returnAddress: cleanAddress(body.returnAddress) ?? cleanAddress(body.fromAddress),
     });
-    const payment = await paymentStore.recordBridgeEvent({
-      booking,
-      eventKind:
-        transfer.state === "awaiting_funds" ? "stablecoin_transfer_awaiting_funds" : "stablecoin_transfer_created",
-      snapshot: transfer,
-    });
-    return NextResponse.json(
-      {
-        payment,
-        sourceDepositInstructions: transfer.source_deposit_instructions,
-        transfer,
-      },
-      { status: 201 },
-    );
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to create Bridge rental transfer." },

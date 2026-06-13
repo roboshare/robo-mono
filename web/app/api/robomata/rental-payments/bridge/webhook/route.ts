@@ -117,10 +117,7 @@ function bookingStillAllowsPaymentConfirmation(booking: RentalBookingRecord) {
   return Number.isFinite(dateFrom) && Number.isFinite(dateTo) && dateTo > dateFrom && dateFrom > Date.now();
 }
 
-async function bookingForBridgeTransfer(snapshot: BridgeTransferSnapshot): Promise<RentalBookingRecord | undefined> {
-  const existingPayment = await getRentalPaymentStore().getPaymentByPaymentIntent(snapshot.id);
-  if (existingPayment) return undefined;
-
+async function bookingForNewBridgeTransfer(snapshot: BridgeTransferSnapshot): Promise<RentalBookingRecord | undefined> {
   const bookingId = snapshot.client_reference_id;
   if (!bookingId) return undefined;
   const booking = (await getRentalBookingStore().getBooking(bookingId)) ?? undefined;
@@ -132,6 +129,26 @@ async function bookingForBridgeTransfer(snapshot: BridgeTransferSnapshot): Promi
     throw new Error("Bridge transfer snapshot does not match the rental booking.");
   }
   return booking;
+}
+
+async function bridgeConfirmationBlockReason(input: {
+  booking: RentalBookingRecord | undefined;
+  eventKind: RentalPaymentProviderEventKind;
+}): Promise<string | undefined> {
+  if (input.eventKind !== "stablecoin_transfer_processed") return undefined;
+  if (!input.booking) return undefined;
+  if (input.booking.state !== "pending_payment_authorization") {
+    return `Bridge transfer settled while booking state is ${input.booking.state}; return or reconcile manually.`;
+  }
+  if (!bookingStillAllowsPaymentConfirmation(input.booking)) {
+    return "Bridge transfer settled after booking could no longer be confirmed; return or reconcile manually.";
+  }
+  if (!isRobomataRentalInventoryEnabled()) return undefined;
+  const vehicle = await getRentalInventoryStore().getVehicle(input.booking.platformVehicleId);
+  if (!vehicle || vehicle.operationalStatus !== "listed") {
+    return "Bridge transfer settled after vehicle availability changed; return or reconcile manually.";
+  }
+  return undefined;
 }
 
 function snapshotMatchesBooking(booking: RentalBookingRecord, snapshot: BridgeTransferSnapshot) {
@@ -197,12 +214,19 @@ export async function POST(request: NextRequest) {
 
     const snapshot = bridgeTransferSnapshot(event);
     const eventKind = eventKindForBridgeTransfer(snapshot);
-    const booking = await bookingForBridgeTransfer(snapshot);
-    const payment = await getRentalPaymentStore().recordBridgeEvent({
+    const paymentStore = getRentalPaymentStore();
+    const existingPayment = await paymentStore.getPaymentByPaymentIntent(snapshot.id);
+    const booking = existingPayment
+      ? ((await getRentalBookingStore().getBooking(existingPayment.bookingId)) ?? undefined)
+      : await bookingForNewBridgeTransfer(snapshot);
+    if (!existingPayment && !booking) return NextResponse.json({ ignored: true });
+
+    const payment = await paymentStore.recordBridgeEvent({
       booking,
       eventKind,
       failureReason: failureReasonForBridgeTransfer(snapshot),
       occurredAt: event.event_created_at,
+      postingBlockReason: await bridgeConfirmationBlockReason({ booking, eventKind }),
       providerEventId: event.event_id,
       snapshot,
     });
