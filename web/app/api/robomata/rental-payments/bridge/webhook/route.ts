@@ -87,6 +87,7 @@ function eventKindForBridgeTransfer(snapshot: BridgeTransferSnapshot): RentalPay
     case "canceled":
       return "stablecoin_transfer_cancelled";
     case "returned":
+      return "stablecoin_transfer_return_in_flight";
     case "refunded":
       return "stablecoin_transfer_returned";
     case "undeliverable":

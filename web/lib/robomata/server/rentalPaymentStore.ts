@@ -200,6 +200,7 @@ function statusFromBridge(input: {
   snapshot: BridgeTransferSnapshot;
 }): RentalPaymentIntentStatus {
   if (input.eventKind === "stablecoin_transfer_cancelled") return "cancelled";
+  if (input.eventKind === "stablecoin_transfer_return_in_flight") return "processing";
   if (input.eventKind === "stablecoin_transfer_returned") return "refunded";
   if (input.eventKind === "stablecoin_transfer_exception") return "failed";
   if (input.eventKind === "refund_failed" || input.eventKind === "payment_failed") return "failed";
@@ -217,6 +218,7 @@ function statusFromBridge(input: {
     case "canceled":
       return "cancelled";
     case "returned":
+      return "processing";
     case "refunded":
       return "refunded";
     case "undeliverable":
@@ -261,6 +263,9 @@ function monotonicPaymentStatus(input: {
   }
   if (input.existing.status === "disputed" && input.eventKind !== "dispute_closed") {
     return "disputed";
+  }
+  if (input.existing.status === "captured" && input.eventKind === "stablecoin_transfer_return_in_flight") {
+    return "processing";
   }
   if (
     (input.existing.status === "disputed" ||

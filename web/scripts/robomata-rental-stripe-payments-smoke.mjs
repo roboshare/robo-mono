@@ -1041,6 +1041,34 @@ async function main() {
   ) {
     throw new Error(`Expected processed Bridge transfer to confirm booking, got ${JSON.stringify(bridgeBookingPayload)}`);
   }
+  const returnedBridgeWebhookBody = JSON.stringify({
+    event_category: "transfer",
+    event_created_at: new Date().toISOString(),
+    event_id: "evt_bridge_returned_smoke",
+    event_object: {
+      ...bridgeTransferPayload.transfer,
+      receipt: {
+        destination_tx_hash: "0xbridgeDestinationReceiptSmoke",
+        final_amount: bridgeTransferPayload.transfer.amount,
+        source_tx_hash: "0xbridgeSourceReceiptSmoke",
+      },
+      state: "returned",
+      updated_at: new Date().toISOString(),
+    },
+    event_type: "transfer.updated",
+  });
+  const returnedBridgePayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/webhook`, {
+    body: returnedBridgeWebhookBody,
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  if (
+    returnedBridgePayload.payment?.status !== "processing" ||
+    !returnedBridgePayload.payment.postingBlocked ||
+    returnedBridgePayload.payment.refundedAmountCents !== 0
+  ) {
+    throw new Error(`Expected returned Bridge transfer to remain blocked, got ${JSON.stringify(returnedBridgePayload)}`);
+  }
 
   const bridgeBlockedCancelCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
     body: JSON.stringify({
