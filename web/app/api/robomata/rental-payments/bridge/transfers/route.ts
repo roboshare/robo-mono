@@ -8,11 +8,11 @@ import {
   isRobomataWorkflowMutationEnabled,
 } from "~~/lib/featureFlags";
 import type { RentalBookingRecord } from "~~/lib/robomata/rentalBookings";
-import type { RentalPaymentRecord } from "~~/lib/robomata/rentalPayments";
+import type { RentalPaymentProviderEventKind, RentalPaymentRecord } from "~~/lib/robomata/rentalPayments";
 import { getRentalBookingStore } from "~~/lib/robomata/server/rentalBookingStore";
 import { createBridgeRentalTransfer, retrieveBridgeRentalTransfer } from "~~/lib/robomata/server/rentalBridge";
 import { getRentalInventoryStore } from "~~/lib/robomata/server/rentalInventoryStore";
-import { getRentalPaymentStore } from "~~/lib/robomata/server/rentalPaymentStore";
+import { type BridgeTransferSnapshot, getRentalPaymentStore } from "~~/lib/robomata/server/rentalPaymentStore";
 import { retrieveStripeRentalPaymentIntent } from "~~/lib/robomata/server/rentalStripe";
 
 export const runtime = "nodejs";
@@ -77,6 +77,36 @@ function bridgePaymentBlocksBridgeCheckout(payment: RentalPaymentRecord) {
     payment.status === "captured" ||
     (payment.status === "failed" && payment.postingBlocked)
   );
+}
+
+function bridgeEventKindForTransfer(snapshot: BridgeTransferSnapshot): RentalPaymentProviderEventKind {
+  switch (snapshot.state) {
+    case "awaiting_funds":
+      return "stablecoin_transfer_awaiting_funds";
+    case "funds_received":
+      return "stablecoin_transfer_funds_received";
+    case "payment_submitted":
+    case "in_review":
+      return "stablecoin_transfer_submitted";
+    case "payment_processed":
+      return "stablecoin_transfer_processed";
+    case "canceled":
+      return "stablecoin_transfer_cancelled";
+    case "returned":
+    case "refund_in_flight":
+      return "stablecoin_transfer_return_in_flight";
+    case "refunded":
+      return "stablecoin_transfer_returned";
+    case "undeliverable":
+      return "payment_failed";
+    case "refund_failed":
+      return "refund_failed";
+    case "error":
+    case "missing_return_policy":
+      return "stablecoin_transfer_exception";
+    default:
+      return "stablecoin_transfer_created";
+  }
 }
 
 async function stripePaymentsBlockingBridgeCheckout(input: {
@@ -184,27 +214,42 @@ export async function POST(request: NextRequest) {
         .sort((left, right) => paymentUpdatedTime(right) - paymentUpdatedTime(left));
       const activeBridgePayments = priorBridgePayments.filter(bridgePaymentBlocksBridgeCheckout);
       if (activeBridgePayments.length > 0) {
-        const activeBridgePayment = activeBridgePayments[0];
-        const activeBridgeTransferId = activeBridgePayment?.providerReference.transferId;
-        let sourceDepositInstructions = activeBridgePayment?.providerReference.sourceDepositInstructions;
+        let activeBridgePayment = activeBridgePayments[0];
+        const activeBridgeTransferId = activeBridgePayment.providerReference.transferId;
+        let sourceDepositInstructions = activeBridgePayment.providerReference.sourceDepositInstructions;
         if (activeBridgeTransferId) {
           try {
-            sourceDepositInstructions =
-              (await retrieveBridgeRentalTransfer(activeBridgeTransferId)).source_deposit_instructions ??
-              sourceDepositInstructions;
+            const transfer = await retrieveBridgeRentalTransfer(activeBridgeTransferId);
+            sourceDepositInstructions = transfer.source_deposit_instructions ?? sourceDepositInstructions;
+            activeBridgePayment = await paymentStore.recordBridgeEvent({
+              booking: lockedBooking,
+              eventKind: bridgeEventKindForTransfer(transfer),
+              snapshot: transfer,
+            });
           } catch {
             // Fall back to the safe persisted subset so retry remains recoverable in mock/offline modes.
           }
         }
-        return NextResponse.json(
-          {
-            error:
-              "Booking has an active Bridge transfer. Cancel or return the Bridge transfer before retrying checkout.",
-            payments: activeBridgePayments,
-            sourceDepositInstructions,
-          },
-          { status: 409 },
-        );
+        if (!bridgePaymentBlocksBridgeCheckout(activeBridgePayment)) {
+          const replacementPayments = bookingPayments.map(payment =>
+            payment.id === activeBridgePayment.id ? activeBridgePayment : payment,
+          );
+          priorBridgePayments.splice(
+            0,
+            priorBridgePayments.length,
+            ...replacementPayments.filter(payment => payment.provider === "bridge"),
+          );
+        } else {
+          return NextResponse.json(
+            {
+              error:
+                "Booking has an active Bridge transfer. Cancel or return the Bridge transfer before retrying checkout.",
+              payments: [activeBridgePayment],
+              sourceDepositInstructions,
+            },
+            { status: 409 },
+          );
+        }
       }
 
       const transfer = await createBridgeRentalTransfer({
