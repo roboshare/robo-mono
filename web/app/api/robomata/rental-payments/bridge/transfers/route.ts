@@ -55,6 +55,12 @@ function cleanAddress(value: string | undefined) {
   return value?.trim() || undefined;
 }
 
+function normalizedBridgeAmountCents(value: string | undefined): number | undefined {
+  if (!value || !/^\d+(\.\d{1,6})?$/.test(value)) return undefined;
+  const [whole, fraction = ""] = value.split(".");
+  return Number(whole) * 100 + Number(fraction.padEnd(2, "0").slice(0, 2));
+}
+
 function paymentUpdatedTime(payment: { updatedAt: string }) {
   const updatedAt = Date.parse(payment.updatedAt);
   return Number.isFinite(updatedAt) ? updatedAt : 0;
@@ -107,6 +113,44 @@ function bridgeEventKindForTransfer(snapshot: BridgeTransferSnapshot): RentalPay
     default:
       return "stablecoin_transfer_created";
   }
+}
+
+function bridgePostingBlockReasonForRetry(input: {
+  booking: RentalBookingRecord;
+  eventKind: RentalPaymentProviderEventKind;
+  snapshot: BridgeTransferSnapshot;
+}) {
+  if (input.eventKind !== "stablecoin_transfer_processed") return undefined;
+  const finalAmountCents = normalizedBridgeAmountCents(input.snapshot.receipt?.final_amount);
+  if (finalAmountCents !== undefined && finalAmountCents < input.booking.paymentPlan.totalDueAtAuthorizationCents) {
+    return "Bridge transfer settled below the booking authorization amount; reconcile or return manually.";
+  }
+  return undefined;
+}
+
+async function advanceBookingAfterBridgeRetry(input: {
+  booking: RentalBookingRecord;
+  eventKind: RentalPaymentProviderEventKind;
+  payment: RentalPaymentRecord;
+}) {
+  if (input.eventKind !== "stablecoin_transfer_processed") return;
+  if (input.payment.status !== "captured" || input.payment.postingBlocked) return;
+  const booking = await getRentalBookingStore().getBooking(input.booking.id);
+  if (!booking || booking.state !== "pending_payment_authorization") return;
+  if (!bookingStillAllowsStablecoinPayment(booking)) return;
+
+  let hostReviewRequired = false;
+  if (isRobomataRentalInventoryEnabled()) {
+    const vehicle = await getRentalInventoryStore().getVehicle(booking.platformVehicleId);
+    if (!vehicle || vehicle.operationalStatus !== "listed") return;
+    hostReviewRequired = vehicle.hostControls?.bookingReview.requireManualApproval === true;
+  }
+
+  await getRentalBookingStore().confirmBooking(booking.id, {
+    hostReviewRequired,
+    paymentAuthorized: true,
+    paymentProviderReference: input.payment.providerReference,
+  });
 }
 
 async function stripePaymentsBlockingBridgeCheckout(input: {
@@ -220,11 +264,22 @@ export async function POST(request: NextRequest) {
         if (activeBridgeTransferId) {
           try {
             const transfer = await retrieveBridgeRentalTransfer(activeBridgeTransferId);
+            const eventKind = bridgeEventKindForTransfer(transfer);
             sourceDepositInstructions = transfer.source_deposit_instructions ?? sourceDepositInstructions;
             activeBridgePayment = await paymentStore.recordBridgeEvent({
               booking: lockedBooking,
-              eventKind: bridgeEventKindForTransfer(transfer),
+              eventKind,
+              postingBlockReason: bridgePostingBlockReasonForRetry({
+                booking: lockedBooking,
+                eventKind,
+                snapshot: transfer,
+              }),
               snapshot: transfer,
+            });
+            await advanceBookingAfterBridgeRetry({
+              booking: lockedBooking,
+              eventKind,
+              payment: activeBridgePayment,
             });
           } catch {
             // Fall back to the safe persisted subset so retry remains recoverable in mock/offline modes.
