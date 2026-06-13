@@ -286,6 +286,13 @@ function monotonicPaymentStatus(input: {
     return "processing";
   }
   if (
+    input.existing.provider === "bridge" &&
+    input.existing.status === "processing" &&
+    input.nextStatus === "awaiting_funds"
+  ) {
+    return "processing";
+  }
+  if (
     input.existing.status === "processing" &&
     input.existing.events[0]?.kind === "stablecoin_transfer_return_in_flight" &&
     input.eventKind !== "stablecoin_transfer_return_in_flight" &&

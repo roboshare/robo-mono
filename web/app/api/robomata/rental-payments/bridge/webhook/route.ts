@@ -169,7 +169,7 @@ function snapshotMatchesBooking(booking: RentalBookingRecord, snapshot: BridgeTr
   return (
     snapshot.client_reference_id === booking.id &&
     normalizedBridgeAmountCents(snapshot.amount) === booking.paymentPlan.totalDueAtAuthorizationCents &&
-    normalizedString(snapshot.currency) === booking.paymentPlan.currency.toLowerCase() &&
+    (!snapshot.currency || normalizedString(snapshot.currency) === booking.paymentPlan.currency.toLowerCase()) &&
     (!expectedCustomerId || snapshot.on_behalf_of === expectedCustomerId) &&
     (!expectedDestinationAddress ||
       normalizedString(snapshot.destination?.to_address) === normalizedString(expectedDestinationAddress)) &&

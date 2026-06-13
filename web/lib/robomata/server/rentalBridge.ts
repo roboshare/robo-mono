@@ -240,6 +240,21 @@ export async function cancelBridgeRentalTransfer(input: {
       };
 }
 
+export async function retrieveBridgeRentalTransfer(transferId: string): Promise<BridgeTransferSnapshot> {
+  if (isBridgeMockEnabled()) {
+    return {
+      id: transferId,
+      state: "awaiting_funds",
+      updated_at: new Date().toISOString(),
+    };
+  }
+  const transfer = await bridgeRequest(`/transfers/${encodeURIComponent(transferId)}`, {
+    headers: bridgeHeaders(),
+    method: "GET",
+  });
+  return bridgeTransferFromJson(transfer);
+}
+
 function parseBridgeSignatureHeader(header: string): { signature: string; timestamp: string } {
   let timestamp: string | undefined;
   let signature: string | undefined;

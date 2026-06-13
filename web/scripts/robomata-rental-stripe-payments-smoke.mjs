@@ -1393,6 +1393,28 @@ async function main() {
     headers: { "content-type": "application/json" },
     method: "POST",
   });
+  const staleAwaitingFundsBridgePayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/webhook`, {
+    body: JSON.stringify({
+      event_category: "transfer",
+      event_created_at: new Date().toISOString(),
+      event_id: "evt_bridge_stale_awaiting_after_funds_smoke",
+      event_object: {
+        ...bridgeBlockedCancelTransferPayload.transfer,
+        state: "awaiting_funds",
+        updated_at: new Date().toISOString(),
+      },
+      event_type: "updated",
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  if (staleAwaitingFundsBridgePayload.payment?.status !== "processing") {
+    throw new Error(
+      `Expected stale awaiting-funds Bridge webhook to preserve processing, got ${JSON.stringify(
+        staleAwaitingFundsBridgePayload,
+      )}`,
+    );
+  }
   await expectJsonFailure(
     `${baseUrl}/api/robomata/rental-bookings/${bridgeBlockedCancelBookingId}/cancel`,
     {

@@ -10,7 +10,7 @@ import {
 import type { RentalBookingRecord } from "~~/lib/robomata/rentalBookings";
 import type { RentalPaymentRecord } from "~~/lib/robomata/rentalPayments";
 import { getRentalBookingStore } from "~~/lib/robomata/server/rentalBookingStore";
-import { createBridgeRentalTransfer } from "~~/lib/robomata/server/rentalBridge";
+import { createBridgeRentalTransfer, retrieveBridgeRentalTransfer } from "~~/lib/robomata/server/rentalBridge";
 import { getRentalInventoryStore } from "~~/lib/robomata/server/rentalInventoryStore";
 import { getRentalPaymentStore } from "~~/lib/robomata/server/rentalPaymentStore";
 import { retrieveStripeRentalPaymentIntent } from "~~/lib/robomata/server/rentalStripe";
@@ -185,12 +185,23 @@ export async function POST(request: NextRequest) {
       const activeBridgePayments = priorBridgePayments.filter(bridgePaymentBlocksBridgeCheckout);
       if (activeBridgePayments.length > 0) {
         const activeBridgePayment = activeBridgePayments[0];
+        const activeBridgeTransferId = activeBridgePayment?.providerReference.transferId;
+        let sourceDepositInstructions = activeBridgePayment?.providerReference.sourceDepositInstructions;
+        if (activeBridgeTransferId) {
+          try {
+            sourceDepositInstructions =
+              (await retrieveBridgeRentalTransfer(activeBridgeTransferId)).source_deposit_instructions ??
+              sourceDepositInstructions;
+          } catch {
+            // Fall back to the safe persisted subset so retry remains recoverable in mock/offline modes.
+          }
+        }
         return NextResponse.json(
           {
             error:
               "Booking has an active Bridge transfer. Cancel or return the Bridge transfer before retrying checkout.",
             payments: activeBridgePayments,
-            sourceDepositInstructions: activeBridgePayment?.providerReference.sourceDepositInstructions,
+            sourceDepositInstructions,
           },
           { status: 409 },
         );

@@ -6,7 +6,7 @@ import {
   isRobomataWorkflowMutationEnabled,
 } from "~~/lib/featureFlags";
 import type { RentalBookingRecord } from "~~/lib/robomata/rentalBookings";
-import type { RentalCancellationInput } from "~~/lib/robomata/rentalSupport";
+import { type RentalCancellationInput, buildRentalCancellationOutcome } from "~~/lib/robomata/rentalSupport";
 import { getRentalBookingStore } from "~~/lib/robomata/server/rentalBookingStore";
 import { cancelBridgeRentalTransfer } from "~~/lib/robomata/server/rentalBridge";
 import { getRentalInventoryStore } from "~~/lib/robomata/server/rentalInventoryStore";
@@ -124,6 +124,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           { status: 409 },
         );
       }
+      buildRentalCancellationOutcome(lockedBooking, input);
       const blockingBridgePayments = await bridgePaymentsBlockingCancellation(lockedBooking);
       if (blockingBridgePayments.length > 0) {
         return NextResponse.json(
@@ -135,6 +136,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           { status: 409 },
         );
       }
+      const cancelledPayments = await cancelOpenPaymentIntents(lockedBooking);
 
       const result = await getRentalSupportStore().recordCancellation(lockedBooking, input);
       const updatedBooking = await getRentalBookingStore().updateBookingState(lockedBooking.id, {
@@ -150,7 +152,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
         const operationalStatus = ["in_trip", "return_pending"].includes(lockedBooking.state) ? "suspended" : "listed";
         await getRentalInventoryStore().updateVehicleControls(lockedBooking.platformVehicleId, { operationalStatus });
       }
-      const cancelledPayments = await cancelOpenPaymentIntents(lockedBooking);
       return NextResponse.json({
         auditEvent: result.auditEvent,
         booking: updatedBooking,
