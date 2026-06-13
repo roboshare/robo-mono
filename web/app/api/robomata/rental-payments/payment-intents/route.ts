@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
         bookingIds: [booking.id],
       })
     )
-      .filter(payment => Boolean(payment.providerReference.paymentIntentId))
+      .filter(payment => payment.provider === "stripe" && Boolean(payment.providerReference.paymentIntentId))
       .sort((left, right) => paymentUpdatedTime(right) - paymentUpdatedTime(left));
 
     for (const payment of existingPayments) {

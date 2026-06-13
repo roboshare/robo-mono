@@ -29,6 +29,7 @@ export type RentalPaymentProviderEventKind =
   | "stablecoin_transfer_processed"
   | "stablecoin_transfer_cancelled"
   | "stablecoin_transfer_returned"
+  | "stablecoin_transfer_exception"
   | "payment_cancelled"
   | "capture_succeeded"
   | "payment_failed"

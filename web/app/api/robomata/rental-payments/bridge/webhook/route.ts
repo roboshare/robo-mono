@@ -39,6 +39,20 @@ function objectRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 }
 
+function normalizedBridgeAmountCents(value: string | undefined): number | undefined {
+  if (!value || !/^\d+(\.\d{1,6})?$/.test(value)) return undefined;
+  const [whole, fraction = ""] = value.split(".");
+  return Number(whole) * 100 + Number(fraction.padEnd(2, "0").slice(0, 2));
+}
+
+function normalizedString(value: string | undefined) {
+  return value?.trim().toLowerCase();
+}
+
+function configuredString(key: string) {
+  return process.env[key]?.trim();
+}
+
 function bridgeTransferSnapshot(event: BridgeWebhookEvent): BridgeTransferSnapshot {
   const transfer = event.event_object;
   const id = stringField(transfer.id);
@@ -78,6 +92,9 @@ function eventKindForBridgeTransfer(snapshot: BridgeTransferSnapshot): RentalPay
     case "undeliverable":
     case "refund_failed":
       return "payment_failed";
+    case "error":
+    case "missing_return_policy":
+      return "stablecoin_transfer_exception";
     default:
       return "stablecoin_transfer_created";
   }
@@ -86,6 +103,8 @@ function eventKindForBridgeTransfer(snapshot: BridgeTransferSnapshot): RentalPay
 function failureReasonForBridgeTransfer(snapshot: BridgeTransferSnapshot): string | undefined {
   if (snapshot.state === "undeliverable") return "Bridge transfer is undeliverable.";
   if (snapshot.state === "refund_failed") return "Bridge transfer refund failed.";
+  if (snapshot.state === "error") return "Bridge transfer entered an error state.";
+  if (snapshot.state === "missing_return_policy") return "Bridge transfer is missing required return policy.";
   return undefined;
 }
 
@@ -106,7 +125,32 @@ async function bookingForBridgeTransfer(snapshot: BridgeTransferSnapshot): Promi
   if (booking.paymentPlan.totalDueAtAuthorizationCents <= 0) {
     throw new Error("Rental booking payment amount is invalid for Bridge transfer reconciliation.");
   }
+  if (!snapshotMatchesBooking(booking, snapshot)) {
+    throw new Error("Bridge transfer snapshot does not match the rental booking.");
+  }
   return booking;
+}
+
+function snapshotMatchesBooking(booking: RentalBookingRecord, snapshot: BridgeTransferSnapshot) {
+  const expectedCustomerId = configuredString("ROBOMATA_RENTAL_BRIDGE_CUSTOMER_ID");
+  const expectedDestinationAddress = configuredString("ROBOMATA_RENTAL_BRIDGE_DESTINATION_ADDRESS");
+  const expectedSourceRail = configuredString("ROBOMATA_RENTAL_BRIDGE_SOURCE_RAIL") ?? "base";
+  const expectedSourceCurrency = configuredString("ROBOMATA_RENTAL_BRIDGE_SOURCE_CURRENCY") ?? "usdc";
+  const expectedDestinationRail = configuredString("ROBOMATA_RENTAL_BRIDGE_DESTINATION_RAIL") ?? expectedSourceRail;
+  const expectedDestinationCurrency =
+    configuredString("ROBOMATA_RENTAL_BRIDGE_DESTINATION_CURRENCY") ?? expectedSourceCurrency;
+  return (
+    snapshot.client_reference_id === booking.id &&
+    normalizedBridgeAmountCents(snapshot.amount) === booking.paymentPlan.totalDueAtAuthorizationCents &&
+    normalizedString(snapshot.currency) === booking.paymentPlan.currency.toLowerCase() &&
+    (!expectedCustomerId || snapshot.on_behalf_of === expectedCustomerId) &&
+    (!expectedDestinationAddress ||
+      normalizedString(snapshot.destination?.to_address) === normalizedString(expectedDestinationAddress)) &&
+    normalizedString(snapshot.source?.payment_rail) === normalizedString(expectedSourceRail) &&
+    normalizedString(snapshot.source?.currency) === normalizedString(expectedSourceCurrency) &&
+    normalizedString(snapshot.destination?.payment_rail) === normalizedString(expectedDestinationRail) &&
+    normalizedString(snapshot.destination?.currency) === normalizedString(expectedDestinationCurrency)
+  );
 }
 
 async function advanceBookingAfterBridgePayment(input: {

@@ -42,6 +42,8 @@ export type BridgeTransferSnapshot = {
   };
   on_behalf_of?: string;
   receipt?: {
+    destination_tx_hash?: string;
+    destination_transaction_hash?: string;
     final_amount?: string;
     initial_amount?: string;
     source_tx_hash?: string;
@@ -199,6 +201,7 @@ function statusFromBridge(input: {
 }): RentalPaymentIntentStatus {
   if (input.eventKind === "stablecoin_transfer_cancelled") return "cancelled";
   if (input.eventKind === "stablecoin_transfer_returned") return "refunded";
+  if (input.eventKind === "stablecoin_transfer_exception") return "failed";
   if (input.eventKind === "refund_failed" || input.eventKind === "payment_failed") return "failed";
 
   switch (input.snapshot.state) {
@@ -338,10 +341,14 @@ function bridgeProviderReference(input: RentalBridgePaymentProviderEventInput): 
   return {
     provider: "bridge",
     customerId: input.snapshot.on_behalf_of,
-    paymentIntentId: input.snapshot.id,
     refundId: input.refundId,
     sourceTxHash: input.snapshot.receipt?.source_tx_hash ?? input.snapshot.receipt?.transaction_hash,
-    destinationTxHash: input.snapshot.destination?.transaction_id ?? input.snapshot.source?.transaction_id,
+    destinationTxHash:
+      input.snapshot.receipt?.destination_tx_hash ??
+      input.snapshot.receipt?.destination_transaction_hash ??
+      input.snapshot.receipt?.transaction_hash ??
+      input.snapshot.destination?.transaction_id ??
+      input.snapshot.source?.transaction_id,
     transferId: input.snapshot.id,
   };
 }
@@ -597,11 +604,7 @@ function createFileStore(): RentalPaymentStore {
     async recordBridgeEvent(input) {
       return withFileStoreWriteLock(filePath, async () => {
         const fileStore = await readFileStore(filePath);
-        const existing = fileStore.payments.find(
-          payment =>
-            payment.providerReference.transferId === input.snapshot.id ||
-            payment.providerReference.paymentIntentId === input.snapshot.id,
-        );
+        const existing = fileStore.payments.find(payment => payment.providerReference.transferId === input.snapshot.id);
         const payment = paymentRecordFromBridgeEvent(existing, input);
         fileStore.payments = [payment, ...fileStore.payments.filter(candidate => candidate.id !== payment.id)];
         await writeFileStore(filePath, fileStore);
@@ -690,8 +693,7 @@ function createPostgresStore(): RentalPaymentStore {
         const rows = (await transaction`
           SELECT payload
           FROM robomata_rental_payments
-          WHERE provider_payment_intent_id = ${input.snapshot.id}
-             OR payload->'providerReference'->>'transferId' = ${input.snapshot.id}
+          WHERE payload->'providerReference'->>'transferId' = ${input.snapshot.id}
           FOR UPDATE;
         `) as Array<{ payload: RentalPaymentRecord }>;
         const payment = paymentRecordFromBridgeEvent(rows[0]?.payload, input);

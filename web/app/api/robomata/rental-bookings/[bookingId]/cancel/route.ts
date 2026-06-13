@@ -31,8 +31,23 @@ function requireMutation() {
   return NextResponse.json({ error: "Robomata rental booking writes are not enabled." }, { status: 403 });
 }
 
-function cancellablePaymentStatus(status: string) {
+function cancellableStripePaymentStatus(status: string) {
   return status === "requires_payment_method" || status === "requires_confirmation" || status === "requires_capture";
+}
+
+function cancellableBridgePaymentStatus(status: string) {
+  return status === "awaiting_funds";
+}
+
+async function bridgePaymentsBlockingCancellation(booking: RentalBookingRecord) {
+  if (!isRobomataRentalPaymentsEnabled()) return [];
+  const payments = await getRentalPaymentStore().listPaymentsByReferences({ bookingIds: [booking.id] });
+  return payments.filter(
+    payment =>
+      payment.provider === "bridge" &&
+      payment.providerReference.transferId &&
+      cancellableBridgePaymentStatus(payment.status),
+  );
 }
 
 async function cancelOpenPaymentIntents(booking: RentalBookingRecord) {
@@ -41,17 +56,19 @@ async function cancelOpenPaymentIntents(booking: RentalBookingRecord) {
   const payments = await paymentStore.listPaymentsByReferences({ bookingIds: [booking.id] });
   const cancelled = [];
   for (const payment of payments) {
-    const paymentIntentId = payment.providerReference.paymentIntentId;
-    if (payment.provider !== "stripe") continue;
-    if (!paymentIntentId || !cancellablePaymentStatus(payment.status)) continue;
-    const snapshot = await cancelStripeRentalPaymentIntent(paymentIntentId);
-    cancelled.push(
-      await paymentStore.recordStripeEvent({
-        booking,
-        eventKind: "payment_cancelled",
-        snapshot,
-      }),
-    );
+    if (payment.provider === "stripe") {
+      const paymentIntentId = payment.providerReference.paymentIntentId;
+      if (!paymentIntentId || !cancellableStripePaymentStatus(payment.status)) continue;
+      const snapshot = await cancelStripeRentalPaymentIntent(paymentIntentId);
+      cancelled.push(
+        await paymentStore.recordStripeEvent({
+          booking,
+          eventKind: "payment_cancelled",
+          snapshot,
+        }),
+      );
+      continue;
+    }
   }
   return cancelled;
 }
@@ -78,6 +95,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
     if (["closed", "completed", "disputed"].includes(booking.state)) {
       return NextResponse.json({ error: `Booking cannot be cancelled from state ${booking.state}.` }, { status: 409 });
+    }
+    const blockingBridgePayments = await bridgePaymentsBlockingCancellation(booking);
+    if (blockingBridgePayments.length > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "Booking has an awaiting-funds Bridge transfer. Cancel or return the Bridge transfer before cancelling the booking.",
+          payments: blockingBridgePayments,
+        },
+        { status: 409 },
+      );
     }
 
     const input = (await request.json()) as RentalCancellationInput;
