@@ -115,7 +115,7 @@ export const HeaderMenuLinks = () => {
     pathname?.startsWith("/operator/") ||
     pathname === "/partner" ||
     pathname?.startsWith("/partner/");
-  const showLaunchApp = isHostResolved && !isAppHost && !isOperatorPath;
+  const showLaunchApp = !isAppHost && !isOperatorPath;
   const showRentalMarketplace = isRobomataRentalMarketplaceClientEnabled();
   const showRentalHostOps = isRobomataRentalHostOpsClientEnabled();
 
@@ -123,10 +123,6 @@ export const HeaderMenuLinks = () => {
     setIsAppHost(window.location.hostname.toLowerCase() === getConfiguredAppHost());
     setIsHostResolved(true);
   }, []);
-
-  if (!isHostResolved) {
-    return null;
-  }
 
   if (isHostResolved && isAppHost) {
     const appLinks: HeaderMenuLink[] = [
