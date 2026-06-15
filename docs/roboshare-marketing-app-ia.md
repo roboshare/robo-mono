@@ -111,13 +111,15 @@ state out of public marketing routes.
 | `/subgraph` | Admin app | Admin-only subgraph diagnostics. |
 | `/debug` | Admin app | Admin-only contract debugging. |
 
-App navigation should use:
+On the dedicated app host, primary navigation should stay intentionally narrow:
 
 - `Markets`
-- `Operator Portal`
-- `Borrowing Base`
-- future flagged `Capital Provider` or `Monitoring`
-- admin-only `Subgraph` and `Debug Contracts`
+- `Dashboard`
+
+Operator submission, monitoring, rental ops, admin diagnostics, and protected
+packet surfaces remain available through their direct permissioned routes or
+in-workflow links, but they should not appear in the app-host top navigation
+until a broader authenticated app navigation model is designed.
 
 Do not create a full lender or capital-provider dashboard in this tranche.
 Protected packet links remain the controlled share surface.
@@ -229,7 +231,8 @@ standardized/tokenized exposure.
 
 - Add canonical `/operator` routes.
 - Add `/partner*` compatibility redirects.
-- Update app nav and CTAs from Partner to Operator.
+- Update app nav and CTAs from Partner to Operator, with the app-host primary
+  nav limited to `Markets` and `Dashboard`.
 - Preserve protected packet links.
 
 ### Phase 4: Host Routing And QA
