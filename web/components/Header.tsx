@@ -24,9 +24,38 @@ type HeaderMenuLink = {
   adminOnly?: boolean;
 };
 
+const DEFAULT_MARKETING_HOSTS = ["roboshare.finance", "www.roboshare.finance"];
 const DEFAULT_APP_HOST = "app.roboshare.finance";
+const configuredAppHost = process.env.NEXT_PUBLIC_ROBOSHARE_APP_HOST?.trim().toLowerCase();
 
-const getConfiguredAppHost = () => process.env.NEXT_PUBLIC_ROBOSHARE_APP_HOST?.trim().toLowerCase() || DEFAULT_APP_HOST;
+const getConfiguredAppHost = () => configuredAppHost || DEFAULT_APP_HOST;
+
+const isDefaultMarketingHost = (host: string | null) => !!host && DEFAULT_MARKETING_HOSTS.includes(host);
+const isLocalHost = (host: string | null) => host === "localhost" || host === "127.0.0.1" || host === "::1";
+const shouldUseAppHostNavigation = (host: string | null) =>
+  !!host && !isLocalHost(host) && (isDefaultMarketingHost(host) || !!configuredAppHost);
+
+const toAppHostHref = (href: string) => {
+  if (!href.startsWith("/")) {
+    return href;
+  }
+
+  return `https://${getConfiguredAppHost()}${href}`;
+};
+
+const HeaderAppAnchor = ({
+  children,
+  className,
+  href,
+}: {
+  children: React.ReactNode;
+  className: string;
+  href: string;
+}) => (
+  <a href={href} className={className}>
+    {children}
+  </a>
+);
 
 export const menuLinks: HeaderMenuLink[] = [
   {
@@ -109,6 +138,7 @@ export const HeaderMenuLinks = () => {
   const { isAdmin } = useIsAdmin();
   const [isAppHost, setIsAppHost] = useState(false);
   const [isHostResolved, setIsHostResolved] = useState(false);
+  const [browserHost, setBrowserHost] = useState<string | null>(null);
   const launchAppHref = isRobomataWorkflowEnabled() ? "/operator/submissions" : "/operator";
   const isOperatorPath =
     pathname === "/operator" ||
@@ -118,9 +148,14 @@ export const HeaderMenuLinks = () => {
   const showLaunchApp = !isAppHost && !isOperatorPath;
   const showRentalMarketplace = isRobomataRentalMarketplaceClientEnabled();
   const showRentalHostOps = isRobomataRentalHostOpsClientEnabled();
+  const useAppHostNavigation = isHostResolved && !isAppHost && shouldUseAppHostNavigation(browserHost);
+  const resolvedLaunchAppHref = useAppHostNavigation ? toAppHostHref(launchAppHref) : launchAppHref;
+  const resolvedRentalOpsHref = useAppHostNavigation ? toAppHostHref("/operator/rentals") : "/operator/rentals";
 
   useEffect(() => {
-    setIsAppHost(window.location.hostname.toLowerCase() === getConfiguredAppHost());
+    const host = window.location.hostname.toLowerCase();
+    setBrowserHost(host);
+    setIsAppHost(host === getConfiguredAppHost());
     setIsHostResolved(true);
   }, []);
 
@@ -200,28 +235,26 @@ export const HeaderMenuLinks = () => {
         })}
       {showRentalHostOps && (
         <li>
-          <Link
-            href="/operator/rentals"
-            passHref
+          <HeaderAppAnchor
+            href={resolvedRentalOpsHref}
             className={`${
               pathname === "/operator/rentals" ? "bg-secondary shadow-md" : ""
             } hover:bg-secondary hover:shadow-md focus:!bg-secondary active:!text-neutral py-1.5 px-3 text-sm rounded-full gap-2 grid grid-flow-col`}
           >
             <UserGroupIcon className="h-4 w-4" />
             <span>Rental Ops</span>
-          </Link>
+          </HeaderAppAnchor>
         </li>
       )}
       {showLaunchApp ? (
         <li>
-          <Link
-            href={launchAppHref}
-            passHref
+          <HeaderAppAnchor
+            href={resolvedLaunchAppHref}
             className="grid grid-flow-col gap-2 rounded-full border border-primary/70 bg-primary px-3 py-1.5 text-sm font-semibold text-primary-content shadow-md shadow-primary/20 hover:bg-primary/90 focus:!bg-primary active:!text-primary-content"
           >
             <RocketLaunchIcon className="h-4 w-4" />
             <span>Launch App</span>
-          </Link>
+          </HeaderAppAnchor>
         </li>
       ) : null}
     </>

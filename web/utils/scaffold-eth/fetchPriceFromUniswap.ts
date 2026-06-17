@@ -6,12 +6,27 @@ import { mainnet } from "viem/chains";
 
 const infuraHttpUrl = getInfuraHttpUrl(mainnet.id);
 const alchemyHttpUrl = getAlchemyHttpUrl(mainnet.id);
+const rpcOverrideUrl = process.env.NEXT_PUBLIC_RPC_URL_1?.trim();
 const shouldUsePublicRpcFallback =
   process.env.NODE_ENV === "development" || process.env.NEXT_PUBLIC_ENABLE_PUBLIC_RPC_FALLBACK === "true";
-const mainnetTransports = [
-  ...[infuraHttpUrl, alchemyHttpUrl].flatMap(rpcUrl => (rpcUrl ? [http(rpcUrl)] : [])),
-  ...(shouldUsePublicRpcFallback || (!infuraHttpUrl && !alchemyHttpUrl) ? [http()] : []),
-];
+const configuredRpcUrls = new Set<string>();
+const mainnetTransports = [];
+const addConfiguredRpc = (rpcUrl: string | undefined) => {
+  if (!rpcUrl || configuredRpcUrls.has(rpcUrl)) {
+    return;
+  }
+
+  configuredRpcUrls.add(rpcUrl);
+  mainnetTransports.push(http(rpcUrl));
+};
+
+addConfiguredRpc(rpcOverrideUrl);
+addConfiguredRpc(alchemyHttpUrl);
+if (shouldUsePublicRpcFallback || typeof window !== "undefined" || (!infuraHttpUrl && !alchemyHttpUrl)) {
+  mainnetTransports.push(http());
+}
+addConfiguredRpc(infuraHttpUrl);
+
 const publicClient = createPublicClient({
   chain: mainnet,
   transport: fallback(mainnetTransports),
