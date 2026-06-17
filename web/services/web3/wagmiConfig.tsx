@@ -11,6 +11,7 @@ import { getAlchemyHttpUrl, getInfuraHttpUrl } from "~~/utils/scaffold-eth";
 const { targetNetworks } = scaffoldConfig;
 const shouldUsePublicRpcFallback =
   process.env.NODE_ENV === "development" || process.env.NEXT_PUBLIC_ENABLE_PUBLIC_RPC_FALLBACK === "true";
+const shouldPreferPublicBrowserRpc = typeof window !== "undefined";
 
 // We always want to have mainnet enabled (ENS resolution, ETH price, etc). But only once.
 export const enabledChains = targetNetworks.find((network: Chain) => network.id === 1)
@@ -37,21 +38,25 @@ export const getWagmiConfig = () => {
     ssr: true,
     client({ chain }) {
       const rpcFallbacks = [];
+      const configuredRpcUrls = new Set<string>();
+      const addConfiguredRpc = (rpcUrl: string | undefined) => {
+        if (!rpcUrl || configuredRpcUrls.has(rpcUrl)) {
+          return;
+        }
+
+        configuredRpcUrls.add(rpcUrl);
+        rpcFallbacks.push(http(rpcUrl));
+      };
       const infuraHttpUrl = getInfuraHttpUrl(chain.id);
       const alchemyHttpUrl = getAlchemyHttpUrl(chain.id);
       const rpcOverrideUrl = (scaffoldConfig.rpcOverrides as ScaffoldConfig["rpcOverrides"])?.[chain.id];
-      if (infuraHttpUrl) {
-        rpcFallbacks.push(http(infuraHttpUrl));
-      }
-      if (alchemyHttpUrl) {
-        rpcFallbacks.push(http(alchemyHttpUrl));
-      }
-      if (rpcOverrideUrl) {
-        rpcFallbacks.push(http(rpcOverrideUrl));
-      }
-      if (shouldUsePublicRpcFallback || rpcFallbacks.length === 0) {
+
+      addConfiguredRpc(rpcOverrideUrl);
+      addConfiguredRpc(alchemyHttpUrl);
+      if (shouldPreferPublicBrowserRpc || shouldUsePublicRpcFallback || rpcFallbacks.length === 0) {
         rpcFallbacks.push(http());
       }
+      addConfiguredRpc(infuraHttpUrl);
 
       return createClient({
         chain,
