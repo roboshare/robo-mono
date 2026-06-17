@@ -52,10 +52,10 @@ export const getWagmiConfig = () => {
 
       addConfiguredRpc(rpcOverrideUrl);
       addConfiguredRpc(alchemyHttpUrl);
+      addConfiguredRpc(infuraHttpUrl);
       if (shouldUsePublicRpcFallback || rpcFallbacks.length === 0) {
         rpcFallbacks.push(http());
       }
-      addConfiguredRpc(infuraHttpUrl);
 
       return createClient({
         chain,
