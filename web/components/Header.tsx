@@ -27,13 +27,16 @@ type HeaderMenuLink = {
 const DEFAULT_MARKETING_HOSTS = ["roboshare.finance", "www.roboshare.finance"];
 const DEFAULT_APP_HOST = "app.roboshare.finance";
 const configuredAppHost = process.env.NEXT_PUBLIC_ROBOSHARE_APP_HOST?.trim().toLowerCase();
+const configuredMarketingHosts = process.env.NEXT_PUBLIC_ROBOSHARE_MARKETING_HOSTS?.split(",")
+  .map(host => host.trim().toLowerCase())
+  .filter(Boolean);
 
 const getConfiguredAppHost = () => configuredAppHost || DEFAULT_APP_HOST;
 
-const isDefaultMarketingHost = (host: string | null) => !!host && DEFAULT_MARKETING_HOSTS.includes(host);
+const marketingHosts = configuredMarketingHosts?.length ? configuredMarketingHosts : DEFAULT_MARKETING_HOSTS;
+const isMarketingHost = (host: string | null) => !!host && marketingHosts.includes(host);
 const isLocalHost = (host: string | null) => host === "localhost" || host === "127.0.0.1" || host === "::1";
-const shouldUseAppHostNavigation = (host: string | null) =>
-  !!host && !isLocalHost(host) && (isDefaultMarketingHost(host) || !!configuredAppHost);
+const shouldUseAppHostNavigation = (host: string | null) => !!host && !isLocalHost(host) && isMarketingHost(host);
 
 const toAppHostHref = (href: string) => {
   if (!href.startsWith("/")) {

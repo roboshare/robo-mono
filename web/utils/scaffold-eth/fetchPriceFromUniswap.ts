@@ -22,7 +22,7 @@ const addConfiguredRpc = (rpcUrl: string | undefined) => {
 
 addConfiguredRpc(rpcOverrideUrl);
 addConfiguredRpc(alchemyHttpUrl);
-if (shouldUsePublicRpcFallback || typeof window !== "undefined" || (!infuraHttpUrl && !alchemyHttpUrl)) {
+if (shouldUsePublicRpcFallback || (!infuraHttpUrl && !alchemyHttpUrl)) {
   mainnetTransports.push(http());
 }
 addConfiguredRpc(infuraHttpUrl);
