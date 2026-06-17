@@ -22,10 +22,10 @@ const addConfiguredRpc = (rpcUrl: string | undefined) => {
 
 addConfiguredRpc(rpcOverrideUrl);
 addConfiguredRpc(alchemyHttpUrl);
-if (shouldUsePublicRpcFallback || typeof window !== "undefined" || (!infuraHttpUrl && !alchemyHttpUrl)) {
+addConfiguredRpc(infuraHttpUrl);
+if (shouldUsePublicRpcFallback || mainnetTransports.length === 0) {
   mainnetTransports.push(http());
 }
-addConfiguredRpc(infuraHttpUrl);
 
 const publicClient = createPublicClient({
   chain: mainnet,
