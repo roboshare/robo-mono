@@ -24,6 +24,7 @@ export type LenderPacket = {
     | "outputSchemaVersion"
     | "policyArtifactId"
     | "policyArtifactVersion"
+    | "providerInputControls"
     | "providerInputDigest"
     | "promptVersion"
     | "provider"
@@ -35,6 +36,7 @@ export type LenderPacket = {
   >;
   memoSummary: string;
   exceptionSections: LenderPacketSection[];
+  diligenceQuestions: string[];
   borrowerRequests: string[];
 };
 
@@ -117,6 +119,7 @@ export function buildLenderPacket(
       outputSchemaVersion: agentReview.outputSchemaVersion,
       policyArtifactId: agentReview.policyArtifactId,
       policyArtifactVersion: agentReview.policyArtifactVersion,
+      providerInputControls: agentReview.providerInputControls,
       providerInputDigest: agentReview.providerInputDigest,
       promptVersion: agentReview.promptVersion,
       provider: agentReview.provider,
@@ -130,6 +133,7 @@ export function buildLenderPacket(
     exceptionSections: [receivableExceptions, evidenceExceptions, agentExceptions].filter(
       (section): section is LenderPacketSection => Boolean(section && section.count > 0),
     ),
+    diligenceQuestions: agentReview.diligenceQuestions,
     borrowerRequests: agentReview.nextActions,
   };
 }

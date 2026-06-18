@@ -19,7 +19,14 @@ function formatPolicyArtifact(boundary: LenderPacket["reviewBoundary"]): string 
   return boundary?.policyArtifactId ?? boundary?.policyArtifactVersion ?? "not recorded";
 }
 
+function formatBooleanFlag(value: boolean | undefined): string {
+  if (typeof value !== "boolean") return "not recorded";
+  return value ? "yes" : "no";
+}
+
 export function ReviewBoundaryPanel({ boundary }: ReviewBoundaryPanelProps) {
+  const controls = boundary?.providerInputControls;
+
   return (
     <div className="rounded-2xl border border-base-300 bg-base-100/70 p-4 text-sm leading-relaxed text-base-content/70">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -44,6 +51,10 @@ export function ReviewBoundaryPanel({ boundary }: ReviewBoundaryPanelProps) {
         <div>Source data digest: {shortDigest(boundary?.sourceDataDigest)}</div>
         <div>Provider input digest: {shortDigest(boundary?.providerInputDigest)}</div>
         <div>Output digest: {shortDigest(boundary?.outputDigest)}</div>
+        <div>Provider input rows: {controls?.maxExceptionRows ?? "not recorded"}</div>
+        <div>Provider text cap: {controls?.maxTextLength ?? "not recorded"}</div>
+        <div>Raw evidence sent: {formatBooleanFlag(controls?.rawEvidenceIncluded)}</div>
+        <div>Secret material sent: {formatBooleanFlag(controls?.secretMaterialIncluded)}</div>
         <div>Generated: {boundary?.generatedAt ? new Date(boundary.generatedAt).toLocaleString() : "not recorded"}</div>
       </div>
     </div>

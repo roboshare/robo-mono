@@ -51,10 +51,21 @@ export type AgentReview = {
   promptVersion?: string;
   reviewInputId?: string;
   sourceDataDigest?: string;
+  providerInputControls?: AgentReviewInputControls;
   headline: string;
   memo: string;
   exceptionReview: string[];
+  diligenceQuestions: string[];
   nextActions: string[];
+};
+
+export type AgentReviewInputControls = {
+  allowedFields: string[];
+  excludedMaterial: string[];
+  maxExceptionRows: number;
+  maxTextLength: number;
+  rawEvidenceIncluded: false;
+  secretMaterialIncluded: false;
 };
 
 type AgentProvider = {
@@ -67,6 +78,7 @@ export const ROBOMATA_AGENT_REVIEW_PROMPT_VERSION = "borrowing-base-review-v1";
 export const ROBOMATA_AGENT_REVIEW_OUTPUT_SCHEMA_VERSION = "borrowing-base-review-output-v1";
 const openAiReviewTimeoutMs = 8_000;
 const openAiExceptionRowLimit = 25;
+const providerInputMaxTextLength = 180;
 
 const openAiReviewSchema = {
   type: "object",
@@ -85,16 +97,24 @@ const openAiReviewSchema = {
       items: { type: "string" },
       description: "Concise exception notes derived only from supplied receivable and evidence exceptions.",
     },
+    diligenceQuestions: {
+      type: "array",
+      items: { type: "string" },
+      description: "Specific lender diligence questions for the operator or borrower.",
+    },
     nextActions: {
       type: "array",
       items: { type: "string" },
       description: "Concrete borrower or operator follow-up requests.",
     },
   },
-  required: ["headline", "memo", "exceptionReview", "nextActions"],
+  required: ["headline", "memo", "exceptionReview", "diligenceQuestions", "nextActions"],
 } as const;
 
-type AgentReviewContent = Pick<AgentReview, "exceptionReview" | "headline" | "memo" | "nextActions">;
+type AgentReviewContent = Pick<
+  AgentReview,
+  "diligenceQuestions" | "exceptionReview" | "headline" | "memo" | "nextActions"
+>;
 type AgentReviewBoundaryInput = Pick<
   AgentReview,
   "model" | "provider" | "providerStatus" | "reviewMode" | "sourceOfTruth"
@@ -132,13 +152,24 @@ type OpenAiReviewPrompt = {
     includedExceptionRows: number;
     omittedExceptionRows: number;
   };
-  receivableExceptions: AgentReviewInput["receivableResults"];
-  evidenceExceptions: AgentReviewInput["evidenceExceptions"];
+  inputControls: AgentReviewInputControls;
+  receivableExceptions: {
+    id: string;
+    obligor: string;
+    eligible: boolean;
+    ineligibleReasons: string[];
+  }[];
+  evidenceExceptions: {
+    id: string;
+    label: string;
+    status: string;
+  }[];
   omittedEvidenceExceptions: number;
 };
 
 type BuildReviewOptions = {
   inputDigestSource?: unknown;
+  providerInputControls?: AgentReviewInputControls;
   providerInputDigest?: string;
 };
 
@@ -227,6 +258,7 @@ async function sha256Hex(value: unknown): Promise<string> {
 
 function reviewContent(review: AgentReview): AgentReviewContent {
   return {
+    diligenceQuestions: review.diligenceQuestions,
     exceptionReview: review.exceptionReview,
     headline: review.headline,
     memo: review.memo,
@@ -271,6 +303,7 @@ async function buildReview(
     outputSchemaVersion: ROBOMATA_AGENT_REVIEW_OUTPUT_SCHEMA_VERSION,
     policyArtifactId: result.policyArtifactId,
     policyArtifactVersion: result.policyArtifactVersion,
+    providerInputControls: options.providerInputControls,
     providerInputDigest: options.providerInputDigest,
     promptVersion: ROBOMATA_AGENT_REVIEW_PROMPT_VERSION,
     reviewInputId: `review_${inputDigest.slice(0, 16)}`,
@@ -294,6 +327,9 @@ async function buildMockReview(
 
   if (result.exceptionCount === 0) {
     return buildReview(result, boundary, {
+      diligenceQuestions: [
+        "Should the lender receive a controlled evidence link now or after the next scheduled refresh?",
+      ],
       exceptionReview: [],
       headline: `${formatUsd(result.availableBorrowingBaseCents)} lender-ready availability with no open exceptions`,
       memo: `${result.portfolio.operator} has a clean receivables pool under the configured borrowing-base policy and is ready for lender packet delivery.`,
@@ -306,6 +342,10 @@ async function buildMockReview(
   }
 
   return buildReview(result, boundary, {
+    diligenceQuestions: [
+      "Which exception cures are required before final advance approval?",
+      "Should ineligible receivables be excluded from the borrowing base or cured before lender delivery?",
+    ],
     exceptionReview,
     headline: `${formatUsd(result.availableBorrowingBaseCents)} lender-ready availability after eligibility cuts`,
     memo: `${result.portfolio.operator} has a financeable receivables pool, but the lender package should separate clean eligible receivables from title, insurance, utilization, and lockbox exceptions before submission.`,
@@ -334,6 +374,10 @@ function boundedStringList(value: unknown, fallback: string[], maxItems: number,
   return items.length ? items : fallback;
 }
 
+function boundedProviderText(value: string): string {
+  return value.trim().slice(0, providerInputMaxTextLength);
+}
+
 function outputTextFromOpenAiResponse(body: OpenAiResponseBody): string | undefined {
   if (body.output_text?.trim()) return body.output_text;
 
@@ -349,8 +393,10 @@ function parseOpenAiReviewPayload(text: string, fallback: AgentReview, result: A
     typeof parsed.headline !== "string" ||
     typeof parsed.memo !== "string" ||
     !Array.isArray(parsed.exceptionReview) ||
+    !Array.isArray(parsed.diligenceQuestions) ||
     !Array.isArray(parsed.nextActions) ||
     parsed.exceptionReview.some(item => typeof item !== "string") ||
+    parsed.diligenceQuestions.some(item => typeof item !== "string") ||
     parsed.nextActions.some(item => typeof item !== "string")
   ) {
     throw new AgentReviewSchemaInvalidError();
@@ -363,7 +409,41 @@ function parseOpenAiReviewPayload(text: string, fallback: AgentReview, result: A
     headline: boundedText(parsed.headline, fallback.headline, 160),
     memo: boundedText(parsed.memo, fallback.memo, 1_200),
     exceptionReview,
+    diligenceQuestions: boundedStringList(parsed.diligenceQuestions, fallback.diligenceQuestions, 8, 220),
     nextActions: boundedStringList(parsed.nextActions, fallback.nextActions, 8, 220),
+  };
+}
+
+function reviewInputControls(): AgentReviewInputControls {
+  return {
+    allowedFields: [
+      "policyArtifactId",
+      "policyArtifactVersion",
+      "portfolio.operator",
+      "availableBorrowingBaseCents",
+      "exceptionCount",
+      "receivableSummary",
+      "receivableExceptions.id",
+      "receivableExceptions.obligor",
+      "receivableExceptions.eligible",
+      "receivableExceptions.ineligibleReasons",
+      "evidenceExceptions.id",
+      "evidenceExceptions.label",
+      "evidenceExceptions.status",
+    ],
+    excludedMaterial: [
+      "raw evidence bodies",
+      "raw provider payloads",
+      "API keys and secret env names",
+      "Sui private keys",
+      "Seal plaintext or ciphertext",
+      "Walrus ciphertext",
+      "share-link tokens",
+    ],
+    maxExceptionRows: openAiExceptionRowLimit,
+    maxTextLength: providerInputMaxTextLength,
+    rawEvidenceIncluded: false,
+    secretMaterialIncluded: false,
   };
 }
 
@@ -371,6 +451,7 @@ function openAiReviewPrompt(result: AgentReviewInput): OpenAiReviewPrompt {
   const receivableExceptions = result.receivableResults.filter(receivable => !receivable.eligible);
   const includedReceivableExceptions = receivableExceptions.slice(0, openAiExceptionRowLimit);
   const includedEvidenceExceptions = result.evidenceExceptions.slice(0, openAiExceptionRowLimit);
+  const inputControls = reviewInputControls();
   return {
     instruction:
       "Prepare advisory lender diligence text. Do not recalculate availability, eligibility, exceptions, or reserves. The deterministic borrowing-base rules are the source of credit truth.",
@@ -386,8 +467,18 @@ function openAiReviewPrompt(result: AgentReviewInput): OpenAiReviewPrompt {
       includedExceptionRows: includedReceivableExceptions.length,
       omittedExceptionRows: Math.max(receivableExceptions.length - includedReceivableExceptions.length, 0),
     },
-    receivableExceptions: includedReceivableExceptions,
-    evidenceExceptions: includedEvidenceExceptions,
+    inputControls,
+    receivableExceptions: includedReceivableExceptions.map(receivable => ({
+      id: boundedProviderText(receivable.id),
+      obligor: boundedProviderText(receivable.obligor),
+      eligible: receivable.eligible,
+      ineligibleReasons: receivable.ineligibleReasons.map(boundedProviderText),
+    })),
+    evidenceExceptions: includedEvidenceExceptions.map(evidence => ({
+      id: boundedProviderText(evidence.id),
+      label: boundedProviderText(evidence.label),
+      status: boundedProviderText(evidence.status),
+    })),
     omittedEvidenceExceptions: Math.max(result.evidenceExceptions.length - includedEvidenceExceptions.length, 0),
   };
 }
@@ -431,6 +522,7 @@ async function reviewWithOpenAi(result: AgentReviewInput, fallback: AgentReview)
     const providerInputDigest = await sha256Hex(providerInput);
     const reviewOptions = {
       inputDigestSource: providerInput,
+      providerInputControls: providerInput.userPrompt.inputControls,
       providerInputDigest,
     };
     try {
@@ -505,6 +597,7 @@ async function reviewWithOpenAi(result: AgentReviewInput, fallback: AgentReview)
     if (model) {
       const providerInput = openAiProviderInput(result, model);
       reviewOptions.inputDigestSource = providerInput;
+      reviewOptions.providerInputControls = providerInput.userPrompt.inputControls;
       reviewOptions.providerInputDigest = await sha256Hex(providerInput);
     }
     return buildReview(
@@ -523,6 +616,7 @@ const disabledProvider: AgentProvider = {
   name: "disabled",
   review: async result =>
     buildReview(result, reviewBoundaryInput("disabled", "configured_disabled", "disabled"), {
+      diligenceQuestions: ["What lender or operator approval is required before enabling advisory review?"],
       exceptionReview: result.exceptionCount > 0 ? ["Manual review required for all exceptions."] : [],
       headline: "Agent review disabled",
       memo: "The borrowing-base engine still produced deterministic output, but no diligence memo was generated.",

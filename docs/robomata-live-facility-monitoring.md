@@ -321,6 +321,17 @@ open exceptions, model-provided exception notes are discarded so the lender
 packet remains clean. The resulting lender packet records whether review output
 was `llm_live` or deterministic fallback.
 
+The live provider input control boundary is explicit:
+
+- Provider input rows are capped by `openAiExceptionRowLimit`.
+- Text sent to the provider is trimmed and bounded before request construction.
+- Allowed fields are limited to policy artifact identity/version, operator
+  name, borrowing-base availability and exception counts, exception summaries,
+  and capped receivable/evidence exception rows.
+- Raw evidence bodies, raw provider payloads, secret env names, API keys, Sui
+  private keys, Seal plaintext/ciphertext, Walrus ciphertext, and share-link
+  tokens are excluded from provider input.
+
 Review provenance is retained as metadata, not raw prompt or provider payload
 storage. Lender packet review boundaries include provider, model, provider
 status, review mode, prompt version, output schema version, active policy
@@ -331,6 +342,12 @@ the full deterministic borrowing-base review input. Those digests let operators
 and lenders identify which bounded review context, source data, and output were
 used without exposing API keys, raw evidence contents, or full LLM
 request/response bodies.
+
+Structured review output contains a headline, memo, exception analysis,
+diligence questions, and recommended next actions. Malformed live-provider
+arrays or schema-invalid responses are rejected and converted to deterministic
+fallback output with `schema_invalid_fallback` status instead of being partially
+accepted as live output.
 
 ## Scheduled Agent Tick Route
 
