@@ -7,7 +7,7 @@ import {
   isRobomataWorkflowServerEnabled,
 } from "~~/lib/featureFlags";
 import type { RobomataAgentPolicy } from "~~/lib/robomata/agents";
-import { getRobomataAgentStore } from "~~/lib/robomata/server/agentStore";
+import { RobomataAgentPolicyRevokedMutationError, getRobomataAgentStore } from "~~/lib/robomata/server/agentStore";
 import { shareLinkHasMonitoringMetadata } from "~~/lib/robomata/server/sharedLenderPacket";
 import {
   getSubmissionShareLinkStore,
@@ -241,6 +241,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ t
       policy: serializeLenderAgentPolicy(policy),
     });
   } catch (error) {
+    if (error instanceof RobomataAgentPolicyRevokedMutationError) {
+      return noStoreResponse({ error: error.message }, { status: 409 });
+    }
     return noStoreResponse(
       { error: error instanceof Error ? error.message : "Failed to update lender agent appointment." },
       { status: 500 },
