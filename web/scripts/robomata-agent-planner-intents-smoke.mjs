@@ -47,6 +47,8 @@ for (const needle of [
   "validateSuggestedToolForAction",
   "validateRequiredApprovals",
   "validateRiskLevel",
+  "isActionWithinAppointment",
+  "isActionAutoApproved",
   "withPlannerRecommendationDefaults",
   "plannerRecommendationSource",
   "plannerRequiredApprovals",
@@ -55,7 +57,8 @@ for (const needle of [
   "plannerExecutionBoundary",
   "plannerToolIntentReason",
   "risk level understated deterministic severity",
-  "required approvals must be exactly operator",
+  "required approvals must include operator",
+  "none_auto_approved",
   "suggested an unsupported tool",
 ]) {
   assertIncludes(planner, needle, "agent planner");
@@ -89,7 +92,7 @@ assertIncludes(packageJson, "robomata:agent-planner-intents-smoke", "root packag
 assertIncludes(webPackageJson, "robomata:agent-planner-intents-smoke", "web package scripts");
 assertIncludes(doc, "structured recommendation intent", "live monitoring docs");
 assertIncludes(doc, "agent-supervision-plan-output-v2", "live monitoring docs");
-assertIncludes(doc, "approvals are currently operator-only", "live monitoring docs");
+assertIncludes(doc, "none_auto_approved", "live monitoring docs");
 assertIncludes(doc, "does not approve, complete, execute, or mutate retained actions", "live monitoring docs");
 
 console.log("Robomata agent planner intents smoke passed.");

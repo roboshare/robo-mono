@@ -24,7 +24,7 @@ export type RobomataAgentRunStatus = "completed" | "failed";
 export type RobomataAgentActionPermissionOperation = "approve" | "auto_approve" | "complete" | "execute" | "propose";
 
 export type RobomataAgentPlannerExecutionBoundary = "audit_only_adapter_flagged" | "proposal_only";
-export type RobomataAgentPlannerRequiredApproval = "operator";
+export type RobomataAgentPlannerRequiredApproval = "none_auto_approved" | "operator";
 export type RobomataAgentPlannerRiskLevel = RobomataAgentActionSeverity;
 export type RobomataAgentPlannerSuggestedTool = "none" | "robomata.agent.advisory_audit.v1";
 
