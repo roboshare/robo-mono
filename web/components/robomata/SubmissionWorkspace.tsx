@@ -1353,6 +1353,16 @@ export const SubmissionWorkspace = ({
                   <div className="mt-4">
                     <ReviewBoundaryPanel boundary={submission.computation.lenderPacket.reviewBoundary} />
                   </div>
+                  {(submission.computation.lenderPacket.diligenceQuestions ?? []).length ? (
+                    <div className="mt-4 rounded-2xl border border-base-300 bg-base-100 p-4">
+                      <div className="text-sm font-semibold text-base-content">Diligence questions</div>
+                      <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-base-content/70">
+                        {(submission.computation.lenderPacket.diligenceQuestions ?? []).map(item => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
                   <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-base-content/70">
                     {submission.computation.lenderPacket.borrowerRequests.map(item => (
                       <li key={item}>{item}</li>
