@@ -155,10 +155,15 @@ Live facility monitoring is additive and default-off:
   stubbed until provider-specific planning controls are implemented.
 - `ROBOMATA_AGENT_PLANNER_MODEL=<model id>` labels a configured non-rules
   planner boundary when the provider requires a model.
-- `ROBOMATA_AGENT_EXECUTION_ENABLED=true` is reserved for future delegated
-  execution adapters. The current code exposes a shared permission gate for that
-  future path, but no Sui/EVM/tool side effects are enabled by this flag in this
-  slice.
+- `ROBOMATA_AGENT_EXECUTION_ENABLED=true` enables the delegated execution
+  permission gate. Execution adapters also require their own adapter flags.
+- `NEXT_PUBLIC_ROBOMATA_AGENT_EXECUTION_ENABLED=true` only exposes the operator
+  UI affordance for approved executable actions; the server flags remain
+  authoritative.
+- `ROBOMATA_AGENT_ADVISORY_EXECUTION_ENABLED=true` enables the first bounded
+  advisory execution adapter. It can execute only approved `evidence_review`
+  and `sui_root_review` actions by recording execution audit metadata. It does
+  not mutate submissions, packets, evidence records, Sui, or EVM state.
 - `ROBOMATA_AGENTS_FILE=/local/path/agents.json` is an optional local-only JSON
   fallback when `POSTGRES_URL` is not configured.
 
@@ -201,6 +206,15 @@ Operators remain the execution boundary. They activate or pause policy, trigger
 manual checks, and approve, reject, complete, or skip proposed actions. Scheduled
 ticks can create proposed actions, but they do not approve their own work, mutate
 submissions, or execute Sui/EVM writes.
+
+The first delegated execution slice is audit-only. When both execution flags are
+enabled, approved `evidence_review` and `sui_root_review` actions can run through
+the `robomata.agent.advisory_audit.v1` adapter. The adapter immediately
+revalidates the current appointment, action authorization snapshot, allowed
+action type, and revocation state before recording executor, tool, input digest,
+output digest, status, and failure reason. Failed adapter attempts are retained
+as action/event audit metadata and leave the action status unchanged. All other
+action types remain proposal-only in this slice.
 
 Agent policies now record the appointed supervised agent name, the appointer,
 and the planner boundary used for each run. The current appointer path is the
@@ -255,6 +269,23 @@ The policy-artifact resolver currently always returns the platform default for a
 facility/submission. It is intentionally shaped for future facility or
 lender-specific overrides, but this tranche does not change credit behavior,
 root verification semantics, or approval boundaries.
+
+Run, packet, share-link, and agent-action payloads can also carry policy
+evaluation detail. These records are explainability metadata derived from the
+already-computed deterministic outputs:
+
+- borrowing-base evaluations explain advance-rate, concentration, receivable
+  eligibility, evidence-status, and manual-exclusion outcomes;
+- packet evaluations explain evidence freshness, packet freshness, and Sui root
+  status;
+- protected share-link metadata stores a compact pinned evaluation summary and
+  the resolved lender packet can include the full pinned evaluation detail when
+  available;
+- agent actions store the proposal/permission rule id and rule status that
+  retained or skipped the action.
+
+These evaluations do not introduce a new decision engine. They document the
+rule outcomes that produced the current deterministic state.
 
 The next agent-first tranche should replace these defaults with explicit lender
 policy artifacts, versioned approvals, and policy effective dates. Until then,

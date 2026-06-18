@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowPathIcon, BoltIcon, CheckCircleIcon, ShieldCheckIcon, XCircleIcon } from "@heroicons/react/24/outline";
 import { AgentSupervisionPolicyDisclosure } from "~~/components/robomata/PolicyRulesPanel";
-import { isRobomataAgentsClientEnabled } from "~~/lib/featureFlags";
+import { isRobomataAgentExecutionClientEnabled, isRobomataAgentsClientEnabled } from "~~/lib/featureFlags";
 import {
   type RobomataAgentAction,
+  type RobomataAgentActionType,
   type RobomataAgentPolicy,
   type RobomataAgentRun,
   getRobomataAgentActionPermissionDenial,
@@ -55,12 +56,15 @@ function metadataValue(action: RobomataAgentAction, key: string): string | undef
   return typeof value === "string" ? value : undefined;
 }
 
+const CLIENT_EXECUTABLE_AGENT_ACTION_TYPES = new Set<RobomataAgentActionType>(["evidence_review", "sui_root_review"]);
+
 export const AgentSupervisionPanel = ({
   chainId,
   getAuthHeaders,
   signerAddress,
   submission,
 }: AgentSupervisionPanelProps) => {
+  const executionClientEnabled = isRobomataAgentExecutionClientEnabled();
   const featureEnabled = isRobomataAgentsClientEnabled();
   const [actions, setActions] = useState<RobomataAgentAction[]>([]);
   const [appointmentNameDraft, setAppointmentNameDraft] = useState("Robomata supervised facility agent");
@@ -209,12 +213,16 @@ export const AgentSupervisionPanel = ({
     }
   };
 
-  const updateAction = async (action: RobomataAgentAction, status: "approved" | "rejected" | "completed") => {
+  const updateAction = async (
+    action: RobomataAgentAction,
+    status: "approved" | "rejected" | "completed",
+    options?: { execute?: boolean },
+  ) => {
     setIsMutating(true);
     try {
       const path = `/api/robomata/submissions/${submission.id}/agent-actions/${action.id}`;
       const response = await fetch(path, {
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ ...(options?.execute ? { execute: true } : {}), status }),
         headers: {
           "content-type": "application/json",
           ...(await getAuthHeaders({ chainId, method: "PATCH", path, signerAddress })),
@@ -222,11 +230,15 @@ export const AgentSupervisionPanel = ({
         method: "PATCH",
       });
       const payload = await readJsonResponse<{ action?: RobomataAgentAction }>(response);
+      if (payload.action) {
+        setActions(current =>
+          current.map(candidate => (candidate.id === payload.action?.id ? payload.action : candidate)),
+        );
+      }
       if (!response.ok || !payload.action) throw new Error(payload.error ?? "Failed to update agent action.");
-      setActions(current =>
-        current.map(candidate => (candidate.id === payload.action?.id ? payload.action : candidate)),
+      notification.success(
+        options?.execute ? "Agent action execution recorded." : `Agent action ${formatStatus(status)}.`,
       );
-      notification.success(`Agent action ${formatStatus(status)}.`);
     } catch (error) {
       notification.error(error instanceof Error ? error.message : "Failed to update agent action.");
     } finally {
@@ -362,6 +374,12 @@ export const AgentSupervisionPanel = ({
               <div className="mt-1 text-sm text-base-content/70">
                 {latestRun ? new Date(latestRun.completedAt).toLocaleString() : "Activate policy to run checks"}
               </div>
+              {latestRun ? (
+                <div className="mt-2 break-all text-xs text-base-content/50">
+                  {latestRun.policyArtifactName ?? policyArtifact.name} ·{" "}
+                  {latestRun.policyArtifactVersion ?? policyArtifact.version}
+                </div>
+              ) : null}
             </div>
             <div className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
               <div className="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">Planner</div>
@@ -396,6 +414,7 @@ export const AgentSupervisionPanel = ({
             {actions.length ? (
               actions.slice(0, 6).map(action => {
                 const permissionDeniedReason = metadataValue(action, "permissionDeniedReason");
+                const executionStatus = metadataValue(action, "executionStatus");
                 const approvalDeniedReason = getRobomataAgentActionPermissionDenial({
                   actionAuthorization: action.authorization,
                   actionType: action.type,
@@ -403,6 +422,12 @@ export const AgentSupervisionPanel = ({
                   policy,
                 });
                 const actionAuthorization = action.authorization;
+                const policyRuleId = metadataValue(action, "policyRuleId");
+                const policyRuleStatus = metadataValue(action, "policyRuleStatus");
+                const canExecuteAction =
+                  executionClientEnabled &&
+                  action.status === "approved" &&
+                  CLIENT_EXECUTABLE_AGENT_ACTION_TYPES.has(action.type);
 
                 return (
                   <div key={action.id} className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
@@ -427,10 +452,27 @@ export const AgentSupervisionPanel = ({
                       Planner: {formatStatus(metadataValue(action, "plannerProvider") ?? "rules")} /{" "}
                       {formatStatus(metadataValue(action, "proposalSource") ?? "deterministic_rules")}
                     </div>
+                    {policyRuleId ? (
+                      <div className="mt-1 text-xs text-base-content/60">
+                        Policy rule: <span className="font-mono">{policyRuleId}</span>
+                        {policyRuleStatus ? ` / ${formatStatus(policyRuleStatus)}` : ""}
+                      </div>
+                    ) : null}
                     <div className="mt-1 text-xs text-base-content/60 capitalize">
                       Authorized by {formatStatus(actionAuthorization?.appointedBy ?? "unknown")} /{" "}
                       {formatStatus(actionAuthorization?.appointmentAuthorizationSurface ?? "missing authorization")}
                     </div>
+                    {executionStatus ? (
+                      <div className="mt-2 rounded-2xl border border-base-300 bg-base-100 p-3 text-xs text-base-content/70">
+                        Execution {formatStatus(executionStatus)} via{" "}
+                        {metadataValue(action, "executionTool") ?? "unknown tool"} · input{" "}
+                        {metadataValue(action, "executionInputDigest")?.slice(0, 12) ?? "n/a"} · output{" "}
+                        {metadataValue(action, "executionOutputDigest")?.slice(0, 12) ?? "n/a"}
+                        {metadataValue(action, "executionFailureReason") ? (
+                          <span className="block text-error">{metadataValue(action, "executionFailureReason")}</span>
+                        ) : null}
+                      </div>
+                    ) : null}
                     {permissionDeniedReason ? (
                       <div className="mt-2 rounded-2xl border border-warning/30 bg-warning/10 p-3 text-xs text-warning-content">
                         Permission gate skipped this action: {permissionDeniedReason}
@@ -463,7 +505,16 @@ export const AgentSupervisionPanel = ({
                         </button>
                       </div>
                     ) : action.status === "approved" ? (
-                      <div className="mt-4">
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {canExecuteAction ? (
+                          <button
+                            className="btn btn-xs btn-primary rounded-full"
+                            disabled={isMutating || Boolean(approvalDeniedReason)}
+                            onClick={() => updateAction(action, "completed", { execute: true })}
+                          >
+                            Execute audit
+                          </button>
+                        ) : null}
                         <button
                           className="btn btn-xs btn-outline rounded-full"
                           disabled={isMutating || Boolean(approvalDeniedReason)}

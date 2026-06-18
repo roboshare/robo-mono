@@ -19,6 +19,12 @@ import {
 } from "~~/lib/robomata/facilityMonitoring";
 import { buildFacilityMonitoringProjection } from "~~/lib/robomata/facilityMonitoringProjection";
 import {
+  buildEvidenceFreshnessPolicyEvaluation,
+  buildPacketFreshnessPolicyEvaluation,
+  buildSuiRootPolicyEvaluation,
+  resolveRobomataFacilityPolicyArtifact,
+} from "~~/lib/robomata/policyRules";
+import {
   buildBorrowingBaseRunRootPayload,
   buildPacketManifestRootPayload,
 } from "~~/lib/robomata/server/facilityMonitoringRoots";
@@ -322,6 +328,46 @@ function derivePacketFreshness(
   return packet.freshnessStatus;
 }
 
+function packetWithCurrentPolicyEvaluations(input: {
+  freshnessStatus: PacketFreshnessStatus;
+  observations: FacilityObservation[];
+  packet: PacketManifest;
+  run: BorrowingBaseRun | undefined;
+  suiRootStatus: SuiRootVerificationStatus;
+}): PacketManifest {
+  if (!input.run) return input.packet;
+
+  const policyArtifact = resolveRobomataFacilityPolicyArtifact({
+    facilityId: input.packet.facilityId,
+  }).artifact;
+  const evaluatedAt = input.observations[0]?.observedAt ?? input.packet.generatedAt;
+  const policyEvaluations = [
+    buildEvidenceFreshnessPolicyEvaluation({
+      artifact: policyArtifact,
+      evaluatedAt,
+      observations: input.observations,
+    }),
+    buildPacketFreshnessPolicyEvaluation({
+      artifact: policyArtifact,
+      evaluatedAt,
+      freshnessStatus: input.freshnessStatus,
+      hasComputation: true,
+      observations: input.observations,
+      openExceptionCount: input.run.exceptions.filter(exception => exception.actionStatus === "open").length,
+    }),
+    buildSuiRootPolicyEvaluation({
+      artifact: policyArtifact,
+      evaluatedAt,
+      suiRootStatus: input.suiRootStatus,
+    }),
+  ];
+
+  return {
+    ...input.packet,
+    policyEvaluations,
+  };
+}
+
 function buildStoredProjection(input: {
   fallback: FacilityMonitoringProjection;
   facility: RobomataFacility;
@@ -339,12 +385,22 @@ function buildStoredProjection(input: {
   const packetManifests = input.packetManifests.length ? input.packetManifests : input.fallback.packetManifests;
   const suiRootCommits = input.suiRootCommits.length ? input.suiRootCommits : input.fallback.suiRootCommits;
   const latestSuiRootCommit = suiRootCommits[0] ?? input.fallback.latestSuiRootCommit;
+  const projectedSuiRootStatus = projectionSuiRootStatus(input.fallback, suiRootCommits);
   const freshnessStatus = derivePacketFreshness(sortedObservations, storedLatestPacket ?? input.fallback.latestPacket);
-  const latestPacket = storedLatestPacket
+  const packetCandidate = storedLatestPacket
     ? { ...storedLatestPacket, freshnessStatus }
     : input.fallback.latestPacket
       ? { ...input.fallback.latestPacket, freshnessStatus }
       : undefined;
+  const latestPacket = packetCandidate
+    ? packetWithCurrentPolicyEvaluations({
+        freshnessStatus,
+        observations: sortedObservations,
+        packet: packetCandidate,
+        run: latestRun,
+        suiRootStatus: projectedSuiRootStatus,
+      })
+    : undefined;
   const nextPacketManifests = latestPacket
     ? [latestPacket, ...packetManifests.filter(packet => packet.id !== latestPacket.id)]
     : packetManifests;
@@ -375,7 +431,7 @@ function buildStoredProjection(input: {
       status: deriveObservationStatus(observation, latestPacket?.generatedAt) as FacilityObservationStatus,
     })),
     freshnessStatus,
-    suiRootStatus: projectionSuiRootStatus(input.fallback, suiRootCommits),
+    suiRootStatus: projectedSuiRootStatus,
   };
 }
 

@@ -1,7 +1,10 @@
 import type { RobomataAgentPolicy } from "~~/lib/robomata/agents";
 import type { EvidenceCommitment } from "~~/lib/robomata/evidence";
 import type { BorrowingBaseRun, PacketFreshnessStatus, PacketManifest } from "~~/lib/robomata/facilityMonitoring";
-import { resolveRobomataFacilityPolicyArtifact } from "~~/lib/robomata/policyRules";
+import {
+  type RobomataPolicyEvaluationSummary,
+  resolveRobomataFacilityPolicyArtifact,
+} from "~~/lib/robomata/policyRules";
 import type {
   FacilitySubmission,
   FacilitySubmissionStatus,
@@ -49,6 +52,9 @@ export type SubmissionShareLinkMonitoringBinding = {
   policyArtifactId?: string;
   policyArtifactName?: string;
   policyArtifactVersion?: string;
+  policyEvaluationFailedCount?: number;
+  policyEvaluationSummary?: string;
+  policyEvaluationWarningCount?: number;
   runPolicyVersion?: string;
   packetManifestId: string;
   packetGeneratedAt: string;
@@ -104,6 +110,7 @@ export type SharedLenderPacketView = {
   monitoring?: SubmissionShareLinkMonitoringBinding & {
     currentPacketFreshnessStatus?: PacketFreshnessStatus;
     pinnedAtShare: boolean;
+    policyEvaluations?: RobomataPolicyEvaluationSummary[];
   };
   policyReviews?: {
     lender?: SubmissionPolicyReview;

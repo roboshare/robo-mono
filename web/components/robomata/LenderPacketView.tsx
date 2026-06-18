@@ -11,6 +11,7 @@ import {
   BorrowingBasePolicyDisclosure,
   EvidenceFreshnessPolicyDisclosure,
   PacketFreshnessPolicyDisclosure,
+  PolicyEvaluationSummaryPanel,
   SuiRootPolicyDisclosure,
 } from "~~/components/robomata/PolicyRulesPanel";
 import { ReviewBoundaryPanel } from "~~/components/robomata/ReviewBoundaryPanel";
@@ -160,6 +161,17 @@ export const LenderPacketView = ({ packet, shareToken }: LenderPacketViewProps) 
                   policyArtifact.version}
                 )
               </div>
+              {packet.monitoring.policyEvaluationSummary ? (
+                <div>
+                  Policy evaluation: {packet.monitoring.policyEvaluationSummary}
+                  {typeof packet.monitoring.policyEvaluationFailedCount === "number" ||
+                  typeof packet.monitoring.policyEvaluationWarningCount === "number"
+                    ? ` (${packet.monitoring.policyEvaluationFailedCount ?? 0} failed / ${
+                        packet.monitoring.policyEvaluationWarningCount ?? 0
+                      } warning)`
+                    : ""}
+                </div>
+              ) : null}
               {packet.monitoring.currentPacketFreshnessStatus ? (
                 <div>Current status: {formatStatus(packet.monitoring.currentPacketFreshnessStatus)}</div>
               ) : null}
@@ -171,6 +183,12 @@ export const LenderPacketView = ({ packet, shareToken }: LenderPacketViewProps) 
               <EvidenceFreshnessPolicyDisclosure policyArtifact={policyArtifact} />
               <PacketFreshnessPolicyDisclosure policyArtifact={policyArtifact} />
               <SuiRootPolicyDisclosure policyArtifact={policyArtifact} />
+            </div>
+            <div className="mt-4">
+              <PolicyEvaluationSummaryPanel
+                evaluations={packet.monitoring.policyEvaluations}
+                title="Policy evaluation detail"
+              />
             </div>
           </div>
         ) : null}
