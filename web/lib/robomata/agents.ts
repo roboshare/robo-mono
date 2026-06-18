@@ -49,6 +49,8 @@ export type RobomataAgentEventType =
   | "action_approved"
   | "action_rejected"
   | "action_completed"
+  | "action_execution_failed"
+  | "action_execution_succeeded"
   | "action_skipped";
 
 export type RobomataAgentMetadata = Record<string, string | number | boolean | null>;
