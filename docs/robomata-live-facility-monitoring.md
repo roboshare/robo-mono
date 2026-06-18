@@ -227,20 +227,28 @@ Broader autonomous execution belongs to the follow-on Linear project
 
 ## Policy Visibility Baseline
 
-The current rules are platform-default policy rules, not lender-authored policy
-artifacts yet. The operator workspace, lender packet view, facility monitor, and
-agent supervision panel expose the active `submission-v1` rules so users can see
-the deterministic thresholds and proposal triggers before relying on the output.
+The current rules are represented by the versioned
+`robomata-default-facility-policy` artifact. This is a platform-default policy
+artifact, not a lender-authored override yet. The operator workspace, lender
+packet view, facility monitor, and agent supervision panel expose the active
+`submission-v1` artifact so users can see the deterministic thresholds and
+proposal triggers before relying on the output.
 
 Visible policy rules cover borrowing-base eligibility, concentration reserves,
-packet freshness classification, Sui evidence-root status, and supervised agent
-action proposal triggers. The displayed rules are sourced from shared policy
-metadata and the numeric borrowing-base thresholds are reused by the computation
-path to avoid UI/runtime drift.
+evidence freshness, packet freshness classification, Sui evidence-root status,
+and supervised agent action proposal triggers. The displayed rules are sourced
+from shared policy-artifact metadata and the numeric borrowing-base thresholds
+are reused by the computation path to avoid UI/runtime drift.
 Packet freshness rules also disclose that fresh observations recorded after a
 stored packet was generated mark that packet stale until reviewed or refreshed.
 Monitoring run and protected lender packet surfaces display the rule version
-attached to the pinned borrowing-base run when that run is available.
+and artifact identity attached to the pinned borrowing-base run when that run is
+available.
+
+The policy-artifact resolver currently always returns the platform default for a
+facility/submission. It is intentionally shaped for future facility or
+lender-specific overrides, but this tranche does not change credit behavior,
+root verification semantics, or approval boundaries.
 
 The next agent-first tranche should replace these defaults with explicit lender
 policy artifacts, versioned approvals, and policy effective dates. Until then,

@@ -29,6 +29,7 @@ import {
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
 import { isRobomataTokenizationClientEnabled } from "~~/lib/featureFlags";
 import { formatPercentFromBps, formatUsd } from "~~/lib/robomata/borrowingBase";
+import { resolveRobomataFacilityPolicyArtifact } from "~~/lib/robomata/policyRules";
 import type { FacilitySubmission, SubmissionComputation, SubmissionReceivable } from "~~/lib/robomata/submissions";
 import { notification } from "~~/utils/scaffold-eth";
 
@@ -207,6 +208,14 @@ export const SubmissionWorkspace = ({
     partnerAddress: partnerAuthAddress,
     signerAddress,
   });
+  const policyArtifact = useMemo(
+    () =>
+      resolveRobomataFacilityPolicyArtifact({
+        facilityId: submission?.facilityMonitoring?.facilityId,
+        submissionId: submission?.id ?? submissionId,
+      }).artifact,
+    [submission?.facilityMonitoring?.facilityId, submission?.id, submissionId],
+  );
 
   const summaryCards = useMemo(
     () => (submission?.computation ? buildSubmissionSummaryCards(submission.computation) : []),
@@ -834,7 +843,7 @@ export const SubmissionWorkspace = ({
         </div>
       </section>
 
-      <BorrowingBasePolicyDisclosure />
+      <BorrowingBasePolicyDisclosure policyArtifact={policyArtifact} />
 
       <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <div className="space-y-6">

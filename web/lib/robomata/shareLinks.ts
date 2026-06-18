@@ -44,6 +44,9 @@ export type SubmissionShareLinkAuditEvent = {
 export type SubmissionShareLinkMonitoringBinding = {
   facilityId: string;
   runId: string;
+  policyArtifactId?: string;
+  policyArtifactName?: string;
+  policyArtifactVersion?: string;
   runPolicyVersion?: string;
   packetManifestId: string;
   packetGeneratedAt: string;

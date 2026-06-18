@@ -9,7 +9,7 @@ import {
   type RobomataFacility,
   type SuiRootVerificationStatus,
 } from "~~/lib/robomata/facilityMonitoring";
-import { ROBOMATA_DEFAULT_POLICY_VERSION } from "~~/lib/robomata/policyRules";
+import { resolveRobomataFacilityPolicyArtifact } from "~~/lib/robomata/policyRules";
 import type { FacilitySubmission, SubmissionEvidence } from "~~/lib/robomata/submissions";
 
 function facilityIdForSubmission(submission: FacilitySubmission): string {
@@ -99,6 +99,7 @@ function suiRootStatus(submission: FacilitySubmission): SuiRootVerificationStatu
 
 function buildLatestRun(submission: FacilitySubmission, facilityId: string, observations: FacilityObservation[]) {
   if (!submission.computation) return undefined;
+  const policyArtifact = resolveRobomataFacilityPolicyArtifact({ facilityId, submissionId: submission.id }).artifact;
 
   const status: BorrowingBaseRun["status"] =
     submission.evidenceCommit.status === "committed"
@@ -113,7 +114,9 @@ function buildLatestRun(submission: FacilitySubmission, facilityId: string, obse
     runNumber: 1,
     asOfDate: submission.asOfDate,
     status,
-    policyVersion: ROBOMATA_DEFAULT_POLICY_VERSION,
+    policyArtifactId: policyArtifact.id,
+    policyArtifactName: policyArtifact.name,
+    policyVersion: policyArtifact.version,
     inputObservationIds: observations.map(observation => observation.id),
     inputDigest: submission.evidenceCommit.evidenceRoot ?? submission.computation.evidenceAnchor.evidenceRoot,
     borrowingBase: submission.computation.borrowingBase,
@@ -134,6 +137,10 @@ function buildLatestPacket(
   freshnessStatus: PacketFreshnessStatus,
 ) {
   if (!run || !submission.computation) return undefined;
+  const policyArtifact = resolveRobomataFacilityPolicyArtifact({
+    facilityId,
+    submissionId: submission.id,
+  }).artifact;
 
   return {
     id: submission.facilityMonitoring?.latestPacketId ?? `packet_${submission.id}`,
@@ -150,6 +157,9 @@ function buildLatestPacket(
       grossReceivablesCents: submission.computation.borrowingBase.grossReceivablesCents,
       availableBorrowingBaseCents: submission.computation.borrowingBase.availableBorrowingBaseCents,
       exceptionCount: submission.computation.borrowingBase.exceptionCount,
+      policyArtifactId: policyArtifact.id,
+      policyArtifactName: policyArtifact.name,
+      policyArtifactVersion: policyArtifact.version,
     },
     lenderPacket: submission.computation.lenderPacket,
   } satisfies PacketManifest;

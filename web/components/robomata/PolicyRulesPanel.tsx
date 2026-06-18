@@ -1,16 +1,19 @@
 import {
   ROBOMATA_AGENT_SUPERVISION_POLICY_RULES,
   ROBOMATA_BORROWING_BASE_POLICY_RULES,
-  ROBOMATA_DEFAULT_POLICY_VERSION,
+  ROBOMATA_DEFAULT_FACILITY_POLICY_ARTIFACT,
+  ROBOMATA_EVIDENCE_FRESHNESS_POLICY_RULES,
   ROBOMATA_PACKET_FRESHNESS_POLICY_RULES,
   ROBOMATA_SUI_ROOT_POLICY_RULES,
   type RobomataAgentPolicyRule,
+  type RobomataFacilityPolicyArtifact,
   type RobomataPolicyRule,
 } from "~~/lib/robomata/policyRules";
 
 type RuleDisclosureProps<T extends RobomataPolicyRule> = {
   title: string;
   description: string;
+  policyArtifact?: RobomataFacilityPolicyArtifact;
   rules: T[];
   badges?: string[];
   renderValue?: (rule: T) => string | undefined;
@@ -19,6 +22,7 @@ type RuleDisclosureProps<T extends RobomataPolicyRule> = {
 function RuleDisclosure<T extends RobomataPolicyRule>({
   badges = [],
   description,
+  policyArtifact = ROBOMATA_DEFAULT_FACILITY_POLICY_ARTIFACT,
   renderValue,
   rules,
   title,
@@ -31,9 +35,13 @@ function RuleDisclosure<T extends RobomataPolicyRule>({
             <div className="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">Active policy</div>
             <div className="mt-1 text-sm font-semibold text-base-content">{title}</div>
             <div className="mt-1 text-sm text-base-content/70">{description}</div>
+            <div className="mt-2 text-xs text-base-content/50">
+              {policyArtifact.name} · {policyArtifact.id}
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <span className="badge badge-ghost">{ROBOMATA_DEFAULT_POLICY_VERSION}</span>
+            <span className="badge badge-ghost">{policyArtifact.version}</span>
+            <span className="badge badge-ghost">{policyArtifact.scope.replace(/_/g, " ")}</span>
             {badges.map(badge => (
               <span key={badge} className="badge badge-ghost">
                 {badge}
@@ -61,45 +69,91 @@ function RuleDisclosure<T extends RobomataPolicyRule>({
   );
 }
 
-export function BorrowingBasePolicyDisclosure() {
+export function BorrowingBasePolicyDisclosure({
+  policyArtifact = ROBOMATA_DEFAULT_FACILITY_POLICY_ARTIFACT,
+}: {
+  policyArtifact?: RobomataFacilityPolicyArtifact;
+}) {
+  const ruleSet = policyArtifact.ruleSets.borrowingBase;
+
   return (
     <RuleDisclosure
-      title="Borrowing-base eligibility rules"
-      description="The current platform-default rules used to compute eligibility, reserves, and exceptions."
-      rules={ROBOMATA_BORROWING_BASE_POLICY_RULES}
+      title={ruleSet.label}
+      description={ruleSet.description}
+      policyArtifact={policyArtifact}
+      rules={ruleSet.rules ?? ROBOMATA_BORROWING_BASE_POLICY_RULES}
     />
   );
 }
 
-export function PacketFreshnessPolicyDisclosure() {
+export function EvidenceFreshnessPolicyDisclosure({
+  policyArtifact = ROBOMATA_DEFAULT_FACILITY_POLICY_ARTIFACT,
+}: {
+  policyArtifact?: RobomataFacilityPolicyArtifact;
+}) {
+  const ruleSet = policyArtifact.ruleSets.evidenceFreshness;
+
   return (
     <RuleDisclosure
-      title="Packet freshness rules"
-      description="The deterministic monitoring rules that classify lender packet freshness."
-      rules={ROBOMATA_PACKET_FRESHNESS_POLICY_RULES}
+      title={ruleSet.label}
+      description={ruleSet.description}
+      policyArtifact={policyArtifact}
+      rules={ruleSet.rules ?? ROBOMATA_EVIDENCE_FRESHNESS_POLICY_RULES}
     />
   );
 }
 
-export function SuiRootPolicyDisclosure() {
+export function PacketFreshnessPolicyDisclosure({
+  policyArtifact = ROBOMATA_DEFAULT_FACILITY_POLICY_ARTIFACT,
+}: {
+  policyArtifact?: RobomataFacilityPolicyArtifact;
+}) {
+  const ruleSet = policyArtifact.ruleSets.packetFreshness;
+
   return (
     <RuleDisclosure
-      title="Sui evidence-root rules"
-      description="The deterministic evidence-anchor rules that classify monitoring root commit and verification status."
-      rules={ROBOMATA_SUI_ROOT_POLICY_RULES}
+      title={ruleSet.label}
+      description={ruleSet.description}
+      policyArtifact={policyArtifact}
+      rules={ruleSet.rules ?? ROBOMATA_PACKET_FRESHNESS_POLICY_RULES}
+    />
+  );
+}
+
+export function SuiRootPolicyDisclosure({
+  policyArtifact = ROBOMATA_DEFAULT_FACILITY_POLICY_ARTIFACT,
+}: {
+  policyArtifact?: RobomataFacilityPolicyArtifact;
+}) {
+  const ruleSet = policyArtifact.ruleSets.suiRoot;
+
+  return (
+    <RuleDisclosure
+      title={ruleSet.label}
+      description={ruleSet.description}
+      policyArtifact={policyArtifact}
+      rules={ruleSet.rules ?? ROBOMATA_SUI_ROOT_POLICY_RULES}
       badges={["robomata.monitoring.v1"]}
     />
   );
 }
 
-export function AgentSupervisionPolicyDisclosure({ allowedActionTypes }: { allowedActionTypes?: string[] }) {
+export function AgentSupervisionPolicyDisclosure({
+  allowedActionTypes,
+  policyArtifact = ROBOMATA_DEFAULT_FACILITY_POLICY_ARTIFACT,
+}: {
+  allowedActionTypes?: string[];
+  policyArtifact?: RobomataFacilityPolicyArtifact;
+}) {
   const allowedActionTypeSet = new Set(allowedActionTypes);
+  const ruleSet = policyArtifact.ruleSets.agentSupervision;
 
   return (
     <RuleDisclosure
-      title="Supervised action proposal rules"
-      description="The current deterministic rules that can propose actions. Operators still approve or reject them."
-      rules={ROBOMATA_AGENT_SUPERVISION_POLICY_RULES}
+      title={ruleSet.label}
+      description={ruleSet.description}
+      policyArtifact={policyArtifact}
+      rules={ruleSet.rules ?? ROBOMATA_AGENT_SUPERVISION_POLICY_RULES}
       renderValue={(rule: RobomataAgentPolicyRule) =>
         allowedActionTypes ? (allowedActionTypeSet.has(rule.actionType) ? "allowed" : "not allowed") : rule.actionType
       }

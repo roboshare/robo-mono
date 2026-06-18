@@ -7,6 +7,7 @@ import {
   isRobomataLenderMonitoringShareEnabled,
   isRobomataShareLinksEnabled,
 } from "~~/lib/featureFlags";
+import { resolveRobomataFacilityPolicyArtifact } from "~~/lib/robomata/policyRules";
 import { getRobomataAgentStore } from "~~/lib/robomata/server/agentStore";
 import { getFacilityMonitoringStore } from "~~/lib/robomata/server/facilityMonitoringStore";
 import {
@@ -24,6 +25,9 @@ const MONITORING_METADATA_KEYS = [
   "packetGeneratedAt",
   "packetManifestId",
   "packetRootDigest",
+  "policyArtifactId",
+  "policyArtifactName",
+  "policyArtifactVersion",
   "runId",
   "runPolicyVersion",
   "runRootDigest",
@@ -52,6 +56,9 @@ function monitoringBindingFromMetadata(
     packetFreshnessStatus: packetFreshnessStatus as SubmissionShareLinkMonitoringBinding["packetFreshnessStatus"],
     monitoringRootVersion: stringMetadata(metadata, "monitoringRootVersion"),
     packetRootDigest: stringMetadata(metadata, "packetRootDigest"),
+    policyArtifactId: stringMetadata(metadata, "policyArtifactId"),
+    policyArtifactName: stringMetadata(metadata, "policyArtifactName"),
+    policyArtifactVersion: stringMetadata(metadata, "policyArtifactVersion"),
     runPolicyVersion: stringMetadata(metadata, "runPolicyVersion"),
     runRootDigest: stringMetadata(metadata, "runRootDigest"),
   };
@@ -66,6 +73,10 @@ export async function buildShareLinkMonitoringMetadata(
   const latestRun = projection.latestRun;
   const latestPacket = projection.latestPacket;
   if (!latestRun || !latestPacket) return undefined;
+  const policyArtifact = resolveRobomataFacilityPolicyArtifact({
+    facilityId: projection.facility.id,
+    submissionId: submission.id,
+  }).artifact;
 
   return {
     facilityId: projection.facility.id,
@@ -80,6 +91,9 @@ export async function buildShareLinkMonitoringMetadata(
       typeof latestPacket.publicMetadata.packetRootDigest === "string"
         ? latestPacket.publicMetadata.packetRootDigest
         : null,
+    policyArtifactId: latestRun.policyArtifactId ?? policyArtifact.id,
+    policyArtifactName: latestRun.policyArtifactName ?? policyArtifact.name,
+    policyArtifactVersion: latestRun.policyVersion ?? policyArtifact.version,
     runId: latestRun.id,
     runPolicyVersion: latestRun.policyVersion,
     runRootDigest: latestRun.rootDigest || null,
@@ -105,6 +119,10 @@ export async function buildResolvedSharedLenderPacketView(input: {
     projection.packetManifests.find(packet => packet.runId === binding.runId);
   const run = projection.runHistory.find(candidate => candidate.id === binding.runId);
   if (!packetManifest || !run) return buildSharedLenderPacketView({ ...input, agentAppointment });
+  const policyArtifact = resolveRobomataFacilityPolicyArtifact({
+    facilityId: projection.facility.id,
+    submissionId: input.submission.id,
+  }).artifact;
 
   const currentPacketFreshnessStatus =
     projection.latestPacket &&
@@ -121,6 +139,9 @@ export async function buildResolvedSharedLenderPacketView(input: {
       ...binding,
       currentPacketFreshnessStatus,
       pinnedAtShare: true,
+      policyArtifactId: binding.policyArtifactId ?? run.policyArtifactId ?? policyArtifact.id,
+      policyArtifactName: binding.policyArtifactName ?? run.policyArtifactName ?? policyArtifact.name,
+      policyArtifactVersion: binding.policyArtifactVersion ?? run.policyVersion ?? policyArtifact.version,
       runPolicyVersion: binding.runPolicyVersion ?? run.policyVersion,
     },
     agentAppointment,
