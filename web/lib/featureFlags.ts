@@ -92,6 +92,10 @@ export function isRobomataAgentPlannerEnabled(): boolean {
   return isEnabled(process.env.ROBOMATA_AGENT_PLANNER_ENABLED);
 }
 
+export function isRobomataAgentExecutionEnabled(): boolean {
+  return isEnabled(process.env.ROBOMATA_AGENT_EXECUTION_ENABLED);
+}
+
 export function isRobomataLenderAgentAppointmentEnabled(): boolean {
   return isEnabled(process.env.ROBOMATA_LENDER_AGENT_APPOINTMENT_ENABLED);
 }

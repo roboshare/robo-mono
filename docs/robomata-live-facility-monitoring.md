@@ -155,6 +155,10 @@ Live facility monitoring is additive and default-off:
   stubbed until provider-specific planning controls are implemented.
 - `ROBOMATA_AGENT_PLANNER_MODEL=<model id>` labels a configured non-rules
   planner boundary when the provider requires a model.
+- `ROBOMATA_AGENT_EXECUTION_ENABLED=true` is reserved for future delegated
+  execution adapters. The current code exposes a shared permission gate for that
+  future path, but no Sui/EVM/tool side effects are enabled by this flag in this
+  slice.
 - `ROBOMATA_AGENTS_FILE=/local/path/agents.json` is an optional local-only JSON
   fallback when `POSTGRES_URL` is not configured.
 
@@ -186,6 +190,12 @@ events. A revoked policy cannot run manually or through scheduled ticks, and
 open actions cannot be approved or completed while the policy remains revoked.
 Operator and protected lender packet surfaces show the revoked state plus
 revocation reason and authorization surface.
+
+Actions carry the appointment authorization snapshot that created them.
+Approving or completing an action requires the current appointment to be active,
+to still allow the action type, and to match the action's recorded appointment
+authorization. Disallowed action types are retained as skipped audit records
+with the permission-denial reason instead of becoming executable work.
 
 Operators remain the execution boundary. They activate or pause policy, trigger
 manual checks, and approve, reject, complete, or skip proposed actions. Scheduled

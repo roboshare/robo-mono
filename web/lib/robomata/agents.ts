@@ -20,6 +20,8 @@ export type RobomataAgentActionSeverity = "low" | "medium" | "high";
 
 export type RobomataAgentRunStatus = "completed" | "failed";
 
+export type RobomataAgentActionPermissionOperation = "approve" | "auto_approve" | "complete" | "execute" | "propose";
+
 export type RobomataAgentAppointer = "lender" | "operator" | "platform";
 export type RobomataAgentAppointmentAuthorizationSurface = "operator_submission_access" | "protected_lender_share_link";
 
@@ -91,6 +93,15 @@ export type RobomataAgentPolicy = {
   lastRunAt?: string;
 };
 
+export type RobomataAgentActionAuthorization = {
+  appointedAgentName?: string;
+  appointedAt?: string;
+  appointedBy?: RobomataAgentAppointer;
+  appointmentAuthorizationId?: string;
+  appointmentAuthorizationSurface?: RobomataAgentAppointmentAuthorizationSurface;
+  policyId: string;
+};
+
 export type RobomataAgentAction = {
   id: string;
   runId: string;
@@ -105,6 +116,7 @@ export type RobomataAgentAction = {
   message: string;
   reason: string;
   proposedAt: string;
+  authorization?: RobomataAgentActionAuthorization;
   decidedAt?: string;
   decisionReason?: string;
   metadata?: RobomataAgentMetadata;
@@ -142,7 +154,15 @@ export type RobomataAgentEvent = {
 
 export type RobomataAgentActionDraft = Omit<
   RobomataAgentAction,
-  "id" | "runId" | "policyId" | "submissionId" | "facilityId" | "partnerAddress" | "proposedAt" | "status"
+  | "authorization"
+  | "id"
+  | "runId"
+  | "policyId"
+  | "submissionId"
+  | "facilityId"
+  | "partnerAddress"
+  | "proposedAt"
+  | "status"
 >;
 
 export function defaultAllowedAgentActionTypes(): RobomataAgentActionType[] {
@@ -183,4 +203,59 @@ export function normalizeAgentActionTypes(values: unknown): RobomataAgentActionT
 
 export function isAgentActionAllowed(policy: RobomataAgentPolicy, type: RobomataAgentActionType): boolean {
   return policy.allowedActionTypes.includes(type);
+}
+
+export function buildAgentActionAuthorization(policy: RobomataAgentPolicy): RobomataAgentActionAuthorization {
+  return {
+    appointedAgentName: policy.appointedAgentName,
+    appointedAt: policy.appointedAt,
+    appointedBy: policy.appointedBy,
+    appointmentAuthorizationId: policy.appointmentAuthorizationId,
+    appointmentAuthorizationSurface: policy.appointmentAuthorizationSurface,
+    policyId: policy.id,
+  };
+}
+
+export function agentActionAuthorizationMatchesPolicy(
+  actionAuthorization: RobomataAgentActionAuthorization | undefined,
+  policy: RobomataAgentPolicy,
+): boolean {
+  if (!actionAuthorization) return false;
+
+  return (
+    actionAuthorization.policyId === policy.id &&
+    actionAuthorization.appointedAt === policy.appointedAt &&
+    actionAuthorization.appointedBy === policy.appointedBy &&
+    actionAuthorization.appointmentAuthorizationId === policy.appointmentAuthorizationId &&
+    actionAuthorization.appointmentAuthorizationSurface === policy.appointmentAuthorizationSurface
+  );
+}
+
+export function getRobomataAgentActionPermissionDenial(input: {
+  actionAuthorization?: RobomataAgentActionAuthorization;
+  actionType: RobomataAgentActionType;
+  executionEnabled?: boolean;
+  operation: RobomataAgentActionPermissionOperation;
+  policy: RobomataAgentPolicy;
+}): string | null {
+  if (input.operation === "execute" && !input.executionEnabled) {
+    return "Delegated agent execution is disabled by feature flag.";
+  }
+  if (input.policy.status !== "active") {
+    return `Current agent appointment is ${input.policy.status}; ${input.operation.replace(/_/g, " ")} requires an active appointment.`;
+  }
+  if (!isAgentActionAllowed(input.policy, input.actionType)) {
+    return `${input.actionType.replace(/_/g, " ")} is not allowed by the current agent appointment.`;
+  }
+  if (input.operation === "auto_approve" && !input.policy.autoApproveActionTypes.includes(input.actionType)) {
+    return `${input.actionType.replace(/_/g, " ")} is not auto-approved by the current agent appointment.`;
+  }
+  if (input.actionAuthorization && !agentActionAuthorizationMatchesPolicy(input.actionAuthorization, input.policy)) {
+    return "This action was authorized by a different agent appointment than the current policy.";
+  }
+  if (!input.actionAuthorization && input.operation === "execute") {
+    return "This action is missing agent appointment authorization metadata.";
+  }
+
+  return null;
 }
