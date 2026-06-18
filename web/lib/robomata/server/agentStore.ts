@@ -81,8 +81,8 @@ export type RobomataAgentStore = {
   getPolicy: (submissionId: string, partnerAddress: string) => Promise<RobomataAgentPolicy | null>;
   getOrCreateDefaultPolicy: (submission: FacilitySubmission) => Promise<RobomataAgentPolicy>;
   updatePolicy: (input: UpdateAgentPolicyInput) => Promise<RobomataAgentPolicy>;
-  listRuns: (submissionId: string, partnerAddress: string) => Promise<RobomataAgentRun[]>;
-  listActions: (submissionId: string, partnerAddress: string) => Promise<RobomataAgentAction[]>;
+  listRuns: (submissionId: string, partnerAddress: string, limit?: number) => Promise<RobomataAgentRun[]>;
+  listActions: (submissionId: string, partnerAddress: string, limit?: number) => Promise<RobomataAgentAction[]>;
   listRunnablePolicies: () => Promise<RobomataAgentPolicy[]>;
   recordActionExecutionAudit: (input: RecordAgentActionExecutionAuditInput) => Promise<RobomataAgentAction | null>;
   recordRun: (input: RecordAgentRunInput) => Promise<{ actions: RobomataAgentAction[]; run: RobomataAgentRun }>;
@@ -125,6 +125,13 @@ function createEventId(): string {
 
 function normalizePartnerAddress(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function normalizeListLimit(limit: number | undefined): number | undefined {
+  if (!Number.isFinite(limit ?? Number.NaN)) return undefined;
+  const normalized = Math.floor(limit ?? 0);
+  if (normalized <= 0) return undefined;
+  return Math.min(normalized, 250);
 }
 
 function hasPostgresConfig() {
@@ -594,22 +601,25 @@ function createFileStore(): RobomataAgentStore {
         return policy;
       });
     },
-    async listRuns(submissionId, partnerAddress) {
+    async listRuns(submissionId, partnerAddress, limit) {
       const normalizedPartnerAddress = normalizePartnerAddress(partnerAddress);
+      const normalizedLimit = normalizeListLimit(limit);
       const fileStore = await readFileStore(filePath);
-      return fileStore.runs
+      const runs = fileStore.runs
         .filter(
           run =>
             run.submissionId === submissionId &&
             normalizePartnerAddress(run.partnerAddress) === normalizedPartnerAddress,
         )
         .sort((left, right) => right.completedAt.localeCompare(left.completedAt));
+      return normalizedLimit ? runs.slice(0, normalizedLimit) : runs;
     },
-    async listActions(submissionId, partnerAddress) {
+    async listActions(submissionId, partnerAddress, limit) {
       const normalizedPartnerAddress = normalizePartnerAddress(partnerAddress);
+      const normalizedLimit = normalizeListLimit(limit);
       const fileStore = await readFileStore(filePath);
       const policy = findPolicy(fileStore.policies, submissionId, partnerAddress);
-      return fileStore.actions
+      const actions = fileStore.actions
         .filter(
           action =>
             action.submissionId === submissionId &&
@@ -617,6 +627,7 @@ function createFileStore(): RobomataAgentStore {
         )
         .map(action => withLegacyActionAuthorization(action, policy))
         .sort((left, right) => right.proposedAt.localeCompare(left.proposedAt));
+      return normalizedLimit ? actions.slice(0, normalizedLimit) : actions;
     },
     async listRunnablePolicies() {
       const fileStore = await readFileStore(filePath);
@@ -880,24 +891,42 @@ function createPostgresStore(): RobomataAgentStore {
         return policy;
       });
     },
-    async listRuns(submissionId, partnerAddress) {
+    async listRuns(submissionId, partnerAddress, limit) {
       await ensurePostgresTables();
-      const rows = (await sql`
-        SELECT payload
-        FROM robomata_agent_runs
-        WHERE submission_id = ${submissionId} AND lower(partner_address) = ${normalizePartnerAddress(partnerAddress)}
-        ORDER BY completed_at DESC;
-      `) as Array<{ payload: RobomataAgentRun }>;
+      const normalizedLimit = normalizeListLimit(limit);
+      const rows = normalizedLimit
+        ? ((await sql`
+            SELECT payload
+            FROM robomata_agent_runs
+            WHERE submission_id = ${submissionId} AND lower(partner_address) = ${normalizePartnerAddress(partnerAddress)}
+            ORDER BY completed_at DESC
+            LIMIT ${normalizedLimit};
+          `) as Array<{ payload: RobomataAgentRun }>)
+        : ((await sql`
+            SELECT payload
+            FROM robomata_agent_runs
+            WHERE submission_id = ${submissionId} AND lower(partner_address) = ${normalizePartnerAddress(partnerAddress)}
+            ORDER BY completed_at DESC;
+          `) as Array<{ payload: RobomataAgentRun }>);
       return rows.map(row => row.payload);
     },
-    async listActions(submissionId, partnerAddress) {
+    async listActions(submissionId, partnerAddress, limit) {
       await ensurePostgresTables();
-      const rows = (await sql`
-        SELECT payload
-        FROM robomata_agent_actions
-        WHERE submission_id = ${submissionId} AND lower(partner_address) = ${normalizePartnerAddress(partnerAddress)}
-        ORDER BY proposed_at DESC;
-      `) as Array<{ payload: RobomataAgentAction }>;
+      const normalizedLimit = normalizeListLimit(limit);
+      const rows = normalizedLimit
+        ? ((await sql`
+            SELECT payload
+            FROM robomata_agent_actions
+            WHERE submission_id = ${submissionId} AND lower(partner_address) = ${normalizePartnerAddress(partnerAddress)}
+            ORDER BY proposed_at DESC
+            LIMIT ${normalizedLimit};
+          `) as Array<{ payload: RobomataAgentAction }>)
+        : ((await sql`
+            SELECT payload
+            FROM robomata_agent_actions
+            WHERE submission_id = ${submissionId} AND lower(partner_address) = ${normalizePartnerAddress(partnerAddress)}
+            ORDER BY proposed_at DESC;
+          `) as Array<{ payload: RobomataAgentAction }>);
       const policy = await this.getPolicy(submissionId, partnerAddress);
       return rows.map(row => withLegacyActionAuthorization(row.payload, policy ?? undefined));
     },

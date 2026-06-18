@@ -19,13 +19,13 @@ import type { FacilitySubmission } from "~~/lib/robomata/submissions";
 
 export const ROBOMATA_AGENT_PLANNER_PROMPT_VERSION = "agent-supervision-planner-v1";
 export const ROBOMATA_AGENT_PLANNER_OUTPUT_SCHEMA_VERSION = "agent-supervision-plan-output-v1";
+export const ROBOMATA_AGENT_PLANNER_MAX_CANDIDATE_ACTIONS = 8;
+export const ROBOMATA_AGENT_PLANNER_MAX_RECENT_ACTIONS = 12;
+export const ROBOMATA_AGENT_PLANNER_MAX_RECENT_RUNS = 5;
+export const ROBOMATA_AGENT_PLANNER_MAX_TEXT_LENGTH = 260;
 
 const supportedPlannerProviders: RobomataAgentPlannerProvider[] = ["rules", "openai", "anthropic", "google"];
 const openAiPlannerTimeoutMs = 8_000;
-const plannerMaxCandidateActions = 8;
-const plannerMaxRecentActions = 12;
-const plannerMaxRecentRuns = 5;
-const plannerMaxTextLength = 260;
 
 const providerKeyEnv: Record<Exclude<RobomataAgentPlannerProvider, "rules">, string> = {
   anthropic: "ANTHROPIC_API_KEY",
@@ -117,6 +117,13 @@ type OpenAiPlannerPayload = {
   actions?: OpenAiPlannerActionPayload[];
 };
 
+class OpenAiPlannerSchemaError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OpenAiPlannerSchemaError";
+  }
+}
+
 type OpenAiResponseOutputContent = {
   text?: string;
 };
@@ -183,10 +190,10 @@ function plannerInputControls(generatedAt: string): RobomataAgentPlannerInputCon
       "unbounded prompts or model responses",
     ],
     generatedAt,
-    maxCandidateActions: plannerMaxCandidateActions,
-    maxRecentActions: plannerMaxRecentActions,
-    maxRecentRuns: plannerMaxRecentRuns,
-    maxTextLength: plannerMaxTextLength,
+    maxCandidateActions: ROBOMATA_AGENT_PLANNER_MAX_CANDIDATE_ACTIONS,
+    maxRecentActions: ROBOMATA_AGENT_PLANNER_MAX_RECENT_ACTIONS,
+    maxRecentRuns: ROBOMATA_AGENT_PLANNER_MAX_RECENT_RUNS,
+    maxTextLength: ROBOMATA_AGENT_PLANNER_MAX_TEXT_LENGTH,
     rawEvidenceIncluded: false,
     secretMaterialIncluded: false,
   };
@@ -200,7 +207,7 @@ function boundedText(value: unknown, fallback: string, maxLength: number): strin
 }
 
 function compactText(value: string | undefined, fallback = "n/a"): string {
-  return boundedText(value, fallback, plannerMaxTextLength);
+  return boundedText(value, fallback, ROBOMATA_AGENT_PLANNER_MAX_TEXT_LENGTH);
 }
 
 function statusCounts(values: string[]): Record<string, number> {
@@ -224,7 +231,7 @@ function buildAllowedToolSurface(policy: RobomataAgentPolicy) {
 function buildPlannerProviderInput(input: PlanAgentActionsInput, generatedAt: string) {
   return {
     allowedToolSurface: buildAllowedToolSurface(input.policy),
-    candidateActions: input.candidateActions.slice(0, plannerMaxCandidateActions).map(action => ({
+    candidateActions: input.candidateActions.slice(0, ROBOMATA_AGENT_PLANNER_MAX_CANDIDATE_ACTIONS).map(action => ({
       message: compactText(action.message),
       policyArtifactId: action.metadata?.policyArtifactId ?? input.policyArtifact.id,
       policyArtifactVersion: action.metadata?.policyArtifactVersion ?? input.policyArtifact.version,
@@ -261,7 +268,7 @@ function buildPlannerProviderInput(input: PlanAgentActionsInput, generatedAt: st
       name: input.policyArtifact.name,
       version: input.policyArtifact.version,
     },
-    recentActionHistory: input.recentActions.slice(0, plannerMaxRecentActions).map(action => ({
+    recentActionHistory: input.recentActions.slice(0, ROBOMATA_AGENT_PLANNER_MAX_RECENT_ACTIONS).map(action => ({
       id: action.id,
       plannerProvider: action.metadata?.plannerProvider ?? null,
       proposalSource: action.metadata?.proposalSource ?? "deterministic_rules",
@@ -271,7 +278,7 @@ function buildPlannerProviderInput(input: PlanAgentActionsInput, generatedAt: st
       title: compactText(action.title),
       type: action.type,
     })),
-    recentRunHistory: input.recentRuns.slice(0, plannerMaxRecentRuns).map(run => ({
+    recentRunHistory: input.recentRuns.slice(0, ROBOMATA_AGENT_PLANNER_MAX_RECENT_RUNS).map(run => ({
       actionCount: run.actionCount,
       completedAt: run.completedAt,
       freshnessStatus: run.freshnessStatus,
@@ -321,8 +328,27 @@ function sourceDataDigestSource(input: PlanAgentActionsInput) {
       id: input.policyArtifact.id,
       version: input.policyArtifact.version,
     },
-    recentActionIds: input.recentActions.slice(0, plannerMaxRecentActions).map(action => action.id),
-    recentRunIds: input.recentRuns.slice(0, plannerMaxRecentRuns).map(run => run.id),
+    recentActionHistory: input.recentActions.slice(0, ROBOMATA_AGENT_PLANNER_MAX_RECENT_ACTIONS).map(action => ({
+      decidedAt: action.decidedAt ?? null,
+      executionStatus: action.metadata?.executionStatus ?? null,
+      id: action.id,
+      plannerProvider: action.metadata?.plannerProvider ?? null,
+      proposalSource: action.metadata?.proposalSource ?? "deterministic_rules",
+      proposedAt: action.proposedAt,
+      severity: action.severity,
+      status: action.status,
+      type: action.type,
+    })),
+    recentRunHistory: input.recentRuns.slice(0, ROBOMATA_AGENT_PLANNER_MAX_RECENT_RUNS).map(run => ({
+      actionCount: run.actionCount,
+      completedAt: run.completedAt,
+      freshnessStatus: run.freshnessStatus,
+      id: run.id,
+      plannerMode: run.plannerBoundary?.mode ?? null,
+      plannerProvider: run.plannerBoundary?.provider ?? null,
+      status: run.status,
+      suiRootStatus: run.suiRootStatus,
+    })),
     submissionId: input.submission.id,
   };
 }
@@ -392,8 +418,24 @@ function outputTextFromOpenAiResponse(body: OpenAiResponseBody): string | undefi
 
 function parseOpenAiPlannerPayload(text: string): OpenAiPlannerPayload {
   const parsed = JSON.parse(text) as Partial<OpenAiPlannerPayload>;
+  if (!Array.isArray(parsed.actions)) {
+    throw new OpenAiPlannerSchemaError("OpenAI planner response actions must be an array.");
+  }
+  for (const action of parsed.actions) {
+    if (!action || typeof action !== "object" || Array.isArray(action)) {
+      throw new OpenAiPlannerSchemaError("OpenAI planner response actions must be objects.");
+    }
+    if (
+      typeof action.type !== "string" ||
+      typeof action.title !== "string" ||
+      typeof action.message !== "string" ||
+      typeof action.reason !== "string"
+    ) {
+      throw new OpenAiPlannerSchemaError("OpenAI planner response action fields must be strings.");
+    }
+  }
   return {
-    actions: Array.isArray(parsed.actions) ? parsed.actions : [],
+    actions: parsed.actions,
   };
 }
 
@@ -525,7 +567,7 @@ async function planWithOpenAi(
       clearTimeout(timeout);
     }
   } catch (error) {
-    if (error instanceof SyntaxError) {
+    if (error instanceof SyntaxError || error instanceof OpenAiPlannerSchemaError) {
       return {
         actions: input.candidateActions,
         plannerBoundary: boundary("openai", "schema_invalid_fallback", "deterministic_fallback", plannerBoundary.model),

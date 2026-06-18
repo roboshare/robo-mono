@@ -10,7 +10,12 @@ import {
   type RobomataFacilityPolicyArtifact,
   resolveRobomataFacilityPolicyArtifact,
 } from "~~/lib/robomata/policyRules";
-import { planRobomataAgentActions, plannerBoundarySummary } from "~~/lib/robomata/server/agentPlanner";
+import {
+  ROBOMATA_AGENT_PLANNER_MAX_RECENT_ACTIONS,
+  ROBOMATA_AGENT_PLANNER_MAX_RECENT_RUNS,
+  planRobomataAgentActions,
+  plannerBoundarySummary,
+} from "~~/lib/robomata/server/agentPlanner";
 import { getRobomataAgentStore } from "~~/lib/robomata/server/agentStore";
 import { getFacilityMonitoringStore } from "~~/lib/robomata/server/facilityMonitoringStore";
 import type { FacilitySubmission } from "~~/lib/robomata/submissions";
@@ -170,8 +175,8 @@ export async function runRobomataAgentForSubmission(input: RunAgentForSubmission
     submissionId: input.submission.id,
   }).artifact;
   const [recentRuns, recentActions] = await Promise.all([
-    store.listRuns(input.submission.id, input.submission.partnerAddress),
-    store.listActions(input.submission.id, input.submission.partnerAddress),
+    store.listRuns(input.submission.id, input.submission.partnerAddress, ROBOMATA_AGENT_PLANNER_MAX_RECENT_RUNS),
+    store.listActions(input.submission.id, input.submission.partnerAddress, ROBOMATA_AGENT_PLANNER_MAX_RECENT_ACTIONS),
   ]);
   const { actions: actionDrafts, plannerBoundary } = await planRobomataAgentActions({
     candidateActions,

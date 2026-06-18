@@ -47,9 +47,14 @@ for (const needle of [
 for (const needle of [
   "ROBOMATA_AGENT_PLANNER_PROMPT_VERSION",
   "ROBOMATA_AGENT_PLANNER_OUTPUT_SCHEMA_VERSION",
+  "ROBOMATA_AGENT_PLANNER_MAX_RECENT_ACTIONS",
+  "ROBOMATA_AGENT_PLANNER_MAX_RECENT_RUNS",
   "plannerInputControls",
   "buildPlannerProviderInput",
   "sourceDataDigestSource",
+  "recentActionHistory",
+  "executionStatus",
+  "decidedAt",
   "plannerOutputDigestSource",
   "withPlannerProvenance",
   "recentRunHistory",
@@ -57,6 +62,7 @@ for (const needle of [
   "allowedToolSurface",
   "rawEvidenceIncluded: false",
   "secretMaterialIncluded: false",
+  "OpenAiPlannerSchemaError",
   "store: false",
   "schema_invalid_fallback",
 ]) {
@@ -80,10 +86,16 @@ for (const needle of [
   "policyArtifact",
   "recentActions",
   "recentRuns",
-  "store.listRuns",
-  "store.listActions",
+  "ROBOMATA_AGENT_PLANNER_MAX_RECENT_ACTIONS",
+  "ROBOMATA_AGENT_PLANNER_MAX_RECENT_RUNS",
+  "store.listRuns(input.submission.id, input.submission.partnerAddress, ROBOMATA_AGENT_PLANNER_MAX_RECENT_RUNS)",
+  "store.listActions(input.submission.id, input.submission.partnerAddress, ROBOMATA_AGENT_PLANNER_MAX_RECENT_ACTIONS)",
 ]) {
   assertIncludes(runner, needle, "agent runner");
+}
+
+for (const needle of ["normalizeListLimit", "LIMIT ${normalizedLimit}", "runs.slice(0, normalizedLimit)", "actions.slice(0, normalizedLimit)"]) {
+  assertIncludes(store, needle, "agent store limited history reads");
 }
 
 for (const needle of [
