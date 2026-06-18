@@ -205,6 +205,12 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ t
       existingPolicy.appointmentAuthorizationSurface === "protected_lender_share_link";
     const isOwnedLenderAppointment =
       isExistingLenderAppointment && existingPolicy.appointmentAuthorizationId === accessedShareLink.id;
+    if (!isRevocation && isExistingLenderAppointment && !isOwnedLenderAppointment) {
+      return noStoreResponse(
+        { error: "This protected lender share link cannot update the current agent appointment." },
+        { status: 403 },
+      );
+    }
     if (isRevocation && !isOwnedLenderAppointment) {
       return noStoreResponse(
         { error: "This protected lender share link cannot revoke the current agent appointment." },

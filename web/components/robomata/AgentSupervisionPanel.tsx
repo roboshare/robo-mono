@@ -270,7 +270,7 @@ export const AgentSupervisionPanel = ({
               {policy.status === "active" ? "Pause" : "Activate"}
             </button>
           ) : null}
-          {policy?.status !== "revoked" ? (
+          {policy && policy.status !== "revoked" ? (
             <button
               className="btn btn-sm btn-outline rounded-full"
               onClick={() => updatePolicyStatus("revoked")}
