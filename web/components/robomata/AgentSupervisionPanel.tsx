@@ -56,6 +56,11 @@ function metadataValue(action: RobomataAgentAction, key: string): string | undef
   return typeof value === "string" ? value : undefined;
 }
 
+function metadataFlag(action: RobomataAgentAction, key: string): boolean {
+  const value = action.metadata?.[key];
+  return value === true || value === "true";
+}
+
 function formatActionTypes(values: string[]) {
   return values.length ? values.map(formatStatus).join(", ") : "none";
 }
@@ -477,6 +482,7 @@ export const AgentSupervisionPanel = ({
                   policy,
                 });
                 const actionAuthorization = action.authorization;
+                const authorizationBackfilled = metadataFlag(action, "authorizationBackfilled");
                 const policyRuleId = metadataValue(action, "policyRuleId");
                 const policyRuleStatus = metadataValue(action, "policyRuleStatus");
                 const canExecuteAction =
@@ -527,11 +533,19 @@ export const AgentSupervisionPanel = ({
                       Authorized by {formatStatus(actionAuthorization?.appointedBy ?? "unknown")} /{" "}
                       {formatStatus(actionAuthorization?.appointmentAuthorizationSurface ?? "missing authorization")}
                     </div>
-                    <div className="mt-1 break-all text-xs text-base-content/60">
-                      Historical authorization: {actionAuthorization?.appointedAgentName ?? "unknown agent"} · policy{" "}
-                      {actionAuthorization?.policyId ?? "missing policy"} ·{" "}
-                      {actionAuthorization?.appointmentAuthorizationId ?? "missing authorization id"}
-                    </div>
+                    {authorizationBackfilled ? (
+                      <div className="mt-1 break-all text-xs text-base-content/60">
+                        Authorization backfilled from current policy:{" "}
+                        {actionAuthorization?.appointedAgentName ?? "unknown agent"} · policy{" "}
+                        {actionAuthorization?.policyId ?? "missing policy"} · historical authorization not stored
+                      </div>
+                    ) : (
+                      <div className="mt-1 break-all text-xs text-base-content/60">
+                        Historical authorization: {actionAuthorization?.appointedAgentName ?? "unknown agent"} · policy{" "}
+                        {actionAuthorization?.policyId ?? "missing policy"} ·{" "}
+                        {actionAuthorization?.appointmentAuthorizationId ?? "missing authorization id"}
+                      </div>
+                    )}
                     {executionStatus ? (
                       <div className="mt-2 rounded-2xl border border-base-300 bg-base-100 p-3 text-xs text-base-content/70">
                         Execution {formatStatus(executionStatus)} via{" "}
