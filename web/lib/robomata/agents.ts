@@ -253,7 +253,7 @@ export function getRobomataAgentActionPermissionDenial(input: {
   if (input.actionAuthorization && !agentActionAuthorizationMatchesPolicy(input.actionAuthorization, input.policy)) {
     return "This action was authorized by a different agent appointment than the current policy.";
   }
-  if (!input.actionAuthorization && ["approve", "complete", "execute"].includes(input.operation)) {
+  if (!input.actionAuthorization && input.operation === "execute") {
     return "This action is missing agent appointment authorization metadata.";
   }
 

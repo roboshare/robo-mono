@@ -353,8 +353,32 @@ function actionPermissionDeniedError(reason: string) {
   return new RobomataAgentPermissionDeniedError(reason);
 }
 
+function skippedActionMutationError() {
+  return actionPermissionDeniedError("Skipped audit actions cannot be changed into executable work.");
+}
+
 function actionEventTypeForStatus(status: RobomataAgentActionStatus): RobomataAgentEventType {
   return status === "skipped" ? "action_skipped" : "action_proposed";
+}
+
+function authorizationForActionPermission(action: RobomataAgentAction, policy: RobomataAgentPolicy) {
+  return action.authorization ?? buildAgentActionAuthorization(policy);
+}
+
+function withLegacyActionAuthorization(
+  action: RobomataAgentAction,
+  policy: RobomataAgentPolicy | undefined,
+): RobomataAgentAction {
+  if (action.authorization || !policy) return action;
+
+  return {
+    ...action,
+    authorization: buildAgentActionAuthorization(policy),
+    metadata: {
+      ...action.metadata,
+      authorizationBackfilled: true,
+    },
+  };
 }
 
 async function ensurePostgresTables() {
@@ -508,12 +532,14 @@ function createFileStore(): RobomataAgentStore {
     async listActions(submissionId, partnerAddress) {
       const normalizedPartnerAddress = normalizePartnerAddress(partnerAddress);
       const fileStore = await readFileStore(filePath);
+      const policy = findPolicy(fileStore.policies, submissionId, partnerAddress);
       return fileStore.actions
         .filter(
           action =>
             action.submissionId === submissionId &&
             normalizePartnerAddress(action.partnerAddress) === normalizedPartnerAddress,
         )
+        .map(action => withLegacyActionAuthorization(action, policy))
         .sort((left, right) => right.proposedAt.localeCompare(left.proposedAt));
     },
     async listRunnablePolicies() {
@@ -578,19 +604,22 @@ function createFileStore(): RobomataAgentStore {
         );
         if (actionIndex < 0) return null;
         const policy = fileStore.policies.find(policy => policy.id === fileStore.actions[actionIndex]?.policyId);
+        if (fileStore.actions[actionIndex]?.status === "skipped" && input.status !== "skipped") {
+          throw skippedActionMutationError();
+        }
         if (policy?.status === "revoked" && shouldBlockActionUnderRevokedPolicy(input.status)) {
           throw actionMutationRevokedError();
         }
         if (policy && shouldBlockActionUnderRevokedPolicy(input.status)) {
           assertRobomataAgentActionPermission({
-            actionAuthorization: fileStore.actions[actionIndex]?.authorization,
+            actionAuthorization: authorizationForActionPermission(fileStore.actions[actionIndex], policy),
             actionType: fileStore.actions[actionIndex].type,
             operation: input.status === "approved" ? "approve" : "complete",
             policy,
           });
         }
         const updatedAction: RobomataAgentAction = {
-          ...fileStore.actions[actionIndex],
+          ...withLegacyActionAuthorization(fileStore.actions[actionIndex], policy),
           status: input.status,
           decidedAt: nowIsoString(),
           decisionReason: input.decisionReason?.trim() || undefined,
@@ -724,7 +753,8 @@ function createPostgresStore(): RobomataAgentStore {
         WHERE submission_id = ${submissionId} AND lower(partner_address) = ${normalizePartnerAddress(partnerAddress)}
         ORDER BY proposed_at DESC;
       `) as Array<{ payload: RobomataAgentAction }>;
-      return rows.map(row => row.payload);
+      const policy = await this.getPolicy(submissionId, partnerAddress);
+      return rows.map(row => withLegacyActionAuthorization(row.payload, policy ?? undefined));
     },
     async listRunnablePolicies() {
       await ensurePostgresTables();
@@ -864,6 +894,10 @@ function createPostgresStore(): RobomataAgentStore {
         `) as Array<{ payload: RobomataAgentAction }>;
         const current = rows[0]?.payload;
         if (!current) return null;
+        let currentPolicy: RobomataAgentPolicy | undefined;
+        if (current.status === "skipped" && input.status !== "skipped") {
+          throw skippedActionMutationError();
+        }
         if (shouldBlockActionUnderRevokedPolicy(input.status)) {
           const policyRows = (await tx`
             SELECT payload
@@ -879,16 +913,28 @@ function createPostgresStore(): RobomataAgentStore {
           if (!policy) {
             throw actionPermissionDeniedError("Current agent appointment could not be loaded for this action.");
           }
+          currentPolicy = policy;
           assertRobomataAgentActionPermission({
-            actionAuthorization: current.authorization,
+            actionAuthorization: authorizationForActionPermission(current, policy),
             actionType: current.type,
             operation: input.status === "approved" ? "approve" : "complete",
             policy,
           });
         }
         const decidedAt = nowIsoString();
+        const policyRows = current.authorization
+          ? []
+          : currentPolicy
+            ? [{ payload: currentPolicy }]
+            : ((await tx`
+                SELECT payload
+                FROM robomata_agent_policies
+                WHERE id = ${current.policyId}
+                LIMIT 1;
+              `) as Array<{ payload: RobomataAgentPolicy }>);
+        const hydratedCurrent = withLegacyActionAuthorization(current, policyRows[0]?.payload);
         const updatedAction: RobomataAgentAction = {
-          ...current,
+          ...hydratedCurrent,
           status: input.status,
           decidedAt,
           decisionReason: input.decisionReason?.trim() || undefined,
