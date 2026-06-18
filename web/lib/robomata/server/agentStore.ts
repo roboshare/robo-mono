@@ -240,12 +240,10 @@ function buildUpdatedPolicy(input: UpdateAgentPolicyInput, existing?: RobomataAg
     updatedAt: now,
     pausedAt: status === "paused" ? (base.pausedAt ?? now) : undefined,
     revocationAuthorizationSurface:
-      status === "revoked"
-        ? (input.revocationAuthorizationSurface ?? base.revocationAuthorizationSurface)
-        : base.revocationAuthorizationSurface,
-    revocationReason: status === "revoked" ? (revocationReason ?? base.revocationReason) : base.revocationReason,
-    revokedAt: status === "revoked" ? (base.revokedAt ?? now) : base.revokedAt,
-    revokedBy: status === "revoked" ? (input.revokedBy ?? base.revokedBy) : base.revokedBy,
+      status === "revoked" ? (input.revocationAuthorizationSurface ?? base.revocationAuthorizationSurface) : undefined,
+    revocationReason: status === "revoked" ? (revocationReason ?? base.revocationReason) : undefined,
+    revokedAt: status === "revoked" ? (base.revokedAt ?? now) : undefined,
+    revokedBy: status === "revoked" ? (input.revokedBy ?? base.revokedBy) : undefined,
   };
 }
 

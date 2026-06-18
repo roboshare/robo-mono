@@ -200,14 +200,26 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ t
     const isExistingLenderAppointment =
       existingPolicy?.appointedBy === "lender" &&
       existingPolicy.appointmentAuthorizationSurface === "protected_lender_share_link";
+    const isOwnedLenderAppointment =
+      isExistingLenderAppointment && existingPolicy.appointmentAuthorizationId === accessedShareLink.id;
+    if (isRevocation && !isOwnedLenderAppointment) {
+      return noStoreResponse(
+        { error: "This protected lender share link cannot revoke the current agent appointment." },
+        { status: 403 },
+      );
+    }
 
     const policy = await getRobomataAgentStore().updatePolicy({
       submission: result.submission,
-      appointedAgentName: body.appointedAgentName,
-      appointedBy: "lender",
-      appointerAddress: lenderAuthorizationId(accessedShareLink),
-      appointmentAuthorizationId: accessedShareLink.id,
-      appointmentAuthorizationSurface: "protected_lender_share_link",
+      ...(isRevocation
+        ? {}
+        : {
+            appointedAgentName: body.appointedAgentName,
+            appointedBy: "lender" as const,
+            appointerAddress: lenderAuthorizationId(accessedShareLink),
+            appointmentAuthorizationId: accessedShareLink.id,
+            appointmentAuthorizationSurface: "protected_lender_share_link" as const,
+          }),
       revocationAuthorizationSurface: isRevocation ? "protected_lender_share_link" : undefined,
       revocationReason: body.revocationReason,
       revokedBy: isRevocation ? lenderAuthorizationId(accessedShareLink) : undefined,

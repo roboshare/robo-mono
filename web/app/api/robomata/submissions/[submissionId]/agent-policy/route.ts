@@ -90,6 +90,12 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ s
         { status: 403 },
       );
     }
+    if (existingPolicy?.status === "revoked" && status && status !== "revoked") {
+      return NextResponse.json(
+        { error: "Revoked agent policies cannot be reactivated through this endpoint." },
+        { status: 409 },
+      );
+    }
 
     const policy = await getRobomataAgentStore().updatePolicy({
       submission: result.submission,
