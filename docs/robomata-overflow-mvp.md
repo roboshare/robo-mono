@@ -434,7 +434,9 @@ This work follows the current repo policy:
 - Do not claim lender-appointed agents are active through the operator policy
   endpoint. Lender appointment is scoped to protected share links behind
   `ROBOMATA_LENDER_AGENT_APPOINTMENT_ENABLED`; it records appointment provenance
-  but does not grant delegated execution or automatic approval.
+  but does not grant delegated execution. Action approval/completion is bounded
+  by the current active appointment, allowed action types, and the action's
+  recorded appointment authorization snapshot.
 - Do not claim non-rules agent planners generate action proposals yet.
   `ROBOMATA_AGENT_PLANNER_PROVIDER=openai` can refine deterministic candidate
   action copy when fully gated and configured, but current action types remain

@@ -5,6 +5,7 @@ import {
   isRobomataWorkflowServerEnabled,
 } from "~~/lib/featureFlags";
 import type { RobomataAgentActionStatus } from "~~/lib/robomata/agents";
+import { RobomataAgentPermissionDeniedError } from "~~/lib/robomata/server/agentPermissions";
 import { RobomataAgentPolicyRevokedMutationError, getRobomataAgentStore } from "~~/lib/robomata/server/agentStore";
 import { requirePartnerAddress, requireSubmissionAccess } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
@@ -70,6 +71,9 @@ export async function PATCH(
   } catch (error) {
     if (error instanceof RobomataAgentPolicyRevokedMutationError) {
       return NextResponse.json({ error: error.message }, { status: 409 });
+    }
+    if (error instanceof RobomataAgentPermissionDeniedError) {
+      return NextResponse.json({ error: error.message }, { status: 403 });
     }
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to update Robomata agent action." },

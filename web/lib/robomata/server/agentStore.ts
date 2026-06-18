@@ -16,11 +16,17 @@ import {
   type RobomataAgentPolicy,
   type RobomataAgentPolicyStatus,
   type RobomataAgentRun,
+  buildAgentActionAuthorization,
   createDefaultAgentPolicy,
   defaultAllowedAgentActionTypes,
+  getRobomataAgentActionPermissionDenial,
   normalizeAgentActionTypes,
 } from "~~/lib/robomata/agents";
 import type { FacilityMonitoringProjection } from "~~/lib/robomata/facilityMonitoring";
+import {
+  RobomataAgentPermissionDeniedError,
+  assertRobomataAgentActionPermission,
+} from "~~/lib/robomata/server/agentPermissions";
 import { getRobomataPostgresSql } from "~~/lib/robomata/server/postgres";
 import type { FacilitySubmission } from "~~/lib/robomata/submissions";
 
@@ -275,25 +281,50 @@ function buildRun(input: RecordAgentRunInput): RobomataAgentRun {
 }
 
 function buildActions(input: RecordAgentRunInput, run: RobomataAgentRun): RobomataAgentAction[] {
-  return input.actionDrafts.map(draft => ({
-    ...draft,
-    metadata: {
-      ...draft.metadata,
-      plannerMode: input.plannerBoundary.mode,
-      plannerProvider: input.plannerBoundary.provider,
-      plannerStatus: input.plannerBoundary.status,
-      proposalSource: draft.metadata?.proposalSource ?? "deterministic_rules",
-    },
-    id: createActionId(),
-    runId: run.id,
-    policyId: input.policy.id,
-    submissionId: input.policy.submissionId,
-    facilityId: run.facilityId,
-    partnerAddress: input.policy.partnerAddress,
-    status:
-      !input.suppressAutoApprove && input.policy.autoApproveActionTypes.includes(draft.type) ? "approved" : "proposed",
-    proposedAt: input.completedAt,
-  }));
+  const authorization = buildAgentActionAuthorization(input.policy);
+
+  return input.actionDrafts.map(draft => {
+    const proposalDenialReason = getRobomataAgentActionPermissionDenial({
+      actionType: draft.type,
+      operation: "propose",
+      policy: input.policy,
+    });
+    const autoApproveDenialReason = getRobomataAgentActionPermissionDenial({
+      actionType: draft.type,
+      operation: "auto_approve",
+      policy: input.policy,
+    });
+    const canAutoApprove = !input.suppressAutoApprove && !autoApproveDenialReason;
+    const status: RobomataAgentActionStatus = proposalDenialReason
+      ? "skipped"
+      : canAutoApprove
+        ? "approved"
+        : "proposed";
+    const permissionDenialReason = proposalDenialReason ?? undefined;
+
+    return {
+      ...draft,
+      authorization,
+      decidedAt: status === "skipped" ? input.completedAt : undefined,
+      decisionReason: permissionDenialReason,
+      metadata: {
+        ...draft.metadata,
+        plannerMode: input.plannerBoundary.mode,
+        plannerProvider: input.plannerBoundary.provider,
+        plannerStatus: input.plannerBoundary.status,
+        ...(permissionDenialReason ? { permissionDeniedReason: permissionDenialReason } : {}),
+        proposalSource: draft.metadata?.proposalSource ?? "deterministic_rules",
+      },
+      id: createActionId(),
+      runId: run.id,
+      policyId: input.policy.id,
+      submissionId: input.policy.submissionId,
+      facilityId: run.facilityId,
+      partnerAddress: input.policy.partnerAddress,
+      status,
+      proposedAt: input.completedAt,
+    };
+  });
 }
 
 function upsertPolicy(policies: RobomataAgentPolicy[], policy: RobomataAgentPolicy): RobomataAgentPolicy[] {
@@ -316,6 +347,14 @@ function runRecordRevokedError() {
   return new RobomataAgentPolicyRevokedMutationError(
     "Robomata agent policy was revoked before this run could be recorded.",
   );
+}
+
+function actionPermissionDeniedError(reason: string) {
+  return new RobomataAgentPermissionDeniedError(reason);
+}
+
+function actionEventTypeForStatus(status: RobomataAgentActionStatus): RobomataAgentEventType {
+  return status === "skipped" ? "action_skipped" : "action_proposed";
 }
 
 async function ensurePostgresTables() {
@@ -507,12 +546,19 @@ function createFileStore(): RobomataAgentStore {
             metadata: { actionCount: run.actionCount },
           }),
           ...actions.map(action =>
-            createAgentEvent("action_proposed", {
+            createAgentEvent(actionEventTypeForStatus(action.status), {
               policy,
               actionId: action.id,
               runId: run.id,
               message: action.title,
-              metadata: { type: action.type, status: action.status, severity: action.severity },
+              metadata: {
+                ...(action.metadata?.permissionDeniedReason
+                  ? { permissionDeniedReason: action.metadata.permissionDeniedReason }
+                  : {}),
+                severity: action.severity,
+                status: action.status,
+                type: action.type,
+              },
             }),
           ),
         );
@@ -534,6 +580,14 @@ function createFileStore(): RobomataAgentStore {
         const policy = fileStore.policies.find(policy => policy.id === fileStore.actions[actionIndex]?.policyId);
         if (policy?.status === "revoked" && shouldBlockActionUnderRevokedPolicy(input.status)) {
           throw actionMutationRevokedError();
+        }
+        if (policy && shouldBlockActionUnderRevokedPolicy(input.status)) {
+          assertRobomataAgentActionPermission({
+            actionAuthorization: fileStore.actions[actionIndex]?.authorization,
+            actionType: fileStore.actions[actionIndex].type,
+            operation: input.status === "approved" ? "approve" : "complete",
+            policy,
+          });
         }
         const updatedAction: RobomataAgentAction = {
           ...fileStore.actions[actionIndex],
@@ -767,6 +821,31 @@ function createPostgresStore(): RobomataAgentStore {
             ${nowIsoString()}::timestamptz
           );
         `;
+        for (const action of actions) {
+          await tx`
+            INSERT INTO robomata_agent_events (
+              id, policy_id, submission_id, action_id, run_id, type, message, metadata, created_at
+            )
+            VALUES (
+              ${createEventId()},
+              ${policy.id},
+              ${policy.submissionId},
+              ${action.id},
+              ${run.id},
+              ${actionEventTypeForStatus(action.status)},
+              ${action.title},
+              ${JSON.stringify({
+                ...(action.metadata?.permissionDeniedReason
+                  ? { permissionDeniedReason: action.metadata.permissionDeniedReason }
+                  : {}),
+                severity: action.severity,
+                status: action.status,
+                type: action.type,
+              })}::jsonb,
+              ${nowIsoString()}::timestamptz
+            );
+          `;
+        }
         return { actions, run };
       });
     },
@@ -796,6 +875,16 @@ function createPostgresStore(): RobomataAgentStore {
           if (policyRows[0]?.payload.status === "revoked") {
             throw actionMutationRevokedError();
           }
+          const policy = policyRows[0]?.payload;
+          if (!policy) {
+            throw actionPermissionDeniedError("Current agent appointment could not be loaded for this action.");
+          }
+          assertRobomataAgentActionPermission({
+            actionAuthorization: current.authorization,
+            actionType: current.type,
+            operation: input.status === "approved" ? "approve" : "complete",
+            policy,
+          });
         }
         const decidedAt = nowIsoString();
         const updatedAction: RobomataAgentAction = {

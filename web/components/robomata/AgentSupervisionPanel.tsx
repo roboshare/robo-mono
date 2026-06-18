@@ -4,7 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowPathIcon, BoltIcon, CheckCircleIcon, ShieldCheckIcon, XCircleIcon } from "@heroicons/react/24/outline";
 import { AgentSupervisionPolicyDisclosure } from "~~/components/robomata/PolicyRulesPanel";
 import { isRobomataAgentsClientEnabled } from "~~/lib/featureFlags";
-import type { RobomataAgentAction, RobomataAgentPolicy, RobomataAgentRun } from "~~/lib/robomata/agents";
+import {
+  type RobomataAgentAction,
+  type RobomataAgentPolicy,
+  type RobomataAgentRun,
+  getRobomataAgentActionPermissionDenial,
+} from "~~/lib/robomata/agents";
 import type { FacilitySubmission } from "~~/lib/robomata/submissions";
 import { notification } from "~~/utils/scaffold-eth";
 
@@ -380,62 +385,88 @@ export const AgentSupervisionPanel = ({
 
           <div className="space-y-3">
             {actions.length ? (
-              actions.slice(0, 6).map(action => (
-                <div key={action.id} className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <div className="font-semibold text-base-content">{action.title}</div>
-                      <div className="mt-1 text-sm text-base-content/70">{action.message}</div>
+              actions.slice(0, 6).map(action => {
+                const permissionDeniedReason = metadataValue(action, "permissionDeniedReason");
+                const approvalDeniedReason = getRobomataAgentActionPermissionDenial({
+                  actionAuthorization: action.authorization,
+                  actionType: action.type,
+                  operation: action.status === "approved" ? "complete" : "approve",
+                  policy,
+                });
+                const actionAuthorization = action.authorization;
+
+                return (
+                  <div key={action.id} className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="font-semibold text-base-content">{action.title}</div>
+                        <div className="mt-1 text-sm text-base-content/70">{action.message}</div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <span className={`badge ${statusBadgeClass(action.severity)} capitalize`}>
+                          {formatStatus(action.severity)}
+                        </span>
+                        <span className={`badge ${statusBadgeClass(action.status)} capitalize`}>
+                          {formatStatus(action.status)}
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      <span className={`badge ${statusBadgeClass(action.severity)} capitalize`}>
-                        {formatStatus(action.severity)}
-                      </span>
-                      <span className={`badge ${statusBadgeClass(action.status)} capitalize`}>
-                        {formatStatus(action.status)}
-                      </span>
+                    <div className="mt-3 text-xs text-base-content/60">
+                      {formatStatus(action.type)} - proposed {new Date(action.proposedAt).toLocaleString()}
                     </div>
+                    <div className="mt-1 text-xs text-base-content/60 capitalize">
+                      Planner: {formatStatus(metadataValue(action, "plannerProvider") ?? "rules")} /{" "}
+                      {formatStatus(metadataValue(action, "proposalSource") ?? "deterministic_rules")}
+                    </div>
+                    <div className="mt-1 text-xs text-base-content/60 capitalize">
+                      Authorized by {formatStatus(actionAuthorization?.appointedBy ?? "unknown")} /{" "}
+                      {formatStatus(actionAuthorization?.appointmentAuthorizationSurface ?? "missing authorization")}
+                    </div>
+                    {permissionDeniedReason ? (
+                      <div className="mt-2 rounded-2xl border border-warning/30 bg-warning/10 p-3 text-xs text-warning-content">
+                        Permission gate skipped this action: {permissionDeniedReason}
+                      </div>
+                    ) : action.status === "proposed" || action.status === "approved" ? (
+                      approvalDeniedReason ? (
+                        <div className="mt-2 rounded-2xl border border-warning/30 bg-warning/10 p-3 text-xs text-warning-content">
+                          Current approval gate blocks this action: {approvalDeniedReason}
+                        </div>
+                      ) : null
+                    ) : null}
+                    <div className="mt-2 text-sm text-base-content/70">{action.reason}</div>
+                    {action.status === "proposed" ? (
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <button
+                          className="btn btn-xs btn-outline rounded-full"
+                          disabled={isMutating || Boolean(approvalDeniedReason)}
+                          onClick={() => updateAction(action, "approved")}
+                        >
+                          <CheckCircleIcon className="h-4 w-4" />
+                          Approve
+                        </button>
+                        <button
+                          className="btn btn-xs btn-outline rounded-full"
+                          disabled={isMutating}
+                          onClick={() => updateAction(action, "rejected")}
+                        >
+                          <XCircleIcon className="h-4 w-4" />
+                          Reject
+                        </button>
+                      </div>
+                    ) : action.status === "approved" ? (
+                      <div className="mt-4">
+                        <button
+                          className="btn btn-xs btn-outline rounded-full"
+                          disabled={isMutating || Boolean(approvalDeniedReason)}
+                          onClick={() => updateAction(action, "completed")}
+                        >
+                          Mark complete
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
-                  <div className="mt-3 text-xs text-base-content/60">
-                    {formatStatus(action.type)} - proposed {new Date(action.proposedAt).toLocaleString()}
-                  </div>
-                  <div className="mt-1 text-xs text-base-content/60 capitalize">
-                    Planner: {formatStatus(metadataValue(action, "plannerProvider") ?? "rules")} /{" "}
-                    {formatStatus(metadataValue(action, "proposalSource") ?? "deterministic_rules")}
-                  </div>
-                  <div className="mt-2 text-sm text-base-content/70">{action.reason}</div>
-                  {action.status === "proposed" ? (
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <button
-                        className="btn btn-xs btn-outline rounded-full"
-                        disabled={isMutating || policy.status === "revoked"}
-                        onClick={() => updateAction(action, "approved")}
-                      >
-                        <CheckCircleIcon className="h-4 w-4" />
-                        Approve
-                      </button>
-                      <button
-                        className="btn btn-xs btn-outline rounded-full"
-                        disabled={isMutating}
-                        onClick={() => updateAction(action, "rejected")}
-                      >
-                        <XCircleIcon className="h-4 w-4" />
-                        Reject
-                      </button>
-                    </div>
-                  ) : action.status === "approved" ? (
-                    <div className="mt-4">
-                      <button
-                        className="btn btn-xs btn-outline rounded-full"
-                        disabled={isMutating || policy.status === "revoked"}
-                        onClick={() => updateAction(action, "completed")}
-                      >
-                        Mark complete
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              ))
+                );
+              })
             ) : (
               <div className="rounded-[1.5rem] border border-dashed border-base-300 p-4 text-sm text-base-content/60">
                 No supervised agent actions have been proposed.
