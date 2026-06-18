@@ -120,6 +120,11 @@ export const ROBOMATA_SUI_ROOT_POLICY_RULES: RobomataPolicyRule[] = [
       "Pending or committing roots require operator follow-up before the evidence anchor is treated as verified.",
   },
   {
+    id: "committed",
+    label: "Evidence anchored",
+    summary: "Committed roots show the evidence reference was submitted on Sui but still needs indexed verification.",
+  },
+  {
     id: "verified",
     label: "Verified root",
     summary:

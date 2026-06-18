@@ -121,6 +121,7 @@ export async function buildResolvedSharedLenderPacketView(input: {
       ...binding,
       currentPacketFreshnessStatus,
       pinnedAtShare: true,
+      runPolicyVersion: binding.runPolicyVersion ?? run.policyVersion,
     },
     agentAppointment,
   });
