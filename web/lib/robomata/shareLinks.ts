@@ -107,7 +107,6 @@ export type SharedLenderPacketView = {
   };
   policyReviews?: {
     lender?: SubmissionPolicyReview;
-    operator?: SubmissionPolicyReview;
   };
   agentAppointment?: {
     flags: {
@@ -144,24 +143,27 @@ function observationIdForEvidence(evidenceId: string): string {
   return `obs_${evidenceId}`;
 }
 
-function currentPolicyReviews(submission: FacilitySubmission): SharedLenderPacketView["policyReviews"] {
-  const artifact = resolveRobomataFacilityPolicyArtifact({
-    facilityId: submission.facilityMonitoring?.facilityId,
-    submissionId: submission.id,
+function currentPolicyReviews(input: {
+  monitoring?: SharedLenderPacketView["monitoring"];
+  shareLink: SubmissionShareLink;
+  submission: FacilitySubmission;
+}): SharedLenderPacketView["policyReviews"] {
+  const fallbackArtifact = resolveRobomataFacilityPolicyArtifact({
+    facilityId: input.submission.facilityMonitoring?.facilityId,
+    submissionId: input.submission.id,
   }).artifact;
+  const artifactId = input.monitoring?.policyArtifactId ?? fallbackArtifact.id;
+  const artifactVersion = input.monitoring?.policyArtifactVersion ?? fallbackArtifact.version;
+  const lenderReviewer = `lender_share:${input.shareLink.id}`;
 
   return {
-    lender: submission.policyReviews?.find(
+    lender: input.submission.policyReviews?.find(
       review =>
         review.role === "lender" &&
-        review.reviewedArtifactId === artifact.id &&
-        review.reviewedArtifactVersion === artifact.version,
-    ),
-    operator: submission.policyReviews?.find(
-      review =>
-        review.role === "operator" &&
-        review.reviewedArtifactId === artifact.id &&
-        review.reviewedArtifactVersion === artifact.version,
+        review.reviewedArtifactId === artifactId &&
+        review.reviewedArtifactVersion === artifactVersion &&
+        review.reviewedBy === lenderReviewer &&
+        review.reviewSurface === "protected_lender_share_link",
     ),
   };
 }
@@ -240,7 +242,7 @@ export function buildSharedLenderPacketView({
       },
     })),
     monitoring,
-    policyReviews: currentPolicyReviews(submission),
+    policyReviews: currentPolicyReviews({ monitoring, shareLink, submission }),
     agentAppointment,
   };
 }

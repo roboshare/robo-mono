@@ -258,7 +258,10 @@ export function createSubmissionPolicyReview(input: {
 }): SubmissionPolicyReview {
   const reviewedAt = input.reviewedAt ?? nowIsoString();
   return {
-    id: `policy_review_${input.role}_${input.artifactId}_${input.artifactVersion}`.replace(/[^a-zA-Z0-9_:-]/g, "_"),
+    id: `policy_review_${input.role}_${input.reviewedBy}_${input.artifactId}_${input.artifactVersion}`.replace(
+      /[^a-zA-Z0-9_:-]/g,
+      "_",
+    ),
     role: input.role,
     status: input.status,
     reviewedArtifactId: input.artifactId,
@@ -283,7 +286,9 @@ export function upsertSubmissionPolicyReview(
         !(
           candidate.role === review.role &&
           candidate.reviewedArtifactId === review.reviewedArtifactId &&
-          candidate.reviewedArtifactVersion === review.reviewedArtifactVersion
+          candidate.reviewedArtifactVersion === review.reviewedArtifactVersion &&
+          candidate.reviewedBy === review.reviewedBy &&
+          candidate.reviewSurface === review.reviewSurface
         ),
     ),
   ];

@@ -85,6 +85,24 @@ function lenderAuthorizationId(shareLink: Pick<SubmissionShareLink, "id">) {
   return `lender_share:${shareLink.id}`;
 }
 
+function metadataString(metadata: SubmissionShareLink["metadata"] | undefined, key: string): string | undefined {
+  const value = metadata?.[key];
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function policyArtifactForShare(submission: FacilitySubmission, shareLink: SubmissionShareLink) {
+  const fallbackArtifact = resolveRobomataFacilityPolicyArtifact({
+    facilityId: metadataString(shareLink.metadata, "facilityId") ?? submission.facilityMonitoring?.facilityId,
+    submissionId: submission.id,
+  }).artifact;
+
+  return {
+    id: metadataString(shareLink.metadata, "policyArtifactId") ?? fallbackArtifact.id,
+    name: metadataString(shareLink.metadata, "policyArtifactName") ?? fallbackArtifact.name,
+    version: metadataString(shareLink.metadata, "policyArtifactVersion") ?? fallbackArtifact.version,
+  };
+}
+
 function getClientIp(request: NextRequest): string | null {
   const forwardedFor = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   return forwardedFor || request.headers.get("x-real-ip")?.trim() || null;
@@ -100,17 +118,20 @@ function buildAccessMetadata(request: NextRequest) {
   };
 }
 
-function currentArtifactReview(submission: FacilitySubmission): SubmissionPolicyReview | undefined {
-  const artifact = resolveRobomataFacilityPolicyArtifact({
-    facilityId: submission.facilityMonitoring?.facilityId,
-    submissionId: submission.id,
-  }).artifact;
+function currentArtifactReview(
+  submission: FacilitySubmission,
+  shareLink: SubmissionShareLink,
+): SubmissionPolicyReview | undefined {
+  const artifact = policyArtifactForShare(submission, shareLink);
+  const lenderReviewer = lenderAuthorizationId(shareLink);
 
   return submission.policyReviews?.find(
     review =>
       review.role === "lender" &&
       review.reviewedArtifactId === artifact.id &&
-      review.reviewedArtifactVersion === artifact.version,
+      review.reviewedArtifactVersion === artifact.version &&
+      review.reviewedBy === lenderReviewer &&
+      review.reviewSurface === "protected_lender_share_link",
   );
 }
 
@@ -143,7 +164,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ tok
       return noStoreResponse({ error: "Share link is no longer active." }, { status: 410 });
     }
 
-    return noStoreResponse({ policyReview: currentArtifactReview(result.submission) ?? null });
+    return noStoreResponse({ policyReview: currentArtifactReview(result.submission, accessedShareLink) ?? null });
   } catch (error) {
     return noStoreResponse(
       { error: error instanceof Error ? error.message : "Failed to load lender policy review." },
@@ -173,10 +194,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ t
       rationale?: unknown;
       status?: unknown;
     };
-    const artifact = resolveRobomataFacilityPolicyArtifact({
-      facilityId: result.submission.facilityMonitoring?.facilityId,
-      submissionId: result.submission.id,
-    }).artifact;
+    const artifact = policyArtifactForShare(result.submission, accessedShareLink);
     const review = createSubmissionPolicyReview({
       artifactId: artifact.id,
       artifactName: artifact.name,
@@ -206,7 +224,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ t
     );
     const saved = await getSubmissionStore().save(result.submission);
 
-    return noStoreResponse({ policyReview: currentArtifactReview(saved) ?? review });
+    return noStoreResponse({ policyReview: currentArtifactReview(saved, accessedShareLink) ?? review });
   } catch (error) {
     return noStoreResponse(
       { error: error instanceof Error ? error.message : "Failed to update lender policy review." },
