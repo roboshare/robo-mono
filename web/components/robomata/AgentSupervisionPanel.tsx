@@ -423,6 +423,8 @@ export const AgentSupervisionPanel = ({
                 });
                 const actionAuthorization = action.authorization;
                 const policyRuleId = metadataValue(action, "policyRuleId");
+                const policyRuleLabel = metadataValue(action, "policyRuleLabel");
+                const policyRuleSummary = metadataValue(action, "policyRuleSummary");
                 const policyRuleStatus = metadataValue(action, "policyRuleStatus");
                 const canExecuteAction =
                   executionClientEnabled &&
@@ -454,8 +456,10 @@ export const AgentSupervisionPanel = ({
                     </div>
                     {policyRuleId ? (
                       <div className="mt-1 text-xs text-base-content/60">
-                        Policy rule: <span className="font-mono">{policyRuleId}</span>
+                        Policy rule: {policyRuleLabel ? `${policyRuleLabel} ` : ""}
+                        <span className="font-mono">{policyRuleId}</span>
                         {policyRuleStatus ? ` / ${formatStatus(policyRuleStatus)}` : ""}
+                        {policyRuleSummary ? <span className="block">{policyRuleSummary}</span> : null}
                       </div>
                     ) : null}
                     <div className="mt-1 text-xs text-base-content/60 capitalize">

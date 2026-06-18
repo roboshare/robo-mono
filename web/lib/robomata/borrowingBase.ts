@@ -1,8 +1,7 @@
 import {
-  ROBOMATA_DEFAULT_ADVANCE_RATE_BPS,
-  ROBOMATA_DEFAULT_CONCENTRATION_LIMIT_PCT,
-  ROBOMATA_MAX_DAYS_PAST_DUE,
-  ROBOMATA_MIN_UTILIZATION_PCT,
+  type RobomataBorrowingBasePolicyParameters,
+  type RobomataFacilityPolicyArtifact,
+  resolveRobomataBorrowingBasePolicyParameters,
 } from "~~/lib/robomata/policyRules";
 
 export type EvidenceStatus = "verified" | "exception" | "pending";
@@ -58,12 +57,18 @@ export type BorrowingBaseResult = {
   evidenceExceptions: EvidenceCommitment[];
 };
 
+type CalculateBorrowingBaseOptions = {
+  policyArtifact?: RobomataFacilityPolicyArtifact;
+};
+
+const demoBorrowingBasePolicy = resolveRobomataBorrowingBasePolicyParameters();
+
 export const demoPortfolio: FleetPortfolio = {
   operator: "MetroFleet Logistics",
   facilityName: "MetroFleet 2026 Fleet Receivables Facility",
   asOfDate: "2026-05-21",
-  advanceRateBps: ROBOMATA_DEFAULT_ADVANCE_RATE_BPS,
-  concentrationLimitPct: ROBOMATA_DEFAULT_CONCENTRATION_LIMIT_PCT,
+  advanceRateBps: demoBorrowingBasePolicy.advanceRateBps,
+  concentrationLimitPct: demoBorrowingBasePolicy.concentrationLimitPct,
   receivables: [
     {
       id: "AR-1007",
@@ -170,20 +175,37 @@ export const demoPortfolio: FleetPortfolio = {
   ],
 };
 
-export function calculateBorrowingBase(portfolio: FleetPortfolio = demoPortfolio): BorrowingBaseResult {
+function receivablePolicyReasons(
+  receivable: Receivable,
+  borrowingBasePolicy: RobomataBorrowingBasePolicyParameters,
+): string[] {
+  const ineligibleReasons: string[] = [];
+
+  if (receivable.manuallyExcluded) ineligibleReasons.push("Manually excluded");
+  if (receivable.daysPastDue > borrowingBasePolicy.maxDaysPastDue) {
+    ineligibleReasons.push(`Over ${borrowingBasePolicy.maxDaysPastDue} days past due`);
+  }
+  if (!receivable.insured) ineligibleReasons.push("Insurance evidence exception");
+  if (!receivable.titleClear) ineligibleReasons.push("Title or lien evidence exception");
+  if (!receivable.lockboxMatched) ineligibleReasons.push("Lockbox cash mapping exception");
+  if (receivable.utilizationPct < borrowingBasePolicy.minUtilizationPct) {
+    ineligibleReasons.push("Utilization below policy floor");
+  }
+
+  return ineligibleReasons;
+}
+
+export function calculateBorrowingBase(
+  portfolio: FleetPortfolio = demoPortfolio,
+  options: CalculateBorrowingBaseOptions = {},
+): BorrowingBaseResult {
+  const borrowingBasePolicy = resolveRobomataBorrowingBasePolicyParameters({
+    artifact: options.policyArtifact,
+  });
   const grossReceivablesCents = portfolio.receivables.reduce((sum, receivable) => sum + receivable.outstandingCents, 0);
 
   const receivableResults = portfolio.receivables.map(receivable => {
-    const ineligibleReasons: string[] = [];
-
-    if (receivable.manuallyExcluded) ineligibleReasons.push("Manually excluded");
-    if (receivable.daysPastDue > ROBOMATA_MAX_DAYS_PAST_DUE) ineligibleReasons.push("Over 45 days past due");
-    if (!receivable.insured) ineligibleReasons.push("Insurance evidence exception");
-    if (!receivable.titleClear) ineligibleReasons.push("Title or lien evidence exception");
-    if (!receivable.lockboxMatched) ineligibleReasons.push("Lockbox cash mapping exception");
-    if (receivable.utilizationPct < ROBOMATA_MIN_UTILIZATION_PCT) {
-      ineligibleReasons.push("Utilization below policy floor");
-    }
+    const ineligibleReasons = receivablePolicyReasons(receivable, borrowingBasePolicy);
 
     return {
       ...receivable,

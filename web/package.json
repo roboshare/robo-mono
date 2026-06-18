@@ -20,6 +20,7 @@
     "robomata:rental-stripe-payments-smoke": "node scripts/robomata-rental-stripe-payments-smoke.mjs",
     "robomata:agent-boundary-smoke": "node scripts/robomata-agent-boundary-smoke.mjs",
     "robomata:agent-execution-smoke": "node scripts/robomata-agent-execution-smoke.mjs",
+    "robomata:policy-artifact-lookup-smoke": "node scripts/robomata-policy-artifact-lookup-smoke.mjs",
     "robomata:tokenization-api-test": "node scripts/robomata-tokenization-api-test.mjs",
     "robomata:testnet-smoke": "node scripts/robomata-testnet-smoke.mjs",
     "serve": "next start",

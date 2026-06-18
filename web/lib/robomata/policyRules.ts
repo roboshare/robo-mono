@@ -7,10 +7,19 @@ import type {
 } from "~~/lib/robomata/facilityMonitoring";
 
 export const ROBOMATA_DEFAULT_POLICY_VERSION = "submission-v1";
+// Compatibility defaults used to construct the platform-default artifact. Runtime
+// paths should read these values through artifact parameter helpers below.
 export const ROBOMATA_DEFAULT_ADVANCE_RATE_BPS = 8200;
 export const ROBOMATA_DEFAULT_CONCENTRATION_LIMIT_PCT = 35;
 export const ROBOMATA_MAX_DAYS_PAST_DUE = 45;
 export const ROBOMATA_MIN_UTILIZATION_PCT = 70;
+
+export type RobomataBorrowingBasePolicyParameters = {
+  advanceRateBps: number;
+  concentrationLimitPct: number;
+  maxDaysPastDue: number;
+  minUtilizationPct: number;
+};
 
 export type RobomataPolicyRule = {
   id: string;
@@ -38,6 +47,9 @@ export type RobomataFacilityPolicyArtifact = {
   status: "active";
   effectiveFrom: string;
   description: string;
+  parameters: {
+    borrowingBase: RobomataBorrowingBasePolicyParameters;
+  };
   ruleSets: {
     borrowingBase: RobomataFacilityPolicyArtifactRuleSet;
     evidenceFreshness: RobomataFacilityPolicyArtifactRuleSet;
@@ -82,6 +94,13 @@ export type RobomataPolicyEvaluationSummary = {
 function formatBps(bps: number): string {
   return `${(bps / 100).toFixed(1)}%`;
 }
+
+const ROBOMATA_DEFAULT_BORROWING_BASE_PARAMETERS: RobomataBorrowingBasePolicyParameters = {
+  advanceRateBps: ROBOMATA_DEFAULT_ADVANCE_RATE_BPS,
+  concentrationLimitPct: ROBOMATA_DEFAULT_CONCENTRATION_LIMIT_PCT,
+  maxDaysPastDue: ROBOMATA_MAX_DAYS_PAST_DUE,
+  minUtilizationPct: ROBOMATA_MIN_UTILIZATION_PCT,
+};
 
 const ROBOMATA_BORROWING_BASE_RULES: RobomataPolicyRule[] = [
   {
@@ -270,6 +289,9 @@ export const ROBOMATA_DEFAULT_FACILITY_POLICY_ARTIFACT: RobomataFacilityPolicyAr
   effectiveFrom: "2026-06-18",
   description:
     "Versioned metadata for the current deterministic Robomata rules. Facility and lender overrides are not active yet.",
+  parameters: {
+    borrowingBase: ROBOMATA_DEFAULT_BORROWING_BASE_PARAMETERS,
+  },
   ruleSets: {
     borrowingBase: {
       id: "borrowing-base-eligibility",
@@ -317,6 +339,26 @@ export function resolveRobomataFacilityPolicyArtifact(input?: {
       submissionId: input?.submissionId,
     },
   };
+}
+
+export function getRobomataBorrowingBasePolicyParameters(
+  artifact: RobomataFacilityPolicyArtifact = ROBOMATA_DEFAULT_FACILITY_POLICY_ARTIFACT,
+): RobomataBorrowingBasePolicyParameters {
+  return artifact.parameters.borrowingBase;
+}
+
+export function resolveRobomataBorrowingBasePolicyParameters(input?: {
+  artifact?: RobomataFacilityPolicyArtifact;
+  facilityId?: string;
+  submissionId?: string;
+}): RobomataBorrowingBasePolicyParameters {
+  if (input?.artifact) return getRobomataBorrowingBasePolicyParameters(input.artifact);
+  return getRobomataBorrowingBasePolicyParameters(
+    resolveRobomataFacilityPolicyArtifact({
+      facilityId: input?.facilityId,
+      submissionId: input?.submissionId,
+    }).artifact,
+  );
 }
 
 export const ROBOMATA_BORROWING_BASE_POLICY_RULES =
@@ -393,6 +435,7 @@ export function buildBorrowingBasePolicyEvaluation(input: {
   evaluatedAt: string;
 }): RobomataPolicyEvaluationSummary {
   const artifact = input.artifact ?? ROBOMATA_DEFAULT_FACILITY_POLICY_ARTIFACT;
+  const borrowingBaseParameters = getRobomataBorrowingBasePolicyParameters(artifact);
   const ruleSet = artifact.ruleSets.borrowingBase;
   const rules = ruleSet.rules;
   const daysPastDueIds = receivableIdsWithReason(input.borrowingBase, "days past due");
@@ -410,7 +453,9 @@ export function buildBorrowingBasePolicyEvaluation(input: {
       evaluationFromRule(ruleById(rules, "advance-rate"), {
         detail: `Applied ${formatBps(input.borrowingBase.portfolio.advanceRateBps)} advance rate.`,
         status:
-          input.borrowingBase.portfolio.advanceRateBps === ROBOMATA_DEFAULT_ADVANCE_RATE_BPS ? "passed" : "warning",
+          input.borrowingBase.portfolio.advanceRateBps === borrowingBaseParameters.advanceRateBps
+            ? "passed"
+            : "warning",
       }),
       evaluationFromRule(ruleById(rules, "concentration-reserve"), {
         detail: `${input.borrowingBase.concentrationReserveCents} cents reserved for concentration.`,

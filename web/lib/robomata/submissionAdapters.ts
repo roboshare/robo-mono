@@ -3,10 +3,10 @@ import { type BorrowingBaseResult, type FleetPortfolio, type ReceivableResult } 
 import { buildEvidenceAnchor, buildEvidenceRail } from "~~/lib/robomata/evidence";
 import { buildLenderPacket } from "~~/lib/robomata/lenderPacket";
 import {
-  ROBOMATA_DEFAULT_ADVANCE_RATE_BPS,
-  ROBOMATA_DEFAULT_CONCENTRATION_LIMIT_PCT,
-  ROBOMATA_MAX_DAYS_PAST_DUE,
-  ROBOMATA_MIN_UTILIZATION_PCT,
+  type RobomataBorrowingBasePolicyParameters,
+  type RobomataFacilityPolicyArtifact,
+  resolveRobomataBorrowingBasePolicyParameters,
+  resolveRobomataFacilityPolicyArtifact,
 } from "~~/lib/robomata/policyRules";
 import {
   isRobomataSuiCommitRuntimeConfigured,
@@ -21,7 +21,11 @@ import {
   resolveSubmissionFacilityOperatorAddress,
 } from "~~/lib/robomata/submissions";
 
-function calculateSubmissionBorrowingBase(portfolio: FleetPortfolio): BorrowingBaseResult {
+function calculateSubmissionBorrowingBase(
+  portfolio: FleetPortfolio,
+  policyArtifact: RobomataFacilityPolicyArtifact,
+): BorrowingBaseResult {
+  const borrowingBasePolicy = resolveRobomataBorrowingBasePolicyParameters({ artifact: policyArtifact });
   const grossReceivablesCents = portfolio.receivables.reduce((sum, receivable) => sum + receivable.outstandingCents, 0);
 
   const receivableResults = portfolio.receivables.map(receivable => {
@@ -31,11 +35,13 @@ function calculateSubmissionBorrowingBase(portfolio: FleetPortfolio): BorrowingB
     if (manuallyExcluded) {
       ineligibleReasons.push("Manually excluded");
     } else {
-      if (receivable.daysPastDue > ROBOMATA_MAX_DAYS_PAST_DUE) ineligibleReasons.push("Over 45 days past due");
+      if (receivable.daysPastDue > borrowingBasePolicy.maxDaysPastDue) {
+        ineligibleReasons.push(`Over ${borrowingBasePolicy.maxDaysPastDue} days past due`);
+      }
       if (!receivable.insured) ineligibleReasons.push("Insurance evidence exception");
       if (!receivable.titleClear) ineligibleReasons.push("Title or lien evidence exception");
       if (!receivable.lockboxMatched) ineligibleReasons.push("Lockbox cash mapping exception");
-      if (receivable.utilizationPct < ROBOMATA_MIN_UTILIZATION_PCT) {
+      if (receivable.utilizationPct < borrowingBasePolicy.minUtilizationPct) {
         ineligibleReasons.push("Utilization below policy floor");
       }
     }
@@ -85,13 +91,19 @@ function calculateSubmissionBorrowingBase(portfolio: FleetPortfolio): BorrowingB
   };
 }
 
-export function buildPortfolioFromSubmission(submission: FacilitySubmission): FleetPortfolio {
+export function buildPortfolioFromSubmission(
+  submission: FacilitySubmission,
+  borrowingBasePolicy: RobomataBorrowingBasePolicyParameters = resolveRobomataBorrowingBasePolicyParameters({
+    facilityId: submission.facilityMonitoring?.facilityId,
+    submissionId: submission.id,
+  }),
+): FleetPortfolio {
   return {
     operator: submission.operatorName,
     facilityName: submission.facilityName,
     asOfDate: submission.asOfDate,
-    advanceRateBps: ROBOMATA_DEFAULT_ADVANCE_RATE_BPS,
-    concentrationLimitPct: ROBOMATA_DEFAULT_CONCENTRATION_LIMIT_PCT,
+    advanceRateBps: borrowingBasePolicy.advanceRateBps,
+    concentrationLimitPct: borrowingBasePolicy.concentrationLimitPct,
     receivables: submission.receivables.map(receivable => ({
       id: receivable.id,
       obligor: receivable.obligor,
@@ -142,7 +154,7 @@ function buildSubmissionExceptions(
       id: `exception_${receivable.id}`,
       kind: "receivable" as const,
       itemId: receivable.id,
-      severity: receivable.ineligibleReasons.some(reason => reason.includes("Over 45"))
+      severity: receivable.ineligibleReasons.some(reason => reason.includes("days past due"))
         ? ("high" as const)
         : ("medium" as const),
       title: `${receivable.id} requires action`,
@@ -196,8 +208,15 @@ async function buildEvidenceCommitPreview(submission: FacilitySubmission, eviden
 }
 
 export async function computeSubmissionArtifacts(submission: FacilitySubmission): Promise<SubmissionComputation> {
-  const portfolio = buildPortfolioFromSubmission(submission);
-  const borrowingBase = calculateSubmissionBorrowingBase(portfolio);
+  const policyArtifact = resolveRobomataFacilityPolicyArtifact({
+    facilityId: submission.facilityMonitoring?.facilityId,
+    submissionId: submission.id,
+  }).artifact;
+  const portfolio = buildPortfolioFromSubmission(
+    submission,
+    resolveRobomataBorrowingBasePolicyParameters({ artifact: policyArtifact }),
+  );
+  const borrowingBase = calculateSubmissionBorrowingBase(portfolio, policyArtifact);
   const evidenceAnchor = buildEvidenceAnchor(portfolio.facilityName, portfolio.evidence);
   const evidenceRail = buildEvidenceRail(evidenceAnchor);
   const lenderBorrowingBase = buildLenderFacingBorrowingBase(borrowingBase);
