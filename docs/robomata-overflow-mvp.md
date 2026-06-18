@@ -431,6 +431,9 @@ This work follows the current repo policy:
 - Do not conflate the deterministic LLM diligence memo with supervised agent
   policies, runs, actions, or events. Current agents monitor, evaluate, propose
   actions, and produce audit records; they do not execute Sui/EVM writes.
+- Do not present the current platform-default policy rules as lender-authored
+  artifacts. The visible `submission-v1` rules are a transparency baseline until
+  lender policy artifacts are implemented.
 - Do not expose raw Walrus, Seal, or Sui identifiers as the primary operator
   workflow. Technical identifiers belong behind `Advanced details`.
 - Do not treat Seal decryption UX, lender allowlists, or multi-party access

@@ -1,3 +1,10 @@
+import {
+  ROBOMATA_DEFAULT_ADVANCE_RATE_BPS,
+  ROBOMATA_DEFAULT_CONCENTRATION_LIMIT_PCT,
+  ROBOMATA_MAX_DAYS_PAST_DUE,
+  ROBOMATA_MIN_UTILIZATION_PCT,
+} from "~~/lib/robomata/policyRules";
+
 export type EvidenceStatus = "verified" | "exception" | "pending";
 
 export type Receivable = {
@@ -55,8 +62,8 @@ export const demoPortfolio: FleetPortfolio = {
   operator: "MetroFleet Logistics",
   facilityName: "MetroFleet 2026 Fleet Receivables Facility",
   asOfDate: "2026-05-21",
-  advanceRateBps: 8200,
-  concentrationLimitPct: 35,
+  advanceRateBps: ROBOMATA_DEFAULT_ADVANCE_RATE_BPS,
+  concentrationLimitPct: ROBOMATA_DEFAULT_CONCENTRATION_LIMIT_PCT,
   receivables: [
     {
       id: "AR-1007",
@@ -170,11 +177,13 @@ export function calculateBorrowingBase(portfolio: FleetPortfolio = demoPortfolio
     const ineligibleReasons: string[] = [];
 
     if (receivable.manuallyExcluded) ineligibleReasons.push("Manually excluded");
-    if (receivable.daysPastDue > 45) ineligibleReasons.push("Over 45 days past due");
+    if (receivable.daysPastDue > ROBOMATA_MAX_DAYS_PAST_DUE) ineligibleReasons.push("Over 45 days past due");
     if (!receivable.insured) ineligibleReasons.push("Insurance evidence exception");
     if (!receivable.titleClear) ineligibleReasons.push("Title or lien evidence exception");
     if (!receivable.lockboxMatched) ineligibleReasons.push("Lockbox cash mapping exception");
-    if (receivable.utilizationPct < 70) ineligibleReasons.push("Utilization below policy floor");
+    if (receivable.utilizationPct < ROBOMATA_MIN_UTILIZATION_PCT) {
+      ineligibleReasons.push("Utilization below policy floor");
+    }
 
     return {
       ...receivable,

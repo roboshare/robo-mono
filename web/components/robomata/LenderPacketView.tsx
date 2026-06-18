@@ -5,6 +5,10 @@ import {
   ExclamationTriangleIcon,
   LockClosedIcon,
 } from "@heroicons/react/24/outline";
+import {
+  BorrowingBasePolicyDisclosure,
+  PacketFreshnessPolicyDisclosure,
+} from "~~/components/robomata/PolicyRulesPanel";
 import { formatPercentFromBps, formatUsd } from "~~/lib/robomata/borrowingBase";
 import type { SharedLenderPacketView } from "~~/lib/robomata/shareLinks";
 
@@ -97,6 +101,9 @@ export const LenderPacketView = ({ packet }: LenderPacketViewProps) => {
             </div>
           ) : null}
         </div>
+        <div className="mt-5">
+          <BorrowingBasePolicyDisclosure />
+        </div>
         {packet.monitoring ? (
           <div className="mt-5 rounded-2xl border border-base-300 bg-base-200/50 p-4 text-sm leading-relaxed text-base-content/70">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -120,6 +127,9 @@ export const LenderPacketView = ({ packet }: LenderPacketViewProps) => {
               {packet.monitoring.runRootDigest ? (
                 <div className="break-all">Run root: {packet.monitoring.runRootDigest}</div>
               ) : null}
+            </div>
+            <div className="mt-4">
+              <PacketFreshnessPolicyDisclosure />
             </div>
           </div>
         ) : null}

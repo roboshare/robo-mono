@@ -9,6 +9,7 @@ import {
   type RobomataFacility,
   type SuiRootVerificationStatus,
 } from "~~/lib/robomata/facilityMonitoring";
+import { ROBOMATA_DEFAULT_POLICY_VERSION } from "~~/lib/robomata/policyRules";
 import type { FacilitySubmission, SubmissionEvidence } from "~~/lib/robomata/submissions";
 
 function facilityIdForSubmission(submission: FacilitySubmission): string {
@@ -112,7 +113,7 @@ function buildLatestRun(submission: FacilitySubmission, facilityId: string, obse
     runNumber: 1,
     asOfDate: submission.asOfDate,
     status,
-    policyVersion: "submission-v1",
+    policyVersion: ROBOMATA_DEFAULT_POLICY_VERSION,
     inputObservationIds: observations.map(observation => observation.id),
     inputDigest: submission.evidenceCommit.evidenceRoot ?? submission.computation.evidenceAnchor.evidenceRoot,
     borrowingBase: submission.computation.borrowingBase,

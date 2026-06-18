@@ -3,6 +3,12 @@ import { type BorrowingBaseResult, type FleetPortfolio, type ReceivableResult } 
 import { buildEvidenceAnchor, buildEvidenceRail } from "~~/lib/robomata/evidence";
 import { buildLenderPacket } from "~~/lib/robomata/lenderPacket";
 import {
+  ROBOMATA_DEFAULT_ADVANCE_RATE_BPS,
+  ROBOMATA_DEFAULT_CONCENTRATION_LIMIT_PCT,
+  ROBOMATA_MAX_DAYS_PAST_DUE,
+  ROBOMATA_MIN_UTILIZATION_PCT,
+} from "~~/lib/robomata/policyRules";
+import {
   isRobomataSuiCommitRuntimeConfigured,
   isRobomataSuiSponsorshipRuntimeConfigured,
 } from "~~/lib/robomata/server/suiCommitConfig";
@@ -25,11 +31,13 @@ function calculateSubmissionBorrowingBase(portfolio: FleetPortfolio): BorrowingB
     if (manuallyExcluded) {
       ineligibleReasons.push("Manually excluded");
     } else {
-      if (receivable.daysPastDue > 45) ineligibleReasons.push("Over 45 days past due");
+      if (receivable.daysPastDue > ROBOMATA_MAX_DAYS_PAST_DUE) ineligibleReasons.push("Over 45 days past due");
       if (!receivable.insured) ineligibleReasons.push("Insurance evidence exception");
       if (!receivable.titleClear) ineligibleReasons.push("Title or lien evidence exception");
       if (!receivable.lockboxMatched) ineligibleReasons.push("Lockbox cash mapping exception");
-      if (receivable.utilizationPct < 70) ineligibleReasons.push("Utilization below policy floor");
+      if (receivable.utilizationPct < ROBOMATA_MIN_UTILIZATION_PCT) {
+        ineligibleReasons.push("Utilization below policy floor");
+      }
     }
 
     return {
@@ -82,8 +90,8 @@ export function buildPortfolioFromSubmission(submission: FacilitySubmission): Fl
     operator: submission.operatorName,
     facilityName: submission.facilityName,
     asOfDate: submission.asOfDate,
-    advanceRateBps: 8200,
-    concentrationLimitPct: 35,
+    advanceRateBps: ROBOMATA_DEFAULT_ADVANCE_RATE_BPS,
+    concentrationLimitPct: ROBOMATA_DEFAULT_CONCENTRATION_LIMIT_PCT,
     receivables: submission.receivables.map(receivable => ({
       id: receivable.id,
       obligor: receivable.obligor,
