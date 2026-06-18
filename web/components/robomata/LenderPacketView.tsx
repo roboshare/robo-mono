@@ -179,7 +179,7 @@ export const LenderPacketView = ({ packet, shareToken }: LenderPacketViewProps) 
             <div className="mt-4">
               <PolicyEvaluationSummaryPanel
                 evaluations={packet.monitoring.policyEvaluations}
-                title="Pinned policy evaluation"
+                title="Policy evaluation detail"
               />
             </div>
           </div>

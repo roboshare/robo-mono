@@ -148,30 +148,35 @@ export async function buildResolvedSharedLenderPacketView(input: {
   if (!binding) return buildSharedLenderPacketView({ ...input, agentAppointment });
 
   const projection = await getFacilityMonitoringStore().getProjectionForSubmission(input.submission);
-  const packetManifest =
+  const pinnedPacketManifest =
     projection.packetManifests.find(packet => packet.id === binding.packetManifestId) ??
     projection.packetManifests.find(packet => packet.runId === binding.runId);
   const run = projection.runHistory.find(candidate => candidate.id === binding.runId);
-  if (!packetManifest || !run) return buildSharedLenderPacketView({ ...input, agentAppointment });
+  if (!pinnedPacketManifest || !run) return buildSharedLenderPacketView({ ...input, agentAppointment });
   const policyArtifact = resolveRobomataFacilityPolicyArtifact({
     facilityId: projection.facility.id,
     submissionId: input.submission.id,
   }).artifact;
+  const currentPacketManifest =
+    projection.latestPacket?.id === pinnedPacketManifest.id ? projection.latestPacket : pinnedPacketManifest;
   const policyEvaluations = [
     ...omitLenderHiddenSubjectIds(run.policyEvaluations ?? []),
-    ...(packetManifest.policyEvaluations ?? []),
+    ...(currentPacketManifest.policyEvaluations ?? []),
   ];
+  const policyEvaluationSummary = policyEvaluations.length
+    ? summarizeRobomataPolicyEvaluations(policyEvaluations)
+    : undefined;
 
   const currentPacketFreshnessStatus =
     projection.latestPacket &&
-    projection.latestPacket.id !== packetManifest.id &&
-    projection.latestPacket.generatedAt > packetManifest.generatedAt
+    projection.latestPacket.id !== pinnedPacketManifest.id &&
+    projection.latestPacket.generatedAt > pinnedPacketManifest.generatedAt
       ? "superseded"
-      : packetManifest.freshnessStatus;
+      : currentPacketManifest.freshnessStatus;
 
   return buildSharedLenderPacketView({
     ...input,
-    packetManifest,
+    packetManifest: pinnedPacketManifest,
     run,
     monitoring: {
       ...binding,
@@ -180,6 +185,9 @@ export async function buildResolvedSharedLenderPacketView(input: {
       policyArtifactId: binding.policyArtifactId ?? run.policyArtifactId ?? policyArtifact.id,
       policyArtifactName: binding.policyArtifactName ?? run.policyArtifactName ?? policyArtifact.name,
       policyArtifactVersion: binding.policyArtifactVersion ?? run.policyVersion ?? policyArtifact.version,
+      policyEvaluationFailedCount: policyEvaluationSummary?.failedCount ?? binding.policyEvaluationFailedCount,
+      policyEvaluationSummary: policyEvaluationSummary?.summary ?? binding.policyEvaluationSummary,
+      policyEvaluationWarningCount: policyEvaluationSummary?.warningCount ?? binding.policyEvaluationWarningCount,
       policyEvaluations: policyEvaluations.length ? policyEvaluations : undefined,
       runPolicyVersion: binding.runPolicyVersion ?? run.policyVersion,
     },

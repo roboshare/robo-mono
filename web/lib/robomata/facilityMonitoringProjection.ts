@@ -173,7 +173,7 @@ function buildLatestPacket(
     buildSuiRootPolicyEvaluation({
       artifact: policyArtifact,
       evaluatedAt: submission.computation.computedAt,
-      suiRootStatus: suiRootStatus(submission),
+      suiRootStatus: "pending",
     }),
   ];
   const policyEvaluationSummary = summarizeRobomataPolicyEvaluations(policyEvaluations);
