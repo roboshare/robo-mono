@@ -266,9 +266,11 @@ auto-approves the action type, in which case the persisted boundary is
 planner boundary back to operator approval for that run. Suggested tools are
 limited to `none` or the advisory audit adapter
 `robomata.agent.advisory_audit.v1`, and the audit adapter is only valid for
-in-appointment evidence-review and Sui-root-review action types. The execution
-boundary remains `proposal_only` or `audit_only_adapter_flagged`; this metadata
-does not approve, complete, execute, or mutate retained actions. Deterministic
+in-appointment evidence-review and Sui-root-review action types while both
+`ROBOMATA_AGENT_EXECUTION_ENABLED` and
+`ROBOMATA_AGENT_ADVISORY_EXECUTION_ENABLED` are enabled. Otherwise the suggested
+tool is `none` and the execution boundary is `proposal_only`. This metadata does
+not approve, complete, execute, or mutate retained actions. Deterministic
 fallback populates the same fields with safe defaults, so the Agent Supervision
 panel can show the boundary even when `ROBOMATA_AGENT_PLANNER_ENABLED` is off or
 a live provider fails validation.

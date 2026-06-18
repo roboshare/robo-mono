@@ -49,6 +49,8 @@ for (const needle of [
   "validateRiskLevel",
   "isActionWithinAppointment",
   "isActionAutoApproved",
+  "isAdvisoryAuditToolEnabled",
+  "defaultExecutionBoundaryForAction",
   "suppressAutoApprove",
   "autoApprovalSuppressedForRun",
   "withPlannerRecommendationDefaults",
@@ -96,6 +98,7 @@ assertIncludes(doc, "structured recommendation intent", "live monitoring docs");
 assertIncludes(doc, "agent-supervision-plan-output-v2", "live monitoring docs");
 assertIncludes(doc, "none_auto_approved", "live monitoring docs");
 assertIncludes(doc, "suppress auto-approval", "live monitoring docs");
-assertIncludes(doc, "does not approve, complete, execute, or mutate retained actions", "live monitoring docs");
+assertIncludes(doc, "ROBOMATA_AGENT_ADVISORY_EXECUTION_ENABLED", "live monitoring docs");
+assertIncludes(doc, "mutate retained actions", "live monitoring docs");
 
 console.log("Robomata agent planner intents smoke passed.");

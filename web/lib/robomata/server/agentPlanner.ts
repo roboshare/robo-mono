@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import "server-only";
-import { isRobomataAgentPlannerEnabled } from "~~/lib/featureFlags";
+import {
+  isRobomataAgentAdvisoryExecutionEnabled,
+  isRobomataAgentExecutionEnabled,
+  isRobomataAgentPlannerEnabled,
+} from "~~/lib/featureFlags";
 import type {
   RobomataAgentAction,
   RobomataAgentActionDraft,
@@ -284,18 +288,33 @@ function isActionAutoApproved(
   type: RobomataAgentActionType,
   suppressAutoApprove?: boolean,
 ): boolean {
+  if (policy.status !== "active") return false;
   if (suppressAutoApprove) return false;
   return policy.autoApproveActionTypes.includes(type);
+}
+
+function isAdvisoryAuditToolEnabled(): boolean {
+  return isRobomataAgentExecutionEnabled() && isRobomataAgentAdvisoryExecutionEnabled();
+}
+
+function canSuggestAdvisoryAuditTool(policy: RobomataAgentPolicy | undefined, type: RobomataAgentActionType): boolean {
+  if (policy && !isActionWithinAppointment(policy, type)) return false;
+  if (!isAdvisoryAuditToolEnabled()) return false;
+  return plannerExecutionBoundaryForAction(type) === "audit_only_adapter_flagged";
 }
 
 function defaultSuggestedToolForAction(
   type: RobomataAgentActionType,
   policy?: RobomataAgentPolicy,
 ): RobomataAgentPlannerSuggestedTool {
-  if (policy && !isActionWithinAppointment(policy, type)) return "none";
-  return plannerExecutionBoundaryForAction(type) === "audit_only_adapter_flagged"
-    ? "robomata.agent.advisory_audit.v1"
-    : "none";
+  return canSuggestAdvisoryAuditTool(policy, type) ? "robomata.agent.advisory_audit.v1" : "none";
+}
+
+function defaultExecutionBoundaryForAction(
+  type: RobomataAgentActionType,
+  policy?: RobomataAgentPolicy,
+): RobomataAgentPlannerExecutionBoundary {
+  return canSuggestAdvisoryAuditTool(policy, type) ? "audit_only_adapter_flagged" : "proposal_only";
 }
 
 function validateSuggestedToolForAction(
@@ -347,14 +366,17 @@ function defaultPlannerToolIntentReason(
   if (!isActionWithinAppointment(policy, type)) {
     return "Appointment does not allow this action type; retain only as a skipped audit record.";
   }
-  if (defaultSuggestedToolForAction(type, policy) === "robomata.agent.advisory_audit.v1") {
-    return "Advisory audit adapter only; operator approval remains required before any retained action changes state.";
-  }
   if (policy.autoApproveActionTypes.includes(type) && suppressAutoApprove) {
     return "Auto-approval is suppressed for this run; operator approval is required before the action can advance.";
   }
   if (isActionAutoApproved(policy, type, suppressAutoApprove)) {
     return "Appointment auto-approval covers this action type, but planner output still cannot execute or mutate state.";
+  }
+  if (defaultSuggestedToolForAction(type, policy) === "robomata.agent.advisory_audit.v1") {
+    return "Advisory audit adapter only; operator approval remains required before any retained action changes state.";
+  }
+  if (plannerExecutionBoundaryForAction(type) === "audit_only_adapter_flagged" && !isAdvisoryAuditToolEnabled()) {
+    return "Advisory execution flags are disabled; retain as a proposal for operator review.";
   }
   return "No executable tool is authorized for this action; retain as a proposal for operator review.";
 }
@@ -382,9 +404,7 @@ function withPlannerRecommendationDefaults(
   const suggestedToolAllowed =
     isActionWithinAppointment(policy, action.type) &&
     (suggestedTool === "none" || suggestedTool === defaultSuggestedToolForAction(action.type, policy));
-  const executionBoundary = isActionWithinAppointment(policy, action.type)
-    ? plannerExecutionBoundaryForAction(action.type)
-    : "proposal_only";
+  const executionBoundary = defaultExecutionBoundaryForAction(action.type, policy);
   return {
     ...action,
     metadata: {
@@ -411,9 +431,7 @@ function buildAllowedToolSurface(policy: RobomataAgentPolicy, suppressAutoApprov
   return ROBOMATA_AGENT_ACTION_TYPES.map(type => ({
     approvalRequired: !isActionAutoApproved(policy, type, suppressAutoApprove),
     autoApproved: isActionAutoApproved(policy, type, suppressAutoApprove),
-    executionBoundary: isActionWithinAppointment(policy, type)
-      ? plannerExecutionBoundaryForAction(type)
-      : "proposal_only",
+    executionBoundary: defaultExecutionBoundaryForAction(type, policy),
     suggestedTool: defaultSuggestedToolForAction(type, policy),
     type,
     withinAppointment: isActionWithinAppointment(policy, type),
