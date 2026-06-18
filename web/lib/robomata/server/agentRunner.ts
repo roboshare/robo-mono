@@ -6,6 +6,10 @@ import {
   type RobomataAgentPolicy,
 } from "~~/lib/robomata/agents";
 import type { FacilityMonitoringProjection, FacilityObservationStatus } from "~~/lib/robomata/facilityMonitoring";
+import {
+  type RobomataFacilityPolicyArtifact,
+  resolveRobomataFacilityPolicyArtifact,
+} from "~~/lib/robomata/policyRules";
 import { planRobomataAgentActions, plannerBoundarySummary } from "~~/lib/robomata/server/agentPlanner";
 import { getRobomataAgentStore } from "~~/lib/robomata/server/agentStore";
 import { getFacilityMonitoringStore } from "~~/lib/robomata/server/facilityMonitoringStore";
@@ -32,10 +36,23 @@ type RunAgentForSubmissionInput = {
 function appendAction(
   actions: RobomataAgentActionDraft[],
   policy: RobomataAgentPolicy,
+  policyArtifact: RobomataFacilityPolicyArtifact,
   action: RobomataAgentActionDraft & { type: RobomataAgentActionType },
 ) {
   void policy;
-  actions.push(action);
+  const policyRule = policyArtifact.ruleSets.agentSupervision.rules.find(rule => rule.actionType === action.type);
+
+  actions.push({
+    ...action,
+    metadata: {
+      ...action.metadata,
+      policyArtifactId: policyArtifact.id,
+      policyArtifactVersion: policyArtifact.version,
+      policyRuleId: policyRule?.id ?? action.type,
+      policyRuleLabel: policyRule?.label ?? action.title,
+      policyRuleSummary: policyRule?.summary ?? action.reason,
+    },
+  });
 }
 
 function observationSeverity(statuses: FacilityObservationStatus[]): RobomataAgentActionSeverity {
@@ -50,12 +67,16 @@ function buildAgentActionDrafts(
   projection: FacilityMonitoringProjection,
 ): RobomataAgentActionDraft[] {
   const actions: RobomataAgentActionDraft[] = [];
+  const policyArtifact = resolveRobomataFacilityPolicyArtifact({
+    facilityId: projection.facility.id,
+    submissionId: submission.id,
+  }).artifact;
   const nonFreshObservations = projection.observations.filter(
     observation => !["fresh", "superseded"].includes(observation.status),
   );
 
   if (nonFreshObservations.length) {
-    appendAction(actions, policy, {
+    appendAction(actions, policy, policyArtifact, {
       type: "evidence_review",
       severity: observationSeverity(nonFreshObservations.map(observation => observation.status)),
       title: "Review facility evidence freshness",
@@ -71,7 +92,7 @@ function buildAgentActionDrafts(
   }
 
   if (!projection.latestRun && submission.receivables.length > 0 && submission.evidence.length > 0) {
-    appendAction(actions, policy, {
+    appendAction(actions, policy, policyArtifact, {
       type: "borrowing_base_recompute",
       severity: "medium",
       title: "Compute borrowing base run",
@@ -85,7 +106,7 @@ function buildAgentActionDrafts(
   }
 
   if (projection.freshnessStatus !== "fresh") {
-    appendAction(actions, policy, {
+    appendAction(actions, policy, policyArtifact, {
       type: "packet_refresh",
       severity: projection.freshnessStatus === "invalid" ? "high" : "medium",
       title: "Refresh lender packet",
@@ -99,7 +120,7 @@ function buildAgentActionDrafts(
   }
 
   if (["pending", "failed", "mismatch", "retryable"].includes(projection.suiRootStatus)) {
-    appendAction(actions, policy, {
+    appendAction(actions, policy, policyArtifact, {
       type: "sui_root_review",
       severity: ["failed", "mismatch"].includes(projection.suiRootStatus) ? "high" : "medium",
       title: "Review Sui root commit",
@@ -116,7 +137,7 @@ function buildAgentActionDrafts(
     submission.evidenceCommit.status === "committed" &&
     ["not_started", "draft", "failed"].includes(submission.tokenization.status)
   ) {
-    appendAction(actions, policy, {
+    appendAction(actions, policy, policyArtifact, {
       type: "tokenization_readiness",
       severity: submission.tokenization.status === "failed" ? "high" : "low",
       title: "Prepare tokenization handoff",

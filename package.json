@@ -55,6 +55,7 @@
     "robomata:local-smoke": "yarn workspace web robomata:local-smoke",
     "robomata:agent-boundary-smoke": "yarn workspace web robomata:agent-boundary-smoke",
     "robomata:agent-execution-smoke": "yarn workspace web robomata:agent-execution-smoke",
+    "robomata:policy-artifact-lookup-smoke": "yarn workspace web robomata:policy-artifact-lookup-smoke",
     "robomata:rental-investor-ui-smoke": "yarn workspace web robomata:rental-investor-ui-smoke",
     "robomata:rental-earnings-executor-smoke": "yarn workspace web robomata:rental-earnings-executor-smoke",
     "robomata:rental-marketplace-ui-smoke": "yarn workspace web robomata:rental-marketplace-ui-smoke",

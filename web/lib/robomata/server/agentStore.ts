@@ -347,6 +347,8 @@ function buildActions(input: RecordAgentRunInput, run: RobomataAgentRun): Roboma
         policyArtifactVersion: policyArtifact.version,
         policyEvaluationResult: policyEvaluation.result,
         policyRuleId: policyRule?.ruleId ?? draft.type,
+        policyRuleLabel: policyRule?.label ?? draft.metadata?.policyRuleLabel ?? draft.title,
+        policyRuleSummary: policyRule?.summary ?? draft.metadata?.policyRuleSummary ?? draft.reason,
         policyRuleStatus: policyRule?.status ?? "not_applicable",
         ...(permissionDenialReason ? { permissionDeniedReason: permissionDenialReason } : {}),
         proposalSource: draft.metadata?.proposalSource ?? "deterministic_rules",

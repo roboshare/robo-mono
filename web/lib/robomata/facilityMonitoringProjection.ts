@@ -99,7 +99,7 @@ function packetFreshness(submission: FacilitySubmission, observations: FacilityO
 function suiRootStatus(submission: FacilitySubmission): SuiRootVerificationStatus {
   if (submission.evidenceCommit.status === "failed") return "failed";
   if (submission.evidenceCommit.status === "committing") return "committing";
-  if (submission.evidenceCommit.status === "committed") return "verified";
+  if (submission.evidenceCommit.status === "committed") return "committed";
   if (submission.evidenceCommit.status === "ready") return "pending";
   return "not_started";
 }
@@ -149,6 +149,7 @@ function buildLatestPacket(
   facilityId: string,
   run: BorrowingBaseRun | undefined,
   freshnessStatus: PacketFreshnessStatus,
+  suiRootVerificationStatus: SuiRootVerificationStatus,
   observations: FacilityObservation[],
 ) {
   if (!run || !submission.computation) return undefined;
@@ -173,7 +174,7 @@ function buildLatestPacket(
     buildSuiRootPolicyEvaluation({
       artifact: policyArtifact,
       evaluatedAt: submission.computation.computedAt,
-      suiRootStatus: "pending",
+      suiRootStatus: suiRootVerificationStatus,
     }),
   ];
   const policyEvaluationSummary = summarizeRobomataPolicyEvaluations(policyEvaluations);
@@ -225,8 +226,16 @@ export function buildFacilityMonitoringProjection(submission: FacilitySubmission
   const observations = buildObservations(submission, facilityId);
   const freshnessStatus =
     submission.facilityMonitoring?.packetFreshnessStatus ?? packetFreshness(submission, observations);
+  const suiRootVerificationStatus = suiRootStatus(submission);
   const latestRun = buildLatestRun(submission, facilityId, observations);
-  const latestPacket = buildLatestPacket(submission, facilityId, latestRun, freshnessStatus, observations);
+  const latestPacket = buildLatestPacket(
+    submission,
+    facilityId,
+    latestRun,
+    freshnessStatus,
+    suiRootVerificationStatus,
+    observations,
+  );
 
   const facility: RobomataFacility = {
     id: facilityId,
@@ -252,7 +261,7 @@ export function buildFacilityMonitoringProjection(submission: FacilitySubmission
     suiRootCommits: [],
     observations,
     freshnessStatus,
-    suiRootStatus: suiRootStatus(submission),
+    suiRootStatus: suiRootVerificationStatus,
     warnings: buildWarnings(submission, observations),
   };
 }
