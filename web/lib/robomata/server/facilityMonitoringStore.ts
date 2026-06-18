@@ -23,7 +23,6 @@ import {
   buildPacketFreshnessPolicyEvaluation,
   buildSuiRootPolicyEvaluation,
   resolveRobomataFacilityPolicyArtifact,
-  summarizeRobomataPolicyEvaluations,
 } from "~~/lib/robomata/policyRules";
 import {
   buildBorrowingBaseRunRootPayload,
@@ -362,20 +361,10 @@ function packetWithCurrentPolicyEvaluations(input: {
       suiRootStatus: input.suiRootStatus,
     }),
   ];
-  const policyEvaluationSummary = summarizeRobomataPolicyEvaluations(policyEvaluations);
 
   return {
     ...input.packet,
     policyEvaluations,
-    publicMetadata: {
-      ...input.packet.publicMetadata,
-      policyArtifactId: input.run.policyArtifactId ?? policyArtifact.id,
-      policyArtifactName: input.run.policyArtifactName ?? policyArtifact.name,
-      policyArtifactVersion: input.run.policyVersion ?? policyArtifact.version,
-      policyEvaluationFailedCount: policyEvaluationSummary.failedCount,
-      policyEvaluationSummary: policyEvaluationSummary.summary,
-      policyEvaluationWarningCount: policyEvaluationSummary.warningCount,
-    },
   };
 }
 
