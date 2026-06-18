@@ -184,7 +184,12 @@ const PartnerDashboard: NextPage = () => {
   const { address: accountAddress, chainId: accountChainId, connectedAddress } = useTransactingAccount();
   const selectedNetwork = useSelectedNetwork(accountChainId);
   const chainId = selectedNetwork.id;
-  const { data: latestBlock } = useBlock({ chainId });
+  const { data: latestBlock } = useBlock({
+    chainId,
+    query: {
+      refetchInterval: CHAIN_CLOCK_REFRESH_MS,
+    },
+  });
   const [currentTimeSec, setCurrentTimeSec] = useState(() => Math.floor(Date.now() / 1000));
   const chains = useChains();
   const currentChain = chains.find(c => c.id === chainId);
