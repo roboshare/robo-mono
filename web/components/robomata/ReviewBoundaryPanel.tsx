@@ -8,6 +8,17 @@ function formatStatus(value: string | undefined): string {
   return value ? value.replace(/_/g, " ") : "not recorded";
 }
 
+function shortDigest(value: string | undefined): string {
+  return value ? value.slice(0, 16) : "not recorded";
+}
+
+function formatPolicyArtifact(boundary: LenderPacket["reviewBoundary"]): string {
+  if (boundary?.policyArtifactId && boundary.policyArtifactVersion) {
+    return `${boundary.policyArtifactId} v${boundary.policyArtifactVersion}`;
+  }
+  return boundary?.policyArtifactId ?? boundary?.policyArtifactVersion ?? "not recorded";
+}
+
 export function ReviewBoundaryPanel({ boundary }: ReviewBoundaryPanelProps) {
   return (
     <div className="rounded-2xl border border-base-300 bg-base-100/70 p-4 text-sm leading-relaxed text-base-content/70">
@@ -25,6 +36,15 @@ export function ReviewBoundaryPanel({ boundary }: ReviewBoundaryPanelProps) {
         <div>Status: {formatStatus(boundary?.providerStatus)}</div>
         <div>Source of truth: {formatStatus(boundary?.sourceOfTruth)}</div>
         <div>Model: {boundary?.model ?? "not configured"}</div>
+        <div>Prompt: {boundary?.promptVersion ?? "not recorded"}</div>
+        <div>Schema: {boundary?.outputSchemaVersion ?? "not recorded"}</div>
+        <div>Policy: {formatPolicyArtifact(boundary)}</div>
+        <div>Review input: {boundary?.reviewInputId ?? "not recorded"}</div>
+        <div>Input digest: {shortDigest(boundary?.inputDigest)}</div>
+        <div>Source data digest: {shortDigest(boundary?.sourceDataDigest)}</div>
+        <div>Provider input digest: {shortDigest(boundary?.providerInputDigest)}</div>
+        <div>Output digest: {shortDigest(boundary?.outputDigest)}</div>
+        <div>Generated: {boundary?.generatedAt ? new Date(boundary.generatedAt).toLocaleString() : "not recorded"}</div>
       </div>
     </div>
   );
