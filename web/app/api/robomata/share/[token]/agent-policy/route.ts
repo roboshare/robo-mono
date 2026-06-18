@@ -6,9 +6,13 @@ import {
   isRobomataShareLinksEnabled,
   isRobomataWorkflowServerEnabled,
 } from "~~/lib/featureFlags";
+import type { RobomataAgentPolicy } from "~~/lib/robomata/agents";
 import { getRobomataAgentStore } from "~~/lib/robomata/server/agentStore";
 import { shareLinkHasMonitoringMetadata } from "~~/lib/robomata/server/sharedLenderPacket";
-import { getSubmissionShareLinkStore } from "~~/lib/robomata/server/submissionShareLinkStore";
+import {
+  getSubmissionShareLinkStore,
+  hashShareLinkMetadataValue,
+} from "~~/lib/robomata/server/submissionShareLinkStore";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
 import type { SubmissionShareLink } from "~~/lib/robomata/shareLinks";
 import type { FacilitySubmission } from "~~/lib/robomata/submissions";
@@ -85,6 +89,36 @@ function lenderAuthorizationId(shareLink: Pick<SubmissionShareLink, "id">) {
   return `lender_share:${shareLink.id}`;
 }
 
+function getClientIp(request: NextRequest): string | null {
+  const forwardedFor = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  return forwardedFor || request.headers.get("x-real-ip")?.trim() || null;
+}
+
+function buildAccessMetadata(request: NextRequest) {
+  const ip = getClientIp(request);
+  const userAgent = request.headers.get("user-agent")?.trim();
+
+  return {
+    ...(ip ? { ipHash: hashShareLinkMetadataValue(ip) } : {}),
+    ...(userAgent ? { userAgentHash: hashShareLinkMetadataValue(userAgent) } : {}),
+  };
+}
+
+function serializeLenderAgentPolicy(policy: RobomataAgentPolicy | null) {
+  if (!policy) return null;
+
+  return {
+    appointedAgentName: policy.appointedAgentName,
+    appointedAt: policy.appointedAt,
+    appointedBy: policy.appointedBy,
+    appointmentAuthorizationId: policy.appointmentAuthorizationId,
+    appointmentAuthorizationSurface: policy.appointmentAuthorizationSurface,
+    id: policy.id,
+    status: policy.status,
+    updatedAt: policy.updatedAt,
+  };
+}
+
 function serializeAppointmentFlags() {
   return {
     agentsEnabled: isRobomataAgentsEnabled(),
@@ -94,7 +128,7 @@ function serializeAppointmentFlags() {
   };
 }
 
-export async function GET(_request: NextRequest, context: { params: Promise<{ token: string }> }) {
+export async function GET(request: NextRequest, context: { params: Promise<{ token: string }> }) {
   try {
     const featureError = requireLenderAppointment(true);
     if (featureError) return featureError;
@@ -103,9 +137,20 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ to
     const result = await loadAuthorizedShare(token);
     if ("error" in result) return result.error;
 
+    const accessedShareLink = await getSubmissionShareLinkStore().recordAccess(
+      result.shareLink,
+      buildAccessMetadata(request),
+    );
+    if (!accessedShareLink) {
+      return noStoreResponse({ error: "Share link is no longer active." }, { status: 410 });
+    }
+
     const policy = await getRobomataAgentStore().getPolicy(result.submission.id, result.submission.partnerAddress);
 
-    return noStoreResponse({ appointmentFlags: serializeAppointmentFlags(), policy });
+    return noStoreResponse({
+      appointmentFlags: serializeAppointmentFlags(),
+      policy: serializeLenderAgentPolicy(policy),
+    });
   } catch (error) {
     return noStoreResponse(
       { error: error instanceof Error ? error.message : "Failed to load lender agent appointment." },
@@ -128,16 +173,28 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ t
       return noStoreResponse({ error: "appointedAgentName is required." }, { status: 400 });
     }
 
+    const accessedShareLink = await getSubmissionShareLinkStore().recordAccess(
+      result.shareLink,
+      buildAccessMetadata(request),
+    );
+    if (!accessedShareLink) {
+      return noStoreResponse({ error: "Share link is no longer active." }, { status: 410 });
+    }
+
     const policy = await getRobomataAgentStore().updatePolicy({
       submission: result.submission,
       appointedAgentName: body.appointedAgentName,
       appointedBy: "lender",
-      appointerAddress: lenderAuthorizationId(result.shareLink),
-      appointmentAuthorizationId: result.shareLink.id,
+      appointerAddress: lenderAuthorizationId(accessedShareLink),
+      appointmentAuthorizationId: accessedShareLink.id,
       appointmentAuthorizationSurface: "protected_lender_share_link",
+      autoApproveActionTypes: [],
     });
 
-    return noStoreResponse({ appointmentFlags: serializeAppointmentFlags(), policy });
+    return noStoreResponse({
+      appointmentFlags: serializeAppointmentFlags(),
+      policy: serializeLenderAgentPolicy(policy),
+    });
   } catch (error) {
     return noStoreResponse(
       { error: error instanceof Error ? error.message : "Failed to update lender agent appointment." },
