@@ -75,7 +75,7 @@ type AgentProvider = {
 
 const supportedProviders: AgentProviderName[] = ["mock", "openai", "anthropic", "google", "disabled"];
 export const ROBOMATA_AGENT_REVIEW_PROMPT_VERSION = "borrowing-base-review-v1";
-export const ROBOMATA_AGENT_REVIEW_OUTPUT_SCHEMA_VERSION = "borrowing-base-review-output-v1";
+export const ROBOMATA_AGENT_REVIEW_OUTPUT_SCHEMA_VERSION = "borrowing-base-review-output-v2";
 const openAiReviewTimeoutMs = 8_000;
 const openAiExceptionRowLimit = 25;
 const providerInputMaxTextLength = 180;
@@ -450,14 +450,17 @@ function reviewInputControls(): AgentReviewInputControls {
 function openAiReviewPrompt(result: AgentReviewInput): OpenAiReviewPrompt {
   const receivableExceptions = result.receivableResults.filter(receivable => !receivable.eligible);
   const includedReceivableExceptions = receivableExceptions.slice(0, openAiExceptionRowLimit);
-  const includedEvidenceExceptions = result.evidenceExceptions.slice(0, openAiExceptionRowLimit);
+  const remainingEvidenceRows = Math.max(openAiExceptionRowLimit - includedReceivableExceptions.length, 0);
+  const includedEvidenceExceptions = result.evidenceExceptions.slice(0, remainingEvidenceRows);
   const inputControls = reviewInputControls();
   return {
     instruction:
       "Prepare advisory lender diligence text. Do not recalculate availability, eligibility, exceptions, or reserves. The deterministic borrowing-base rules are the source of credit truth.",
-    policyArtifactId: result.policyArtifactId,
-    policyArtifactVersion: result.policyArtifactVersion,
-    portfolio: result.portfolio,
+    policyArtifactId: result.policyArtifactId ? boundedProviderText(result.policyArtifactId) : undefined,
+    policyArtifactVersion: result.policyArtifactVersion ? boundedProviderText(result.policyArtifactVersion) : undefined,
+    portfolio: {
+      operator: boundedProviderText(result.portfolio.operator),
+    },
     availableBorrowingBaseCents: result.availableBorrowingBaseCents,
     exceptionCount: result.exceptionCount,
     receivableSummary: {

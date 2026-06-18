@@ -51,6 +51,7 @@ function formatStatus(value: string) {
 
 export const LenderPacketView = ({ packet, shareToken }: LenderPacketViewProps) => {
   const { borrowingBase } = packet;
+  const diligenceQuestions = packet.lenderPacket.diligenceQuestions ?? [];
   const policyArtifact = resolveRobomataFacilityPolicyArtifact({
     facilityId: packet.monitoring?.facilityId,
     submissionId: packet.submission.id,
@@ -199,11 +200,11 @@ export const LenderPacketView = ({ packet, shareToken }: LenderPacketViewProps) 
           <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">Exception memo</p>
           <h2 className="mt-2 text-2xl font-black text-base-content">Borrower follow-up packet</h2>
           <p className="mt-3 text-sm leading-relaxed text-base-content/70">{packet.lenderPacket.memoSummary}</p>
-          {packet.lenderPacket.diligenceQuestions.length ? (
+          {diligenceQuestions.length ? (
             <div className="mt-5 rounded-2xl border border-base-300 bg-base-200/50 p-4">
               <div className="font-semibold text-base-content">Diligence questions</div>
               <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-base-content/70">
-                {packet.lenderPacket.diligenceQuestions.map(item => (
+                {diligenceQuestions.map(item => (
                   <li key={item}>{item}</li>
                 ))}
               </ul>

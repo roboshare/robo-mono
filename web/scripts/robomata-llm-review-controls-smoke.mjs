@@ -33,6 +33,7 @@ const [agentProviders, lenderPacket, reviewBoundaryPanel, lenderPacketView, subm
 
 for (const needle of [
   "AgentReviewInputControls",
+  'ROBOMATA_AGENT_REVIEW_OUTPUT_SCHEMA_VERSION = "borrowing-base-review-output-v2"',
   "reviewInputControls",
   "allowedFields",
   "excludedMaterial",

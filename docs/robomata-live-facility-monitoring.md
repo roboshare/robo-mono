@@ -343,11 +343,11 @@ and lenders identify which bounded review context, source data, and output were
 used without exposing API keys, raw evidence contents, or full LLM
 request/response bodies.
 
-Structured review output contains a headline, memo, exception analysis,
-diligence questions, and recommended next actions. Malformed live-provider
-arrays or schema-invalid responses are rejected and converted to deterministic
-fallback output with `schema_invalid_fallback` status instead of being partially
-accepted as live output.
+Structured review output schema v2 contains a headline, memo, exception
+analysis, diligence questions, and recommended next actions. Malformed
+live-provider arrays or schema-invalid responses are rejected and converted to
+deterministic fallback output with `schema_invalid_fallback` status instead of
+being partially accepted as live output.
 
 ## Scheduled Agent Tick Route
 
