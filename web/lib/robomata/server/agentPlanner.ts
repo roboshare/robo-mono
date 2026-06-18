@@ -4,12 +4,17 @@ import { isRobomataAgentPlannerEnabled } from "~~/lib/featureFlags";
 import type {
   RobomataAgentAction,
   RobomataAgentActionDraft,
+  RobomataAgentActionSeverity,
   RobomataAgentActionType,
   RobomataAgentPlannerBoundary,
+  RobomataAgentPlannerExecutionBoundary,
   RobomataAgentPlannerInputControls,
   RobomataAgentPlannerMode,
   RobomataAgentPlannerProvider,
+  RobomataAgentPlannerRequiredApproval,
+  RobomataAgentPlannerRiskLevel,
   RobomataAgentPlannerStatus,
+  RobomataAgentPlannerSuggestedTool,
   RobomataAgentPolicy,
 } from "~~/lib/robomata/agents";
 import { ROBOMATA_AGENT_ACTION_TYPES } from "~~/lib/robomata/agents";
@@ -18,7 +23,7 @@ import type { RobomataFacilityPolicyArtifact } from "~~/lib/robomata/policyRules
 import type { FacilitySubmission } from "~~/lib/robomata/submissions";
 
 export const ROBOMATA_AGENT_PLANNER_PROMPT_VERSION = "agent-supervision-planner-v1";
-export const ROBOMATA_AGENT_PLANNER_OUTPUT_SCHEMA_VERSION = "agent-supervision-plan-output-v1";
+export const ROBOMATA_AGENT_PLANNER_OUTPUT_SCHEMA_VERSION = "agent-supervision-plan-output-v2";
 export const ROBOMATA_AGENT_PLANNER_MAX_CANDIDATE_ACTIONS = 8;
 export const ROBOMATA_AGENT_PLANNER_MAX_RECENT_ACTIONS = 12;
 export const ROBOMATA_AGENT_PLANNER_MAX_RECENT_RUNS = 5;
@@ -26,6 +31,9 @@ export const ROBOMATA_AGENT_PLANNER_MAX_TEXT_LENGTH = 260;
 
 const supportedPlannerProviders: RobomataAgentPlannerProvider[] = ["rules", "openai", "anthropic", "google"];
 const openAiPlannerTimeoutMs = 8_000;
+const plannerRiskRank: Record<RobomataAgentPlannerRiskLevel, number> = { low: 1, medium: 2, high: 3 };
+const plannerRequiredApprovals: RobomataAgentPlannerRequiredApproval[] = ["operator"];
+const plannerSuggestedTools: RobomataAgentPlannerSuggestedTool[] = ["none", "robomata.agent.advisory_audit.v1"];
 
 const providerKeyEnv: Record<Exclude<RobomataAgentPlannerProvider, "rules">, string> = {
   anthropic: "ANTHROPIC_API_KEY",
@@ -98,8 +106,40 @@ const openAiPlannerSchema = {
             type: "string",
             description: "Why the supervised agent proposed this action.",
           },
+          riskLevel: {
+            type: "string",
+            enum: ["low", "medium", "high"],
+            description: "Must not understate the deterministic candidate severity.",
+          },
+          requiredApprovals: {
+            type: "array",
+            items: {
+              type: "string",
+              enum: plannerRequiredApprovals,
+            },
+            description: "Current execution boundary only supports operator approval.",
+          },
+          suggestedTool: {
+            type: "string",
+            enum: plannerSuggestedTools,
+            description:
+              "Use none unless the supplied allowed tool surface permits the advisory audit adapter for this action type.",
+          },
+          toolIntentReason: {
+            type: "string",
+            description: "Why this suggested tool remains proposal-only or audit-only.",
+          },
         },
-        required: ["type", "title", "message", "reason"],
+        required: [
+          "type",
+          "title",
+          "message",
+          "reason",
+          "riskLevel",
+          "requiredApprovals",
+          "suggestedTool",
+          "toolIntentReason",
+        ],
       },
     },
   },
@@ -109,7 +149,11 @@ const openAiPlannerSchema = {
 type OpenAiPlannerActionPayload = {
   message?: unknown;
   reason?: unknown;
+  requiredApprovals?: unknown;
+  riskLevel?: unknown;
+  suggestedTool?: unknown;
   title?: unknown;
+  toolIntentReason?: unknown;
   type?: unknown;
 };
 
@@ -217,12 +261,91 @@ function statusCounts(values: string[]): Record<string, number> {
   }, {});
 }
 
+function isPlannerRiskLevel(value: unknown): value is RobomataAgentPlannerRiskLevel {
+  return value === "low" || value === "medium" || value === "high";
+}
+
+function isPlannerSuggestedTool(value: unknown): value is RobomataAgentPlannerSuggestedTool {
+  return typeof value === "string" && plannerSuggestedTools.includes(value as RobomataAgentPlannerSuggestedTool);
+}
+
+function plannerExecutionBoundaryForAction(type: RobomataAgentActionType): RobomataAgentPlannerExecutionBoundary {
+  return type === "evidence_review" || type === "sui_root_review" ? "audit_only_adapter_flagged" : "proposal_only";
+}
+
+function defaultSuggestedToolForAction(type: RobomataAgentActionType): RobomataAgentPlannerSuggestedTool {
+  return plannerExecutionBoundaryForAction(type) === "audit_only_adapter_flagged"
+    ? "robomata.agent.advisory_audit.v1"
+    : "none";
+}
+
+function validateSuggestedToolForAction(
+  type: RobomataAgentActionType,
+  suggestedTool: RobomataAgentPlannerSuggestedTool,
+): void {
+  if (suggestedTool === "none") return;
+  if (defaultSuggestedToolForAction(type) === suggestedTool) return;
+  throw new OpenAiPlannerSchemaError("OpenAI planner suggested an unsupported tool for the action type.");
+}
+
+function validateRequiredApprovals(value: unknown): RobomataAgentPlannerRequiredApproval[] {
+  if (!Array.isArray(value) || value.length !== 1 || value[0] !== "operator") {
+    throw new OpenAiPlannerSchemaError("OpenAI planner required approvals must be exactly operator.");
+  }
+  return ["operator"];
+}
+
+function validateRiskLevel(
+  value: unknown,
+  deterministicSeverity: RobomataAgentActionSeverity,
+): RobomataAgentPlannerRiskLevel {
+  if (!isPlannerRiskLevel(value)) throw new OpenAiPlannerSchemaError("OpenAI planner risk level is not supported.");
+  if (plannerRiskRank[value] < plannerRiskRank[deterministicSeverity]) {
+    throw new OpenAiPlannerSchemaError("OpenAI planner risk level understated deterministic severity.");
+  }
+  return value;
+}
+
+function defaultPlannerToolIntentReason(type: RobomataAgentActionType): string {
+  if (defaultSuggestedToolForAction(type) === "robomata.agent.advisory_audit.v1") {
+    return "Advisory audit adapter only; operator approval remains required before any retained action changes state.";
+  }
+  return "No executable tool is authorized for this action; retain as a proposal for operator review.";
+}
+
+function withPlannerRecommendationDefaults(action: RobomataAgentActionDraft): RobomataAgentActionDraft {
+  const riskLevel = isPlannerRiskLevel(action.metadata?.plannerRiskLevel)
+    ? action.metadata.plannerRiskLevel
+    : action.severity;
+  const suggestedTool = isPlannerSuggestedTool(action.metadata?.plannerSuggestedTool)
+    ? action.metadata.plannerSuggestedTool
+    : defaultSuggestedToolForAction(action.type);
+  const executionBoundary = plannerExecutionBoundaryForAction(action.type);
+  return {
+    ...action,
+    metadata: {
+      ...action.metadata,
+      plannerExecutionBoundary: executionBoundary,
+      plannerRecommendationSource: action.metadata?.proposalSource ?? "deterministic_rules",
+      plannerRequiredApprovals: "operator",
+      plannerRiskLevel: riskLevel,
+      plannerSuggestedTool: suggestedTool,
+      plannerSuggestedToolAllowed:
+        suggestedTool === "none" || suggestedTool === defaultSuggestedToolForAction(action.type),
+      plannerToolIntentReason:
+        typeof action.metadata?.plannerToolIntentReason === "string"
+          ? boundedText(action.metadata.plannerToolIntentReason, defaultPlannerToolIntentReason(action.type), 180)
+          : defaultPlannerToolIntentReason(action.type),
+    },
+  };
+}
+
 function buildAllowedToolSurface(policy: RobomataAgentPolicy) {
   return ROBOMATA_AGENT_ACTION_TYPES.map(type => ({
     approvalRequired: !policy.autoApproveActionTypes.includes(type),
     autoApproved: policy.autoApproveActionTypes.includes(type),
-    executionBoundary:
-      type === "evidence_review" || type === "sui_root_review" ? "audit_only_adapter_flagged" : "proposal_only",
+    executionBoundary: plannerExecutionBoundaryForAction(type),
+    suggestedTool: defaultSuggestedToolForAction(type),
     type,
     withinAppointment: policy.allowedActionTypes.includes(type),
   }));
@@ -358,6 +481,13 @@ function plannerOutputDigestSource(actions: RobomataAgentActionDraft[]) {
   return {
     actions: actions.map(action => ({
       message: action.message,
+      plannerExecutionBoundary: action.metadata?.plannerExecutionBoundary ?? null,
+      plannerRecommendationSource: action.metadata?.plannerRecommendationSource ?? null,
+      plannerRequiredApprovals: action.metadata?.plannerRequiredApprovals ?? null,
+      plannerRiskLevel: action.metadata?.plannerRiskLevel ?? null,
+      plannerSuggestedTool: action.metadata?.plannerSuggestedTool ?? null,
+      plannerSuggestedToolAllowed: action.metadata?.plannerSuggestedToolAllowed ?? null,
+      plannerToolIntentReason: action.metadata?.plannerToolIntentReason ?? null,
       proposalSource: action.metadata?.proposalSource ?? "deterministic_rules",
       reason: action.reason,
       severity: action.severity,
@@ -376,8 +506,9 @@ function withPlannerProvenance(input: {
   providerInput: PlannerProviderInput;
   sourceDataDigest: string;
 }): PlanAgentActionsResult {
+  const actionsWithRecommendationDefaults = input.actions.map(withPlannerRecommendationDefaults);
   const plannerInputDigest = digest(input.providerInput);
-  const plannerOutputDigest = digest(plannerOutputDigestSource(input.actions));
+  const plannerOutputDigest = digest(plannerOutputDigestSource(actionsWithRecommendationDefaults));
   const plannerBoundary: RobomataAgentPlannerBoundary = {
     ...input.baseBoundary,
     allowedToolCount: input.providerInput.allowedToolSurface.length,
@@ -394,7 +525,7 @@ function withPlannerProvenance(input: {
   };
 
   return {
-    actions: input.actions.map(action => ({
+    actions: actionsWithRecommendationDefaults.map(action => ({
       ...action,
       metadata: {
         ...action.metadata,
@@ -419,7 +550,7 @@ function outputTextFromOpenAiResponse(body: OpenAiResponseBody): string | undefi
 
 function parseOpenAiPlannerPayload(text: string, candidateActions: RobomataAgentActionDraft[]): OpenAiPlannerPayload {
   const parsed = JSON.parse(text) as Partial<OpenAiPlannerPayload>;
-  const candidateTypes = new Set(candidateActions.map(action => action.type));
+  const candidatesByType = new Map(candidateActions.map(action => [action.type, action]));
   if (!Array.isArray(parsed.actions)) {
     throw new OpenAiPlannerSchemaError("OpenAI planner response actions must be an array.");
   }
@@ -431,16 +562,28 @@ function parseOpenAiPlannerPayload(text: string, candidateActions: RobomataAgent
       typeof action.type !== "string" ||
       typeof action.title !== "string" ||
       typeof action.message !== "string" ||
-      typeof action.reason !== "string"
+      typeof action.reason !== "string" ||
+      typeof action.toolIntentReason !== "string"
     ) {
       throw new OpenAiPlannerSchemaError("OpenAI planner response action fields must be strings.");
     }
     if (!ROBOMATA_AGENT_ACTION_TYPES.includes(action.type as RobomataAgentActionType)) {
       throw new OpenAiPlannerSchemaError("OpenAI planner response action type is not supported.");
     }
-    if (!candidateTypes.has(action.type as RobomataAgentActionType)) {
+    const candidate = candidatesByType.get(action.type as RobomataAgentActionType);
+    if (!candidate) {
       throw new OpenAiPlannerSchemaError("OpenAI planner response action type was not a deterministic candidate.");
     }
+    const riskLevel = validateRiskLevel(action.riskLevel, candidate.severity);
+    const suggestedTool = action.suggestedTool;
+    if (!isPlannerSuggestedTool(suggestedTool)) {
+      throw new OpenAiPlannerSchemaError("OpenAI planner suggested tool is not supported.");
+    }
+    validateRequiredApprovals(action.requiredApprovals);
+    validateSuggestedToolForAction(candidate.type, suggestedTool);
+    action.riskLevel = riskLevel;
+    action.requiredApprovals = ["operator"];
+    action.suggestedTool = suggestedTool;
   }
   return {
     actions: parsed.actions,
@@ -450,7 +593,7 @@ function parseOpenAiPlannerPayload(text: string, candidateActions: RobomataAgent
 function openAiPlannerPrompt(providerInput: PlannerProviderInput): string {
   return JSON.stringify({
     instruction:
-      "Refine operator-facing copy for the supplied supervised-agent candidate actions. Do not add action types, remove required candidates, approve actions, execute actions, or change credit truth.",
+      "Refine operator-facing copy and structured recommendation intent for the supplied supervised-agent candidate actions. Do not add action types, remove required candidates, understate deterministic risk, approve actions, execute actions, or change credit truth. Required approvals must remain operator-only. Suggested tools must match the allowed tool surface and remain proposal-only or audit-only.",
     inputControls: {
       rawEvidenceIncluded: false,
       secretMaterialIncluded: false,
@@ -484,6 +627,17 @@ function applyOpenAiPlannerPayload(
       metadata: {
         ...candidate.metadata,
         llmPlannerApplied: true,
+        plannerExecutionBoundary: plannerExecutionBoundaryForAction(candidate.type),
+        plannerRecommendationSource: "llm_refined_rules",
+        plannerRequiredApprovals: "operator",
+        plannerRiskLevel: planned.riskLevel as RobomataAgentPlannerRiskLevel,
+        plannerSuggestedTool: planned.suggestedTool as RobomataAgentPlannerSuggestedTool,
+        plannerSuggestedToolAllowed: true,
+        plannerToolIntentReason: boundedText(
+          planned.toolIntentReason,
+          defaultPlannerToolIntentReason(candidate.type),
+          180,
+        ),
         proposalSource: "llm_refined_rules",
       },
     };

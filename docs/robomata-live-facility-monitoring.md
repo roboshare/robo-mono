@@ -221,8 +221,9 @@ and the planner boundary used for each run. The current appointer path is the
 authenticated operator/partner address. Lender-appointed agents require a
 separate lender-authorized policy endpoint before the UI should claim lender
 appointment. OpenAI planner output is constrained to the deterministic candidate
-action set: it may refine operator-facing title, message, and reason text, but
-it cannot add action types, drop rule-triggered candidates, approve actions, or
+action set: it may refine operator-facing title, message, reason text, and
+structured recommendation intent, but it cannot add action types, drop
+rule-triggered candidates, understate deterministic risk, approve actions, or
 execute writes. Other non-rules planner providers only change recorded boundary
 state until their live planning controls are implemented.
 
@@ -231,15 +232,18 @@ state until their live planning controls are implemented.
 Agent Supervision planning is a bounded advisory layer over deterministic
 candidate actions. The planner can refine operator-facing action copy, but the
 candidate action set still comes from policy-artifact rules and current facility
-state. LLM output cannot create new action types, remove rule-triggered
-candidates, approve actions, execute actions, mutate submissions, mutate
+state. The planner also records structured recommendation intent for each
+action: recommendation source, risk level, required approval boundary,
+suggested tool, tool-intent reason, and execution boundary. LLM output cannot
+create new action types, remove rule-triggered candidates, understate
+deterministic risk, approve actions, execute actions, mutate submissions, mutate
 packets, write evidence, or submit Sui/EVM transactions.
 
 Every supervised agent run records planner provenance on the run payload:
 
 - provider, model, mode, status, and source of truth;
 - prompt version `agent-supervision-planner-v1`;
-- output schema version `agent-supervision-plan-output-v1`;
+- output schema version `agent-supervision-plan-output-v2`;
 - bounded planner input digest;
 - source-data digest;
 - planner output digest;
@@ -254,6 +258,16 @@ facility projection status, packet/Sui freshness statuses, deterministic
 candidate action summaries, recent run/action summaries, submission counts, and
 the allowed supervised action/tool surface. The provider input includes recent
 run/packet history only as compact ids, statuses, counts, and bounded summaries.
+
+Planner recommendation intent is validated before persistence. Required
+approvals are currently operator-only. Suggested tools are limited to `none` or
+the advisory audit adapter `robomata.agent.advisory_audit.v1`, and the audit
+adapter is only valid for evidence-review and Sui-root-review action types. The
+execution boundary remains `proposal_only` or `audit_only_adapter_flagged`; this
+metadata does not approve, complete, execute, or mutate retained actions.
+Deterministic fallback populates the same fields with safe defaults, so the
+Agent Supervision panel can show the boundary even when
+`ROBOMATA_AGENT_PLANNER_ENABLED` is off or a live provider fails validation.
 
 Excluded material includes raw evidence bodies, raw provider payloads, API keys,
 secret env names, Sui private keys, Seal plaintext or ciphertext, Walrus

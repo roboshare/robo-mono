@@ -38,7 +38,7 @@ for (const needle of [
   "promptVersion",
   "outputSchemaVersion",
   '"agent-supervision-planner-v1"',
-  '"agent-supervision-plan-output-v1"',
+  '"agent-supervision-plan-output-v2"',
   '"schema_invalid_fallback"',
 ]) {
   assertIncludes(agents, needle, "agent model");
@@ -64,7 +64,7 @@ for (const needle of [
   "rawEvidenceIncluded: false",
   "secretMaterialIncluded: false",
   "OpenAiPlannerSchemaError",
-  "candidateTypes.has",
+  "candidatesByType.get",
   "action type was not a deterministic candidate",
   "store: false",
   "schema_invalid_fallback",
@@ -97,7 +97,12 @@ for (const needle of [
   assertIncludes(runner, needle, "agent runner");
 }
 
-for (const needle of ["normalizeListLimit", "LIMIT ${normalizedLimit}", "runs.slice(0, normalizedLimit)", "actions.slice(0, normalizedLimit)"]) {
+for (const needle of [
+  "normalizeListLimit",
+  "LIMIT ${normalizedLimit}",
+  "runs.slice(0, normalizedLimit)",
+  "actions.slice(0, normalizedLimit)",
+]) {
   assertIncludes(store, needle, "agent store limited history reads");
 }
 

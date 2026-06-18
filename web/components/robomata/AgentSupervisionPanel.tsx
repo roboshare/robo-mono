@@ -512,6 +512,12 @@ export const AgentSupervisionPanel = ({
                 const policyRuleLabel = metadataValue(action, "policyRuleLabel");
                 const policyRuleSummary = metadataValue(action, "policyRuleSummary");
                 const policyRuleStatus = metadataValue(action, "policyRuleStatus");
+                const plannerExecutionBoundary = metadataValue(action, "plannerExecutionBoundary");
+                const plannerRecommendationSource = metadataValue(action, "plannerRecommendationSource");
+                const plannerRequiredApprovals = metadataValue(action, "plannerRequiredApprovals");
+                const plannerRiskLevel = metadataValue(action, "plannerRiskLevel");
+                const plannerSuggestedTool = metadataValue(action, "plannerSuggestedTool");
+                const plannerToolIntentReason = metadataValue(action, "plannerToolIntentReason");
                 const canExecuteAction =
                   executionClientEnabled &&
                   action.status === "approved" &&
@@ -549,6 +555,15 @@ export const AgentSupervisionPanel = ({
                     <div className="mt-1 text-xs text-base-content/60 capitalize">
                       Planner: {formatStatus(metadataValue(action, "plannerProvider") ?? "rules")} /{" "}
                       {formatStatus(metadataValue(action, "proposalSource") ?? "deterministic_rules")}
+                    </div>
+                    <div className="mt-1 text-xs text-base-content/60">
+                      Recommendation: source{" "}
+                      {formatStatus(plannerRecommendationSource ?? metadataValue(action, "proposalSource") ?? "rules")}{" "}
+                      · risk {formatStatus(plannerRiskLevel ?? action.severity)} · approval{" "}
+                      {formatStatus(plannerRequiredApprovals ?? "operator")} · tool{" "}
+                      {formatStatus(plannerSuggestedTool ?? "none")} · boundary{" "}
+                      {formatStatus(plannerExecutionBoundary ?? "proposal_only")}
+                      {plannerToolIntentReason ? <span className="block">{plannerToolIntentReason}</span> : null}
                     </div>
                     <div className="mt-1 text-xs text-base-content/60">
                       Planner digests: input {shortDigest(metadataValue(action, "plannerInputDigest"))} · output{" "}
