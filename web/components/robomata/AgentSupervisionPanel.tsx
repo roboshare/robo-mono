@@ -317,6 +317,12 @@ export const AgentSupervisionPanel = ({
                 <div className="mt-2 rounded-xl border border-error/20 bg-error/10 p-2 text-xs text-base-content/70">
                   Revoked {new Date(policy.revokedAt).toLocaleString()}
                   {policy.revocationReason ? `: ${policy.revocationReason}` : ""}
+                  {policy.revocationAuthorizationSurface ? (
+                    <div className="mt-1 capitalize">
+                      Via {formatStatus(policy.revocationAuthorizationSurface)}
+                      {policy.revokedBy ? <span className="break-all"> · {policy.revokedBy}</span> : null}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
               <div className="mt-3 flex flex-col gap-2">

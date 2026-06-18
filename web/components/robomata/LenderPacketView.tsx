@@ -108,7 +108,11 @@ export const LenderPacketView = ({ packet, shareToken }: LenderPacketViewProps) 
           <ReviewBoundaryPanel boundary={packet.lenderPacket.reviewBoundary} />
         </div>
         <div className="mt-5">
-          <LenderAgentAppointmentPanel appointment={packet.agentAppointment} shareToken={shareToken} />
+          <LenderAgentAppointmentPanel
+            appointment={packet.agentAppointment}
+            shareLinkId={packet.shareLink.id}
+            shareToken={shareToken}
+          />
         </div>
         <div className="mt-5">
           <BorrowingBasePolicyDisclosure />

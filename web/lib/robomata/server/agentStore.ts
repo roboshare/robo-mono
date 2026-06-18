@@ -456,6 +456,10 @@ function createFileStore(): RobomataAgentStore {
     async recordRun(input) {
       return withFileStoreWriteLock(filePath, async () => {
         const fileStore = await readFileStore(filePath);
+        const currentPolicy = findPolicy(fileStore.policies, input.policy.submissionId, input.policy.partnerAddress);
+        if (currentPolicy?.status === "revoked") {
+          throw new Error("Robomata agent policy was revoked before this run could be recorded.");
+        }
         const run = buildRun(input);
         const actions = buildActions(input, run);
         const policy = {
@@ -630,6 +634,10 @@ function createPostgresStore(): RobomataAgentStore {
     },
     async recordRun(input) {
       await ensurePostgresTables();
+      const currentPolicy = await this.getPolicy(input.policy.submissionId, input.policy.partnerAddress);
+      if (currentPolicy?.status === "revoked") {
+        throw new Error("Robomata agent policy was revoked before this run could be recorded.");
+      }
       const run = buildRun(input);
       const actions = buildActions(input, run);
       const policy = {
@@ -638,15 +646,19 @@ function createPostgresStore(): RobomataAgentStore {
         lastRunAt: run.completedAt,
         updatedAt: run.completedAt,
       };
-      await sql`
+      const updatedPolicyRows = (await sql`
         UPDATE robomata_agent_policies
         SET
           facility_id = ${policy.facilityId},
           payload = ${JSON.stringify(policy)}::jsonb,
           updated_at = ${policy.updatedAt}::timestamptz,
           last_run_at = ${policy.lastRunAt}::timestamptz
-        WHERE id = ${policy.id};
-      `;
+        WHERE id = ${policy.id} AND status <> 'revoked'
+        RETURNING id;
+      `) as Array<{ id: string }>;
+      if (!updatedPolicyRows.length) {
+        throw new Error("Robomata agent policy was revoked before this run could be recorded.");
+      }
       await sql`
         INSERT INTO robomata_agent_runs (
           id, policy_id, submission_id, facility_id, partner_address, status, payload, started_at, completed_at

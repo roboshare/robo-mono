@@ -9,6 +9,7 @@ type LenderAgentAppointment = NonNullable<SharedLenderPacketView["agentAppointme
 
 type LenderAgentAppointmentPanelProps = {
   appointment?: LenderAgentAppointment;
+  shareLinkId: string;
   shareToken: string;
 };
 
@@ -36,7 +37,11 @@ function statusBadgeClass(status?: string) {
   return "badge-ghost";
 }
 
-export function LenderAgentAppointmentPanel({ appointment, shareToken }: LenderAgentAppointmentPanelProps) {
+export function LenderAgentAppointmentPanel({
+  appointment,
+  shareLinkId,
+  shareToken,
+}: LenderAgentAppointmentPanelProps) {
   const flags = appointment?.flags ?? {
     agentsEnabled: false,
     lenderAppointmentEnabled: false,
@@ -51,6 +56,11 @@ export function LenderAgentAppointmentPanel({ appointment, shareToken }: LenderA
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [policy, setPolicy] = useState(appointment?.policy);
+  const canRevoke =
+    policy?.status !== "revoked" &&
+    policy?.appointedBy === "lender" &&
+    policy.appointmentAuthorizationSurface === "protected_lender_share_link" &&
+    policy.appointmentAuthorizationId === shareLinkId;
 
   const updateAppointment = async (input: { appointedAgentName?: string; status?: "revoked" }) => {
     setErrorMessage(null);
@@ -113,6 +123,12 @@ export function LenderAgentAppointmentPanel({ appointment, shareToken }: LenderA
             <div className="mt-2 rounded-xl border border-error/20 bg-error/10 p-2 text-xs text-base-content/70">
               Revoked {policy.revokedAt}
               {policy.revocationReason ? `: ${policy.revocationReason}` : ""}
+              {policy.revocationAuthorizationSurface ? (
+                <div className="mt-1 capitalize">
+                  Via {formatStatus(policy.revocationAuthorizationSurface)}
+                  {policy.revokedBy ? <span className="break-all"> · {policy.revokedBy}</span> : null}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -139,10 +155,10 @@ export function LenderAgentAppointmentPanel({ appointment, shareToken }: LenderA
         >
           {isSaving ? "Saving..." : "Save appointment"}
         </button>
-        {policy?.status !== "revoked" ? (
+        {canRevoke ? (
           <button
             className="btn btn-outline btn-sm rounded-full"
-            disabled={!canMutate || isSaving || !policy}
+            disabled={!canMutate || isSaving}
             onClick={() => updateAppointment({ status: "revoked" })}
             type="button"
           >

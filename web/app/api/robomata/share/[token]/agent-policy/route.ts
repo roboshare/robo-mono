@@ -197,6 +197,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ t
       result.submission.id,
       result.submission.partnerAddress,
     );
+    if (existingPolicy?.status === "revoked") {
+      return noStoreResponse({ error: "The current agent appointment has already been revoked." }, { status: 409 });
+    }
     const isExistingLenderAppointment =
       existingPolicy?.appointedBy === "lender" &&
       existingPolicy.appointmentAuthorizationSurface === "protected_lender_share_link";
