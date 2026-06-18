@@ -12,6 +12,13 @@ function shortDigest(value: string | undefined): string {
   return value ? value.slice(0, 16) : "not recorded";
 }
 
+function formatPolicyArtifact(boundary: LenderPacket["reviewBoundary"]): string {
+  if (boundary?.policyArtifactId && boundary.policyArtifactVersion) {
+    return `${boundary.policyArtifactId} v${boundary.policyArtifactVersion}`;
+  }
+  return boundary?.policyArtifactId ?? boundary?.policyArtifactVersion ?? "not recorded";
+}
+
 export function ReviewBoundaryPanel({ boundary }: ReviewBoundaryPanelProps) {
   return (
     <div className="rounded-2xl border border-base-300 bg-base-100/70 p-4 text-sm leading-relaxed text-base-content/70">
@@ -31,7 +38,7 @@ export function ReviewBoundaryPanel({ boundary }: ReviewBoundaryPanelProps) {
         <div>Model: {boundary?.model ?? "not configured"}</div>
         <div>Prompt: {boundary?.promptVersion ?? "not recorded"}</div>
         <div>Schema: {boundary?.outputSchemaVersion ?? "not recorded"}</div>
-        <div>Policy: {boundary?.policyArtifactVersion ?? boundary?.policyArtifactId ?? "not recorded"}</div>
+        <div>Policy: {formatPolicyArtifact(boundary)}</div>
         <div>Review input: {boundary?.reviewInputId ?? "not recorded"}</div>
         <div>Input digest: {shortDigest(boundary?.inputDigest)}</div>
         <div>Output digest: {shortDigest(boundary?.outputDigest)}</div>
