@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowPathIcon, CheckCircleIcon, CircleStackIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
-import { PacketFreshnessPolicyDisclosure } from "~~/components/robomata/PolicyRulesPanel";
+import { PacketFreshnessPolicyDisclosure, SuiRootPolicyDisclosure } from "~~/components/robomata/PolicyRulesPanel";
 import { isRobomataFacilityMonitoringClientEnabled } from "~~/lib/featureFlags";
 import { formatUsd } from "~~/lib/robomata/borrowingBase";
 import type {
@@ -246,6 +246,11 @@ export const FacilityMonitoringPanel = ({
               <div className="mt-1 text-sm text-base-content/70">
                 {projection.latestRun ? `As of ${projection.latestRun.asOfDate}` : "Waiting on borrowing base"}
               </div>
+              {projection.latestRun ? (
+                <div className="mt-2">
+                  <span className="badge badge-ghost badge-sm">{projection.latestRun.policyVersion}</span>
+                </div>
+              ) : null}
             </div>
             <div className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
               <div className="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">Packet</div>
@@ -258,7 +263,10 @@ export const FacilityMonitoringPanel = ({
             </div>
           </div>
 
-          <PacketFreshnessPolicyDisclosure />
+          <div className="grid gap-3 lg:grid-cols-2">
+            <PacketFreshnessPolicyDisclosure />
+            <SuiRootPolicyDisclosure />
+          </div>
 
           {projection.warnings.length ? (
             <div className="rounded-[1.5rem] border border-warning/20 bg-warning/10 p-4">
@@ -349,6 +357,7 @@ export const FacilityMonitoringPanel = ({
                               <span className="badge badge-ghost badge-xs">
                                 {run.exceptions.length} exception{run.exceptions.length === 1 ? "" : "s"}
                               </span>
+                              <span className="badge badge-ghost badge-xs">{run.policyVersion}</span>
                             </div>
                           </td>
                           <td>

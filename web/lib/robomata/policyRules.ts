@@ -107,6 +107,42 @@ export const ROBOMATA_PACKET_FRESHNESS_POLICY_RULES: RobomataPolicyRule[] = [
   },
 ];
 
+export const ROBOMATA_SUI_ROOT_POLICY_RULES: RobomataPolicyRule[] = [
+  {
+    id: "not-started",
+    label: "No root committed",
+    summary: "A borrowing-base run or packet manifest has not been anchored until a Sui root commit is created.",
+  },
+  {
+    id: "pending",
+    label: "Commit pending",
+    summary:
+      "Pending or committing roots require operator follow-up before the evidence anchor is treated as verified.",
+  },
+  {
+    id: "committed",
+    label: "Evidence anchored",
+    summary: "Committed roots show the evidence reference was submitted on Sui but still needs indexed verification.",
+  },
+  {
+    id: "verified",
+    label: "Verified root",
+    summary:
+      "Verified roots indicate the stored monitoring payload digest matches the committed Sui evidence reference.",
+  },
+  {
+    id: "mismatch",
+    label: "Digest mismatch",
+    summary:
+      "Mismatched roots require review because the stored monitoring payload no longer matches the committed digest.",
+  },
+  {
+    id: "retryable",
+    label: "Retryable failure",
+    summary: "Failed or retryable root states require a new operator-visible commit or reconciliation attempt.",
+  },
+];
+
 export const ROBOMATA_AGENT_SUPERVISION_POLICY_RULES: RobomataAgentPolicyRule[] = [
   {
     id: "evidence-review",

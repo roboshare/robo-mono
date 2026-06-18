@@ -25,6 +25,7 @@ const MONITORING_METADATA_KEYS = [
   "packetManifestId",
   "packetRootDigest",
   "runId",
+  "runPolicyVersion",
   "runRootDigest",
 ] as const;
 
@@ -51,6 +52,7 @@ function monitoringBindingFromMetadata(
     packetFreshnessStatus: packetFreshnessStatus as SubmissionShareLinkMonitoringBinding["packetFreshnessStatus"],
     monitoringRootVersion: stringMetadata(metadata, "monitoringRootVersion"),
     packetRootDigest: stringMetadata(metadata, "packetRootDigest"),
+    runPolicyVersion: stringMetadata(metadata, "runPolicyVersion"),
     runRootDigest: stringMetadata(metadata, "runRootDigest"),
   };
 }
@@ -79,6 +81,7 @@ export async function buildShareLinkMonitoringMetadata(
         ? latestPacket.publicMetadata.packetRootDigest
         : null,
     runId: latestRun.id,
+    runPolicyVersion: latestRun.policyVersion,
     runRootDigest: latestRun.rootDigest || null,
   };
 }
@@ -118,6 +121,7 @@ export async function buildResolvedSharedLenderPacketView(input: {
       ...binding,
       currentPacketFreshnessStatus,
       pinnedAtShare: true,
+      runPolicyVersion: binding.runPolicyVersion ?? run.policyVersion,
     },
     agentAppointment,
   });
