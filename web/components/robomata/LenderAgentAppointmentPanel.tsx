@@ -37,6 +37,10 @@ function statusBadgeClass(status?: string) {
   return "badge-ghost";
 }
 
+function formatActionTypes(values?: string[]) {
+  return values?.length ? values.map(formatStatus).join(", ") : "none";
+}
+
 export function LenderAgentAppointmentPanel({
   appointment,
   shareLinkId,
@@ -50,6 +54,15 @@ export function LenderAgentAppointmentPanel({
   };
   const canMutate =
     flags.agentsEnabled && flags.lenderAppointmentEnabled && flags.mutationsEnabled && flags.shareLinksEnabled;
+  const readOnlyReason = !flags.shareLinksEnabled
+    ? "Share-link mutations are disabled on this server."
+    : !flags.agentsEnabled
+      ? "Agent supervision is disabled on this server."
+      : !flags.mutationsEnabled
+        ? "Agent policy mutations are disabled on this server."
+        : !flags.lenderAppointmentEnabled
+          ? "Lender-side appointments are disabled on this server."
+          : null;
   const [draftName, setDraftName] = useState(
     appointment?.policy?.appointedAgentName ?? "Lender-appointed Robomata facility agent",
   );
@@ -118,7 +131,25 @@ export function LenderAgentAppointmentPanel({
             Appointed by {formatStatus(policy.appointedBy ?? "operator")} ·{" "}
             {formatStatus(policy.appointmentAuthorizationSurface ?? "operator_submission_access")}
           </div>
+          {policy.appointedAt ? (
+            <div className="mt-1 text-xs text-base-content/60">Appointed {policy.appointedAt}</div>
+          ) : null}
           <div className="mt-1 break-all text-xs text-base-content/60">Policy: {policy.id}</div>
+          {policy.appointmentAuthorizationId ? (
+            <div className="mt-1 break-all text-xs text-base-content/60">
+              Authorization: {policy.appointmentAuthorizationId}
+            </div>
+          ) : null}
+          <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+            <div className="rounded-xl border border-base-300 bg-base-200/60 p-2">
+              <div className="font-semibold text-base-content">Allowed actions</div>
+              <div className="mt-1 text-base-content/60">{formatActionTypes(policy.allowedActionTypes)}</div>
+            </div>
+            <div className="rounded-xl border border-base-300 bg-base-200/60 p-2">
+              <div className="font-semibold text-base-content">Auto-approved actions</div>
+              <div className="mt-1 text-base-content/60">{formatActionTypes(policy.autoApproveActionTypes)}</div>
+            </div>
+          </div>
           {policy.revokedAt ? (
             <div className="mt-2 rounded-xl border border-error/20 bg-error/10 p-2 text-xs text-base-content/70">
               Revoked {policy.revokedAt}
@@ -168,9 +199,10 @@ export function LenderAgentAppointmentPanel({
       </div>
 
       {!canMutate ? (
-        <div className="mt-3 text-xs text-base-content/60">
-          Lender appointment is read-only until share links, agents, agent mutations, and lender appointment are all
-          enabled on the server.
+        <div className="mt-3 rounded-xl border border-base-300 bg-base-100 p-3 text-xs text-base-content/60">
+          Lender appointment is read-only.{" "}
+          {readOnlyReason ??
+            "Share links, agents, agent mutations, and lender appointments must all be enabled on the server."}
         </div>
       ) : null}
       {errorMessage ? <div className="mt-3 text-xs text-error">{errorMessage}</div> : null}

@@ -56,6 +56,10 @@ function metadataValue(action: RobomataAgentAction, key: string): string | undef
   return typeof value === "string" ? value : undefined;
 }
 
+function formatActionTypes(values: string[]) {
+  return values.length ? values.map(formatStatus).join(", ") : "none";
+}
+
 const CLIENT_EXECUTABLE_AGENT_ACTION_TYPES = new Set<RobomataAgentActionType>(["evidence_review", "sui_root_review"]);
 
 export const AgentSupervisionPanel = ({
@@ -254,6 +258,22 @@ export const AgentSupervisionPanel = ({
   const appointedBy = policy?.appointedBy ?? "operator";
   const appointerAddress = policy?.appointerAddress ?? policy?.partnerAddress;
   const plannerBoundary = latestRun?.plannerBoundary;
+  const latestPermissionDenial =
+    policy && actions.length
+      ? actions
+          .map(action => {
+            const storedReason = metadataValue(action, "permissionDeniedReason");
+            if (storedReason) return storedReason;
+            if (action.status !== "proposed" && action.status !== "approved") return null;
+            return getRobomataAgentActionPermissionDenial({
+              actionAuthorization: action.authorization,
+              actionType: action.type,
+              operation: action.status === "approved" ? "complete" : "approve",
+              policy,
+            });
+          })
+          .find((reason): reason is string => Boolean(reason))
+      : null;
 
   return (
     <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
@@ -319,7 +339,7 @@ export const AgentSupervisionPanel = ({
         </div>
       ) : policy ? (
         <div className="mt-5 space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
             <div className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
               <div className="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">Policy</div>
               <div className="mt-2 break-all text-sm font-semibold text-base-content">{policy.id}</div>
@@ -333,8 +353,21 @@ export const AgentSupervisionPanel = ({
               <div className="mt-1 text-sm text-base-content/70 capitalize">
                 Appointed by {formatStatus(appointedBy)}
               </div>
+              <div className="mt-1 text-xs text-base-content/60 capitalize">
+                Via {formatStatus(policy.appointmentAuthorizationSurface ?? "operator_submission_access")}
+              </div>
+              {policy.appointedAt ? (
+                <div className="mt-1 text-xs text-base-content/60">
+                  Appointed {new Date(policy.appointedAt).toLocaleString()}
+                </div>
+              ) : null}
               {appointerAddress ? (
                 <div className="mt-1 break-all text-xs text-base-content/60">{appointerAddress}</div>
+              ) : null}
+              {policy.appointmentAuthorizationId ? (
+                <div className="mt-1 break-all text-xs text-base-content/60">
+                  Authorization {policy.appointmentAuthorizationId}
+                </div>
               ) : null}
               {policy.revokedAt ? (
                 <div className="mt-2 rounded-xl border border-error/20 bg-error/10 p-2 text-xs text-base-content/70">
@@ -366,6 +399,28 @@ export const AgentSupervisionPanel = ({
                 >
                   Save appointment
                 </button>
+              </div>
+            </div>
+            <div className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">Permissions</div>
+              <div className="mt-2 text-sm font-semibold text-base-content">
+                {policy.allowedActionTypes.length} allowed action types
+              </div>
+              <div className="mt-1 text-xs text-base-content/60">
+                Allowed: {formatActionTypes(policy.allowedActionTypes)}
+              </div>
+              <div className="mt-2 text-xs text-base-content/60">
+                Auto-approved: {formatActionTypes(policy.autoApproveActionTypes)}
+              </div>
+              <div
+                className={`mt-3 rounded-xl border p-2 text-xs ${
+                  latestPermissionDenial
+                    ? "border-warning/30 bg-warning/10 text-warning-content"
+                    : "border-base-300 bg-base-100 text-base-content/60"
+                }`}
+              >
+                <div className="font-semibold text-base-content">Latest permission denial</div>
+                <div className="mt-1">{latestPermissionDenial ?? "No current permission denial recorded."}</div>
               </div>
             </div>
             <div className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
@@ -409,7 +464,7 @@ export const AgentSupervisionPanel = ({
               actions.slice(0, 6).map(action => {
                 const permissionDeniedReason = metadataValue(action, "permissionDeniedReason");
                 const executionStatus = metadataValue(action, "executionStatus");
-                const approvalDeniedReason = getRobomataAgentActionPermissionDenial({
+                const actionGateDeniedReason = getRobomataAgentActionPermissionDenial({
                   actionAuthorization: action.authorization,
                   actionType: action.type,
                   operation: action.status === "approved" ? "complete" : "approve",
@@ -420,6 +475,16 @@ export const AgentSupervisionPanel = ({
                   executionClientEnabled &&
                   action.status === "approved" &&
                   CLIENT_EXECUTABLE_AGENT_ACTION_TYPES.has(action.type);
+                const executeDeniedReason =
+                  action.status === "approved" && CLIENT_EXECUTABLE_AGENT_ACTION_TYPES.has(action.type)
+                    ? getRobomataAgentActionPermissionDenial({
+                        actionAuthorization: action.authorization,
+                        actionType: action.type,
+                        executionEnabled: executionClientEnabled,
+                        operation: "execute",
+                        policy,
+                      })
+                    : null;
 
                 return (
                   <div key={action.id} className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
@@ -448,6 +513,11 @@ export const AgentSupervisionPanel = ({
                       Authorized by {formatStatus(actionAuthorization?.appointedBy ?? "unknown")} /{" "}
                       {formatStatus(actionAuthorization?.appointmentAuthorizationSurface ?? "missing authorization")}
                     </div>
+                    <div className="mt-1 break-all text-xs text-base-content/60">
+                      Historical authorization: {actionAuthorization?.appointedAgentName ?? "unknown agent"} · policy{" "}
+                      {actionAuthorization?.policyId ?? "missing policy"} ·{" "}
+                      {actionAuthorization?.appointmentAuthorizationId ?? "missing authorization id"}
+                    </div>
                     {executionStatus ? (
                       <div className="mt-2 rounded-2xl border border-base-300 bg-base-100 p-3 text-xs text-base-content/70">
                         Execution {formatStatus(executionStatus)} via{" "}
@@ -464,9 +534,9 @@ export const AgentSupervisionPanel = ({
                         Permission gate skipped this action: {permissionDeniedReason}
                       </div>
                     ) : action.status === "proposed" || action.status === "approved" ? (
-                      approvalDeniedReason ? (
+                      actionGateDeniedReason ? (
                         <div className="mt-2 rounded-2xl border border-warning/30 bg-warning/10 p-3 text-xs text-warning-content">
-                          Current approval gate blocks this action: {approvalDeniedReason}
+                          Current permission gate blocks this action: {actionGateDeniedReason}
                         </div>
                       ) : null
                     ) : null}
@@ -475,8 +545,9 @@ export const AgentSupervisionPanel = ({
                       <div className="mt-4 flex flex-wrap gap-2">
                         <button
                           className="btn btn-xs btn-outline rounded-full"
-                          disabled={isMutating || Boolean(approvalDeniedReason)}
+                          disabled={isMutating || Boolean(actionGateDeniedReason)}
                           onClick={() => updateAction(action, "approved")}
+                          title={actionGateDeniedReason ?? undefined}
                         >
                           <CheckCircleIcon className="h-4 w-4" />
                           Approve
@@ -495,16 +566,18 @@ export const AgentSupervisionPanel = ({
                         {canExecuteAction ? (
                           <button
                             className="btn btn-xs btn-primary rounded-full"
-                            disabled={isMutating || Boolean(approvalDeniedReason)}
+                            disabled={isMutating || Boolean(executeDeniedReason)}
                             onClick={() => updateAction(action, "completed", { execute: true })}
+                            title={executeDeniedReason ?? undefined}
                           >
                             Execute audit
                           </button>
                         ) : null}
                         <button
                           className="btn btn-xs btn-outline rounded-full"
-                          disabled={isMutating || Boolean(approvalDeniedReason)}
+                          disabled={isMutating || Boolean(actionGateDeniedReason)}
                           onClick={() => updateAction(action, "completed")}
+                          title={actionGateDeniedReason ?? undefined}
                         >
                           Mark complete
                         </button>
