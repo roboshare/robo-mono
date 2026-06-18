@@ -50,6 +50,7 @@ for (const needle of [
   "isActionWithinAppointment",
   "isActionAutoApproved",
   "isAdvisoryAuditToolEnabled",
+  'policy.status !== "active"',
   "defaultExecutionBoundaryForAction",
   "suppressAutoApprove",
   "autoApprovalSuppressedForRun",

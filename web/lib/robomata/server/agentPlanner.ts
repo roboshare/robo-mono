@@ -298,6 +298,7 @@ function isAdvisoryAuditToolEnabled(): boolean {
 }
 
 function canSuggestAdvisoryAuditTool(policy: RobomataAgentPolicy | undefined, type: RobomataAgentActionType): boolean {
+  if (policy && policy.status !== "active") return false;
   if (policy && !isActionWithinAppointment(policy, type)) return false;
   if (!isAdvisoryAuditToolEnabled()) return false;
   return plannerExecutionBoundaryForAction(type) === "audit_only_adapter_flagged";
