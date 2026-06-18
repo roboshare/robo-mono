@@ -181,6 +181,14 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ t
       return noStoreResponse({ error: "Share link is no longer active." }, { status: 410 });
     }
 
+    const existingPolicy = await getRobomataAgentStore().getPolicy(
+      result.submission.id,
+      result.submission.partnerAddress,
+    );
+    const isExistingLenderAppointment =
+      existingPolicy?.appointedBy === "lender" &&
+      existingPolicy.appointmentAuthorizationSurface === "protected_lender_share_link";
+
     const policy = await getRobomataAgentStore().updatePolicy({
       submission: result.submission,
       appointedAgentName: body.appointedAgentName,
@@ -188,7 +196,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ t
       appointerAddress: lenderAuthorizationId(accessedShareLink),
       appointmentAuthorizationId: accessedShareLink.id,
       appointmentAuthorizationSurface: "protected_lender_share_link",
-      autoApproveActionTypes: [],
+      ...(isExistingLenderAppointment ? {} : { autoApproveActionTypes: [] }),
     });
 
     return noStoreResponse({
