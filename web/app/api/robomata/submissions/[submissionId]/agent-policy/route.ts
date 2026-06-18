@@ -67,9 +67,11 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ s
       allowedActionTypes?: unknown;
       appointedAgentName?: unknown;
       autoApproveActionTypes?: unknown;
+      revocationReason?: unknown;
       status?: unknown;
     };
-    const status = body.status === "active" || body.status === "paused" ? body.status : undefined;
+    const status =
+      body.status === "active" || body.status === "paused" || body.status === "revoked" ? body.status : undefined;
     if (body.status !== undefined && !status) {
       return NextResponse.json({ error: "Invalid agent policy status." }, { status: 400 });
     }
@@ -95,6 +97,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ s
       allowedActionTypes: body.allowedActionTypes,
       autoApproveActionTypes: body.autoApproveActionTypes,
       appointedAgentName: body.appointedAgentName,
+      revocationAuthorizationSurface: status === "revoked" ? "operator_submission_access" : undefined,
+      revocationReason: body.revocationReason,
+      revokedBy: status === "revoked" ? result.partnerAddress : undefined,
       ...(body.appointedAgentName !== undefined
         ? {
             appointedBy: "operator" as const,

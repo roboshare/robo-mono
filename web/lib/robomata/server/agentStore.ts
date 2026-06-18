@@ -34,6 +34,9 @@ export type UpdateAgentPolicyInput = {
   appointerAddress?: string;
   appointmentAuthorizationId?: string;
   appointmentAuthorizationSurface?: RobomataAgentAppointmentAuthorizationSurface;
+  revocationAuthorizationSurface?: RobomataAgentPolicy["revocationAuthorizationSurface"];
+  revocationReason?: unknown;
+  revokedBy?: string;
 };
 
 export type RecordAgentRunInput = {
@@ -197,6 +200,10 @@ function buildUpdatedPolicy(input: UpdateAgentPolicyInput, existing?: RobomataAg
   const now = nowIsoString();
   const base = existing ?? createDefaultAgentPolicy(input.submission, now);
   const status = input.status ?? base.status;
+  const revocationReason =
+    typeof input.revocationReason === "string" && input.revocationReason.trim()
+      ? input.revocationReason.trim().slice(0, 240)
+      : undefined;
   const appointedAgentName =
     typeof input.appointedAgentName === "string" && input.appointedAgentName.trim()
       ? input.appointedAgentName.trim().slice(0, 80)
@@ -232,6 +239,13 @@ function buildUpdatedPolicy(input: UpdateAgentPolicyInput, existing?: RobomataAg
     autoApproveActionTypes: autoApproveActionTypes.filter(type => allowedActionTypes.includes(type)),
     updatedAt: now,
     pausedAt: status === "paused" ? (base.pausedAt ?? now) : undefined,
+    revocationAuthorizationSurface:
+      status === "revoked"
+        ? (input.revocationAuthorizationSurface ?? base.revocationAuthorizationSurface)
+        : base.revocationAuthorizationSurface,
+    revocationReason: status === "revoked" ? (revocationReason ?? base.revocationReason) : base.revocationReason,
+    revokedAt: status === "revoked" ? (base.revokedAt ?? now) : base.revokedAt,
+    revokedBy: status === "revoked" ? (input.revokedBy ?? base.revokedBy) : base.revokedBy,
   };
 }
 
@@ -398,15 +412,18 @@ function createFileStore(): RobomataAgentStore {
         const policy = buildUpdatedPolicy(input, existing);
         fileStore.policies = upsertPolicy(fileStore.policies, policy);
         fileStore.events.unshift(
-          createAgentEvent(existing ? "policy_updated" : "policy_created", {
-            policy,
-            message: `Robomata agent policy ${existing ? "updated" : "created"}.`,
-            metadata: {
-              appointedBy: policy.appointedBy ?? null,
-              appointmentAuthorizationSurface: policy.appointmentAuthorizationSurface ?? null,
-              status: policy.status,
+          createAgentEvent(
+            policy.status === "revoked" ? "policy_revoked" : existing ? "policy_updated" : "policy_created",
+            {
+              policy,
+              message: `Robomata agent policy ${existing ? "updated" : "created"}.`,
+              metadata: {
+                appointedBy: policy.appointedBy ?? null,
+                appointmentAuthorizationSurface: policy.appointmentAuthorizationSurface ?? null,
+                status: policy.status,
+              },
             },
-          }),
+          ),
         );
         await writeFileStore(filePath, fileStore);
         return policy;
@@ -571,8 +588,8 @@ function createPostgresStore(): RobomataAgentStore {
           ${createEventId()},
           ${policy.id},
           ${policy.submissionId},
-          ${existing ? "policy_updated" : "policy_created"},
-          ${`Robomata agent policy ${existing ? "updated" : "created"}.`},
+          ${policy.status === "revoked" ? "policy_revoked" : existing ? "policy_updated" : "policy_created"},
+          ${policy.status === "revoked" ? "Robomata agent policy revoked." : `Robomata agent policy ${existing ? "updated" : "created"}.`},
           ${JSON.stringify({
             appointedBy: policy.appointedBy ?? null,
             appointmentAuthorizationSurface: policy.appointmentAuthorizationSurface ?? null,

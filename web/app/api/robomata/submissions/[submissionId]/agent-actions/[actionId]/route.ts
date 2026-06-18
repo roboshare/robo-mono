@@ -48,7 +48,16 @@ export async function PATCH(
       return NextResponse.json({ error: "Invalid agent action status." }, { status: 400 });
     }
 
-    const action = await getRobomataAgentStore().updateAction({
+    const store = getRobomataAgentStore();
+    const policy = await store.getPolicy(submission.id, partnerAddress);
+    if (policy?.status === "revoked" && ["approved", "completed"].includes(body.status)) {
+      return NextResponse.json(
+        { error: "Revoked agent policies cannot approve or complete actions." },
+        { status: 409 },
+      );
+    }
+
+    const action = await store.updateAction({
       actionId,
       submissionId,
       partnerAddress,

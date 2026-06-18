@@ -114,6 +114,10 @@ export type SharedLenderPacketView = {
       | "appointmentAuthorizationId"
       | "appointmentAuthorizationSurface"
       | "id"
+      | "revocationAuthorizationSurface"
+      | "revocationReason"
+      | "revokedAt"
+      | "revokedBy"
       | "status"
       | "updatedAt"
     >;

@@ -5,7 +5,7 @@ import type {
 } from "~~/lib/robomata/facilityMonitoring";
 import type { FacilitySubmission } from "~~/lib/robomata/submissions";
 
-export type RobomataAgentPolicyStatus = "active" | "paused";
+export type RobomataAgentPolicyStatus = "active" | "paused" | "revoked";
 
 export type RobomataAgentActionType =
   | "evidence_review"
@@ -38,6 +38,7 @@ export type RobomataAgentPlannerStatus =
 
 export type RobomataAgentEventType =
   | "policy_created"
+  | "policy_revoked"
   | "policy_updated"
   | "run_completed"
   | "run_failed"
@@ -83,6 +84,10 @@ export type RobomataAgentPolicy = {
   createdAt: string;
   updatedAt: string;
   pausedAt?: string;
+  revocationAuthorizationSurface?: RobomataAgentAppointmentAuthorizationSurface | "platform_admin";
+  revocationReason?: string;
+  revokedAt?: string;
+  revokedBy?: string;
   lastRunAt?: string;
 };
 

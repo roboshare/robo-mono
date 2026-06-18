@@ -32,6 +32,7 @@ function formatStatus(value: string) {
 function statusBadgeClass(status?: string) {
   if (status === "active") return "badge-success";
   if (status === "paused") return "badge-warning";
+  if (status === "revoked") return "badge-error";
   return "badge-ghost";
 }
 
@@ -51,12 +52,15 @@ export function LenderAgentAppointmentPanel({ appointment, shareToken }: LenderA
   const [isSaving, setIsSaving] = useState(false);
   const [policy, setPolicy] = useState(appointment?.policy);
 
-  const saveAppointment = async () => {
+  const updateAppointment = async (input: { appointedAgentName?: string; status?: "revoked" }) => {
     setErrorMessage(null);
     setIsSaving(true);
     try {
       const response = await fetch(`/api/robomata/share/${encodeURIComponent(shareToken)}/agent-policy`, {
-        body: JSON.stringify({ appointedAgentName: draftName }),
+        body: JSON.stringify({
+          ...input,
+          ...(input.status === "revoked" ? { revocationReason: "Revoked from protected lender packet share." } : {}),
+        }),
         headers: { "content-type": "application/json" },
         method: "PATCH",
       });
@@ -105,6 +109,12 @@ export function LenderAgentAppointmentPanel({ appointment, shareToken }: LenderA
             {formatStatus(policy.appointmentAuthorizationSurface ?? "operator_submission_access")}
           </div>
           <div className="mt-1 break-all text-xs text-base-content/60">Policy: {policy.id}</div>
+          {policy.revokedAt ? (
+            <div className="mt-2 rounded-xl border border-error/20 bg-error/10 p-2 text-xs text-base-content/70">
+              Revoked {policy.revokedAt}
+              {policy.revocationReason ? `: ${policy.revocationReason}` : ""}
+            </div>
+          ) : null}
         </div>
       ) : (
         <div className="mt-4 rounded-xl border border-dashed border-base-300 bg-base-100 p-3 text-xs text-base-content/60">
@@ -123,12 +133,22 @@ export function LenderAgentAppointmentPanel({ appointment, shareToken }: LenderA
         />
         <button
           className="btn btn-primary btn-sm rounded-full"
-          disabled={!canMutate || isSaving || !draftName.trim()}
-          onClick={saveAppointment}
+          disabled={!canMutate || isSaving || !draftName.trim() || policy?.status === "revoked"}
+          onClick={() => updateAppointment({ appointedAgentName: draftName })}
           type="button"
         >
           {isSaving ? "Saving..." : "Save appointment"}
         </button>
+        {policy?.status !== "revoked" ? (
+          <button
+            className="btn btn-outline btn-sm rounded-full"
+            disabled={!canMutate || isSaving || !policy}
+            onClick={() => updateAppointment({ status: "revoked" })}
+            type="button"
+          >
+            Revoke
+          </button>
+        ) : null}
       </div>
 
       {!canMutate ? (

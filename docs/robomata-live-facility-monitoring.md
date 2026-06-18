@@ -181,6 +181,12 @@ grant delegated execution, Sui/EVM writes, or automatic action approval. Those
 capabilities require later permission, revocation, and bounded-execution
 controls.
 
+Appointments can be revoked without deleting prior runs, actions, or audit
+events. A revoked policy cannot run manually or through scheduled ticks, and
+open actions cannot be approved or completed while the policy remains revoked.
+Operator and protected lender packet surfaces show the revoked state plus
+revocation reason and authorization surface.
+
 Operators remain the execution boundary. They activate or pause policy, trigger
 manual checks, and approve, reject, complete, or skip proposed actions. Scheduled
 ticks can create proposed actions, but they do not approve their own work, mutate

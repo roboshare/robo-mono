@@ -418,6 +418,10 @@ Verify:
   lender-appointed policy through operator submission access
 - the lender appointment path does not execute actions, approve actions, or
   mutate Sui/EVM state
+- revoked policies remain retained in history but cannot run, approve actions,
+  complete actions, or be picked up by scheduled ticks
+- operator and lender packet surfaces show revocation state, reason, and
+  authorization surface
 
 ### 8e. Agent-First Trust Boundary
 

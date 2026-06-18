@@ -114,6 +114,10 @@ function serializeLenderAgentPolicy(policy: RobomataAgentPolicy | null) {
     appointmentAuthorizationId: policy.appointmentAuthorizationId,
     appointmentAuthorizationSurface: policy.appointmentAuthorizationSurface,
     id: policy.id,
+    revocationAuthorizationSurface: policy.revocationAuthorizationSurface,
+    revocationReason: policy.revocationReason,
+    revokedAt: policy.revokedAt,
+    revokedBy: policy.revokedBy,
     status: policy.status,
     updatedAt: policy.updatedAt,
   };
@@ -168,9 +172,17 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ t
     const result = await loadAuthorizedShare(token);
     if ("error" in result) return result.error;
 
-    const body = (await request.json().catch(() => ({}))) as { appointedAgentName?: unknown };
-    if (typeof body.appointedAgentName !== "string" || !body.appointedAgentName.trim()) {
+    const body = (await request.json().catch(() => ({}))) as {
+      appointedAgentName?: unknown;
+      revocationReason?: unknown;
+      status?: unknown;
+    };
+    const isRevocation = body.status === "revoked";
+    if (!isRevocation && (typeof body.appointedAgentName !== "string" || !body.appointedAgentName.trim())) {
       return noStoreResponse({ error: "appointedAgentName is required." }, { status: 400 });
+    }
+    if (body.status !== undefined && !isRevocation) {
+      return noStoreResponse({ error: "Invalid lender appointment status." }, { status: 400 });
     }
 
     const accessedShareLink = await getSubmissionShareLinkStore().recordAccess(
@@ -196,6 +208,10 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ t
       appointerAddress: lenderAuthorizationId(accessedShareLink),
       appointmentAuthorizationId: accessedShareLink.id,
       appointmentAuthorizationSurface: "protected_lender_share_link",
+      revocationAuthorizationSurface: isRevocation ? "protected_lender_share_link" : undefined,
+      revocationReason: body.revocationReason,
+      revokedBy: isRevocation ? lenderAuthorizationId(accessedShareLink) : undefined,
+      status: isRevocation ? "revoked" : undefined,
       ...(isExistingLenderAppointment ? {} : { autoApproveActionTypes: [] }),
     });
 

@@ -4,7 +4,11 @@ import {
   isRobomataAgentsEnabled,
   isRobomataWorkflowServerEnabled,
 } from "~~/lib/featureFlags";
-import { RobomataAgentPolicyPausedError, runRobomataAgentForSubmission } from "~~/lib/robomata/server/agentRunner";
+import {
+  RobomataAgentPolicyPausedError,
+  RobomataAgentPolicyRevokedError,
+  runRobomataAgentForSubmission,
+} from "~~/lib/robomata/server/agentRunner";
 import { getRobomataAgentStore } from "~~/lib/robomata/server/agentStore";
 import { requirePartnerAddress, requireSubmissionAccess } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
@@ -77,6 +81,9 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     return NextResponse.json(runResult);
   } catch (error) {
     if (error instanceof RobomataAgentPolicyPausedError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
+    if (error instanceof RobomataAgentPolicyRevokedError) {
       return NextResponse.json({ error: error.message }, { status: 409 });
     }
     return NextResponse.json(
