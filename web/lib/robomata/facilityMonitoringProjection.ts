@@ -99,7 +99,7 @@ function packetFreshness(submission: FacilitySubmission, observations: FacilityO
 function suiRootStatus(submission: FacilitySubmission): SuiRootVerificationStatus {
   if (submission.evidenceCommit.status === "failed") return "failed";
   if (submission.evidenceCommit.status === "committing") return "committing";
-  if (submission.evidenceCommit.status === "committed") return "verified";
+  if (submission.evidenceCommit.status === "committed") return "committed";
   if (submission.evidenceCommit.status === "ready") return "pending";
   return "not_started";
 }

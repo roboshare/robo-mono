@@ -68,6 +68,11 @@ assertIncludes(
 assertIncludes(facilityMonitoringProjection, "buildPacketFreshnessPolicyEvaluation", "facility monitoring projection");
 assertIncludes(facilityMonitoringProjection, "buildSuiRootPolicyEvaluation", "facility monitoring projection");
 assertIncludes(facilityMonitoringProjection, "suiRootVerificationStatus", "facility monitoring projection");
+assertIncludes(
+  facilityMonitoringProjection,
+  'if (submission.evidenceCommit.status === "committed") return "committed";',
+  "facility monitoring projection",
+);
 assertIncludes(agentRunner, "policyArtifact.ruleSets.agentSupervision.rules.find", "agent runner");
 assertIncludes(agentRunner, "policyRuleLabel", "agent runner");
 assertIncludes(agentRunner, "policyRuleSummary", "agent runner");
