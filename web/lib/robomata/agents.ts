@@ -3,6 +3,7 @@ import type {
   PacketFreshnessStatus,
   SuiRootVerificationStatus,
 } from "~~/lib/robomata/facilityMonitoring";
+import type { RobomataPolicyEvaluationSummary } from "~~/lib/robomata/policyRules";
 import type { FacilitySubmission } from "~~/lib/robomata/submissions";
 
 export type RobomataAgentPolicyStatus = "active" | "paused" | "revoked";
@@ -135,6 +136,10 @@ export type RobomataAgentRun = {
   completedAt: string;
   actionCount: number;
   summary: string;
+  policyArtifactId?: string;
+  policyArtifactName?: string;
+  policyArtifactVersion?: string;
+  policyEvaluations?: RobomataPolicyEvaluationSummary[];
   plannerBoundary?: RobomataAgentPlannerBoundary;
   projectionStatus: FacilityMonitoringProjection["facility"]["status"];
   freshnessStatus: PacketFreshnessStatus;

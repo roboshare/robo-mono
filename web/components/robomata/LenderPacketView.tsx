@@ -6,10 +6,12 @@ import {
   LockClosedIcon,
 } from "@heroicons/react/24/outline";
 import { LenderAgentAppointmentPanel } from "~~/components/robomata/LenderAgentAppointmentPanel";
+import { LenderPolicyReviewPanel } from "~~/components/robomata/PolicyReviewPanels";
 import {
   BorrowingBasePolicyDisclosure,
   EvidenceFreshnessPolicyDisclosure,
   PacketFreshnessPolicyDisclosure,
+  PolicyEvaluationSummaryPanel,
   SuiRootPolicyDisclosure,
 } from "~~/components/robomata/PolicyRulesPanel";
 import { ReviewBoundaryPanel } from "~~/components/robomata/ReviewBoundaryPanel";
@@ -124,6 +126,13 @@ export const LenderPacketView = ({ packet, shareToken }: LenderPacketViewProps) 
         <div className="mt-5">
           <BorrowingBasePolicyDisclosure policyArtifact={policyArtifact} />
         </div>
+        <div className="mt-5">
+          <LenderPolicyReviewPanel
+            initialReview={packet.policyReviews?.lender}
+            policyArtifact={policyArtifact}
+            shareToken={shareToken}
+          />
+        </div>
         {packet.monitoring ? (
           <div className="mt-5 rounded-2xl border border-base-300 bg-base-200/50 p-4 text-sm leading-relaxed text-base-content/70">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -152,6 +161,17 @@ export const LenderPacketView = ({ packet, shareToken }: LenderPacketViewProps) 
                   policyArtifact.version}
                 )
               </div>
+              {packet.monitoring.policyEvaluationSummary ? (
+                <div>
+                  Policy evaluation: {packet.monitoring.policyEvaluationSummary}
+                  {typeof packet.monitoring.policyEvaluationFailedCount === "number" ||
+                  typeof packet.monitoring.policyEvaluationWarningCount === "number"
+                    ? ` (${packet.monitoring.policyEvaluationFailedCount ?? 0} failed / ${
+                        packet.monitoring.policyEvaluationWarningCount ?? 0
+                      } warning)`
+                    : ""}
+                </div>
+              ) : null}
               {packet.monitoring.currentPacketFreshnessStatus ? (
                 <div>Current status: {formatStatus(packet.monitoring.currentPacketFreshnessStatus)}</div>
               ) : null}
@@ -163,6 +183,12 @@ export const LenderPacketView = ({ packet, shareToken }: LenderPacketViewProps) 
               <EvidenceFreshnessPolicyDisclosure policyArtifact={policyArtifact} />
               <PacketFreshnessPolicyDisclosure policyArtifact={policyArtifact} />
               <SuiRootPolicyDisclosure policyArtifact={policyArtifact} />
+            </div>
+            <div className="mt-4">
+              <PolicyEvaluationSummaryPanel
+                evaluations={packet.monitoring.policyEvaluations}
+                title="Policy evaluation detail"
+              />
             </div>
           </div>
         ) : null}

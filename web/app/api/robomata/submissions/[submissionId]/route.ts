@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isRobomataWorkflowMutationEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
+import { resolveRobomataFacilityPolicyArtifact } from "~~/lib/robomata/policyRules";
 import {
   requirePartnerAddress,
   requireSubmissionAccess,
   requireSubmissionMutable,
 } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
-import { addAuditEvent, invalidateSubmissionArtifacts } from "~~/lib/robomata/submissions";
+import {
+  addAuditEvent,
+  createSubmissionPolicyReview,
+  invalidateSubmissionArtifacts,
+  upsertSubmissionPolicyReview,
+} from "~~/lib/robomata/submissions";
 
 export const runtime = "nodejs";
 
@@ -43,6 +49,11 @@ type SubmissionPatchAction =
       action: "updateEvidenceStatus";
       evidenceId: string;
       status: "verified" | "exception" | "pending";
+    }
+  | {
+      action: "reviewPolicy";
+      rationale?: unknown;
+      status: "accepted" | "needs_changes";
     };
 
 type ReceivablePatch = Partial<{
@@ -57,6 +68,7 @@ type ReceivablePatch = Partial<{
 }>;
 
 const evidenceStatuses = new Set(["verified", "exception", "pending"]);
+const policyReviewStatuses = new Set(["accepted", "needs_changes"]);
 
 function normalizeNumberPatch(
   value: unknown,
@@ -99,6 +111,21 @@ function normalizeEvidenceStatus(value: unknown) {
   }
 
   return value as "verified" | "exception" | "pending";
+}
+
+function normalizePolicyReviewStatus(value: unknown) {
+  if (typeof value !== "string" || !policyReviewStatuses.has(value)) {
+    throw new Error("status must be accepted or needs_changes.");
+  }
+
+  return value as "accepted" | "needs_changes";
+}
+
+function normalizeOptionalRationale(value: unknown) {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string") throw new Error("rationale must be a string.");
+  const normalized = value.trim();
+  return normalized ? normalized.slice(0, 500) : undefined;
 }
 
 function normalizeReceivablePatch(patch: ReceivablePatch): ReceivablePatch {
@@ -165,10 +192,13 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ s
 
     const accessError = requireSubmissionAccess(submission, partnerAddress);
     if (accessError) return accessError;
-    const mutabilityError = requireSubmissionMutable(submission);
-    if (mutabilityError) return mutabilityError;
 
     const body = (await request.json()) as SubmissionPatchAction;
+
+    if (body.action !== "reviewPolicy") {
+      const mutabilityError = requireSubmissionMutable(submission);
+      if (mutabilityError) return mutabilityError;
+    }
 
     if (body.action === "updateSubmission") {
       const operatorName = normalizeStringPatch(body.patch.operatorName, "operatorName");
@@ -217,6 +247,36 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ s
         status,
       });
       invalidateSubmissionArtifacts(submission);
+    }
+
+    if (body.action === "reviewPolicy") {
+      const status = normalizePolicyReviewStatus(body.status);
+      const artifact = resolveRobomataFacilityPolicyArtifact({
+        facilityId: submission.facilityMonitoring?.facilityId,
+        submissionId: submission.id,
+      }).artifact;
+      const review = createSubmissionPolicyReview({
+        artifactId: artifact.id,
+        artifactName: artifact.name,
+        artifactVersion: artifact.version,
+        rationale: normalizeOptionalRationale(body.rationale),
+        reviewedBy: partnerAddress,
+        reviewSurface: "operator_submission_access",
+        role: "operator",
+        status,
+      });
+      upsertSubmissionPolicyReview(submission, review);
+      addAuditEvent(
+        submission,
+        "policy_reviewed",
+        `Operator ${status === "accepted" ? "accepted" : "requested changes to"} policy artifact ${artifact.version}.`,
+        {
+          policyArtifactId: artifact.id,
+          policyArtifactVersion: artifact.version,
+          policyReviewRole: "operator",
+          policyReviewStatus: status,
+        },
+      );
     }
 
     const saved = await store.save(submission);

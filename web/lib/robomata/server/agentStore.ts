@@ -23,6 +23,7 @@ import {
   normalizeAgentActionTypes,
 } from "~~/lib/robomata/agents";
 import type { FacilityMonitoringProjection } from "~~/lib/robomata/facilityMonitoring";
+import { buildAgentActionPolicyEvaluation, resolveRobomataFacilityPolicyArtifact } from "~~/lib/robomata/policyRules";
 import { type RobomataAgentExecutionAudit, executionAuditMetadata } from "~~/lib/robomata/server/agentExecution";
 import {
   RobomataAgentPermissionDeniedError,
@@ -272,6 +273,11 @@ function buildUpdatedPolicy(input: UpdateAgentPolicyInput, existing?: RobomataAg
 }
 
 function buildRun(input: RecordAgentRunInput): RobomataAgentRun {
+  const policyArtifact = resolveRobomataFacilityPolicyArtifact({
+    facilityId: input.projection.facility.id,
+    submissionId: input.policy.submissionId,
+  }).artifact;
+
   return {
     id: createRunId(),
     policyId: input.policy.id,
@@ -283,6 +289,9 @@ function buildRun(input: RecordAgentRunInput): RobomataAgentRun {
     completedAt: input.completedAt,
     actionCount: input.actionDrafts.length,
     summary: input.summary,
+    policyArtifactId: policyArtifact.id,
+    policyArtifactName: policyArtifact.name,
+    policyArtifactVersion: policyArtifact.version,
     plannerBoundary: input.plannerBoundary,
     projectionStatus: input.projection.facility.status,
     freshnessStatus: input.projection.freshnessStatus,
@@ -293,6 +302,10 @@ function buildRun(input: RecordAgentRunInput): RobomataAgentRun {
 
 function buildActions(input: RecordAgentRunInput, run: RobomataAgentRun): RobomataAgentAction[] {
   const authorization = buildAgentActionAuthorization(input.policy);
+  const policyArtifact = resolveRobomataFacilityPolicyArtifact({
+    facilityId: run.facilityId,
+    submissionId: input.policy.submissionId,
+  }).artifact;
 
   return input.actionDrafts.map(draft => {
     const proposalDenialReason = getRobomataAgentActionPermissionDenial({
@@ -312,6 +325,13 @@ function buildActions(input: RecordAgentRunInput, run: RobomataAgentRun): Roboma
         ? "approved"
         : "proposed";
     const permissionDenialReason = proposalDenialReason ?? undefined;
+    const policyEvaluation = buildAgentActionPolicyEvaluation({
+      actionType: draft.type,
+      artifact: policyArtifact,
+      evaluatedAt: input.completedAt,
+      permissionDeniedReason: permissionDenialReason,
+    });
+    const policyRule = policyEvaluation.rules[0];
 
     return {
       ...draft,
@@ -323,6 +343,11 @@ function buildActions(input: RecordAgentRunInput, run: RobomataAgentRun): Roboma
         plannerMode: input.plannerBoundary.mode,
         plannerProvider: input.plannerBoundary.provider,
         plannerStatus: input.plannerBoundary.status,
+        policyArtifactId: policyArtifact.id,
+        policyArtifactVersion: policyArtifact.version,
+        policyEvaluationResult: policyEvaluation.result,
+        policyRuleId: policyRule?.ruleId ?? draft.type,
+        policyRuleStatus: policyRule?.status ?? "not_applicable",
         ...(permissionDenialReason ? { permissionDeniedReason: permissionDenialReason } : {}),
         proposalSource: draft.metadata?.proposalSource ?? "deterministic_rules",
       },

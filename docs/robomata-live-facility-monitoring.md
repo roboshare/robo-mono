@@ -259,10 +259,33 @@ Monitoring run and protected lender packet surfaces display the rule version
 and artifact identity attached to the pinned borrowing-base run when that run is
 available.
 
+Operator and protected lender packet policy reviews are acknowledgement records
+for the active platform-default artifact. They persist reviewer role, reviewed
+artifact identity/version, decision status, timestamp, and rationale, but they
+do not activate lender-authored overrides, change deterministic credit rules, or
+alter the borrowing-base source of truth.
+
 The policy-artifact resolver currently always returns the platform default for a
 facility/submission. It is intentionally shaped for future facility or
 lender-specific overrides, but this tranche does not change credit behavior,
 root verification semantics, or approval boundaries.
+
+Run, packet, share-link, and agent-action payloads can also carry policy
+evaluation detail. These records are explainability metadata derived from the
+already-computed deterministic outputs:
+
+- borrowing-base evaluations explain advance-rate, concentration, receivable
+  eligibility, evidence-status, and manual-exclusion outcomes;
+- packet evaluations explain evidence freshness, packet freshness, and Sui root
+  status;
+- protected share-link metadata stores a compact pinned evaluation summary and
+  the resolved lender packet can include the full pinned evaluation detail when
+  available;
+- agent actions store the proposal/permission rule id and rule status that
+  retained or skipped the action.
+
+These evaluations do not introduce a new decision engine. They document the
+rule outcomes that produced the current deterministic state.
 
 The next agent-first tranche should replace these defaults with explicit lender
 policy artifacts, versioned approvals, and policy effective dates. Until then,

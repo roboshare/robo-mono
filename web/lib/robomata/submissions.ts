@@ -85,10 +85,28 @@ export type SubmissionAuditEvent = {
     | "tokenization_drafted"
     | "tokenization_terms_updated"
     | "tokenization_prepared"
-    | "tokenization_completed";
+    | "tokenization_completed"
+    | "policy_reviewed";
   createdAt: string;
   message: string;
   metadata?: Record<string, string | number | boolean | null>;
+};
+
+export type SubmissionPolicyReviewRole = "lender" | "operator";
+export type SubmissionPolicyReviewStatus = "accepted" | "needs_changes";
+export type SubmissionPolicyReviewSurface = "operator_submission_access" | "protected_lender_share_link";
+
+export type SubmissionPolicyReview = {
+  id: string;
+  role: SubmissionPolicyReviewRole;
+  status: SubmissionPolicyReviewStatus;
+  reviewedArtifactId: string;
+  reviewedArtifactName: string;
+  reviewedArtifactVersion: string;
+  reviewedAt: string;
+  reviewedBy: string;
+  reviewSurface: SubmissionPolicyReviewSurface;
+  rationale?: string;
 };
 
 export type SubmissionEvidenceCommit = {
@@ -190,6 +208,7 @@ export type FacilitySubmission = {
   evidenceCommit: SubmissionEvidenceCommit;
   tokenization: SubmissionTokenization;
   facilityMonitoring?: SubmissionFacilityMonitoringRef;
+  policyReviews?: SubmissionPolicyReview[];
   auditEvents: SubmissionAuditEvent[];
   createdAt: string;
   updatedAt: string;
@@ -226,6 +245,56 @@ export function createAuditEvent(
   };
 }
 
+export function createSubmissionPolicyReview(input: {
+  artifactId: string;
+  artifactName: string;
+  artifactVersion: string;
+  rationale?: string;
+  reviewedAt?: string;
+  reviewedBy: string;
+  reviewSurface: SubmissionPolicyReviewSurface;
+  role: SubmissionPolicyReviewRole;
+  status: SubmissionPolicyReviewStatus;
+}): SubmissionPolicyReview {
+  const reviewedAt = input.reviewedAt ?? nowIsoString();
+  return {
+    id: `policy_review_${input.role}_${input.reviewedBy}_${input.artifactId}_${input.artifactVersion}`.replace(
+      /[^a-zA-Z0-9_:-]/g,
+      "_",
+    ),
+    role: input.role,
+    status: input.status,
+    reviewedArtifactId: input.artifactId,
+    reviewedArtifactName: input.artifactName,
+    reviewedArtifactVersion: input.artifactVersion,
+    reviewedAt,
+    reviewedBy: input.reviewedBy,
+    reviewSurface: input.reviewSurface,
+    rationale: input.rationale,
+  };
+}
+
+export function upsertSubmissionPolicyReview(
+  submission: FacilitySubmission,
+  review: SubmissionPolicyReview,
+): FacilitySubmission {
+  const reviews = submission.policyReviews ?? [];
+  submission.policyReviews = [
+    review,
+    ...reviews.filter(
+      candidate =>
+        !(
+          candidate.role === review.role &&
+          candidate.reviewedArtifactId === review.reviewedArtifactId &&
+          candidate.reviewedArtifactVersion === review.reviewedArtifactVersion &&
+          candidate.reviewedBy === review.reviewedBy &&
+          candidate.reviewSurface === review.reviewSurface
+        ),
+    ),
+  ];
+  return submission;
+}
+
 export function createDefaultSubmissionTokenization(): SubmissionTokenization {
   return {
     status: "not_started",
@@ -236,6 +305,7 @@ export function createDefaultSubmissionTokenization(): SubmissionTokenization {
 }
 
 export function normalizeSubmissionTokenization(submission: FacilitySubmission): FacilitySubmission {
+  submission.policyReviews = submission.policyReviews ?? [];
   submission.tokenization = {
     ...createDefaultSubmissionTokenization(),
     ...(submission.tokenization ?? {}),

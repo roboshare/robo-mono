@@ -1,12 +1,17 @@
 import type { RobomataAgentPolicy } from "~~/lib/robomata/agents";
 import type { EvidenceCommitment } from "~~/lib/robomata/evidence";
 import type { BorrowingBaseRun, PacketFreshnessStatus, PacketManifest } from "~~/lib/robomata/facilityMonitoring";
+import {
+  type RobomataPolicyEvaluationSummary,
+  resolveRobomataFacilityPolicyArtifact,
+} from "~~/lib/robomata/policyRules";
 import type {
   FacilitySubmission,
   FacilitySubmissionStatus,
   SubmissionComputation,
   SubmissionEncryptionBackend,
   SubmissionException,
+  SubmissionPolicyReview,
   SubmissionStorageBackend,
 } from "~~/lib/robomata/submissions";
 
@@ -47,6 +52,9 @@ export type SubmissionShareLinkMonitoringBinding = {
   policyArtifactId?: string;
   policyArtifactName?: string;
   policyArtifactVersion?: string;
+  policyEvaluationFailedCount?: number;
+  policyEvaluationSummary?: string;
+  policyEvaluationWarningCount?: number;
   runPolicyVersion?: string;
   packetManifestId: string;
   packetGeneratedAt: string;
@@ -102,6 +110,10 @@ export type SharedLenderPacketView = {
   monitoring?: SubmissionShareLinkMonitoringBinding & {
     currentPacketFreshnessStatus?: PacketFreshnessStatus;
     pinnedAtShare: boolean;
+    policyEvaluations?: RobomataPolicyEvaluationSummary[];
+  };
+  policyReviews?: {
+    lender?: SubmissionPolicyReview;
   };
   agentAppointment?: {
     flags: {
@@ -138,6 +150,31 @@ function linkedExceptionIdsForEvidence(exceptions: SubmissionException[], eviden
 
 function observationIdForEvidence(evidenceId: string): string {
   return `obs_${evidenceId}`;
+}
+
+function currentPolicyReviews(input: {
+  monitoring?: SharedLenderPacketView["monitoring"];
+  shareLink: SubmissionShareLink;
+  submission: FacilitySubmission;
+}): SharedLenderPacketView["policyReviews"] {
+  const fallbackArtifact = resolveRobomataFacilityPolicyArtifact({
+    facilityId: input.submission.facilityMonitoring?.facilityId,
+    submissionId: input.submission.id,
+  }).artifact;
+  const artifactId = input.monitoring?.policyArtifactId ?? fallbackArtifact.id;
+  const artifactVersion = input.monitoring?.policyArtifactVersion ?? fallbackArtifact.version;
+  const lenderReviewer = `lender_share:${input.shareLink.id}`;
+
+  return {
+    lender: input.submission.policyReviews?.find(
+      review =>
+        review.role === "lender" &&
+        review.reviewedArtifactId === artifactId &&
+        review.reviewedArtifactVersion === artifactVersion &&
+        review.reviewedBy === lenderReviewer &&
+        review.reviewSurface === "protected_lender_share_link",
+    ),
+  };
 }
 
 export function buildSharedLenderPacketView({
@@ -214,6 +251,7 @@ export function buildSharedLenderPacketView({
       },
     })),
     monitoring,
+    policyReviews: currentPolicyReviews({ monitoring, shareLink, submission }),
     agentAppointment,
   };
 }

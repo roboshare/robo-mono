@@ -7,7 +7,11 @@ import {
   isRobomataLenderMonitoringShareEnabled,
   isRobomataShareLinksEnabled,
 } from "~~/lib/featureFlags";
-import { resolveRobomataFacilityPolicyArtifact } from "~~/lib/robomata/policyRules";
+import {
+  type RobomataPolicyEvaluationSummary,
+  resolveRobomataFacilityPolicyArtifact,
+  summarizeRobomataPolicyEvaluations,
+} from "~~/lib/robomata/policyRules";
 import { getRobomataAgentStore } from "~~/lib/robomata/server/agentStore";
 import { getFacilityMonitoringStore } from "~~/lib/robomata/server/facilityMonitoringStore";
 import {
@@ -28,6 +32,9 @@ const MONITORING_METADATA_KEYS = [
   "policyArtifactId",
   "policyArtifactName",
   "policyArtifactVersion",
+  "policyEvaluationFailedCount",
+  "policyEvaluationSummary",
+  "policyEvaluationWarningCount",
   "runId",
   "runPolicyVersion",
   "runRootDigest",
@@ -36,6 +43,11 @@ const MONITORING_METADATA_KEYS = [
 function stringMetadata(metadata: SubmissionShareLink["metadata"] | undefined, key: string): string | undefined {
   const value = metadata?.[key];
   return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function numberMetadata(metadata: SubmissionShareLink["metadata"] | undefined, key: string): number | undefined {
+  const value = metadata?.[key];
+  return typeof value === "number" ? value : undefined;
 }
 
 function monitoringBindingFromMetadata(
@@ -59,9 +71,24 @@ function monitoringBindingFromMetadata(
     policyArtifactId: stringMetadata(metadata, "policyArtifactId"),
     policyArtifactName: stringMetadata(metadata, "policyArtifactName"),
     policyArtifactVersion: stringMetadata(metadata, "policyArtifactVersion"),
+    policyEvaluationFailedCount: numberMetadata(metadata, "policyEvaluationFailedCount"),
+    policyEvaluationSummary: stringMetadata(metadata, "policyEvaluationSummary"),
+    policyEvaluationWarningCount: numberMetadata(metadata, "policyEvaluationWarningCount"),
     runPolicyVersion: stringMetadata(metadata, "runPolicyVersion"),
     runRootDigest: stringMetadata(metadata, "runRootDigest"),
   };
+}
+
+function omitLenderHiddenSubjectIds(evaluations: RobomataPolicyEvaluationSummary[]): RobomataPolicyEvaluationSummary[] {
+  return evaluations.map(evaluation => ({
+    ...evaluation,
+    rules: evaluation.rules.map(rule => {
+      if (!rule.subjectIds?.length) return rule;
+      const safeRule = { ...rule };
+      delete safeRule.subjectIds;
+      return safeRule;
+    }),
+  }));
 }
 
 export async function buildShareLinkMonitoringMetadata(
@@ -77,6 +104,10 @@ export async function buildShareLinkMonitoringMetadata(
     facilityId: projection.facility.id,
     submissionId: submission.id,
   }).artifact;
+  const policyEvaluationSummary = summarizeRobomataPolicyEvaluations([
+    ...(latestRun.policyEvaluations ?? []),
+    ...(latestPacket.policyEvaluations ?? []),
+  ]);
 
   return {
     facilityId: projection.facility.id,
@@ -94,6 +125,9 @@ export async function buildShareLinkMonitoringMetadata(
     policyArtifactId: latestRun.policyArtifactId ?? policyArtifact.id,
     policyArtifactName: latestRun.policyArtifactName ?? policyArtifact.name,
     policyArtifactVersion: latestRun.policyVersion ?? policyArtifact.version,
+    policyEvaluationFailedCount: policyEvaluationSummary.failedCount,
+    policyEvaluationSummary: policyEvaluationSummary.summary,
+    policyEvaluationWarningCount: policyEvaluationSummary.warningCount,
     runId: latestRun.id,
     runPolicyVersion: latestRun.policyVersion,
     runRootDigest: latestRun.rootDigest || null,
@@ -114,26 +148,35 @@ export async function buildResolvedSharedLenderPacketView(input: {
   if (!binding) return buildSharedLenderPacketView({ ...input, agentAppointment });
 
   const projection = await getFacilityMonitoringStore().getProjectionForSubmission(input.submission);
-  const packetManifest =
+  const pinnedPacketManifest =
     projection.packetManifests.find(packet => packet.id === binding.packetManifestId) ??
     projection.packetManifests.find(packet => packet.runId === binding.runId);
   const run = projection.runHistory.find(candidate => candidate.id === binding.runId);
-  if (!packetManifest || !run) return buildSharedLenderPacketView({ ...input, agentAppointment });
+  if (!pinnedPacketManifest || !run) return buildSharedLenderPacketView({ ...input, agentAppointment });
   const policyArtifact = resolveRobomataFacilityPolicyArtifact({
     facilityId: projection.facility.id,
     submissionId: input.submission.id,
   }).artifact;
+  const currentPacketManifest =
+    projection.latestPacket?.id === pinnedPacketManifest.id ? projection.latestPacket : pinnedPacketManifest;
+  const policyEvaluations = [
+    ...omitLenderHiddenSubjectIds(run.policyEvaluations ?? []),
+    ...omitLenderHiddenSubjectIds(currentPacketManifest.policyEvaluations ?? []),
+  ];
+  const policyEvaluationSummary = policyEvaluations.length
+    ? summarizeRobomataPolicyEvaluations(policyEvaluations)
+    : undefined;
 
   const currentPacketFreshnessStatus =
     projection.latestPacket &&
-    projection.latestPacket.id !== packetManifest.id &&
-    projection.latestPacket.generatedAt > packetManifest.generatedAt
+    projection.latestPacket.id !== pinnedPacketManifest.id &&
+    projection.latestPacket.generatedAt > pinnedPacketManifest.generatedAt
       ? "superseded"
-      : packetManifest.freshnessStatus;
+      : currentPacketManifest.freshnessStatus;
 
   return buildSharedLenderPacketView({
     ...input,
-    packetManifest,
+    packetManifest: pinnedPacketManifest,
     run,
     monitoring: {
       ...binding,
@@ -142,6 +185,10 @@ export async function buildResolvedSharedLenderPacketView(input: {
       policyArtifactId: binding.policyArtifactId ?? run.policyArtifactId ?? policyArtifact.id,
       policyArtifactName: binding.policyArtifactName ?? run.policyArtifactName ?? policyArtifact.name,
       policyArtifactVersion: binding.policyArtifactVersion ?? run.policyVersion ?? policyArtifact.version,
+      policyEvaluationFailedCount: policyEvaluationSummary?.failedCount ?? binding.policyEvaluationFailedCount,
+      policyEvaluationSummary: policyEvaluationSummary?.summary ?? binding.policyEvaluationSummary,
+      policyEvaluationWarningCount: policyEvaluationSummary?.warningCount ?? binding.policyEvaluationWarningCount,
+      policyEvaluations: policyEvaluations.length ? policyEvaluations : undefined,
       runPolicyVersion: binding.runPolicyVersion ?? run.policyVersion,
     },
     agentAppointment,
