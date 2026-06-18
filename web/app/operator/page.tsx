@@ -707,8 +707,9 @@ const PartnerDashboard: NextPage = () => {
     return () => window.clearInterval(intervalId);
   }, []);
 
-  const latestBlockTimeSec = latestBlock?.timestamp ? Number(latestBlock.timestamp) : 0;
-  const chainNowSec = Math.max(latestBlockTimeSec, currentTimeSec);
+  const latestBlockTimeSec = latestBlock?.timestamp ? Number(latestBlock.timestamp) : undefined;
+  const settlementChainNowSec = latestBlockTimeSec ?? currentTimeSec;
+  const displayNowSec = Math.max(settlementChainNowSec, currentTimeSec);
   const assetMaturityDateById = new Map<string, bigint>(
     assetRecords.map((asset, index) => [asset.id, (tokenMaturityDates?.[index]?.result as bigint | undefined) ?? 0n]),
   );
@@ -823,7 +824,7 @@ const PartnerDashboard: NextPage = () => {
       const settlementTopUpMinimum = calculateResidualSettlementTopUp({
         immediateProceeds,
         maturityDate,
-        chainNowSec,
+        chainNowSec: settlementChainNowSec,
         unredeemedBasePrincipal,
         baseCollateral: investorLiquidity,
         lockedAt,
@@ -1553,7 +1554,7 @@ const PartnerDashboard: NextPage = () => {
               {activeFleet.map(asset =>
                 (() => {
                   const maturityDate = assetMaturityDateById.get(asset.id) ?? 0n;
-                  const isMaturedByTime = maturityDate > 0n && Number(maturityDate) <= chainNowSec;
+                  const isMaturedByTime = maturityDate > 0n && Number(maturityDate) <= displayNowSec;
                   const isMatured = isMaturedByTime;
                   const tokenId = BigInt(asset.id) + 1n;
                   const isPoolPaused = !!asset.primaryPoolPaused;
