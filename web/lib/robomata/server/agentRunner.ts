@@ -186,6 +186,7 @@ export async function runRobomataAgentForSubmission(input: RunAgentForSubmission
     recentActions,
     recentRuns,
     submission: input.submission,
+    suppressAutoApprove: input.suppressAutoApprove,
   });
   const completedAt = new Date().toISOString();
   const proposalSummary = actionDrafts.length

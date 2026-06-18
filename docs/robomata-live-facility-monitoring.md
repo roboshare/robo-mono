@@ -262,14 +262,16 @@ run/packet history only as compact ids, statuses, counts, and bounded summaries.
 Planner recommendation intent is validated before persistence. Required
 approvals are operator-only unless the active appointment explicitly
 auto-approves the action type, in which case the persisted boundary is
-`none_auto_approved`. Suggested tools are limited to `none` or the advisory
-audit adapter `robomata.agent.advisory_audit.v1`, and the audit adapter is only
-valid for in-appointment evidence-review and Sui-root-review action types. The
-execution boundary remains `proposal_only` or `audit_only_adapter_flagged`; this
-metadata does not approve, complete, execute, or mutate retained actions.
-Deterministic fallback populates the same fields with safe defaults, so the
-Agent Supervision panel can show the boundary even when
-`ROBOMATA_AGENT_PLANNER_ENABLED` is off or a live provider fails validation.
+`none_auto_approved`. Scheduled tick runs that suppress auto-approval force the
+planner boundary back to operator approval for that run. Suggested tools are
+limited to `none` or the advisory audit adapter
+`robomata.agent.advisory_audit.v1`, and the audit adapter is only valid for
+in-appointment evidence-review and Sui-root-review action types. The execution
+boundary remains `proposal_only` or `audit_only_adapter_flagged`; this metadata
+does not approve, complete, execute, or mutate retained actions. Deterministic
+fallback populates the same fields with safe defaults, so the Agent Supervision
+panel can show the boundary even when `ROBOMATA_AGENT_PLANNER_ENABLED` is off or
+a live provider fails validation.
 
 Excluded material includes raw evidence bodies, raw provider payloads, API keys,
 secret env names, Sui private keys, Seal plaintext or ciphertext, Walrus
