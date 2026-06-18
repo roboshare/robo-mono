@@ -212,6 +212,22 @@ to switch credit review into a live LLM path. Until provider-specific prompts,
 logging, retention, and data controls are approved, live provider selections use
 deterministic fallback or an explicitly stubbed review mode.
 
+OpenAI review is the first live adapter. It requires:
+
+- `ROBOMATA_AGENT_PROVIDER=openai`
+- `ROBOMATA_LLM_REVIEW_ENABLED=true`
+- `OPENAI_API_KEY=<secret>`
+- `ROBOMATA_AGENT_REVIEW_MODEL=<model id>`
+
+The adapter uses OpenAI Responses structured output for advisory memo text only.
+It sends aggregates plus capped receivable/evidence exception rows, not raw
+evidence files or every eligible receivable. Requests set `store: false`, use a
+short provider timeout, and fall back to deterministic review output if the API
+key, model, response, or provider call fails. When deterministic rules report no
+open exceptions, model-provided exception notes are discarded so the lender
+packet remains clean. The resulting lender packet records whether review output
+was `llm_live` or deterministic fallback.
+
 ## Scheduled Agent Tick Route
 
 `POST /api/robomata/agents/tick` is an operator-controlled scheduling target,
