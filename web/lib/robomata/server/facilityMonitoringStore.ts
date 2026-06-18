@@ -401,11 +401,9 @@ function buildStoredProjection(input: {
         suiRootStatus: projectedSuiRootStatus,
       })
     : undefined;
-  const nextPacketManifests = packetManifests.length
-    ? packetManifests
-    : latestPacket
-      ? [latestPacket]
-      : packetManifests;
+  const nextPacketManifests = latestPacket
+    ? [latestPacket, ...packetManifests.filter(packet => packet.id !== latestPacket.id)]
+    : packetManifests;
   const facilityStatus =
     freshnessStatus === "fresh"
       ? "packet_fresh"

@@ -161,7 +161,7 @@ export async function buildResolvedSharedLenderPacketView(input: {
     projection.latestPacket?.id === pinnedPacketManifest.id ? projection.latestPacket : pinnedPacketManifest;
   const policyEvaluations = [
     ...omitLenderHiddenSubjectIds(run.policyEvaluations ?? []),
-    ...(currentPacketManifest.policyEvaluations ?? []),
+    ...omitLenderHiddenSubjectIds(currentPacketManifest.policyEvaluations ?? []),
   ];
   const policyEvaluationSummary = policyEvaluations.length
     ? summarizeRobomataPolicyEvaluations(policyEvaluations)
