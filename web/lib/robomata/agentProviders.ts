@@ -47,8 +47,10 @@ export type AgentReview = {
   outputSchemaVersion?: string;
   policyArtifactId?: string;
   policyArtifactVersion?: string;
+  providerInputDigest?: string;
   promptVersion?: string;
   reviewInputId?: string;
+  sourceDataDigest?: string;
   headline: string;
   memo: string;
   exceptionReview: string[];
@@ -134,6 +136,14 @@ type OpenAiReviewPrompt = {
   evidenceExceptions: AgentReviewInput["evidenceExceptions"];
   omittedEvidenceExceptions: number;
 };
+
+type BuildReviewOptions = {
+  inputDigestSource?: unknown;
+  providerInputDigest?: string;
+};
+
+const openAiSystemInstruction =
+  "You are a private-credit diligence reviewer. Return only schema-compliant JSON. Never override deterministic borrowing-base results.";
 
 class AgentReviewSchemaInvalidError extends Error {
   constructor() {
@@ -224,12 +234,8 @@ function reviewContent(review: AgentReview): AgentReviewContent {
   };
 }
 
-async function buildReview(
-  result: AgentReviewInput,
-  boundary: AgentReviewBoundaryInput,
-  content: AgentReviewContent,
-): Promise<AgentReview> {
-  const inputDigest = await sha256Hex({
+function sourceDataDigestSource(result: AgentReviewInput) {
+  return {
     availableBorrowingBaseCents: result.availableBorrowingBaseCents,
     evidenceExceptions: result.evidenceExceptions,
     exceptionCount: result.exceptionCount,
@@ -238,7 +244,17 @@ async function buildReview(
     portfolio: result.portfolio,
     promptVersion: ROBOMATA_AGENT_REVIEW_PROMPT_VERSION,
     receivableResults: result.receivableResults,
-  });
+  };
+}
+
+async function buildReview(
+  result: AgentReviewInput,
+  boundary: AgentReviewBoundaryInput,
+  content: AgentReviewContent,
+  options: BuildReviewOptions = {},
+): Promise<AgentReview> {
+  const sourceDataDigest = await sha256Hex(sourceDataDigestSource(result));
+  const inputDigest = await sha256Hex(options.inputDigestSource ?? sourceDataDigestSource(result));
   const outputDigest = await sha256Hex({
     ...boundary,
     ...content,
@@ -255,8 +271,10 @@ async function buildReview(
     outputSchemaVersion: ROBOMATA_AGENT_REVIEW_OUTPUT_SCHEMA_VERSION,
     policyArtifactId: result.policyArtifactId,
     policyArtifactVersion: result.policyArtifactVersion,
+    providerInputDigest: options.providerInputDigest,
     promptVersion: ROBOMATA_AGENT_REVIEW_PROMPT_VERSION,
     reviewInputId: `review_${inputDigest.slice(0, 16)}`,
+    sourceDataDigest,
   };
 }
 
@@ -331,7 +349,9 @@ function parseOpenAiReviewPayload(text: string, fallback: AgentReview, result: A
     typeof parsed.headline !== "string" ||
     typeof parsed.memo !== "string" ||
     !Array.isArray(parsed.exceptionReview) ||
-    !Array.isArray(parsed.nextActions)
+    !Array.isArray(parsed.nextActions) ||
+    parsed.exceptionReview.some(item => typeof item !== "string") ||
+    parsed.nextActions.some(item => typeof item !== "string")
   ) {
     throw new AgentReviewSchemaInvalidError();
   }
@@ -347,11 +367,11 @@ function parseOpenAiReviewPayload(text: string, fallback: AgentReview, result: A
   };
 }
 
-function openAiReviewPrompt(result: AgentReviewInput): string {
+function openAiReviewPrompt(result: AgentReviewInput): OpenAiReviewPrompt {
   const receivableExceptions = result.receivableResults.filter(receivable => !receivable.eligible);
   const includedReceivableExceptions = receivableExceptions.slice(0, openAiExceptionRowLimit);
   const includedEvidenceExceptions = result.evidenceExceptions.slice(0, openAiExceptionRowLimit);
-  const prompt: OpenAiReviewPrompt = {
+  return {
     instruction:
       "Prepare advisory lender diligence text. Do not recalculate availability, eligibility, exceptions, or reserves. The deterministic borrowing-base rules are the source of credit truth.",
     policyArtifactId: result.policyArtifactId,
@@ -370,8 +390,16 @@ function openAiReviewPrompt(result: AgentReviewInput): string {
     evidenceExceptions: includedEvidenceExceptions,
     omittedEvidenceExceptions: Math.max(result.evidenceExceptions.length - includedEvidenceExceptions.length, 0),
   };
+}
 
-  return JSON.stringify(prompt);
+function openAiProviderInput(result: AgentReviewInput, model: string) {
+  return {
+    model,
+    outputSchemaVersion: ROBOMATA_AGENT_REVIEW_OUTPUT_SCHEMA_VERSION,
+    promptVersion: ROBOMATA_AGENT_REVIEW_PROMPT_VERSION,
+    systemInstruction: openAiSystemInstruction,
+    userPrompt: openAiReviewPrompt(result),
+  };
 }
 
 async function reviewWithOpenAi(result: AgentReviewInput, fallback: AgentReview): Promise<AgentReview> {
@@ -399,18 +427,23 @@ async function reviewWithOpenAi(result: AgentReviewInput, fallback: AgentReview)
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), openAiReviewTimeoutMs);
+    const providerInput = openAiProviderInput(result, model);
+    const providerInputDigest = await sha256Hex(providerInput);
+    const reviewOptions = {
+      inputDigestSource: providerInput,
+      providerInputDigest,
+    };
     try {
       const response = await fetch("https://api.openai.com/v1/responses", {
         body: JSON.stringify({
           input: [
             {
               role: "system",
-              content:
-                "You are a private-credit diligence reviewer. Return only schema-compliant JSON. Never override deterministic borrowing-base results.",
+              content: providerInput.systemInstruction,
             },
             {
               role: "user",
-              content: openAiReviewPrompt(result),
+              content: JSON.stringify(providerInput.userPrompt),
             },
           ],
           model,
@@ -442,6 +475,7 @@ async function reviewWithOpenAi(result: AgentReviewInput, fallback: AgentReview)
           result,
           reviewBoundaryInput("openai", "live_completed", "llm_live", model),
           parseOpenAiReviewPayload(outputText, fallback, result),
+          reviewOptions,
         );
       } catch (error) {
         if (error instanceof SyntaxError || error instanceof AgentReviewSchemaInvalidError) {
@@ -452,6 +486,7 @@ async function reviewWithOpenAi(result: AgentReviewInput, fallback: AgentReview)
               ...reviewContent(fallback),
               memo: `${fallback.memo} Live openai review returned invalid schema output, so the review used deterministic fallback output.`,
             },
+            reviewOptions,
           );
         }
 
@@ -466,10 +501,21 @@ async function reviewWithOpenAi(result: AgentReviewInput, fallback: AgentReview)
       result,
       reviewBoundaryInput("openai", "live_error_fallback", "deterministic_fallback", model),
     );
-    return buildReview(result, reviewBoundaryInput("openai", "live_error_fallback", "deterministic_fallback", model), {
-      ...reviewContent(errorFallback),
-      memo: `${fallback.memo} Live openai review failed, so the review used deterministic fallback output.`,
-    });
+    const reviewOptions: BuildReviewOptions = {};
+    if (model) {
+      const providerInput = openAiProviderInput(result, model);
+      reviewOptions.inputDigestSource = providerInput;
+      reviewOptions.providerInputDigest = await sha256Hex(providerInput);
+    }
+    return buildReview(
+      result,
+      reviewBoundaryInput("openai", "live_error_fallback", "deterministic_fallback", model),
+      {
+        ...reviewContent(errorFallback),
+        memo: `${fallback.memo} Live openai review failed, so the review used deterministic fallback output.`,
+      },
+      reviewOptions,
+    );
   }
 }
 

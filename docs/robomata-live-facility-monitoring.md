@@ -325,9 +325,12 @@ Review provenance is retained as metadata, not raw prompt or provider payload
 storage. Lender packet review boundaries include provider, model, provider
 status, review mode, prompt version, output schema version, active policy
 artifact id/version, a stable review input id, and short input/output digests.
-Those digests let operators and lenders identify which bounded review context
-and output were used without exposing API keys, raw evidence contents, or full
-LLM request/response bodies.
+For live provider attempts, the review input id and input digest are derived
+from the normalized bounded provider input, while the source-data digest records
+the full deterministic borrowing-base review input. Those digests let operators
+and lenders identify which bounded review context, source data, and output were
+used without exposing API keys, raw evidence contents, or full LLM
+request/response bodies.
 
 ## Scheduled Agent Tick Route
 

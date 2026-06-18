@@ -33,12 +33,18 @@ assertIncludes(agentProviders, "ROBOMATA_AGENT_REVIEW_PROMPT_VERSION", "agent pr
 assertIncludes(agentProviders, "ROBOMATA_AGENT_REVIEW_OUTPUT_SCHEMA_VERSION", "agent providers");
 assertIncludes(agentProviders, "inputDigest", "agent providers");
 assertIncludes(agentProviders, "outputDigest", "agent providers");
+assertIncludes(agentProviders, "sourceDataDigest", "agent providers");
+assertIncludes(agentProviders, "providerInputDigest", "agent providers");
+assertIncludes(agentProviders, "openAiProviderInput", "agent providers");
+assertIncludes(agentProviders, "inputDigestSource: providerInput", "agent providers");
 assertIncludes(agentProviders, "reviewInputId", "agent providers");
 assertIncludes(agentProviders, "policyArtifactId", "agent providers");
 assertIncludes(agentProviders, "policyArtifactVersion", "agent providers");
 assertIncludes(agentProviders, "sha256Hex", "agent providers");
 assertIncludes(agentProviders, "store: false", "agent providers");
 assertIncludes(agentProviders, "AgentReviewSchemaInvalidError", "agent providers");
+assertIncludes(agentProviders, 'parsed.exceptionReview.some(item => typeof item !== "string")', "agent providers");
+assertIncludes(agentProviders, 'parsed.nextActions.some(item => typeof item !== "string")', "agent providers");
 assertIncludes(agentProviders, '"schema_invalid_fallback"', "agent providers");
 assertIncludes(agentProviders, '"configured_without_key"', "agent providers");
 assertIncludes(agentProviders, '"configured_without_model"', "agent providers");
@@ -56,8 +62,10 @@ for (const key of [
   "outputSchemaVersion",
   "policyArtifactId",
   "policyArtifactVersion",
+  "providerInputDigest",
   "promptVersion",
   "reviewInputId",
+  "sourceDataDigest",
 ]) {
   assertIncludes(lenderPacket, key, "lender packet review boundary");
   assertIncludes(reviewBoundaryPanel, key, "review boundary panel");

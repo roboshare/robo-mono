@@ -24,12 +24,14 @@ export type LenderPacket = {
     | "outputSchemaVersion"
     | "policyArtifactId"
     | "policyArtifactVersion"
+    | "providerInputDigest"
     | "promptVersion"
     | "provider"
     | "providerStatus"
     | "reviewInputId"
     | "reviewMode"
     | "sourceOfTruth"
+    | "sourceDataDigest"
   >;
   memoSummary: string;
   exceptionSections: LenderPacketSection[];
@@ -115,12 +117,14 @@ export function buildLenderPacket(
       outputSchemaVersion: agentReview.outputSchemaVersion,
       policyArtifactId: agentReview.policyArtifactId,
       policyArtifactVersion: agentReview.policyArtifactVersion,
+      providerInputDigest: agentReview.providerInputDigest,
       promptVersion: agentReview.promptVersion,
       provider: agentReview.provider,
       providerStatus: agentReview.providerStatus,
       reviewInputId: agentReview.reviewInputId,
       reviewMode: agentReview.reviewMode,
       sourceOfTruth: agentReview.sourceOfTruth,
+      sourceDataDigest: agentReview.sourceDataDigest,
     },
     memoSummary: agentReview.memo,
     exceptionSections: [receivableExceptions, evidenceExceptions, agentExceptions].filter(

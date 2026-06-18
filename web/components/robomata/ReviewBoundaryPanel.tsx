@@ -41,6 +41,8 @@ export function ReviewBoundaryPanel({ boundary }: ReviewBoundaryPanelProps) {
         <div>Policy: {formatPolicyArtifact(boundary)}</div>
         <div>Review input: {boundary?.reviewInputId ?? "not recorded"}</div>
         <div>Input digest: {shortDigest(boundary?.inputDigest)}</div>
+        <div>Source data digest: {shortDigest(boundary?.sourceDataDigest)}</div>
+        <div>Provider input digest: {shortDigest(boundary?.providerInputDigest)}</div>
         <div>Output digest: {shortDigest(boundary?.outputDigest)}</div>
         <div>Generated: {boundary?.generatedAt ? new Date(boundary.generatedAt).toLocaleString() : "not recorded"}</div>
       </div>
