@@ -321,6 +321,14 @@ open exceptions, model-provided exception notes are discarded so the lender
 packet remains clean. The resulting lender packet records whether review output
 was `llm_live` or deterministic fallback.
 
+Review provenance is retained as metadata, not raw prompt or provider payload
+storage. Lender packet review boundaries include provider, model, provider
+status, review mode, prompt version, output schema version, active policy
+artifact id/version, a stable review input id, and short input/output digests.
+Those digests let operators and lenders identify which bounded review context
+and output were used without exposing API keys, raw evidence contents, or full
+LLM request/response bodies.
+
 ## Scheduled Agent Tick Route
 
 `POST /api/robomata/agents/tick` is an operator-controlled scheduling target,

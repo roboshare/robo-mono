@@ -220,7 +220,12 @@ export async function computeSubmissionArtifacts(submission: FacilitySubmission)
   const evidenceAnchor = buildEvidenceAnchor(portfolio.facilityName, portfolio.evidence);
   const evidenceRail = buildEvidenceRail(evidenceAnchor);
   const lenderBorrowingBase = buildLenderFacingBorrowingBase(borrowingBase);
-  const agentReview = await reviewBorrowingBase(buildAgentReviewInput(lenderBorrowingBase));
+  const agentReview = await reviewBorrowingBase(
+    buildAgentReviewInput(lenderBorrowingBase, {
+      policyArtifactId: policyArtifact.id,
+      policyArtifactVersion: policyArtifact.version,
+    }),
+  );
   const lenderPacket = buildLenderPacket(lenderBorrowingBase, agentReview, evidenceAnchor);
 
   submission.exceptions = buildSubmissionExceptions(borrowingBase, submission.evidence);

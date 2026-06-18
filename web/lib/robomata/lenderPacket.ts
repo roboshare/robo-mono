@@ -15,7 +15,22 @@ export type LenderPacket = {
   borrowerCoverageLine: string;
   certificationStatement: string;
   deliveryChecklist: string[];
-  reviewBoundary?: Pick<AgentReview, "model" | "provider" | "providerStatus" | "reviewMode" | "sourceOfTruth">;
+  reviewBoundary?: Pick<
+    AgentReview,
+    | "generatedAt"
+    | "inputDigest"
+    | "model"
+    | "outputDigest"
+    | "outputSchemaVersion"
+    | "policyArtifactId"
+    | "policyArtifactVersion"
+    | "promptVersion"
+    | "provider"
+    | "providerStatus"
+    | "reviewInputId"
+    | "reviewMode"
+    | "sourceOfTruth"
+  >;
   memoSummary: string;
   exceptionSections: LenderPacketSection[];
   borrowerRequests: string[];
@@ -93,9 +108,17 @@ export function buildLenderPacket(
       `Sui facility path prepared: ${evidenceAnchor.suiPackagePath}`,
     ],
     reviewBoundary: {
+      generatedAt: agentReview.generatedAt,
+      inputDigest: agentReview.inputDigest,
       model: agentReview.model,
+      outputDigest: agentReview.outputDigest,
+      outputSchemaVersion: agentReview.outputSchemaVersion,
+      policyArtifactId: agentReview.policyArtifactId,
+      policyArtifactVersion: agentReview.policyArtifactVersion,
+      promptVersion: agentReview.promptVersion,
       provider: agentReview.provider,
       providerStatus: agentReview.providerStatus,
+      reviewInputId: agentReview.reviewInputId,
       reviewMode: agentReview.reviewMode,
       sourceOfTruth: agentReview.sourceOfTruth,
     },

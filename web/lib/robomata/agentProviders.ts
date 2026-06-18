@@ -4,6 +4,7 @@ import type { BorrowingBaseResult } from "~~/lib/robomata/borrowingBase";
 export type AgentProviderName = "mock" | "openai" | "anthropic" | "google" | "disabled";
 export type AgentReviewMode = "disabled" | "deterministic" | "deterministic_fallback" | "llm_live" | "llm_stubbed";
 export type AgentReviewProviderStatus =
+  | "schema_invalid_fallback"
   | "configured_disabled"
   | "configured_without_feature_flag"
   | "configured_without_key"
@@ -14,6 +15,8 @@ export type AgentReviewProviderStatus =
   | "stubbed_pending_controls";
 
 export type AgentReviewInput = {
+  policyArtifactId?: string;
+  policyArtifactVersion?: string;
   portfolio: {
     operator: string;
   };
@@ -38,6 +41,14 @@ export type AgentReview = {
   reviewMode?: AgentReviewMode;
   model?: string;
   sourceOfTruth?: "borrowing_base_rules";
+  generatedAt?: string;
+  inputDigest?: string;
+  outputDigest?: string;
+  outputSchemaVersion?: string;
+  policyArtifactId?: string;
+  policyArtifactVersion?: string;
+  promptVersion?: string;
+  reviewInputId?: string;
   headline: string;
   memo: string;
   exceptionReview: string[];
@@ -50,6 +61,8 @@ type AgentProvider = {
 };
 
 const supportedProviders: AgentProviderName[] = ["mock", "openai", "anthropic", "google", "disabled"];
+export const ROBOMATA_AGENT_REVIEW_PROMPT_VERSION = "borrowing-base-review-v1";
+export const ROBOMATA_AGENT_REVIEW_OUTPUT_SCHEMA_VERSION = "borrowing-base-review-output-v1";
 const openAiReviewTimeoutMs = 8_000;
 const openAiExceptionRowLimit = 25;
 
@@ -79,7 +92,12 @@ const openAiReviewSchema = {
   required: ["headline", "memo", "exceptionReview", "nextActions"],
 } as const;
 
-type OpenAiReviewPayload = Pick<AgentReview, "exceptionReview" | "headline" | "memo" | "nextActions">;
+type AgentReviewContent = Pick<AgentReview, "exceptionReview" | "headline" | "memo" | "nextActions">;
+type AgentReviewBoundaryInput = Pick<
+  AgentReview,
+  "model" | "provider" | "providerStatus" | "reviewMode" | "sourceOfTruth"
+>;
+type OpenAiReviewPayload = AgentReviewContent;
 
 type OpenAiResponseOutputContent = {
   text?: string;
@@ -100,6 +118,8 @@ type OpenAiResponseBody = {
 
 type OpenAiReviewPrompt = {
   instruction: string;
+  policyArtifactId?: string;
+  policyArtifactVersion?: string;
   portfolio: AgentReviewInput["portfolio"];
   availableBorrowingBaseCents: number;
   exceptionCount: number;
@@ -115,6 +135,12 @@ type OpenAiReviewPrompt = {
   omittedEvidenceExceptions: number;
 };
 
+class AgentReviewSchemaInvalidError extends Error {
+  constructor() {
+    super("LLM borrowing-base review output did not match the expected schema.");
+  }
+}
+
 function normalizeProviderName(value: string | undefined): AgentProviderName {
   if (supportedProviders.includes(value as AgentProviderName)) return value as AgentProviderName;
   return "mock";
@@ -129,8 +155,13 @@ function formatUsd(cents: number): string {
   }).format(cents / 100);
 }
 
-export function buildAgentReviewInput(result: BorrowingBaseResult): AgentReviewInput {
+export function buildAgentReviewInput(
+  result: BorrowingBaseResult,
+  context: { policyArtifactId?: string; policyArtifactVersion?: string } = {},
+): AgentReviewInput {
   return {
+    policyArtifactId: context.policyArtifactId,
+    policyArtifactVersion: context.policyArtifactVersion,
     portfolio: {
       operator: result.portfolio.operator,
     },
@@ -150,24 +181,89 @@ export function buildAgentReviewInput(result: BorrowingBaseResult): AgentReviewI
   };
 }
 
-function reviewBoundary(
+function reviewBoundaryInput(
   provider: AgentProviderName,
   providerStatus: AgentReviewProviderStatus,
   reviewMode: AgentReviewMode,
-): Pick<AgentReview, "model" | "provider" | "providerStatus" | "reviewMode" | "sourceOfTruth"> {
+  model = process.env.ROBOMATA_AGENT_REVIEW_MODEL?.trim() || undefined,
+): AgentReviewBoundaryInput {
   return {
     provider,
     providerStatus,
     reviewMode,
-    model: process.env.ROBOMATA_AGENT_REVIEW_MODEL?.trim() || undefined,
+    model,
     sourceOfTruth: "borrowing_base_rules",
   };
 }
 
-function buildMockReview(
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value)
+      .filter(([, entryValue]) => entryValue !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableJson(entryValue)}`)
+      .join(",")}}`;
+  }
+
+  return JSON.stringify(value);
+}
+
+async function sha256Hex(value: unknown): Promise<string> {
+  const bytes = new TextEncoder().encode(stableJson(value));
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function reviewContent(review: AgentReview): AgentReviewContent {
+  return {
+    exceptionReview: review.exceptionReview,
+    headline: review.headline,
+    memo: review.memo,
+    nextActions: review.nextActions,
+  };
+}
+
+async function buildReview(
   result: AgentReviewInput,
-  boundary = reviewBoundary("mock", "deterministic_mock", "deterministic"),
-): AgentReview {
+  boundary: AgentReviewBoundaryInput,
+  content: AgentReviewContent,
+): Promise<AgentReview> {
+  const inputDigest = await sha256Hex({
+    availableBorrowingBaseCents: result.availableBorrowingBaseCents,
+    evidenceExceptions: result.evidenceExceptions,
+    exceptionCount: result.exceptionCount,
+    policyArtifactId: result.policyArtifactId,
+    policyArtifactVersion: result.policyArtifactVersion,
+    portfolio: result.portfolio,
+    promptVersion: ROBOMATA_AGENT_REVIEW_PROMPT_VERSION,
+    receivableResults: result.receivableResults,
+  });
+  const outputDigest = await sha256Hex({
+    ...boundary,
+    ...content,
+    outputSchemaVersion: ROBOMATA_AGENT_REVIEW_OUTPUT_SCHEMA_VERSION,
+    promptVersion: ROBOMATA_AGENT_REVIEW_PROMPT_VERSION,
+  });
+
+  return {
+    ...boundary,
+    ...content,
+    generatedAt: new Date().toISOString(),
+    inputDigest,
+    outputDigest,
+    outputSchemaVersion: ROBOMATA_AGENT_REVIEW_OUTPUT_SCHEMA_VERSION,
+    policyArtifactId: result.policyArtifactId,
+    policyArtifactVersion: result.policyArtifactVersion,
+    promptVersion: ROBOMATA_AGENT_REVIEW_PROMPT_VERSION,
+    reviewInputId: `review_${inputDigest.slice(0, 16)}`,
+  };
+}
+
+async function buildMockReview(
+  result: AgentReviewInput,
+  boundary = reviewBoundaryInput("mock", "deterministic_mock", "deterministic"),
+): Promise<AgentReview> {
   const ineligibleReceivables = result.receivableResults.filter(receivable => !receivable.eligible);
   const exceptionReview = [
     ...ineligibleReceivables.map(
@@ -179,31 +275,29 @@ function buildMockReview(
   ];
 
   if (result.exceptionCount === 0) {
-    return {
-      ...boundary,
+    return buildReview(result, boundary, {
+      exceptionReview: [],
       headline: `${formatUsd(result.availableBorrowingBaseCents)} lender-ready availability with no open exceptions`,
       memo: `${result.portfolio.operator} has a clean receivables pool under the configured borrowing-base policy and is ready for lender packet delivery.`,
-      exceptionReview: [],
       nextActions: [
         "Send the borrowing-base certificate and controlled evidence links to the credit contact.",
         "Preserve the current evidence root for lender and auditor review.",
         "Schedule the next receivables refresh before the next borrowing-base update.",
       ],
-    };
+    });
   }
 
-  return {
-    ...boundary,
+  return buildReview(result, boundary, {
+    exceptionReview,
     headline: `${formatUsd(result.availableBorrowingBaseCents)} lender-ready availability after eligibility cuts`,
     memo: `${result.portfolio.operator} has a financeable receivables pool, but the lender package should separate clean eligible receivables from title, insurance, utilization, and lockbox exceptions before submission.`,
-    exceptionReview,
     nextActions: [
       "Request updated insurance schedule for the flagged obligor before final advance.",
       "Resolve title/lien evidence exception or exclude the affected receivable from the borrowing base.",
       "Refresh telematics export and preserve the Walrus digest in the lender package.",
       "Send the borrowing-base certificate and controlled evidence links to the credit contact.",
     ],
-  };
+  });
 }
 
 function boundedText(value: unknown, fallback: string, maxLength: number): string {
@@ -233,6 +327,15 @@ function outputTextFromOpenAiResponse(body: OpenAiResponseBody): string | undefi
 
 function parseOpenAiReviewPayload(text: string, fallback: AgentReview, result: AgentReviewInput): OpenAiReviewPayload {
   const parsed = JSON.parse(text) as Partial<OpenAiReviewPayload>;
+  if (
+    typeof parsed.headline !== "string" ||
+    typeof parsed.memo !== "string" ||
+    !Array.isArray(parsed.exceptionReview) ||
+    !Array.isArray(parsed.nextActions)
+  ) {
+    throw new AgentReviewSchemaInvalidError();
+  }
+
   const exceptionReview =
     result.exceptionCount === 0 ? [] : boundedStringList(parsed.exceptionReview, fallback.exceptionReview, 12, 240);
 
@@ -251,6 +354,8 @@ function openAiReviewPrompt(result: AgentReviewInput): string {
   const prompt: OpenAiReviewPrompt = {
     instruction:
       "Prepare advisory lender diligence text. Do not recalculate availability, eligibility, exceptions, or reserves. The deterministic borrowing-base rules are the source of credit truth.",
+    policyArtifactId: result.policyArtifactId,
+    policyArtifactVersion: result.policyArtifactVersion,
     portfolio: result.portfolio,
     availableBorrowingBaseCents: result.availableBorrowingBaseCents,
     exceptionCount: result.exceptionCount,
@@ -274,17 +379,21 @@ async function reviewWithOpenAi(result: AgentReviewInput, fallback: AgentReview)
   const model = process.env.ROBOMATA_AGENT_REVIEW_MODEL?.trim();
 
   if (!apiKey) {
-    return {
-      ...fallback,
+    return buildReview(result, reviewBoundaryInput("openai", "configured_without_key", "deterministic_fallback"), {
+      ...reviewContent(fallback),
       memo: `${fallback.memo} openai was selected, but OPENAI_API_KEY is not configured, so the review used deterministic fallback output.`,
-    };
+    });
   }
 
   if (!model) {
-    return {
-      ...buildMockReview(result, reviewBoundary("openai", "configured_without_model", "deterministic_fallback")),
+    const missingModelFallback = await buildMockReview(
+      result,
+      reviewBoundaryInput("openai", "configured_without_model", "deterministic_fallback"),
+    );
+    return buildReview(result, reviewBoundaryInput("openai", "configured_without_model", "deterministic_fallback"), {
+      ...reviewContent(missingModelFallback),
       memo: `${fallback.memo} openai was selected, but ROBOMATA_AGENT_REVIEW_MODEL is not configured, so the review used deterministic fallback output.`,
-    };
+    });
   }
 
   try {
@@ -328,32 +437,51 @@ async function reviewWithOpenAi(result: AgentReviewInput, fallback: AgentReview)
       const outputText = outputTextFromOpenAiResponse(body);
       if (!outputText) throw new Error("OpenAI review response did not include output text.");
 
-      return {
-        ...parseOpenAiReviewPayload(outputText, fallback, result),
-        ...reviewBoundary("openai", "live_completed", "llm_live"),
-        model,
-      };
+      try {
+        return buildReview(
+          result,
+          reviewBoundaryInput("openai", "live_completed", "llm_live", model),
+          parseOpenAiReviewPayload(outputText, fallback, result),
+        );
+      } catch (error) {
+        if (error instanceof SyntaxError || error instanceof AgentReviewSchemaInvalidError) {
+          return buildReview(
+            result,
+            reviewBoundaryInput("openai", "schema_invalid_fallback", "deterministic_fallback", model),
+            {
+              ...reviewContent(fallback),
+              memo: `${fallback.memo} Live openai review returned invalid schema output, so the review used deterministic fallback output.`,
+            },
+          );
+        }
+
+        throw error;
+      }
     } finally {
       clearTimeout(timeout);
     }
   } catch (error) {
     void error;
-    return {
-      ...buildMockReview(result, reviewBoundary("openai", "live_error_fallback", "deterministic_fallback")),
+    const errorFallback = await buildMockReview(
+      result,
+      reviewBoundaryInput("openai", "live_error_fallback", "deterministic_fallback", model),
+    );
+    return buildReview(result, reviewBoundaryInput("openai", "live_error_fallback", "deterministic_fallback", model), {
+      ...reviewContent(errorFallback),
       memo: `${fallback.memo} Live openai review failed, so the review used deterministic fallback output.`,
-    };
+    });
   }
 }
 
 const disabledProvider: AgentProvider = {
   name: "disabled",
-  review: async result => ({
-    ...reviewBoundary("disabled", "configured_disabled", "disabled"),
-    headline: "Agent review disabled",
-    memo: "The borrowing-base engine still produced deterministic output, but no diligence memo was generated.",
-    exceptionReview: result.exceptionCount > 0 ? ["Manual review required for all exceptions."] : [],
-    nextActions: ["Enable `ROBOMATA_AGENT_PROVIDER=mock` or configure a live provider before lender review."],
-  }),
+  review: async result =>
+    buildReview(result, reviewBoundaryInput("disabled", "configured_disabled", "disabled"), {
+      exceptionReview: result.exceptionCount > 0 ? ["Manual review required for all exceptions."] : [],
+      headline: "Agent review disabled",
+      memo: "The borrowing-base engine still produced deterministic output, but no diligence memo was generated.",
+      nextActions: ["Enable `ROBOMATA_AGENT_PROVIDER=mock` or configure a live provider before lender review."],
+    }),
 };
 
 function liveProvider(name: Exclude<AgentProviderName, "mock" | "disabled">, requiredEnv: string): AgentProvider {
@@ -361,9 +489,9 @@ function liveProvider(name: Exclude<AgentProviderName, "mock" | "disabled">, req
     name,
     review: async result => {
       const liveReviewEnabled = isRobomataLlmReviewEnabled();
-      const mockReview = buildMockReview(
+      const mockReview = await buildMockReview(
         result,
-        reviewBoundary(
+        reviewBoundaryInput(
           name,
           liveReviewEnabled ? "configured_without_key" : "configured_without_feature_flag",
           "deterministic_fallback",
@@ -371,25 +499,33 @@ function liveProvider(name: Exclude<AgentProviderName, "mock" | "disabled">, req
       );
 
       if (!liveReviewEnabled) {
-        return {
-          ...mockReview,
-          memo: `${mockReview.memo} ${name} was selected, but ROBOMATA_LLM_REVIEW_ENABLED is not enabled, so the review used deterministic fallback output.`,
-        };
+        return buildReview(
+          result,
+          reviewBoundaryInput(name, "configured_without_feature_flag", "deterministic_fallback"),
+          {
+            ...reviewContent(mockReview),
+            memo: `${mockReview.memo} ${name} was selected, but ROBOMATA_LLM_REVIEW_ENABLED is not enabled, so the review used deterministic fallback output.`,
+          },
+        );
       }
 
       if (name === "openai") return reviewWithOpenAi(result, mockReview);
 
       if (!process.env[requiredEnv]) {
-        return {
-          ...mockReview,
+        return buildReview(result, reviewBoundaryInput(name, "configured_without_key", "deterministic_fallback"), {
+          ...reviewContent(mockReview),
           memo: `${mockReview.memo} ${name} was selected, but ${requiredEnv} is not configured, so the MVP used deterministic mock diligence output.`,
-        };
+        });
       }
 
-      return {
-        ...buildMockReview(result, reviewBoundary(name, "stubbed_pending_controls", "llm_stubbed")),
+      const stubbedReview = await buildMockReview(
+        result,
+        reviewBoundaryInput(name, "stubbed_pending_controls", "llm_stubbed"),
+      );
+      return buildReview(result, reviewBoundaryInput(name, "stubbed_pending_controls", "llm_stubbed"), {
+        ...reviewContent(stubbedReview),
         memo: `${mockReview.memo} Live ${name} execution is intentionally stubbed in the MVP until provider-specific prompts, logging, and data controls are approved.`,
-      };
+      });
     },
   };
 }
