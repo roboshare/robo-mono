@@ -1,3 +1,4 @@
+import type { RobomataAgentPolicy } from "~~/lib/robomata/agents";
 import type { EvidenceCommitment } from "~~/lib/robomata/evidence";
 import type { BorrowingBaseRun, PacketFreshnessStatus, PacketManifest } from "~~/lib/robomata/facilityMonitoring";
 import type {
@@ -98,6 +99,25 @@ export type SharedLenderPacketView = {
     currentPacketFreshnessStatus?: PacketFreshnessStatus;
     pinnedAtShare: boolean;
   };
+  agentAppointment?: {
+    flags: {
+      agentsEnabled: boolean;
+      lenderAppointmentEnabled: boolean;
+      mutationsEnabled: boolean;
+      shareLinksEnabled: boolean;
+    };
+    policy?: Pick<
+      RobomataAgentPolicy,
+      | "appointedAgentName"
+      | "appointedAt"
+      | "appointedBy"
+      | "appointmentAuthorizationId"
+      | "appointmentAuthorizationSurface"
+      | "id"
+      | "status"
+      | "updatedAt"
+    >;
+  };
 };
 
 function linkedExceptionIdsForEvidence(exceptions: SubmissionException[], evidenceId: string): string[] {
@@ -116,7 +136,9 @@ export function buildSharedLenderPacketView({
   run,
   shareLink,
   submission,
+  agentAppointment,
 }: {
+  agentAppointment?: SharedLenderPacketView["agentAppointment"];
   monitoring?: SharedLenderPacketView["monitoring"];
   packetManifest?: PacketManifest;
   run?: BorrowingBaseRun;
@@ -182,5 +204,6 @@ export function buildSharedLenderPacketView({
       },
     })),
     monitoring,
+    agentAppointment,
   };
 }

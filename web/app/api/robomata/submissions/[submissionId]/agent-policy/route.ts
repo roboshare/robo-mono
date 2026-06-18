@@ -74,12 +74,35 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ s
       return NextResponse.json({ error: "Invalid agent policy status." }, { status: 400 });
     }
 
+    const existingPolicy = await getRobomataAgentStore().getPolicy(
+      result.submission.id,
+      result.submission.partnerAddress,
+    );
+    if (
+      body.appointedAgentName !== undefined &&
+      existingPolicy?.appointedBy === "lender" &&
+      existingPolicy.appointmentAuthorizationSurface === "protected_lender_share_link"
+    ) {
+      return NextResponse.json(
+        { error: "Lender-appointed agent names can only be updated through the protected lender share link." },
+        { status: 403 },
+      );
+    }
+
     const policy = await getRobomataAgentStore().updatePolicy({
       submission: result.submission,
       status,
       allowedActionTypes: body.allowedActionTypes,
       autoApproveActionTypes: body.autoApproveActionTypes,
       appointedAgentName: body.appointedAgentName,
+      ...(body.appointedAgentName !== undefined
+        ? {
+            appointedBy: "operator" as const,
+            appointerAddress: result.partnerAddress,
+            appointmentAuthorizationId: result.partnerAddress,
+            appointmentAuthorizationSurface: "operator_submission_access" as const,
+          }
+        : {}),
     });
 
     return NextResponse.json({ policy });

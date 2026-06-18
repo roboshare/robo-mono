@@ -398,7 +398,28 @@ Verify:
 - deployment scheduling remains caller-owned until a durable worker or
   control-plane service is justified
 
-### 8d. Agent-First Trust Boundary
+### 8d. Lender Agent Appointment Preview
+
+Status: preview behind `ROBOMATA_SHARE_LINKS_ENABLED`,
+`ROBOMATA_AGENTS_ENABLED`, `ROBOMATA_AGENT_MUTATIONS_ENABLED`, and
+`ROBOMATA_LENDER_AGENT_APPOINTMENT_ENABLED`.
+
+Tracking issue: `ROB-244`.
+
+Verify:
+
+- protected lender packet pages show current lender appointment flag state
+- disabled appointment flag keeps the lender appointment card read-only
+- `PATCH /api/robomata/share/:token/agent-policy` fails closed when share
+  links, agents, agent mutations, or lender appointment are disabled
+- active protected share links can record `appointedBy: lender` with
+  `appointmentAuthorizationSurface: protected_lender_share_link`
+- the operator-only agent policy endpoint cannot rename an existing
+  lender-appointed policy through operator submission access
+- the lender appointment path does not execute actions, approve actions, or
+  mutate Sui/EVM state
+
+### 8e. Agent-First Trust Boundary
 
 Status: documented for the current supervised tranche.
 

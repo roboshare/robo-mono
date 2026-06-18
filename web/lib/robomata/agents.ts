@@ -21,6 +21,7 @@ export type RobomataAgentActionSeverity = "low" | "medium" | "high";
 export type RobomataAgentRunStatus = "completed" | "failed";
 
 export type RobomataAgentAppointer = "lender" | "operator" | "platform";
+export type RobomataAgentAppointmentAuthorizationSurface = "operator_submission_access" | "protected_lender_share_link";
 
 export type RobomataAgentPlannerProvider = "anthropic" | "google" | "openai" | "rules";
 
@@ -73,6 +74,9 @@ export type RobomataAgentPolicy = {
   appointedAgentName?: string;
   appointedBy?: RobomataAgentAppointer;
   appointerAddress?: string;
+  appointmentAuthorizationId?: string;
+  appointmentAuthorizationSurface?: RobomataAgentAppointmentAuthorizationSurface;
+  appointedAt?: string;
   status: RobomataAgentPolicyStatus;
   allowedActionTypes: RobomataAgentActionType[];
   autoApproveActionTypes: RobomataAgentActionType[];
@@ -152,6 +156,9 @@ export function createDefaultAgentPolicy(
     appointedAgentName: "Robomata supervised facility agent",
     appointedBy: "operator",
     appointerAddress: submission.partnerAddress,
+    appointmentAuthorizationId: submission.partnerAddress,
+    appointmentAuthorizationSurface: "operator_submission_access",
+    appointedAt: now,
     status: "paused",
     allowedActionTypes: defaultAllowedAgentActionTypes(),
     autoApproveActionTypes: [],
