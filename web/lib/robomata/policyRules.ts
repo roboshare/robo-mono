@@ -527,6 +527,7 @@ export function buildPacketFreshnessPolicyEvaluation(input: {
   const pendingWarningIds = input.observations
     .filter(observation => observation.status === "pending" || observation.status === "warning")
     .map(observation => observation.id);
+  const packetNeedsRefresh = ["refresh_available", "stale", "superseded"].includes(input.freshnessStatus);
 
   return buildEvaluationSummary({
     artifact,
@@ -553,9 +554,10 @@ export function buildPacketFreshnessPolicyEvaluation(input: {
         subjectIds: staleIds,
       }),
       evaluationFromRule(ruleById(rules, "newer-observations"), {
-        detail:
-          input.freshnessStatus === "superseded" ? "A newer packet state superseded the pinned packet." : undefined,
-        status: input.freshnessStatus === "superseded" ? "warning" : "passed",
+        detail: packetNeedsRefresh
+          ? `Packet freshness is ${input.freshnessStatus.replace(/_/g, " ")} and requires review or refresh.`
+          : undefined,
+        status: packetNeedsRefresh ? "warning" : "passed",
       }),
       evaluationFromRule(ruleById(rules, "pending-warning-observations"), {
         detail: pendingWarningIds.length ? `${pendingWarningIds.length} pending/warning observation(s).` : undefined,
@@ -574,6 +576,7 @@ export function buildSuiRootPolicyEvaluation(input: {
   const artifact = input.artifact ?? ROBOMATA_DEFAULT_FACILITY_POLICY_ARTIFACT;
   const ruleSet = artifact.ruleSets.suiRoot;
   const rules = ruleSet.rules;
+  const activeRuleStatus = input.suiRootStatus === "committing" ? "pending" : input.suiRootStatus;
 
   return buildEvaluationSummary({
     artifact,
@@ -581,7 +584,7 @@ export function buildSuiRootPolicyEvaluation(input: {
     ruleSet,
     rules: rules.map(rule => {
       const activeRule =
-        rule.id.replace(/-/g, "_") === input.suiRootStatus ||
+        rule.id.replace(/-/g, "_") === activeRuleStatus ||
         (rule.id === "retryable" && input.suiRootStatus === "failed");
 
       return evaluationFromRule(rule, {
@@ -632,11 +635,13 @@ export function summarizeRobomataPolicyEvaluations(evaluations: RobomataPolicyEv
   return {
     failedCount,
     passedCount,
-    summary: failedCount
-      ? `${failedCount} failed rule evaluation${failedCount === 1 ? "" : "s"}`
-      : warningCount
-        ? `${warningCount} warning rule evaluation${warningCount === 1 ? "" : "s"}`
-        : `${passedCount} passed rule evaluation${passedCount === 1 ? "" : "s"}`,
+    summary: !rules.length
+      ? "No policy evaluations recorded"
+      : failedCount
+        ? `${failedCount} failed rule evaluation${failedCount === 1 ? "" : "s"}`
+        : warningCount
+          ? `${warningCount} warning rule evaluation${warningCount === 1 ? "" : "s"}`
+          : `${passedCount} passed rule evaluation${passedCount === 1 ? "" : "s"}`,
     warningCount,
   };
 }
