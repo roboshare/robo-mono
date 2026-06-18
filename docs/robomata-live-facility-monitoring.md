@@ -199,6 +199,19 @@ policy artifacts, versioned approvals, and policy effective dates. Until then,
 the deterministic rules remain the source of credit truth and LLM output remains
 advisory diligence text.
 
+## LLM Review Provider Boundary
+
+Borrowing-base and lender-packet review output records a review boundary with
+provider, provider status, review mode, optional model label, and source of
+truth. Operator and lender packet views display this boundary next to the memo
+so users can distinguish deterministic review text from future live LLM review.
+
+Live LLM review attempts require both a selected provider and the server-side
+`ROBOMATA_LLM_REVIEW_ENABLED=true` gate. Provider API keys alone are not enough
+to switch credit review into a live LLM path. Until provider-specific prompts,
+logging, retention, and data controls are approved, live provider selections use
+deterministic fallback or an explicitly stubbed review mode.
+
 ## Scheduled Agent Tick Route
 
 `POST /api/robomata/agents/tick` is an operator-controlled scheduling target,

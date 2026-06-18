@@ -15,6 +15,7 @@ export type LenderPacket = {
   borrowerCoverageLine: string;
   certificationStatement: string;
   deliveryChecklist: string[];
+  reviewBoundary?: Pick<AgentReview, "model" | "provider" | "providerStatus" | "reviewMode" | "sourceOfTruth">;
   memoSummary: string;
   exceptionSections: LenderPacketSection[];
   borrowerRequests: string[];
@@ -91,6 +92,13 @@ export function buildLenderPacket(
       `Evidence root ready for controlled sharing: ${evidenceAnchor.evidenceRoot.slice(0, 24)}...`,
       `Sui facility path prepared: ${evidenceAnchor.suiPackagePath}`,
     ],
+    reviewBoundary: {
+      model: agentReview.model,
+      provider: agentReview.provider,
+      providerStatus: agentReview.providerStatus,
+      reviewMode: agentReview.reviewMode,
+      sourceOfTruth: agentReview.sourceOfTruth,
+    },
     memoSummary: agentReview.memo,
     exceptionSections: [receivableExceptions, evidenceExceptions, agentExceptions].filter(
       (section): section is LenderPacketSection => Boolean(section && section.count > 0),

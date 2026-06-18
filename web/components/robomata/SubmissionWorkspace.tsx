@@ -16,6 +16,7 @@ import { AgentSupervisionPanel } from "~~/components/robomata/AgentSupervisionPa
 import { FacilityMonitoringPanel } from "~~/components/robomata/FacilityMonitoringPanel";
 import { PacketSharePanel } from "~~/components/robomata/PacketSharePanel";
 import { BorrowingBasePolicyDisclosure } from "~~/components/robomata/PolicyRulesPanel";
+import { ReviewBoundaryPanel } from "~~/components/robomata/ReviewBoundaryPanel";
 import { useSelectedNetwork, useTransactor } from "~~/hooks/scaffold-eth";
 import { usePrivySuiWalletBinding } from "~~/hooks/usePrivySuiWalletBinding";
 import { useRobomataApiAuth } from "~~/hooks/useRobomataApiAuth";
@@ -1328,6 +1329,9 @@ export const SubmissionWorkspace = ({
                   </div>
                   <div className="mt-2 text-sm text-base-content/70">
                     {submission.computation.lenderPacket.certificationStatement}
+                  </div>
+                  <div className="mt-4">
+                    <ReviewBoundaryPanel boundary={submission.computation.lenderPacket.reviewBoundary} />
                   </div>
                   <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-base-content/70">
                     {submission.computation.lenderPacket.borrowerRequests.map(item => (

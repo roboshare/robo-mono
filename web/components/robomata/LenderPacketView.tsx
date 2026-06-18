@@ -9,6 +9,7 @@ import {
   BorrowingBasePolicyDisclosure,
   PacketFreshnessPolicyDisclosure,
 } from "~~/components/robomata/PolicyRulesPanel";
+import { ReviewBoundaryPanel } from "~~/components/robomata/ReviewBoundaryPanel";
 import { formatPercentFromBps, formatUsd } from "~~/lib/robomata/borrowingBase";
 import type { SharedLenderPacketView } from "~~/lib/robomata/shareLinks";
 
@@ -100,6 +101,9 @@ export const LenderPacketView = ({ packet }: LenderPacketViewProps) => {
               Last accessed {packet.shareLink.lastAccessedAt} · {packet.shareLink.accessCount} views
             </div>
           ) : null}
+        </div>
+        <div className="mt-5">
+          <ReviewBoundaryPanel boundary={packet.lenderPacket.reviewBoundary} />
         </div>
         <div className="mt-5">
           <BorrowingBasePolicyDisclosure />

@@ -88,6 +88,10 @@ export function isRobomataAgentRefreshEnabled(): boolean {
   return isEnabled(process.env.ROBOMATA_AGENT_REFRESH_ENABLED);
 }
 
+export function isRobomataLlmReviewEnabled(): boolean {
+  return isEnabled(process.env.ROBOMATA_LLM_REVIEW_ENABLED);
+}
+
 export function isRobomataRentalInventoryEnabled(): boolean {
   return isEnabled(process.env.ROBOMATA_RENTAL_INVENTORY_ENABLED);
 }
