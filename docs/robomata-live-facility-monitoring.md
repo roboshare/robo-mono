@@ -245,6 +245,12 @@ Monitoring run and protected lender packet surfaces display the rule version
 and artifact identity attached to the pinned borrowing-base run when that run is
 available.
 
+Operator and protected lender packet policy reviews are acknowledgement records
+for the active platform-default artifact. They persist reviewer role, reviewed
+artifact identity/version, decision status, timestamp, and rationale, but they
+do not activate lender-authored overrides, change deterministic credit rules, or
+alter the borrowing-base source of truth.
+
 The policy-artifact resolver currently always returns the platform default for a
 facility/submission. It is intentionally shaped for future facility or
 lender-specific overrides, but this tranche does not change credit behavior,

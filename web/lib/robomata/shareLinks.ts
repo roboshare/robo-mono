@@ -1,12 +1,14 @@
 import type { RobomataAgentPolicy } from "~~/lib/robomata/agents";
 import type { EvidenceCommitment } from "~~/lib/robomata/evidence";
 import type { BorrowingBaseRun, PacketFreshnessStatus, PacketManifest } from "~~/lib/robomata/facilityMonitoring";
+import { resolveRobomataFacilityPolicyArtifact } from "~~/lib/robomata/policyRules";
 import type {
   FacilitySubmission,
   FacilitySubmissionStatus,
   SubmissionComputation,
   SubmissionEncryptionBackend,
   SubmissionException,
+  SubmissionPolicyReview,
   SubmissionStorageBackend,
 } from "~~/lib/robomata/submissions";
 
@@ -103,6 +105,10 @@ export type SharedLenderPacketView = {
     currentPacketFreshnessStatus?: PacketFreshnessStatus;
     pinnedAtShare: boolean;
   };
+  policyReviews?: {
+    lender?: SubmissionPolicyReview;
+    operator?: SubmissionPolicyReview;
+  };
   agentAppointment?: {
     flags: {
       agentsEnabled: boolean;
@@ -136,6 +142,28 @@ function linkedExceptionIdsForEvidence(exceptions: SubmissionException[], eviden
 
 function observationIdForEvidence(evidenceId: string): string {
   return `obs_${evidenceId}`;
+}
+
+function currentPolicyReviews(submission: FacilitySubmission): SharedLenderPacketView["policyReviews"] {
+  const artifact = resolveRobomataFacilityPolicyArtifact({
+    facilityId: submission.facilityMonitoring?.facilityId,
+    submissionId: submission.id,
+  }).artifact;
+
+  return {
+    lender: submission.policyReviews?.find(
+      review =>
+        review.role === "lender" &&
+        review.reviewedArtifactId === artifact.id &&
+        review.reviewedArtifactVersion === artifact.version,
+    ),
+    operator: submission.policyReviews?.find(
+      review =>
+        review.role === "operator" &&
+        review.reviewedArtifactId === artifact.id &&
+        review.reviewedArtifactVersion === artifact.version,
+    ),
+  };
 }
 
 export function buildSharedLenderPacketView({
@@ -212,6 +240,7 @@ export function buildSharedLenderPacketView({
       },
     })),
     monitoring,
+    policyReviews: currentPolicyReviews(submission),
     agentAppointment,
   };
 }
