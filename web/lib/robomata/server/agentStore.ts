@@ -34,6 +34,9 @@ export type UpdateAgentPolicyInput = {
   appointerAddress?: string;
   appointmentAuthorizationId?: string;
   appointmentAuthorizationSurface?: RobomataAgentAppointmentAuthorizationSurface;
+  revocationAuthorizationSurface?: RobomataAgentPolicy["revocationAuthorizationSurface"];
+  revocationReason?: unknown;
+  revokedBy?: string;
 };
 
 export type RecordAgentRunInput = {
@@ -67,6 +70,13 @@ export type RobomataAgentStore = {
   recordRun: (input: RecordAgentRunInput) => Promise<{ actions: RobomataAgentAction[]; run: RobomataAgentRun }>;
   updateAction: (input: UpdateAgentActionInput) => Promise<RobomataAgentAction | null>;
 };
+
+export class RobomataAgentPolicyRevokedMutationError extends Error {
+  constructor(message = "Robomata agent policy has been revoked for this submission.") {
+    super(message);
+    this.name = "RobomataAgentPolicyRevokedMutationError";
+  }
+}
 
 type AgentFileStore = {
   policies: RobomataAgentPolicy[];
@@ -197,6 +207,10 @@ function buildUpdatedPolicy(input: UpdateAgentPolicyInput, existing?: RobomataAg
   const now = nowIsoString();
   const base = existing ?? createDefaultAgentPolicy(input.submission, now);
   const status = input.status ?? base.status;
+  const revocationReason =
+    typeof input.revocationReason === "string" && input.revocationReason.trim()
+      ? input.revocationReason.trim().slice(0, 240)
+      : undefined;
   const appointedAgentName =
     typeof input.appointedAgentName === "string" && input.appointedAgentName.trim()
       ? input.appointedAgentName.trim().slice(0, 80)
@@ -232,6 +246,11 @@ function buildUpdatedPolicy(input: UpdateAgentPolicyInput, existing?: RobomataAg
     autoApproveActionTypes: autoApproveActionTypes.filter(type => allowedActionTypes.includes(type)),
     updatedAt: now,
     pausedAt: status === "paused" ? (base.pausedAt ?? now) : undefined,
+    revocationAuthorizationSurface:
+      status === "revoked" ? (input.revocationAuthorizationSurface ?? base.revocationAuthorizationSurface) : undefined,
+    revocationReason: status === "revoked" ? (revocationReason ?? base.revocationReason) : undefined,
+    revokedAt: status === "revoked" ? (base.revokedAt ?? now) : undefined,
+    revokedBy: status === "revoked" ? (input.revokedBy ?? base.revokedBy) : undefined,
   };
 }
 
@@ -279,6 +298,24 @@ function buildActions(input: RecordAgentRunInput, run: RobomataAgentRun): Roboma
 
 function upsertPolicy(policies: RobomataAgentPolicy[], policy: RobomataAgentPolicy): RobomataAgentPolicy[] {
   return [policy, ...policies.filter(candidate => candidate.id !== policy.id)];
+}
+
+function shouldBlockActionUnderRevokedPolicy(status: UpdateAgentActionInput["status"]) {
+  return status === "approved" || status === "completed";
+}
+
+function policyMutationRevokedError() {
+  return new RobomataAgentPolicyRevokedMutationError("Revoked agent policies cannot be mutated.");
+}
+
+function actionMutationRevokedError() {
+  return new RobomataAgentPolicyRevokedMutationError("Revoked agent policies cannot approve or complete actions.");
+}
+
+function runRecordRevokedError() {
+  return new RobomataAgentPolicyRevokedMutationError(
+    "Robomata agent policy was revoked before this run could be recorded.",
+  );
 }
 
 async function ensurePostgresTables() {
@@ -395,18 +432,24 @@ function createFileStore(): RobomataAgentStore {
       return withFileStoreWriteLock(filePath, async () => {
         const fileStore = await readFileStore(filePath);
         const existing = findPolicy(fileStore.policies, input.submission.id, input.submission.partnerAddress);
+        if (existing?.status === "revoked") {
+          throw policyMutationRevokedError();
+        }
         const policy = buildUpdatedPolicy(input, existing);
         fileStore.policies = upsertPolicy(fileStore.policies, policy);
         fileStore.events.unshift(
-          createAgentEvent(existing ? "policy_updated" : "policy_created", {
-            policy,
-            message: `Robomata agent policy ${existing ? "updated" : "created"}.`,
-            metadata: {
-              appointedBy: policy.appointedBy ?? null,
-              appointmentAuthorizationSurface: policy.appointmentAuthorizationSurface ?? null,
-              status: policy.status,
+          createAgentEvent(
+            policy.status === "revoked" ? "policy_revoked" : existing ? "policy_updated" : "policy_created",
+            {
+              policy,
+              message: `Robomata agent policy ${existing ? "updated" : "created"}.`,
+              metadata: {
+                appointedBy: policy.appointedBy ?? null,
+                appointmentAuthorizationSurface: policy.appointmentAuthorizationSurface ?? null,
+                status: policy.status,
+              },
             },
-          }),
+          ),
         );
         await writeFileStore(filePath, fileStore);
         return policy;
@@ -441,6 +484,10 @@ function createFileStore(): RobomataAgentStore {
     async recordRun(input) {
       return withFileStoreWriteLock(filePath, async () => {
         const fileStore = await readFileStore(filePath);
+        const currentPolicy = findPolicy(fileStore.policies, input.policy.submissionId, input.policy.partnerAddress);
+        if (currentPolicy?.status === "revoked") {
+          throw runRecordRevokedError();
+        }
         const run = buildRun(input);
         const actions = buildActions(input, run);
         const policy = {
@@ -484,6 +531,10 @@ function createFileStore(): RobomataAgentStore {
             normalizePartnerAddress(action.partnerAddress) === normalizedPartnerAddress,
         );
         if (actionIndex < 0) return null;
+        const policy = fileStore.policies.find(policy => policy.id === fileStore.actions[actionIndex]?.policyId);
+        if (policy?.status === "revoked" && shouldBlockActionUnderRevokedPolicy(input.status)) {
+          throw actionMutationRevokedError();
+        }
         const updatedAction: RobomataAgentAction = {
           ...fileStore.actions[actionIndex],
           status: input.status,
@@ -491,7 +542,6 @@ function createFileStore(): RobomataAgentStore {
           decisionReason: input.decisionReason?.trim() || undefined,
         };
         fileStore.actions[actionIndex] = updatedAction;
-        const policy = fileStore.policies.find(policy => policy.id === updatedAction?.policyId);
         if (policy) {
           fileStore.events.unshift(
             createAgentEvent(`action_${input.status}` as RobomataAgentEventType, {
@@ -537,51 +587,70 @@ function createPostgresStore(): RobomataAgentStore {
     },
     async updatePolicy(input) {
       await ensurePostgresTables();
-      const existing = await this.getPolicy(input.submission.id, input.submission.partnerAddress);
-      const policy = buildUpdatedPolicy(input, existing ?? undefined);
-      await sql`
-        INSERT INTO robomata_agent_policies (
-          id, submission_id, facility_id, partner_address, status, payload, created_at, updated_at, paused_at, last_run_at
-        )
-        VALUES (
-          ${policy.id},
-          ${policy.submissionId},
-          ${policy.facilityId},
-          ${policy.partnerAddress},
-          ${policy.status},
-          ${JSON.stringify(policy)}::jsonb,
-          ${policy.createdAt}::timestamptz,
-          ${policy.updatedAt}::timestamptz,
-          ${policy.pausedAt ?? null}::timestamptz,
-          ${policy.lastRunAt ?? null}::timestamptz
-        )
-        ON CONFLICT (id) DO UPDATE
-        SET
-          facility_id = EXCLUDED.facility_id,
-          partner_address = EXCLUDED.partner_address,
-          status = EXCLUDED.status,
-          payload = EXCLUDED.payload,
-          updated_at = EXCLUDED.updated_at,
-          paused_at = EXCLUDED.paused_at,
-          last_run_at = EXCLUDED.last_run_at;
-      `;
-      await sql`
-        INSERT INTO robomata_agent_events (id, policy_id, submission_id, type, message, metadata, created_at)
-        VALUES (
-          ${createEventId()},
-          ${policy.id},
-          ${policy.submissionId},
-          ${existing ? "policy_updated" : "policy_created"},
-          ${`Robomata agent policy ${existing ? "updated" : "created"}.`},
-          ${JSON.stringify({
-            appointedBy: policy.appointedBy ?? null,
-            appointmentAuthorizationSurface: policy.appointmentAuthorizationSurface ?? null,
-            status: policy.status,
-          })}::jsonb,
-          ${nowIsoString()}::timestamptz
-        );
-      `;
-      return policy;
+      return sql.begin(async tx => {
+        await tx`
+          SELECT pg_advisory_xact_lock(
+            hashtext(${`${input.submission.id}:${normalizePartnerAddress(input.submission.partnerAddress)}`})
+          );
+        `;
+        const existingRows = (await tx`
+          SELECT payload
+          FROM robomata_agent_policies
+          WHERE
+            submission_id = ${input.submission.id}
+            AND lower(partner_address) = ${normalizePartnerAddress(input.submission.partnerAddress)}
+          LIMIT 1
+          FOR UPDATE;
+        `) as Array<{ payload: RobomataAgentPolicy }>;
+        const existing = existingRows[0]?.payload;
+        if (existing?.status === "revoked") {
+          throw policyMutationRevokedError();
+        }
+        const policy = buildUpdatedPolicy(input, existing ?? undefined);
+        await tx`
+          INSERT INTO robomata_agent_policies (
+            id, submission_id, facility_id, partner_address, status, payload, created_at, updated_at, paused_at, last_run_at
+          )
+          VALUES (
+            ${policy.id},
+            ${policy.submissionId},
+            ${policy.facilityId},
+            ${policy.partnerAddress},
+            ${policy.status},
+            ${JSON.stringify(policy)}::jsonb,
+            ${policy.createdAt}::timestamptz,
+            ${policy.updatedAt}::timestamptz,
+            ${policy.pausedAt ?? null}::timestamptz,
+            ${policy.lastRunAt ?? null}::timestamptz
+          )
+          ON CONFLICT (id) DO UPDATE
+          SET
+            facility_id = EXCLUDED.facility_id,
+            partner_address = EXCLUDED.partner_address,
+            status = EXCLUDED.status,
+            payload = EXCLUDED.payload,
+            updated_at = EXCLUDED.updated_at,
+            paused_at = EXCLUDED.paused_at,
+            last_run_at = EXCLUDED.last_run_at;
+        `;
+        await tx`
+          INSERT INTO robomata_agent_events (id, policy_id, submission_id, type, message, metadata, created_at)
+          VALUES (
+            ${createEventId()},
+            ${policy.id},
+            ${policy.submissionId},
+            ${policy.status === "revoked" ? "policy_revoked" : existing ? "policy_updated" : "policy_created"},
+            ${policy.status === "revoked" ? "Robomata agent policy revoked." : `Robomata agent policy ${existing ? "updated" : "created"}.`},
+            ${JSON.stringify({
+              appointedBy: policy.appointedBy ?? null,
+              appointmentAuthorizationSurface: policy.appointmentAuthorizationSurface ?? null,
+              status: policy.status,
+            })}::jsonb,
+            ${nowIsoString()}::timestamptz
+          );
+        `;
+        return policy;
+      });
     },
     async listRuns(submissionId, partnerAddress) {
       await ensurePostgresTables();
@@ -615,120 +684,152 @@ function createPostgresStore(): RobomataAgentStore {
     },
     async recordRun(input) {
       await ensurePostgresTables();
-      const run = buildRun(input);
-      const actions = buildActions(input, run);
-      const policy = {
-        ...input.policy,
-        facilityId: run.facilityId,
-        lastRunAt: run.completedAt,
-        updatedAt: run.completedAt,
-      };
-      await sql`
-        UPDATE robomata_agent_policies
-        SET
-          facility_id = ${policy.facilityId},
-          payload = ${JSON.stringify(policy)}::jsonb,
-          updated_at = ${policy.updatedAt}::timestamptz,
-          last_run_at = ${policy.lastRunAt}::timestamptz
-        WHERE id = ${policy.id};
-      `;
-      await sql`
-        INSERT INTO robomata_agent_runs (
-          id, policy_id, submission_id, facility_id, partner_address, status, payload, started_at, completed_at
-        )
-        VALUES (
-          ${run.id},
-          ${run.policyId},
-          ${run.submissionId},
-          ${run.facilityId},
-          ${run.partnerAddress},
-          ${run.status},
-          ${JSON.stringify(run)}::jsonb,
-          ${run.startedAt}::timestamptz,
-          ${run.completedAt}::timestamptz
-        );
-      `;
-      for (const action of actions) {
-        await sql`
-          INSERT INTO robomata_agent_actions (
-            id, run_id, policy_id, submission_id, facility_id, partner_address, type, status, severity, payload, proposed_at, decided_at
+      return sql.begin(async tx => {
+        const currentPolicyRows = (await tx`
+          SELECT payload
+          FROM robomata_agent_policies
+          WHERE id = ${input.policy.id}
+          LIMIT 1
+          FOR UPDATE;
+        `) as Array<{ payload: RobomataAgentPolicy }>;
+        const currentPolicy = currentPolicyRows[0]?.payload;
+        if (currentPolicy?.status === "revoked") {
+          throw runRecordRevokedError();
+        }
+        const run = buildRun(input);
+        const actions = buildActions(input, run);
+        const policy = {
+          ...input.policy,
+          facilityId: run.facilityId,
+          lastRunAt: run.completedAt,
+          updatedAt: run.completedAt,
+        };
+        const updatedPolicyRows = (await tx`
+          UPDATE robomata_agent_policies
+          SET
+            facility_id = ${policy.facilityId},
+            payload = ${JSON.stringify(policy)}::jsonb,
+            updated_at = ${policy.updatedAt}::timestamptz,
+            last_run_at = ${policy.lastRunAt}::timestamptz
+          WHERE id = ${policy.id} AND status <> 'revoked'
+          RETURNING id;
+        `) as Array<{ id: string }>;
+        if (!updatedPolicyRows.length) {
+          throw runRecordRevokedError();
+        }
+        await tx`
+          INSERT INTO robomata_agent_runs (
+            id, policy_id, submission_id, facility_id, partner_address, status, payload, started_at, completed_at
           )
           VALUES (
-            ${action.id},
-            ${action.runId},
-            ${action.policyId},
-            ${action.submissionId},
-            ${action.facilityId},
-            ${action.partnerAddress},
-            ${action.type},
-            ${action.status},
-            ${action.severity},
-            ${JSON.stringify(action)}::jsonb,
-            ${action.proposedAt}::timestamptz,
-            ${action.decidedAt ?? null}::timestamptz
+            ${run.id},
+            ${run.policyId},
+            ${run.submissionId},
+            ${run.facilityId},
+            ${run.partnerAddress},
+            ${run.status},
+            ${JSON.stringify(run)}::jsonb,
+            ${run.startedAt}::timestamptz,
+            ${run.completedAt}::timestamptz
           );
         `;
-      }
-      await sql`
-        INSERT INTO robomata_agent_events (id, policy_id, submission_id, run_id, type, message, metadata, created_at)
-        VALUES (
-          ${createEventId()},
-          ${policy.id},
-          ${policy.submissionId},
-          ${run.id},
-          ${input.status === "failed" ? "run_failed" : "run_completed"},
-          ${run.summary},
-          ${JSON.stringify({ actionCount: run.actionCount })}::jsonb,
-          ${nowIsoString()}::timestamptz
-        );
-      `;
-      return { actions, run };
+        for (const action of actions) {
+          await tx`
+            INSERT INTO robomata_agent_actions (
+              id, run_id, policy_id, submission_id, facility_id, partner_address, type, status, severity, payload, proposed_at, decided_at
+            )
+            VALUES (
+              ${action.id},
+              ${action.runId},
+              ${action.policyId},
+              ${action.submissionId},
+              ${action.facilityId},
+              ${action.partnerAddress},
+              ${action.type},
+              ${action.status},
+              ${action.severity},
+              ${JSON.stringify(action)}::jsonb,
+              ${action.proposedAt}::timestamptz,
+              ${action.decidedAt ?? null}::timestamptz
+            );
+          `;
+        }
+        await tx`
+          INSERT INTO robomata_agent_events (id, policy_id, submission_id, run_id, type, message, metadata, created_at)
+          VALUES (
+            ${createEventId()},
+            ${policy.id},
+            ${policy.submissionId},
+            ${run.id},
+            ${input.status === "failed" ? "run_failed" : "run_completed"},
+            ${run.summary},
+            ${JSON.stringify({ actionCount: run.actionCount })}::jsonb,
+            ${nowIsoString()}::timestamptz
+          );
+        `;
+        return { actions, run };
+      });
     },
     async updateAction(input) {
       await ensurePostgresTables();
-      const rows = (await sql`
-        SELECT payload
-        FROM robomata_agent_actions
-        WHERE
-          id = ${input.actionId}
-          AND submission_id = ${input.submissionId}
-          AND lower(partner_address) = ${normalizePartnerAddress(input.partnerAddress)}
-        LIMIT 1;
-      `) as Array<{ payload: RobomataAgentAction }>;
-      const current = rows[0]?.payload;
-      if (!current) return null;
-      const decidedAt = nowIsoString();
-      const updatedAction: RobomataAgentAction = {
-        ...current,
-        status: input.status,
-        decidedAt,
-        decisionReason: input.decisionReason?.trim() || undefined,
-      };
-      await sql`
-        UPDATE robomata_agent_actions
-        SET
-          status = ${updatedAction.status},
-          payload = ${JSON.stringify(updatedAction)}::jsonb,
-          decided_at = ${decidedAt}::timestamptz
-        WHERE id = ${input.actionId};
-      `;
-      await sql`
-        INSERT INTO robomata_agent_events (
-          id, policy_id, submission_id, action_id, run_id, type, message, metadata, created_at
-        )
-        VALUES (
-          ${createEventId()},
-          ${updatedAction.policyId},
-          ${updatedAction.submissionId},
-          ${updatedAction.id},
-          ${updatedAction.runId},
-          ${`action_${input.status}`},
-          ${`Agent action ${input.status}.`},
-          ${JSON.stringify({ type: updatedAction.type })}::jsonb,
-          ${nowIsoString()}::timestamptz
-        );
-      `;
-      return updatedAction;
+      return sql.begin(async tx => {
+        const rows = (await tx`
+          SELECT payload
+          FROM robomata_agent_actions
+          WHERE
+            id = ${input.actionId}
+            AND submission_id = ${input.submissionId}
+            AND lower(partner_address) = ${normalizePartnerAddress(input.partnerAddress)}
+          LIMIT 1
+          FOR UPDATE;
+        `) as Array<{ payload: RobomataAgentAction }>;
+        const current = rows[0]?.payload;
+        if (!current) return null;
+        if (shouldBlockActionUnderRevokedPolicy(input.status)) {
+          const policyRows = (await tx`
+            SELECT payload
+            FROM robomata_agent_policies
+            WHERE id = ${current.policyId}
+            LIMIT 1
+            FOR UPDATE;
+          `) as Array<{ payload: RobomataAgentPolicy }>;
+          if (policyRows[0]?.payload.status === "revoked") {
+            throw actionMutationRevokedError();
+          }
+        }
+        const decidedAt = nowIsoString();
+        const updatedAction: RobomataAgentAction = {
+          ...current,
+          status: input.status,
+          decidedAt,
+          decisionReason: input.decisionReason?.trim() || undefined,
+        };
+        await tx`
+          UPDATE robomata_agent_actions
+          SET
+            status = ${updatedAction.status},
+            payload = ${JSON.stringify(updatedAction)}::jsonb,
+            decided_at = ${decidedAt}::timestamptz
+          WHERE id = ${input.actionId};
+        `;
+        await tx`
+          INSERT INTO robomata_agent_events (
+            id, policy_id, submission_id, action_id, run_id, type, message, metadata, created_at
+          )
+          VALUES (
+            ${createEventId()},
+            ${updatedAction.policyId},
+            ${updatedAction.submissionId},
+            ${updatedAction.id},
+            ${updatedAction.runId},
+            ${`action_${input.status}`},
+            ${`Agent action ${input.status}.`},
+            ${JSON.stringify({ type: updatedAction.type })}::jsonb,
+            ${nowIsoString()}::timestamptz
+          );
+        `;
+        return updatedAction;
+      });
     },
   };
 }

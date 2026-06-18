@@ -40,7 +40,7 @@ function formatStatus(value: string) {
 function statusBadgeClass(status: string) {
   if (["active", "completed", "approved"].includes(status)) return "badge-success";
   if (["paused", "proposed", "medium", "low"].includes(status)) return "badge-warning";
-  if (["failed", "rejected", "high"].includes(status)) return "badge-error";
+  if (["failed", "rejected", "revoked", "high"].includes(status)) return "badge-error";
   return "badge-ghost";
 }
 
@@ -121,11 +121,14 @@ export const AgentSupervisionPanel = ({
     void loadAgentState();
   }, [loadAgentState, submission.updatedAt]);
 
-  const updatePolicyStatus = async (status: "active" | "paused") => {
+  const updatePolicyStatus = async (status: "active" | "paused" | "revoked") => {
     setIsMutating(true);
     try {
       const response = await fetch(policyPath, {
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({
+          status,
+          ...(status === "revoked" ? { revocationReason: "Revoked from operator supervision panel." } : {}),
+        }),
         headers: {
           "content-type": "application/json",
           ...(await getAuthHeaders({ chainId, method: "PATCH", path: policyPath, signerAddress })),
@@ -136,7 +139,13 @@ export const AgentSupervisionPanel = ({
       if (!response.ok || !payload.policy) throw new Error(payload.error ?? "Failed to update agent policy.");
       setPolicy(payload.policy);
       setAppointmentNameDraft(payload.policy.appointedAgentName ?? "Robomata supervised facility agent");
-      notification.success(status === "active" ? "Robomata agent policy activated." : "Robomata agent policy paused.");
+      notification.success(
+        status === "active"
+          ? "Robomata agent policy activated."
+          : status === "revoked"
+            ? "Robomata agent policy revoked."
+            : "Robomata agent policy paused.",
+      );
     } catch (error) {
       notification.error(error instanceof Error ? error.message : "Failed to update agent policy.");
     } finally {
@@ -256,9 +265,18 @@ export const AgentSupervisionPanel = ({
             <button
               className="btn btn-sm btn-outline rounded-full"
               onClick={() => updatePolicyStatus(policy.status === "active" ? "paused" : "active")}
-              disabled={isMutating}
+              disabled={isMutating || policy.status === "revoked"}
             >
               {policy.status === "active" ? "Pause" : "Activate"}
+            </button>
+          ) : null}
+          {policy && policy.status !== "revoked" ? (
+            <button
+              className="btn btn-sm btn-outline rounded-full"
+              onClick={() => updatePolicyStatus("revoked")}
+              disabled={isMutating}
+            >
+              Revoke
             </button>
           ) : null}
           <button
@@ -295,18 +313,32 @@ export const AgentSupervisionPanel = ({
               {appointerAddress ? (
                 <div className="mt-1 break-all text-xs text-base-content/60">{appointerAddress}</div>
               ) : null}
+              {policy.revokedAt ? (
+                <div className="mt-2 rounded-xl border border-error/20 bg-error/10 p-2 text-xs text-base-content/70">
+                  Revoked {new Date(policy.revokedAt).toLocaleString()}
+                  {policy.revocationReason ? `: ${policy.revocationReason}` : ""}
+                  {policy.revocationAuthorizationSurface ? (
+                    <div className="mt-1 capitalize">
+                      Via {formatStatus(policy.revocationAuthorizationSurface)}
+                      {policy.revokedBy ? <span className="break-all"> · {policy.revokedBy}</span> : null}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               <div className="mt-3 flex flex-col gap-2">
                 <input
                   className="input input-bordered input-xs w-full rounded-full"
                   value={appointmentNameDraft}
                   onChange={event => setAppointmentNameDraft(event.target.value)}
                   maxLength={80}
-                  disabled={isMutating}
+                  disabled={isMutating || policy.status === "revoked"}
                   aria-label="Appointed agent name"
                 />
                 <button
                   className="btn btn-xs btn-outline rounded-full"
-                  disabled={isMutating || appointmentNameDraft.trim() === appointedAgentName}
+                  disabled={
+                    isMutating || policy.status === "revoked" || appointmentNameDraft.trim() === appointedAgentName
+                  }
                   onClick={updateAppointment}
                 >
                   Save appointment
@@ -376,7 +408,7 @@ export const AgentSupervisionPanel = ({
                     <div className="mt-4 flex flex-wrap gap-2">
                       <button
                         className="btn btn-xs btn-outline rounded-full"
-                        disabled={isMutating}
+                        disabled={isMutating || policy.status === "revoked"}
                         onClick={() => updateAction(action, "approved")}
                       >
                         <CheckCircleIcon className="h-4 w-4" />
@@ -395,7 +427,7 @@ export const AgentSupervisionPanel = ({
                     <div className="mt-4">
                       <button
                         className="btn btn-xs btn-outline rounded-full"
-                        disabled={isMutating}
+                        disabled={isMutating || policy.status === "revoked"}
                         onClick={() => updateAction(action, "completed")}
                       >
                         Mark complete

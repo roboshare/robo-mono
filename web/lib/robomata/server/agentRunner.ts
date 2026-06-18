@@ -18,6 +18,12 @@ export class RobomataAgentPolicyPausedError extends Error {
   }
 }
 
+export class RobomataAgentPolicyRevokedError extends Error {
+  constructor() {
+    super("Robomata agent policy has been revoked for this submission.");
+  }
+}
+
 type RunAgentForSubmissionInput = {
   force?: boolean;
   submission: FacilitySubmission;
@@ -129,6 +135,9 @@ function buildAgentActionDrafts(
 export async function runRobomataAgentForSubmission(input: RunAgentForSubmissionInput) {
   const store = getRobomataAgentStore();
   const policy = await store.getOrCreateDefaultPolicy(input.submission);
+  if (policy.status === "revoked") {
+    throw new RobomataAgentPolicyRevokedError();
+  }
   if (policy.status !== "active" && !input.force) {
     throw new RobomataAgentPolicyPausedError();
   }

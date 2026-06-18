@@ -5,7 +5,7 @@ import {
   isRobomataWorkflowServerEnabled,
 } from "~~/lib/featureFlags";
 import type { RobomataAgentActionStatus } from "~~/lib/robomata/agents";
-import { getRobomataAgentStore } from "~~/lib/robomata/server/agentStore";
+import { RobomataAgentPolicyRevokedMutationError, getRobomataAgentStore } from "~~/lib/robomata/server/agentStore";
 import { requirePartnerAddress, requireSubmissionAccess } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
 
@@ -48,7 +48,16 @@ export async function PATCH(
       return NextResponse.json({ error: "Invalid agent action status." }, { status: 400 });
     }
 
-    const action = await getRobomataAgentStore().updateAction({
+    const store = getRobomataAgentStore();
+    const policy = await store.getPolicy(submission.id, partnerAddress);
+    if (policy?.status === "revoked" && ["approved", "completed"].includes(body.status)) {
+      return NextResponse.json(
+        { error: "Revoked agent policies cannot approve or complete actions." },
+        { status: 409 },
+      );
+    }
+
+    const action = await store.updateAction({
       actionId,
       submissionId,
       partnerAddress,
@@ -59,6 +68,9 @@ export async function PATCH(
 
     return NextResponse.json({ action });
   } catch (error) {
+    if (error instanceof RobomataAgentPolicyRevokedMutationError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to update Robomata agent action." },
       { status: 500 },

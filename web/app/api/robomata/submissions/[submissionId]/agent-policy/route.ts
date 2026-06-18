@@ -4,7 +4,7 @@ import {
   isRobomataAgentsEnabled,
   isRobomataWorkflowServerEnabled,
 } from "~~/lib/featureFlags";
-import { getRobomataAgentStore } from "~~/lib/robomata/server/agentStore";
+import { RobomataAgentPolicyRevokedMutationError, getRobomataAgentStore } from "~~/lib/robomata/server/agentStore";
 import { requirePartnerAddress, requireSubmissionAccess } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
 
@@ -67,9 +67,11 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ s
       allowedActionTypes?: unknown;
       appointedAgentName?: unknown;
       autoApproveActionTypes?: unknown;
+      revocationReason?: unknown;
       status?: unknown;
     };
-    const status = body.status === "active" || body.status === "paused" ? body.status : undefined;
+    const status =
+      body.status === "active" || body.status === "paused" || body.status === "revoked" ? body.status : undefined;
     if (body.status !== undefined && !status) {
       return NextResponse.json({ error: "Invalid agent policy status." }, { status: 400 });
     }
@@ -78,6 +80,12 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ s
       result.submission.id,
       result.submission.partnerAddress,
     );
+    if (existingPolicy?.status === "revoked") {
+      return NextResponse.json(
+        { error: "Revoked agent policies cannot be mutated through this endpoint." },
+        { status: 409 },
+      );
+    }
     if (
       body.appointedAgentName !== undefined &&
       existingPolicy?.appointedBy === "lender" &&
@@ -88,13 +96,15 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ s
         { status: 403 },
       );
     }
-
     const policy = await getRobomataAgentStore().updatePolicy({
       submission: result.submission,
       status,
       allowedActionTypes: body.allowedActionTypes,
       autoApproveActionTypes: body.autoApproveActionTypes,
       appointedAgentName: body.appointedAgentName,
+      revocationAuthorizationSurface: status === "revoked" ? "operator_submission_access" : undefined,
+      revocationReason: body.revocationReason,
+      revokedBy: status === "revoked" ? result.partnerAddress : undefined,
       ...(body.appointedAgentName !== undefined
         ? {
             appointedBy: "operator" as const,
@@ -107,6 +117,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ s
 
     return NextResponse.json({ policy });
   } catch (error) {
+    if (error instanceof RobomataAgentPolicyRevokedMutationError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to update Robomata agent policy." },
       { status: 500 },

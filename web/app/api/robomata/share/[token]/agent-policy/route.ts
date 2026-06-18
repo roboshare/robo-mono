@@ -7,7 +7,7 @@ import {
   isRobomataWorkflowServerEnabled,
 } from "~~/lib/featureFlags";
 import type { RobomataAgentPolicy } from "~~/lib/robomata/agents";
-import { getRobomataAgentStore } from "~~/lib/robomata/server/agentStore";
+import { RobomataAgentPolicyRevokedMutationError, getRobomataAgentStore } from "~~/lib/robomata/server/agentStore";
 import { shareLinkHasMonitoringMetadata } from "~~/lib/robomata/server/sharedLenderPacket";
 import {
   getSubmissionShareLinkStore,
@@ -114,6 +114,10 @@ function serializeLenderAgentPolicy(policy: RobomataAgentPolicy | null) {
     appointmentAuthorizationId: policy.appointmentAuthorizationId,
     appointmentAuthorizationSurface: policy.appointmentAuthorizationSurface,
     id: policy.id,
+    revocationAuthorizationSurface: policy.revocationAuthorizationSurface,
+    revocationReason: policy.revocationReason,
+    revokedAt: policy.revokedAt,
+    revokedBy: policy.revokedBy,
     status: policy.status,
     updatedAt: policy.updatedAt,
   };
@@ -168,9 +172,17 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ t
     const result = await loadAuthorizedShare(token);
     if ("error" in result) return result.error;
 
-    const body = (await request.json().catch(() => ({}))) as { appointedAgentName?: unknown };
-    if (typeof body.appointedAgentName !== "string" || !body.appointedAgentName.trim()) {
+    const body = (await request.json().catch(() => ({}))) as {
+      appointedAgentName?: unknown;
+      revocationReason?: unknown;
+      status?: unknown;
+    };
+    const isRevocation = body.status === "revoked";
+    if (!isRevocation && (typeof body.appointedAgentName !== "string" || !body.appointedAgentName.trim())) {
       return noStoreResponse({ error: "appointedAgentName is required." }, { status: 400 });
+    }
+    if (body.status !== undefined && !isRevocation) {
+      return noStoreResponse({ error: "Invalid lender appointment status." }, { status: 400 });
     }
 
     const accessedShareLink = await getSubmissionShareLinkStore().recordAccess(
@@ -185,17 +197,42 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ t
       result.submission.id,
       result.submission.partnerAddress,
     );
+    if (existingPolicy?.status === "revoked") {
+      return noStoreResponse({ error: "The current agent appointment has already been revoked." }, { status: 409 });
+    }
     const isExistingLenderAppointment =
       existingPolicy?.appointedBy === "lender" &&
       existingPolicy.appointmentAuthorizationSurface === "protected_lender_share_link";
+    const isOwnedLenderAppointment =
+      isExistingLenderAppointment && existingPolicy.appointmentAuthorizationId === accessedShareLink.id;
+    if (!isRevocation && isExistingLenderAppointment && !isOwnedLenderAppointment) {
+      return noStoreResponse(
+        { error: "This protected lender share link cannot update the current agent appointment." },
+        { status: 403 },
+      );
+    }
+    if (isRevocation && !isOwnedLenderAppointment) {
+      return noStoreResponse(
+        { error: "This protected lender share link cannot revoke the current agent appointment." },
+        { status: 403 },
+      );
+    }
 
     const policy = await getRobomataAgentStore().updatePolicy({
       submission: result.submission,
-      appointedAgentName: body.appointedAgentName,
-      appointedBy: "lender",
-      appointerAddress: lenderAuthorizationId(accessedShareLink),
-      appointmentAuthorizationId: accessedShareLink.id,
-      appointmentAuthorizationSurface: "protected_lender_share_link",
+      ...(isRevocation
+        ? {}
+        : {
+            appointedAgentName: body.appointedAgentName,
+            appointedBy: "lender" as const,
+            appointerAddress: lenderAuthorizationId(accessedShareLink),
+            appointmentAuthorizationId: accessedShareLink.id,
+            appointmentAuthorizationSurface: "protected_lender_share_link" as const,
+          }),
+      revocationAuthorizationSurface: isRevocation ? "protected_lender_share_link" : undefined,
+      revocationReason: body.revocationReason,
+      revokedBy: isRevocation ? lenderAuthorizationId(accessedShareLink) : undefined,
+      status: isRevocation ? "revoked" : undefined,
       ...(isExistingLenderAppointment ? {} : { autoApproveActionTypes: [] }),
     });
 
@@ -204,6 +241,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ t
       policy: serializeLenderAgentPolicy(policy),
     });
   } catch (error) {
+    if (error instanceof RobomataAgentPolicyRevokedMutationError) {
+      return noStoreResponse({ error: error.message }, { status: 409 });
+    }
     return noStoreResponse(
       { error: error instanceof Error ? error.message : "Failed to update lender agent appointment." },
       { status: 500 },
