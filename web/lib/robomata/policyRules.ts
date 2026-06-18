@@ -96,6 +96,11 @@ export const ROBOMATA_PACKET_FRESHNESS_POLICY_RULES: RobomataPolicyRule[] = [
     summary: "Stale or superseded observations mark the packet stale.",
   },
   {
+    id: "newer-observations",
+    label: "Newer observations",
+    summary: "Fresh observations recorded after the stored packet was generated mark that packet stale.",
+  },
+  {
     id: "pending-warning-observations",
     label: "Pending evidence",
     summary: "Pending or warning observations require a packet refresh review.",

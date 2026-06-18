@@ -191,6 +191,8 @@ packet freshness classification, and supervised agent action proposal triggers.
 The displayed rules are sourced from shared policy metadata and the numeric
 borrowing-base thresholds are reused by the computation path to avoid UI/runtime
 drift.
+Packet freshness rules also disclose that fresh observations recorded after a
+stored packet was generated mark that packet stale until reviewed or refreshed.
 
 The next agent-first tranche should replace these defaults with explicit lender
 policy artifacts, versioned approvals, and policy effective dates. Until then,
