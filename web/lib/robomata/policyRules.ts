@@ -17,11 +17,44 @@ export type RobomataAgentPolicyRule = RobomataPolicyRule & {
   actionType: RobomataAgentActionType;
 };
 
+export type RobomataFacilityPolicyArtifactRuleSet<T extends RobomataPolicyRule = RobomataPolicyRule> = {
+  id: string;
+  label: string;
+  description: string;
+  rules: T[];
+};
+
+export type RobomataFacilityPolicyArtifact = {
+  id: string;
+  name: string;
+  version: string;
+  scope: "platform_default" | "facility_override" | "lender_override";
+  status: "active";
+  effectiveFrom: string;
+  description: string;
+  ruleSets: {
+    borrowingBase: RobomataFacilityPolicyArtifactRuleSet;
+    evidenceFreshness: RobomataFacilityPolicyArtifactRuleSet;
+    packetFreshness: RobomataFacilityPolicyArtifactRuleSet;
+    suiRoot: RobomataFacilityPolicyArtifactRuleSet;
+    agentSupervision: RobomataFacilityPolicyArtifactRuleSet<RobomataAgentPolicyRule>;
+  };
+};
+
+export type RobomataResolvedFacilityPolicyArtifact = {
+  artifact: RobomataFacilityPolicyArtifact;
+  resolution: {
+    source: "platform_default";
+    facilityId?: string;
+    submissionId?: string;
+  };
+};
+
 function formatBps(bps: number): string {
   return `${(bps / 100).toFixed(1)}%`;
 }
 
-export const ROBOMATA_BORROWING_BASE_POLICY_RULES: RobomataPolicyRule[] = [
+const ROBOMATA_BORROWING_BASE_RULES: RobomataPolicyRule[] = [
   {
     id: "advance-rate",
     label: "Advance rate",
@@ -74,7 +107,30 @@ export const ROBOMATA_BORROWING_BASE_POLICY_RULES: RobomataPolicyRule[] = [
   },
 ];
 
-export const ROBOMATA_PACKET_FRESHNESS_POLICY_RULES: RobomataPolicyRule[] = [
+const ROBOMATA_EVIDENCE_FRESHNESS_RULES: RobomataPolicyRule[] = [
+  {
+    id: "verified-evidence",
+    label: "Verified evidence",
+    summary: "Verified evidence is treated as a fresh monitoring observation for the linked receivables.",
+  },
+  {
+    id: "pending-evidence",
+    label: "Pending evidence",
+    summary: "Pending evidence keeps the facility in review and prevents packet freshness from being treated as final.",
+  },
+  {
+    id: "exception-evidence",
+    label: "Exception evidence",
+    summary: "Evidence marked in exception makes the facility packet invalid until resolved or superseded.",
+  },
+  {
+    id: "system-verified-evidence",
+    label: "System-verified storage",
+    summary: "Seal-encrypted Walrus evidence is disclosed as system-verified provenance when available.",
+  },
+];
+
+const ROBOMATA_PACKET_FRESHNESS_RULES: RobomataPolicyRule[] = [
   {
     id: "missing-computation",
     label: "Missing computation",
@@ -107,7 +163,7 @@ export const ROBOMATA_PACKET_FRESHNESS_POLICY_RULES: RobomataPolicyRule[] = [
   },
 ];
 
-export const ROBOMATA_SUI_ROOT_POLICY_RULES: RobomataPolicyRule[] = [
+const ROBOMATA_SUI_ROOT_RULES: RobomataPolicyRule[] = [
   {
     id: "not-started",
     label: "No root committed",
@@ -143,7 +199,7 @@ export const ROBOMATA_SUI_ROOT_POLICY_RULES: RobomataPolicyRule[] = [
   },
 ];
 
-export const ROBOMATA_AGENT_SUPERVISION_POLICY_RULES: RobomataAgentPolicyRule[] = [
+const ROBOMATA_AGENT_SUPERVISION_RULES: RobomataAgentPolicyRule[] = [
   {
     id: "evidence-review",
     actionType: "evidence_review",
@@ -175,3 +231,71 @@ export const ROBOMATA_AGENT_SUPERVISION_POLICY_RULES: RobomataAgentPolicyRule[] 
     summary: "Propose handoff when evidence is committed but tokenization has not reached offering readiness.",
   },
 ];
+
+export const ROBOMATA_DEFAULT_FACILITY_POLICY_ARTIFACT: RobomataFacilityPolicyArtifact = {
+  id: "robomata-default-facility-policy",
+  name: "Robomata platform default facility policy",
+  version: ROBOMATA_DEFAULT_POLICY_VERSION,
+  scope: "platform_default",
+  status: "active",
+  effectiveFrom: "2026-06-18",
+  description:
+    "Versioned metadata for the current deterministic Robomata rules. Facility and lender overrides are not active yet.",
+  ruleSets: {
+    borrowingBase: {
+      id: "borrowing-base-eligibility",
+      label: "Borrowing-base eligibility rules",
+      description: "The current platform-default rules used to compute eligibility, reserves, and exceptions.",
+      rules: ROBOMATA_BORROWING_BASE_RULES,
+    },
+    evidenceFreshness: {
+      id: "evidence-freshness",
+      label: "Evidence freshness rules",
+      description: "The deterministic rules that map evidence records into monitoring observation status.",
+      rules: ROBOMATA_EVIDENCE_FRESHNESS_RULES,
+    },
+    packetFreshness: {
+      id: "packet-freshness",
+      label: "Packet freshness rules",
+      description: "The deterministic monitoring rules that classify lender packet freshness.",
+      rules: ROBOMATA_PACKET_FRESHNESS_RULES,
+    },
+    suiRoot: {
+      id: "sui-evidence-root",
+      label: "Sui evidence-root rules",
+      description:
+        "The deterministic evidence-anchor rules that classify monitoring root commit and verification status.",
+      rules: ROBOMATA_SUI_ROOT_RULES,
+    },
+    agentSupervision: {
+      id: "agent-supervision-actions",
+      label: "Supervised action proposal rules",
+      description: "The current deterministic rules that can propose actions. Operators still approve or reject them.",
+      rules: ROBOMATA_AGENT_SUPERVISION_RULES,
+    },
+  },
+};
+
+export function resolveRobomataFacilityPolicyArtifact(input?: {
+  facilityId?: string;
+  submissionId?: string;
+}): RobomataResolvedFacilityPolicyArtifact {
+  return {
+    artifact: ROBOMATA_DEFAULT_FACILITY_POLICY_ARTIFACT,
+    resolution: {
+      source: "platform_default",
+      facilityId: input?.facilityId,
+      submissionId: input?.submissionId,
+    },
+  };
+}
+
+export const ROBOMATA_BORROWING_BASE_POLICY_RULES =
+  ROBOMATA_DEFAULT_FACILITY_POLICY_ARTIFACT.ruleSets.borrowingBase.rules;
+export const ROBOMATA_EVIDENCE_FRESHNESS_POLICY_RULES =
+  ROBOMATA_DEFAULT_FACILITY_POLICY_ARTIFACT.ruleSets.evidenceFreshness.rules;
+export const ROBOMATA_PACKET_FRESHNESS_POLICY_RULES =
+  ROBOMATA_DEFAULT_FACILITY_POLICY_ARTIFACT.ruleSets.packetFreshness.rules;
+export const ROBOMATA_SUI_ROOT_POLICY_RULES = ROBOMATA_DEFAULT_FACILITY_POLICY_ARTIFACT.ruleSets.suiRoot.rules;
+export const ROBOMATA_AGENT_SUPERVISION_POLICY_RULES =
+  ROBOMATA_DEFAULT_FACILITY_POLICY_ARTIFACT.ruleSets.agentSupervision.rules;

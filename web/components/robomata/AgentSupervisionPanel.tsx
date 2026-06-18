@@ -10,6 +10,7 @@ import {
   type RobomataAgentRun,
   getRobomataAgentActionPermissionDenial,
 } from "~~/lib/robomata/agents";
+import { resolveRobomataFacilityPolicyArtifact } from "~~/lib/robomata/policyRules";
 import type { FacilitySubmission } from "~~/lib/robomata/submissions";
 import { notification } from "~~/utils/scaffold-eth";
 
@@ -125,6 +126,11 @@ export const AgentSupervisionPanel = ({
   useEffect(() => {
     void loadAgentState();
   }, [loadAgentState, submission.updatedAt]);
+
+  const policyArtifact = resolveRobomataFacilityPolicyArtifact({
+    facilityId: policy?.facilityId ?? submission.facilityMonitoring?.facilityId,
+    submissionId: submission.id,
+  }).artifact;
 
   const updatePolicyStatus = async (status: "active" | "paused" | "revoked") => {
     setIsMutating(true);
@@ -381,7 +387,10 @@ export const AgentSupervisionPanel = ({
             </div>
           </div>
 
-          <AgentSupervisionPolicyDisclosure allowedActionTypes={policy.allowedActionTypes} />
+          <AgentSupervisionPolicyDisclosure
+            allowedActionTypes={policy.allowedActionTypes}
+            policyArtifact={policyArtifact}
+          />
 
           <div className="space-y-3">
             {actions.length ? (

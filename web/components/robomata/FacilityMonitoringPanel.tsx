@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowPathIcon, CheckCircleIcon, CircleStackIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
-import { PacketFreshnessPolicyDisclosure, SuiRootPolicyDisclosure } from "~~/components/robomata/PolicyRulesPanel";
+import {
+  EvidenceFreshnessPolicyDisclosure,
+  PacketFreshnessPolicyDisclosure,
+  SuiRootPolicyDisclosure,
+} from "~~/components/robomata/PolicyRulesPanel";
 import { isRobomataFacilityMonitoringClientEnabled } from "~~/lib/featureFlags";
 import { formatUsd } from "~~/lib/robomata/borrowingBase";
 import type {
@@ -14,6 +18,7 @@ import type {
   PacketManifest,
   SuiRootVerificationStatus,
 } from "~~/lib/robomata/facilityMonitoring";
+import { resolveRobomataFacilityPolicyArtifact } from "~~/lib/robomata/policyRules";
 import type { FacilitySubmission } from "~~/lib/robomata/submissions";
 import { notification } from "~~/utils/scaffold-eth";
 
@@ -196,6 +201,11 @@ export const FacilityMonitoringPanel = ({
 
   if (!featureEnabled) return null;
 
+  const policyArtifact = resolveRobomataFacilityPolicyArtifact({
+    facilityId: projection?.facility.id ?? submission.facilityMonitoring?.facilityId,
+    submissionId: submission.id,
+  }).artifact;
+
   return (
     <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -247,8 +257,12 @@ export const FacilityMonitoringPanel = ({
                 {projection.latestRun ? `As of ${projection.latestRun.asOfDate}` : "Waiting on borrowing base"}
               </div>
               {projection.latestRun ? (
-                <div className="mt-2">
+                <div className="mt-2 space-y-1">
                   <span className="badge badge-ghost badge-sm">{projection.latestRun.policyVersion}</span>
+                  <div className="break-all text-xs text-base-content/50">
+                    {projection.latestRun.policyArtifactName ?? policyArtifact.name} ·{" "}
+                    {projection.latestRun.policyArtifactId ?? policyArtifact.id}
+                  </div>
                 </div>
               ) : null}
             </div>
@@ -263,9 +277,10 @@ export const FacilityMonitoringPanel = ({
             </div>
           </div>
 
-          <div className="grid gap-3 lg:grid-cols-2">
-            <PacketFreshnessPolicyDisclosure />
-            <SuiRootPolicyDisclosure />
+          <div className="grid gap-3 lg:grid-cols-3">
+            <EvidenceFreshnessPolicyDisclosure policyArtifact={policyArtifact} />
+            <PacketFreshnessPolicyDisclosure policyArtifact={policyArtifact} />
+            <SuiRootPolicyDisclosure policyArtifact={policyArtifact} />
           </div>
 
           {projection.warnings.length ? (
@@ -358,6 +373,9 @@ export const FacilityMonitoringPanel = ({
                                 {run.exceptions.length} exception{run.exceptions.length === 1 ? "" : "s"}
                               </span>
                               <span className="badge badge-ghost badge-xs">{run.policyVersion}</span>
+                            </div>
+                            <div className="mt-1 break-all text-xs text-base-content/50">
+                              {run.policyArtifactId ?? policyArtifact.id}
                             </div>
                           </td>
                           <td>

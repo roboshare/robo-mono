@@ -8,11 +8,13 @@ import {
 import { LenderAgentAppointmentPanel } from "~~/components/robomata/LenderAgentAppointmentPanel";
 import {
   BorrowingBasePolicyDisclosure,
+  EvidenceFreshnessPolicyDisclosure,
   PacketFreshnessPolicyDisclosure,
   SuiRootPolicyDisclosure,
 } from "~~/components/robomata/PolicyRulesPanel";
 import { ReviewBoundaryPanel } from "~~/components/robomata/ReviewBoundaryPanel";
 import { formatPercentFromBps, formatUsd } from "~~/lib/robomata/borrowingBase";
+import { resolveRobomataFacilityPolicyArtifact } from "~~/lib/robomata/policyRules";
 import type { SharedLenderPacketView } from "~~/lib/robomata/shareLinks";
 
 type LenderPacketViewProps = {
@@ -47,6 +49,10 @@ function formatStatus(value: string) {
 
 export const LenderPacketView = ({ packet, shareToken }: LenderPacketViewProps) => {
   const { borrowingBase } = packet;
+  const policyArtifact = resolveRobomataFacilityPolicyArtifact({
+    facilityId: packet.monitoring?.facilityId,
+    submissionId: packet.submission.id,
+  }).artifact;
 
   return (
     <div className="space-y-6">
@@ -116,7 +122,7 @@ export const LenderPacketView = ({ packet, shareToken }: LenderPacketViewProps) 
           />
         </div>
         <div className="mt-5">
-          <BorrowingBasePolicyDisclosure />
+          <BorrowingBasePolicyDisclosure policyArtifact={policyArtifact} />
         </div>
         {packet.monitoring ? (
           <div className="mt-5 rounded-2xl border border-base-300 bg-base-200/50 p-4 text-sm leading-relaxed text-base-content/70">
@@ -138,6 +144,14 @@ export const LenderPacketView = ({ packet, shareToken }: LenderPacketViewProps) 
               {packet.monitoring.runPolicyVersion ? (
                 <div>Policy version: {packet.monitoring.runPolicyVersion}</div>
               ) : null}
+              <div>
+                Policy artifact: {packet.monitoring.policyArtifactName ?? policyArtifact.name} (
+                {packet.monitoring.policyArtifactId ?? policyArtifact.id} ·{" "}
+                {packet.monitoring.policyArtifactVersion ??
+                  packet.monitoring.runPolicyVersion ??
+                  policyArtifact.version}
+                )
+              </div>
               {packet.monitoring.currentPacketFreshnessStatus ? (
                 <div>Current status: {formatStatus(packet.monitoring.currentPacketFreshnessStatus)}</div>
               ) : null}
@@ -145,9 +159,10 @@ export const LenderPacketView = ({ packet, shareToken }: LenderPacketViewProps) 
                 <div className="break-all">Run root: {packet.monitoring.runRootDigest}</div>
               ) : null}
             </div>
-            <div className="mt-4 grid gap-3 lg:grid-cols-2">
-              <PacketFreshnessPolicyDisclosure />
-              <SuiRootPolicyDisclosure />
+            <div className="mt-4 grid gap-3 lg:grid-cols-3">
+              <EvidenceFreshnessPolicyDisclosure policyArtifact={policyArtifact} />
+              <PacketFreshnessPolicyDisclosure policyArtifact={policyArtifact} />
+              <SuiRootPolicyDisclosure policyArtifact={policyArtifact} />
             </div>
           </div>
         ) : null}

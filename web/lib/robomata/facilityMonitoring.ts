@@ -108,6 +108,8 @@ export type BorrowingBaseRun = {
   asOfDate: string;
   status: BorrowingBaseRunStatus;
   policyVersion: string;
+  policyArtifactId?: string;
+  policyArtifactName?: string;
   inputObservationIds: string[];
   inputDigest: string;
   borrowingBase: BorrowingBaseResult;
