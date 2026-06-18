@@ -1,6 +1,14 @@
+import { isRobomataLlmReviewEnabled } from "~~/lib/featureFlags";
 import type { BorrowingBaseResult } from "~~/lib/robomata/borrowingBase";
 
 export type AgentProviderName = "mock" | "openai" | "anthropic" | "google" | "disabled";
+export type AgentReviewMode = "disabled" | "deterministic" | "deterministic_fallback" | "llm_stubbed";
+export type AgentReviewProviderStatus =
+  | "configured_disabled"
+  | "configured_without_feature_flag"
+  | "configured_without_key"
+  | "deterministic_mock"
+  | "stubbed_pending_controls";
 
 export type AgentReviewInput = {
   portfolio: {
@@ -23,6 +31,10 @@ export type AgentReviewInput = {
 
 export type AgentReview = {
   provider: AgentProviderName;
+  providerStatus?: AgentReviewProviderStatus;
+  reviewMode?: AgentReviewMode;
+  model?: string;
+  sourceOfTruth?: "borrowing_base_rules";
   headline: string;
   memo: string;
   exceptionReview: string[];
@@ -71,7 +83,24 @@ export function buildAgentReviewInput(result: BorrowingBaseResult): AgentReviewI
   };
 }
 
-function buildMockReview(result: AgentReviewInput, provider: AgentProviderName = "mock"): AgentReview {
+function reviewBoundary(
+  provider: AgentProviderName,
+  providerStatus: AgentReviewProviderStatus,
+  reviewMode: AgentReviewMode,
+): Pick<AgentReview, "model" | "provider" | "providerStatus" | "reviewMode" | "sourceOfTruth"> {
+  return {
+    provider,
+    providerStatus,
+    reviewMode,
+    model: process.env.ROBOMATA_AGENT_REVIEW_MODEL?.trim() || undefined,
+    sourceOfTruth: "borrowing_base_rules",
+  };
+}
+
+function buildMockReview(
+  result: AgentReviewInput,
+  boundary = reviewBoundary("mock", "deterministic_mock", "deterministic"),
+): AgentReview {
   const ineligibleReceivables = result.receivableResults.filter(receivable => !receivable.eligible);
   const exceptionReview = [
     ...ineligibleReceivables.map(
@@ -84,7 +113,7 @@ function buildMockReview(result: AgentReviewInput, provider: AgentProviderName =
 
   if (result.exceptionCount === 0) {
     return {
-      provider,
+      ...boundary,
       headline: `${formatUsd(result.availableBorrowingBaseCents)} lender-ready availability with no open exceptions`,
       memo: `${result.portfolio.operator} has a clean receivables pool under the configured borrowing-base policy and is ready for lender packet delivery.`,
       exceptionReview: [],
@@ -97,7 +126,7 @@ function buildMockReview(result: AgentReviewInput, provider: AgentProviderName =
   }
 
   return {
-    provider,
+    ...boundary,
     headline: `${formatUsd(result.availableBorrowingBaseCents)} lender-ready availability after eligibility cuts`,
     memo: `${result.portfolio.operator} has a financeable receivables pool, but the lender package should separate clean eligible receivables from title, insurance, utilization, and lockbox exceptions before submission.`,
     exceptionReview,
@@ -113,7 +142,7 @@ function buildMockReview(result: AgentReviewInput, provider: AgentProviderName =
 const disabledProvider: AgentProvider = {
   name: "disabled",
   review: async result => ({
-    provider: "disabled",
+    ...reviewBoundary("disabled", "configured_disabled", "disabled"),
     headline: "Agent review disabled",
     memo: "The borrowing-base engine still produced deterministic output, but no diligence memo was generated.",
     exceptionReview: result.exceptionCount > 0 ? ["Manual review required for all exceptions."] : [],
@@ -125,7 +154,22 @@ function liveProvider(name: Exclude<AgentProviderName, "mock" | "disabled">, req
   return {
     name,
     review: async result => {
-      const mockReview = buildMockReview(result);
+      const liveReviewEnabled = isRobomataLlmReviewEnabled();
+      const mockReview = buildMockReview(
+        result,
+        reviewBoundary(
+          name,
+          liveReviewEnabled ? "configured_without_key" : "configured_without_feature_flag",
+          "deterministic_fallback",
+        ),
+      );
+
+      if (!liveReviewEnabled) {
+        return {
+          ...mockReview,
+          memo: `${mockReview.memo} ${name} was selected, but ROBOMATA_LLM_REVIEW_ENABLED is not enabled, so the review used deterministic fallback output.`,
+        };
+      }
 
       if (!process.env[requiredEnv]) {
         return {
@@ -135,8 +179,7 @@ function liveProvider(name: Exclude<AgentProviderName, "mock" | "disabled">, req
       }
 
       return {
-        ...mockReview,
-        provider: name,
+        ...buildMockReview(result, reviewBoundary(name, "stubbed_pending_controls", "llm_stubbed")),
         memo: `${mockReview.memo} Live ${name} execution is intentionally stubbed in the MVP until provider-specific prompts, logging, and data controls are approved.`,
       };
     },
