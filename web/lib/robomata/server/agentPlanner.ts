@@ -1,9 +1,12 @@
+import { createHash } from "node:crypto";
 import "server-only";
 import { isRobomataAgentPlannerEnabled } from "~~/lib/featureFlags";
 import type {
+  RobomataAgentAction,
   RobomataAgentActionDraft,
   RobomataAgentActionType,
   RobomataAgentPlannerBoundary,
+  RobomataAgentPlannerInputControls,
   RobomataAgentPlannerMode,
   RobomataAgentPlannerProvider,
   RobomataAgentPlannerStatus,
@@ -11,7 +14,15 @@ import type {
 } from "~~/lib/robomata/agents";
 import { ROBOMATA_AGENT_ACTION_TYPES } from "~~/lib/robomata/agents";
 import type { FacilityMonitoringProjection } from "~~/lib/robomata/facilityMonitoring";
+import type { RobomataFacilityPolicyArtifact } from "~~/lib/robomata/policyRules";
 import type { FacilitySubmission } from "~~/lib/robomata/submissions";
+
+export const ROBOMATA_AGENT_PLANNER_PROMPT_VERSION = "agent-supervision-planner-v1";
+export const ROBOMATA_AGENT_PLANNER_OUTPUT_SCHEMA_VERSION = "agent-supervision-plan-output-v1";
+export const ROBOMATA_AGENT_PLANNER_MAX_CANDIDATE_ACTIONS = 8;
+export const ROBOMATA_AGENT_PLANNER_MAX_RECENT_ACTIONS = 12;
+export const ROBOMATA_AGENT_PLANNER_MAX_RECENT_RUNS = 5;
+export const ROBOMATA_AGENT_PLANNER_MAX_TEXT_LENGTH = 260;
 
 const supportedPlannerProviders: RobomataAgentPlannerProvider[] = ["rules", "openai", "anthropic", "google"];
 const openAiPlannerTimeoutMs = 8_000;
@@ -43,6 +54,21 @@ function boundary(
     sourceOfTruth: "agent_policy_rules",
     version: "agent-supervision-v1",
   };
+}
+
+function stableJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .sort()
+    .map(key => `${JSON.stringify(key)}:${stableJson(record[key])}`)
+    .join(",")}}`;
+}
+
+function digest(value: unknown): string {
+  return `0x${createHash("sha256").update(stableJson(value)).digest("hex")}`;
 }
 
 const openAiPlannerSchema = {
@@ -91,6 +117,13 @@ type OpenAiPlannerPayload = {
   actions?: OpenAiPlannerActionPayload[];
 };
 
+class OpenAiPlannerSchemaError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OpenAiPlannerSchemaError";
+  }
+}
+
 type OpenAiResponseOutputContent = {
   text?: string;
 };
@@ -109,8 +142,20 @@ type OpenAiResponseBody = {
 
 type PlanAgentActionsInput = {
   candidateActions: RobomataAgentActionDraft[];
+  policyArtifact: RobomataFacilityPolicyArtifact;
   policy: RobomataAgentPolicy;
   projection: FacilityMonitoringProjection;
+  recentActions: RobomataAgentAction[];
+  recentRuns: Array<{
+    actionCount: number;
+    completedAt: string;
+    freshnessStatus: string;
+    id: string;
+    plannerBoundary?: RobomataAgentPlannerBoundary;
+    status: string;
+    suiRootStatus: string;
+    summary: string;
+  }>;
   submission: FacilitySubmission;
 };
 
@@ -119,11 +164,248 @@ type PlanAgentActionsResult = {
   plannerBoundary: RobomataAgentPlannerBoundary;
 };
 
+type PlannerProviderInput = ReturnType<typeof buildPlannerProviderInput>;
+
+function plannerInputControls(generatedAt: string): RobomataAgentPlannerInputControls {
+  return {
+    allowedFields: [
+      "policy artifact id, name, and version",
+      "policy appointment metadata and allowed action types",
+      "facility projection status, freshness status, Sui root status, and observation status counts",
+      "latest run and packet ids/statuses",
+      "deterministic candidate action type, severity, title, message, reason, and policy metadata",
+      "recent agent run summaries and statuses",
+      "recent retained action statuses and planner provenance",
+      "allowed supervised action/tool surface",
+    ],
+    excludedMaterial: [
+      "raw evidence bodies",
+      "raw provider payloads",
+      "API keys and secret env names",
+      "Sui private keys",
+      "Seal plaintext or ciphertext",
+      "Walrus ciphertext",
+      "share-link tokens",
+      "wallet signatures",
+      "unbounded prompts or model responses",
+    ],
+    generatedAt,
+    maxCandidateActions: ROBOMATA_AGENT_PLANNER_MAX_CANDIDATE_ACTIONS,
+    maxRecentActions: ROBOMATA_AGENT_PLANNER_MAX_RECENT_ACTIONS,
+    maxRecentRuns: ROBOMATA_AGENT_PLANNER_MAX_RECENT_RUNS,
+    maxTextLength: ROBOMATA_AGENT_PLANNER_MAX_TEXT_LENGTH,
+    rawEvidenceIncluded: false,
+    secretMaterialIncluded: false,
+  };
+}
+
 function boundedText(value: unknown, fallback: string, maxLength: number): string {
   if (typeof value !== "string") return fallback;
   const trimmed = value.trim();
   if (!trimmed) return fallback;
   return trimmed.slice(0, maxLength);
+}
+
+function compactText(value: string | undefined, fallback = "n/a"): string {
+  return boundedText(value, fallback, ROBOMATA_AGENT_PLANNER_MAX_TEXT_LENGTH);
+}
+
+function statusCounts(values: string[]): Record<string, number> {
+  return values.reduce<Record<string, number>>((counts, status) => {
+    counts[status] = (counts[status] ?? 0) + 1;
+    return counts;
+  }, {});
+}
+
+function buildAllowedToolSurface(policy: RobomataAgentPolicy) {
+  return ROBOMATA_AGENT_ACTION_TYPES.map(type => ({
+    approvalRequired: !policy.autoApproveActionTypes.includes(type),
+    autoApproved: policy.autoApproveActionTypes.includes(type),
+    executionBoundary:
+      type === "evidence_review" || type === "sui_root_review" ? "audit_only_adapter_flagged" : "proposal_only",
+    type,
+    withinAppointment: policy.allowedActionTypes.includes(type),
+  }));
+}
+
+function buildPlannerProviderInput(input: PlanAgentActionsInput, generatedAt: string) {
+  return {
+    allowedToolSurface: buildAllowedToolSurface(input.policy),
+    candidateActions: input.candidateActions.slice(0, ROBOMATA_AGENT_PLANNER_MAX_CANDIDATE_ACTIONS).map(action => ({
+      message: compactText(action.message),
+      policyArtifactId: action.metadata?.policyArtifactId ?? input.policyArtifact.id,
+      policyArtifactVersion: action.metadata?.policyArtifactVersion ?? input.policyArtifact.version,
+      policyRuleId: action.metadata?.policyRuleId ?? action.type,
+      policyRuleLabel: action.metadata?.policyRuleLabel ?? action.title,
+      policyRuleSummary: action.metadata?.policyRuleSummary ?? action.reason,
+      reason: compactText(action.reason),
+      severity: action.severity,
+      title: compactText(action.title),
+      type: action.type,
+    })),
+    facilityProjection: {
+      facilityId: input.projection.facility.id,
+      facilityStatus: input.projection.facility.status,
+      freshnessStatus: input.projection.freshnessStatus,
+      latestPacketId: input.projection.latestPacket?.id ?? null,
+      latestRunId: input.projection.latestRun?.id ?? null,
+      observationCount: input.projection.observations.length,
+      observationStatuses: statusCounts(input.projection.observations.map(observation => observation.status)),
+      suiRootStatus: input.projection.suiRootStatus,
+    },
+    generatedAt,
+    policyAppointment: {
+      allowedActionTypes: input.policy.allowedActionTypes,
+      appointedAgentName: compactText(input.policy.appointedAgentName, "Robomata supervised facility agent"),
+      appointedBy: input.policy.appointedBy ?? null,
+      appointmentAuthorizationSurface: input.policy.appointmentAuthorizationSurface ?? null,
+      autoApproveActionTypes: input.policy.autoApproveActionTypes,
+      policyId: input.policy.id,
+      status: input.policy.status,
+    },
+    policyArtifact: {
+      id: input.policyArtifact.id,
+      name: input.policyArtifact.name,
+      version: input.policyArtifact.version,
+    },
+    recentActionHistory: input.recentActions.slice(0, ROBOMATA_AGENT_PLANNER_MAX_RECENT_ACTIONS).map(action => ({
+      id: action.id,
+      plannerProvider: action.metadata?.plannerProvider ?? null,
+      proposalSource: action.metadata?.proposalSource ?? "deterministic_rules",
+      proposedAt: action.proposedAt,
+      severity: action.severity,
+      status: action.status,
+      title: compactText(action.title),
+      type: action.type,
+    })),
+    recentRunHistory: input.recentRuns.slice(0, ROBOMATA_AGENT_PLANNER_MAX_RECENT_RUNS).map(run => ({
+      actionCount: run.actionCount,
+      completedAt: run.completedAt,
+      freshnessStatus: run.freshnessStatus,
+      id: run.id,
+      plannerMode: run.plannerBoundary?.mode ?? "deterministic_rules",
+      plannerProvider: run.plannerBoundary?.provider ?? "rules",
+      status: run.status,
+      suiRootStatus: run.suiRootStatus,
+      summary: compactText(run.summary),
+    })),
+    submission: {
+      evidenceCount: input.submission.evidence.length,
+      receivableCount: input.submission.receivables.length,
+      submissionId: input.submission.id,
+      tokenizationStatus: input.submission.tokenization.status,
+    },
+  };
+}
+
+function sourceDataDigestSource(input: PlanAgentActionsInput) {
+  return {
+    candidateActions: input.candidateActions.map(action => ({
+      metadata: action.metadata ?? null,
+      message: action.message,
+      reason: action.reason,
+      severity: action.severity,
+      title: action.title,
+      type: action.type,
+    })),
+    facilityProjection: {
+      facilityId: input.projection.facility.id,
+      freshnessStatus: input.projection.freshnessStatus,
+      latestPacketId: input.projection.latestPacket?.id ?? null,
+      latestRunId: input.projection.latestRun?.id ?? null,
+      observationIds: input.projection.observations.map(observation => observation.id).sort(),
+      observationStatuses: statusCounts(input.projection.observations.map(observation => observation.status)),
+      status: input.projection.facility.status,
+      suiRootStatus: input.projection.suiRootStatus,
+    },
+    policy: {
+      allowedActionTypes: input.policy.allowedActionTypes,
+      appointedBy: input.policy.appointedBy ?? null,
+      autoApproveActionTypes: input.policy.autoApproveActionTypes,
+      id: input.policy.id,
+      status: input.policy.status,
+    },
+    policyArtifact: {
+      id: input.policyArtifact.id,
+      version: input.policyArtifact.version,
+    },
+    recentActionHistory: input.recentActions.slice(0, ROBOMATA_AGENT_PLANNER_MAX_RECENT_ACTIONS).map(action => ({
+      decidedAt: action.decidedAt ?? null,
+      executionStatus: action.metadata?.executionStatus ?? null,
+      id: action.id,
+      plannerProvider: action.metadata?.plannerProvider ?? null,
+      proposalSource: action.metadata?.proposalSource ?? "deterministic_rules",
+      proposedAt: action.proposedAt,
+      severity: action.severity,
+      status: action.status,
+      type: action.type,
+    })),
+    recentRunHistory: input.recentRuns.slice(0, ROBOMATA_AGENT_PLANNER_MAX_RECENT_RUNS).map(run => ({
+      actionCount: run.actionCount,
+      completedAt: run.completedAt,
+      freshnessStatus: run.freshnessStatus,
+      id: run.id,
+      plannerMode: run.plannerBoundary?.mode ?? null,
+      plannerProvider: run.plannerBoundary?.provider ?? null,
+      status: run.status,
+      suiRootStatus: run.suiRootStatus,
+    })),
+    submissionId: input.submission.id,
+  };
+}
+
+function plannerOutputDigestSource(actions: RobomataAgentActionDraft[]) {
+  return {
+    actions: actions.map(action => ({
+      message: action.message,
+      proposalSource: action.metadata?.proposalSource ?? "deterministic_rules",
+      reason: action.reason,
+      severity: action.severity,
+      title: action.title,
+      type: action.type,
+    })),
+    outputSchemaVersion: ROBOMATA_AGENT_PLANNER_OUTPUT_SCHEMA_VERSION,
+  };
+}
+
+function withPlannerProvenance(input: {
+  actions: RobomataAgentActionDraft[];
+  baseBoundary: RobomataAgentPlannerBoundary;
+  controls: RobomataAgentPlannerInputControls;
+  generatedAt: string;
+  providerInput: PlannerProviderInput;
+  sourceDataDigest: string;
+}): PlanAgentActionsResult {
+  const plannerInputDigest = digest(input.providerInput);
+  const plannerOutputDigest = digest(plannerOutputDigestSource(input.actions));
+  const plannerBoundary: RobomataAgentPlannerBoundary = {
+    ...input.baseBoundary,
+    allowedToolCount: input.providerInput.allowedToolSurface.length,
+    candidateActionCount: input.providerInput.candidateActions.length,
+    generatedAt: input.generatedAt,
+    inputControls: input.controls,
+    outputSchemaVersion: ROBOMATA_AGENT_PLANNER_OUTPUT_SCHEMA_VERSION,
+    plannerInputDigest,
+    plannerOutputDigest,
+    promptVersion: ROBOMATA_AGENT_PLANNER_PROMPT_VERSION,
+    recentActionCount: input.providerInput.recentActionHistory.length,
+    recentRunCount: input.providerInput.recentRunHistory.length,
+    sourceDataDigest: input.sourceDataDigest,
+  };
+
+  return {
+    actions: input.actions.map(action => ({
+      ...action,
+      metadata: {
+        ...action.metadata,
+        plannerInputDigest,
+        plannerOutputDigest,
+        plannerPromptVersion: ROBOMATA_AGENT_PLANNER_PROMPT_VERSION,
+        plannerSourceDataDigest: input.sourceDataDigest,
+      },
+    })),
+    plannerBoundary,
+  };
 }
 
 function outputTextFromOpenAiResponse(body: OpenAiResponseBody): string | undefined {
@@ -135,42 +417,45 @@ function outputTextFromOpenAiResponse(body: OpenAiResponseBody): string | undefi
     .find((text): text is string => Boolean(text?.trim()));
 }
 
-function parseOpenAiPlannerPayload(text: string): OpenAiPlannerPayload {
+function parseOpenAiPlannerPayload(text: string, candidateActions: RobomataAgentActionDraft[]): OpenAiPlannerPayload {
   const parsed = JSON.parse(text) as Partial<OpenAiPlannerPayload>;
+  const candidateTypes = new Set(candidateActions.map(action => action.type));
+  if (!Array.isArray(parsed.actions)) {
+    throw new OpenAiPlannerSchemaError("OpenAI planner response actions must be an array.");
+  }
+  for (const action of parsed.actions) {
+    if (!action || typeof action !== "object" || Array.isArray(action)) {
+      throw new OpenAiPlannerSchemaError("OpenAI planner response actions must be objects.");
+    }
+    if (
+      typeof action.type !== "string" ||
+      typeof action.title !== "string" ||
+      typeof action.message !== "string" ||
+      typeof action.reason !== "string"
+    ) {
+      throw new OpenAiPlannerSchemaError("OpenAI planner response action fields must be strings.");
+    }
+    if (!ROBOMATA_AGENT_ACTION_TYPES.includes(action.type as RobomataAgentActionType)) {
+      throw new OpenAiPlannerSchemaError("OpenAI planner response action type is not supported.");
+    }
+    if (!candidateTypes.has(action.type as RobomataAgentActionType)) {
+      throw new OpenAiPlannerSchemaError("OpenAI planner response action type was not a deterministic candidate.");
+    }
+  }
   return {
-    actions: Array.isArray(parsed.actions) ? parsed.actions : [],
+    actions: parsed.actions,
   };
 }
 
-function openAiPlannerPrompt(input: PlanAgentActionsInput): string {
+function openAiPlannerPrompt(providerInput: PlannerProviderInput): string {
   return JSON.stringify({
     instruction:
       "Refine operator-facing copy for the supplied supervised-agent candidate actions. Do not add action types, remove required candidates, approve actions, execute actions, or change credit truth.",
-    policy: {
-      allowedActionTypes: input.policy.allowedActionTypes,
-      appointedAgentName: input.policy.appointedAgentName,
-      appointedBy: input.policy.appointedBy,
-      autoApproveActionTypes: input.policy.autoApproveActionTypes,
-      status: input.policy.status,
+    inputControls: {
+      rawEvidenceIncluded: false,
+      secretMaterialIncluded: false,
     },
-    facility: {
-      freshnessStatus: input.projection.freshnessStatus,
-      observationCount: input.projection.observations.length,
-      status: input.projection.facility.status,
-      suiRootStatus: input.projection.suiRootStatus,
-    },
-    submission: {
-      evidenceCount: input.submission.evidence.length,
-      receivableCount: input.submission.receivables.length,
-      tokenizationStatus: input.submission.tokenization.status,
-    },
-    candidateActions: input.candidateActions.map(action => ({
-      message: action.message,
-      reason: action.reason,
-      severity: action.severity,
-      title: action.title,
-      type: action.type,
-    })),
+    ...providerInput,
   });
 }
 
@@ -229,6 +514,7 @@ export function resolveRobomataAgentPlannerBoundary(): RobomataAgentPlannerBound
 async function planWithOpenAi(
   input: PlanAgentActionsInput,
   plannerBoundary: RobomataAgentPlannerBoundary,
+  providerInput: PlannerProviderInput,
 ): Promise<PlanAgentActionsResult> {
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey || !plannerBoundary.model) {
@@ -252,7 +538,7 @@ async function planWithOpenAi(
             },
             {
               role: "user",
-              content: openAiPlannerPrompt(input),
+              content: openAiPlannerPrompt(providerInput),
             },
           ],
           model: plannerBoundary.model,
@@ -279,15 +565,22 @@ async function planWithOpenAi(
       const outputText = outputTextFromOpenAiResponse(body);
       if (!outputText) throw new Error("OpenAI planner response did not include output text.");
 
+      const payload = parseOpenAiPlannerPayload(outputText, input.candidateActions);
+
       return {
-        actions: applyOpenAiPlannerPayload(input.candidateActions, parseOpenAiPlannerPayload(outputText)),
+        actions: applyOpenAiPlannerPayload(input.candidateActions, payload),
         plannerBoundary,
       };
     } finally {
       clearTimeout(timeout);
     }
   } catch (error) {
-    void error;
+    if (error instanceof SyntaxError || error instanceof OpenAiPlannerSchemaError) {
+      return {
+        actions: input.candidateActions,
+        plannerBoundary: boundary("openai", "schema_invalid_fallback", "deterministic_fallback", plannerBoundary.model),
+      };
+    }
     return {
       actions: input.candidateActions,
       plannerBoundary: boundary("openai", "live_error_fallback", "deterministic_fallback", plannerBoundary.model),
@@ -295,18 +588,51 @@ async function planWithOpenAi(
   }
 }
 
+function normalizedPlannerContext(input: PlanAgentActionsInput) {
+  const generatedAt = new Date().toISOString();
+  const controls = plannerInputControls(generatedAt);
+  const providerInput = buildPlannerProviderInput(input, generatedAt);
+  const sourceDataDigest = digest(sourceDataDigestSource(input));
+  return { controls, generatedAt, providerInput, sourceDataDigest };
+}
+
+function withDeterministicPlannerProvenance(
+  input: PlanAgentActionsInput,
+  baseBoundary: RobomataAgentPlannerBoundary,
+): PlanAgentActionsResult {
+  const context = normalizedPlannerContext(input);
+  return withPlannerProvenance({
+    actions: input.candidateActions,
+    baseBoundary,
+    ...context,
+  });
+}
+
+async function withLivePlannerProvenance(
+  input: PlanAgentActionsInput,
+  baseBoundary: RobomataAgentPlannerBoundary,
+): Promise<PlanAgentActionsResult> {
+  const context = normalizedPlannerContext(input);
+  const planned = await planWithOpenAi(input, baseBoundary, context.providerInput);
+  return withPlannerProvenance({
+    actions: planned.actions,
+    baseBoundary: planned.plannerBoundary,
+    ...context,
+  });
+}
+
 export async function planRobomataAgentActions(input: PlanAgentActionsInput): Promise<PlanAgentActionsResult> {
   const plannerBoundary = resolveRobomataAgentPlannerBoundary();
 
   if (!input.candidateActions.length) {
-    return { actions: input.candidateActions, plannerBoundary };
+    return withDeterministicPlannerProvenance(input, plannerBoundary);
   }
 
   if (plannerBoundary.provider === "openai" && plannerBoundary.mode === "llm_live") {
-    return planWithOpenAi(input, plannerBoundary);
+    return withLivePlannerProvenance(input, plannerBoundary);
   }
 
-  return { actions: input.candidateActions, plannerBoundary };
+  return withDeterministicPlannerProvenance(input, plannerBoundary);
 }
 
 export function plannerBoundarySummary(boundaryValue: RobomataAgentPlannerBoundary): string {
@@ -316,6 +642,9 @@ export function plannerBoundarySummary(boundaryValue: RobomataAgentPlannerBounda
   }
   if (boundaryValue.status === "live_error_fallback") {
     return "OpenAI planner failed, so action proposals used deterministic fallback rules.";
+  }
+  if (boundaryValue.status === "schema_invalid_fallback") {
+    return "OpenAI planner returned schema-invalid output, so action proposals used deterministic fallback rules.";
   }
   if (boundaryValue.mode === "llm_stubbed") {
     return `${boundaryValue.provider} planner is configured, but live action planning is stubbed until planner controls are approved.`;
