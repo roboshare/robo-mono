@@ -9,6 +9,7 @@ import { LenderAgentAppointmentPanel } from "~~/components/robomata/LenderAgentA
 import {
   BorrowingBasePolicyDisclosure,
   PacketFreshnessPolicyDisclosure,
+  SuiRootPolicyDisclosure,
 } from "~~/components/robomata/PolicyRulesPanel";
 import { ReviewBoundaryPanel } from "~~/components/robomata/ReviewBoundaryPanel";
 import { formatPercentFromBps, formatUsd } from "~~/lib/robomata/borrowingBase";
@@ -134,6 +135,9 @@ export const LenderPacketView = ({ packet, shareToken }: LenderPacketViewProps) 
             <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
               <div>Packet manifest: {packet.monitoring.packetManifestId}</div>
               <div>Generated: {packet.monitoring.packetGeneratedAt}</div>
+              {packet.monitoring.runPolicyVersion ? (
+                <div>Policy version: {packet.monitoring.runPolicyVersion}</div>
+              ) : null}
               {packet.monitoring.currentPacketFreshnessStatus ? (
                 <div>Current status: {formatStatus(packet.monitoring.currentPacketFreshnessStatus)}</div>
               ) : null}
@@ -141,8 +145,9 @@ export const LenderPacketView = ({ packet, shareToken }: LenderPacketViewProps) 
                 <div className="break-all">Run root: {packet.monitoring.runRootDigest}</div>
               ) : null}
             </div>
-            <div className="mt-4">
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
               <PacketFreshnessPolicyDisclosure />
+              <SuiRootPolicyDisclosure />
             </div>
           </div>
         ) : null}

@@ -233,12 +233,14 @@ agent supervision panel expose the active `submission-v1` rules so users can see
 the deterministic thresholds and proposal triggers before relying on the output.
 
 Visible policy rules cover borrowing-base eligibility, concentration reserves,
-packet freshness classification, and supervised agent action proposal triggers.
-The displayed rules are sourced from shared policy metadata and the numeric
-borrowing-base thresholds are reused by the computation path to avoid UI/runtime
-drift.
+packet freshness classification, Sui evidence-root status, and supervised agent
+action proposal triggers. The displayed rules are sourced from shared policy
+metadata and the numeric borrowing-base thresholds are reused by the computation
+path to avoid UI/runtime drift.
 Packet freshness rules also disclose that fresh observations recorded after a
 stored packet was generated mark that packet stale until reviewed or refreshed.
+Monitoring run and protected lender packet surfaces display the rule version
+attached to the pinned borrowing-base run when that run is available.
 
 The next agent-first tranche should replace these defaults with explicit lender
 policy artifacts, versioned approvals, and policy effective dates. Until then,

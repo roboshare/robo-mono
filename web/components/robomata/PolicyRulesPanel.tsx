@@ -3,6 +3,7 @@ import {
   ROBOMATA_BORROWING_BASE_POLICY_RULES,
   ROBOMATA_DEFAULT_POLICY_VERSION,
   ROBOMATA_PACKET_FRESHNESS_POLICY_RULES,
+  ROBOMATA_SUI_ROOT_POLICY_RULES,
   type RobomataAgentPolicyRule,
   type RobomataPolicyRule,
 } from "~~/lib/robomata/policyRules";
@@ -76,6 +77,17 @@ export function PacketFreshnessPolicyDisclosure() {
       title="Packet freshness rules"
       description="The deterministic monitoring rules that classify lender packet freshness."
       rules={ROBOMATA_PACKET_FRESHNESS_POLICY_RULES}
+    />
+  );
+}
+
+export function SuiRootPolicyDisclosure() {
+  return (
+    <RuleDisclosure
+      title="Sui evidence-root rules"
+      description="The deterministic evidence-anchor rules that classify monitoring root commit and verification status."
+      rules={ROBOMATA_SUI_ROOT_POLICY_RULES}
+      badges={["robomata.monitoring.v1"]}
     />
   );
 }
