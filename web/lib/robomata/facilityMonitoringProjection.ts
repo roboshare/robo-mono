@@ -9,7 +9,14 @@ import {
   type RobomataFacility,
   type SuiRootVerificationStatus,
 } from "~~/lib/robomata/facilityMonitoring";
-import { resolveRobomataFacilityPolicyArtifact } from "~~/lib/robomata/policyRules";
+import {
+  buildBorrowingBasePolicyEvaluation,
+  buildEvidenceFreshnessPolicyEvaluation,
+  buildPacketFreshnessPolicyEvaluation,
+  buildSuiRootPolicyEvaluation,
+  resolveRobomataFacilityPolicyArtifact,
+  summarizeRobomataPolicyEvaluations,
+} from "~~/lib/robomata/policyRules";
 import type { FacilitySubmission, SubmissionEvidence } from "~~/lib/robomata/submissions";
 
 function facilityIdForSubmission(submission: FacilitySubmission): string {
@@ -116,6 +123,13 @@ function buildLatestRun(submission: FacilitySubmission, facilityId: string, obse
     status,
     policyArtifactId: policyArtifact.id,
     policyArtifactName: policyArtifact.name,
+    policyEvaluations: [
+      buildBorrowingBasePolicyEvaluation({
+        artifact: policyArtifact,
+        borrowingBase: submission.computation.borrowingBase,
+        evaluatedAt: submission.computation.computedAt,
+      }),
+    ],
     policyVersion: policyArtifact.version,
     inputObservationIds: observations.map(observation => observation.id),
     inputDigest: submission.evidenceCommit.evidenceRoot ?? submission.computation.evidenceAnchor.evidenceRoot,
@@ -135,12 +149,34 @@ function buildLatestPacket(
   facilityId: string,
   run: BorrowingBaseRun | undefined,
   freshnessStatus: PacketFreshnessStatus,
+  observations: FacilityObservation[],
 ) {
   if (!run || !submission.computation) return undefined;
   const policyArtifact = resolveRobomataFacilityPolicyArtifact({
     facilityId,
     submissionId: submission.id,
   }).artifact;
+  const policyEvaluations = [
+    buildEvidenceFreshnessPolicyEvaluation({
+      artifact: policyArtifact,
+      evaluatedAt: submission.computation.computedAt,
+      observations: observations,
+    }),
+    buildPacketFreshnessPolicyEvaluation({
+      artifact: policyArtifact,
+      evaluatedAt: submission.computation.computedAt,
+      freshnessStatus,
+      hasComputation: Boolean(submission.computation),
+      observations,
+      openExceptionCount: submission.exceptions.filter(exception => exception.actionStatus === "open").length,
+    }),
+    buildSuiRootPolicyEvaluation({
+      artifact: policyArtifact,
+      evaluatedAt: submission.computation.computedAt,
+      suiRootStatus: suiRootStatus(submission),
+    }),
+  ];
+  const policyEvaluationSummary = summarizeRobomataPolicyEvaluations(policyEvaluations);
 
   return {
     id: submission.facilityMonitoring?.latestPacketId ?? `packet_${submission.id}`,
@@ -150,6 +186,7 @@ function buildLatestPacket(
     generatedAt: submission.computation.computedAt,
     freshnessStatus,
     evidenceObservationIds: run.inputObservationIds,
+    policyEvaluations,
     publicMetadata: {
       facilityName: submission.facilityName,
       operatorName: submission.operatorName,
@@ -160,6 +197,9 @@ function buildLatestPacket(
       policyArtifactId: policyArtifact.id,
       policyArtifactName: policyArtifact.name,
       policyArtifactVersion: policyArtifact.version,
+      policyEvaluationFailedCount: policyEvaluationSummary.failedCount,
+      policyEvaluationSummary: policyEvaluationSummary.summary,
+      policyEvaluationWarningCount: policyEvaluationSummary.warningCount,
     },
     lenderPacket: submission.computation.lenderPacket,
   } satisfies PacketManifest;
@@ -186,7 +226,7 @@ export function buildFacilityMonitoringProjection(submission: FacilitySubmission
   const freshnessStatus =
     submission.facilityMonitoring?.packetFreshnessStatus ?? packetFreshness(submission, observations);
   const latestRun = buildLatestRun(submission, facilityId, observations);
-  const latestPacket = buildLatestPacket(submission, facilityId, latestRun, freshnessStatus);
+  const latestPacket = buildLatestPacket(submission, facilityId, latestRun, freshnessStatus, observations);
 
   const facility: RobomataFacility = {
     id: facilityId,

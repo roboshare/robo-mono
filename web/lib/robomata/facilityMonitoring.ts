@@ -1,6 +1,7 @@
 import type { BorrowingBaseResult } from "~~/lib/robomata/borrowingBase";
 import type { EvidenceAnchor } from "~~/lib/robomata/evidence";
 import type { LenderPacket } from "~~/lib/robomata/lenderPacket";
+import type { RobomataPolicyEvaluationSummary } from "~~/lib/robomata/policyRules";
 import type { SubmissionException } from "~~/lib/robomata/submissions";
 
 export const ROBOMATA_MONITORING_ROOT_VERSION = "robomata.monitoring.v1" as const;
@@ -110,6 +111,7 @@ export type BorrowingBaseRun = {
   policyVersion: string;
   policyArtifactId?: string;
   policyArtifactName?: string;
+  policyEvaluations?: RobomataPolicyEvaluationSummary[];
   inputObservationIds: string[];
   inputDigest: string;
   borrowingBase: BorrowingBaseResult;
@@ -130,6 +132,7 @@ export type PacketManifest = {
   generatedAt: string;
   freshnessStatus: PacketFreshnessStatus;
   evidenceObservationIds: string[];
+  policyEvaluations?: RobomataPolicyEvaluationSummary[];
   publicMetadata: Record<string, string | number | boolean | null>;
   lenderPacket?: LenderPacket;
 };

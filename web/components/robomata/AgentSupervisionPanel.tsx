@@ -362,6 +362,12 @@ export const AgentSupervisionPanel = ({
               <div className="mt-1 text-sm text-base-content/70">
                 {latestRun ? new Date(latestRun.completedAt).toLocaleString() : "Activate policy to run checks"}
               </div>
+              {latestRun ? (
+                <div className="mt-2 break-all text-xs text-base-content/50">
+                  {latestRun.policyArtifactName ?? policyArtifact.name} ·{" "}
+                  {latestRun.policyArtifactVersion ?? policyArtifact.version}
+                </div>
+              ) : null}
             </div>
             <div className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
               <div className="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">Planner</div>
@@ -403,6 +409,8 @@ export const AgentSupervisionPanel = ({
                   policy,
                 });
                 const actionAuthorization = action.authorization;
+                const policyRuleId = metadataValue(action, "policyRuleId");
+                const policyRuleStatus = metadataValue(action, "policyRuleStatus");
 
                 return (
                   <div key={action.id} className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
@@ -427,6 +435,12 @@ export const AgentSupervisionPanel = ({
                       Planner: {formatStatus(metadataValue(action, "plannerProvider") ?? "rules")} /{" "}
                       {formatStatus(metadataValue(action, "proposalSource") ?? "deterministic_rules")}
                     </div>
+                    {policyRuleId ? (
+                      <div className="mt-1 text-xs text-base-content/60">
+                        Policy rule: <span className="font-mono">{policyRuleId}</span>
+                        {policyRuleStatus ? ` / ${formatStatus(policyRuleStatus)}` : ""}
+                      </div>
+                    ) : null}
                     <div className="mt-1 text-xs text-base-content/60 capitalize">
                       Authorized by {formatStatus(actionAuthorization?.appointedBy ?? "unknown")} /{" "}
                       {formatStatus(actionAuthorization?.appointmentAuthorizationSurface ?? "missing authorization")}
