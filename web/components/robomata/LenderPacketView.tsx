@@ -6,6 +6,7 @@ import {
   LockClosedIcon,
 } from "@heroicons/react/24/outline";
 import { LenderAgentAppointmentPanel } from "~~/components/robomata/LenderAgentAppointmentPanel";
+import { LenderPolicyReviewPanel } from "~~/components/robomata/PolicyReviewPanels";
 import {
   BorrowingBasePolicyDisclosure,
   EvidenceFreshnessPolicyDisclosure,
@@ -124,6 +125,13 @@ export const LenderPacketView = ({ packet, shareToken }: LenderPacketViewProps) 
         </div>
         <div className="mt-5">
           <BorrowingBasePolicyDisclosure policyArtifact={policyArtifact} />
+        </div>
+        <div className="mt-5">
+          <LenderPolicyReviewPanel
+            initialReview={packet.policyReviews?.lender}
+            policyArtifact={policyArtifact}
+            shareToken={shareToken}
+          />
         </div>
         {packet.monitoring ? (
           <div className="mt-5 rounded-2xl border border-base-300 bg-base-200/50 p-4 text-sm leading-relaxed text-base-content/70">
