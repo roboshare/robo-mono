@@ -5,6 +5,7 @@ import { ArrowPathIcon, CheckCircleIcon, CircleStackIcon, ExclamationTriangleIco
 import {
   EvidenceFreshnessPolicyDisclosure,
   PacketFreshnessPolicyDisclosure,
+  PolicyEvaluationSummaryPanel,
   SuiRootPolicyDisclosure,
 } from "~~/components/robomata/PolicyRulesPanel";
 import { isRobomataFacilityMonitoringClientEnabled } from "~~/lib/featureFlags";
@@ -281,6 +282,17 @@ export const FacilityMonitoringPanel = ({
             <EvidenceFreshnessPolicyDisclosure policyArtifact={policyArtifact} />
             <PacketFreshnessPolicyDisclosure policyArtifact={policyArtifact} />
             <SuiRootPolicyDisclosure policyArtifact={policyArtifact} />
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-2">
+            <PolicyEvaluationSummaryPanel
+              evaluations={projection.latestRun?.policyEvaluations}
+              title="Borrowing-base rule evaluation"
+            />
+            <PolicyEvaluationSummaryPanel
+              evaluations={projection.latestPacket?.policyEvaluations}
+              title="Packet and evidence rule evaluation"
+            />
           </div>
 
           {projection.warnings.length ? (

@@ -264,6 +264,23 @@ facility/submission. It is intentionally shaped for future facility or
 lender-specific overrides, but this tranche does not change credit behavior,
 root verification semantics, or approval boundaries.
 
+Run, packet, share-link, and agent-action payloads can also carry policy
+evaluation detail. These records are explainability metadata derived from the
+already-computed deterministic outputs:
+
+- borrowing-base evaluations explain advance-rate, concentration, receivable
+  eligibility, evidence-status, and manual-exclusion outcomes;
+- packet evaluations explain evidence freshness, packet freshness, and Sui root
+  status;
+- protected share-link metadata stores a compact pinned evaluation summary and
+  the resolved lender packet can include the full pinned evaluation detail when
+  available;
+- agent actions store the proposal/permission rule id and rule status that
+  retained or skipped the action.
+
+These evaluations do not introduce a new decision engine. They document the
+rule outcomes that produced the current deterministic state.
+
 The next agent-first tranche should replace these defaults with explicit lender
 policy artifacts, versioned approvals, and policy effective dates. Until then,
 the deterministic rules remain the source of credit truth and LLM output remains

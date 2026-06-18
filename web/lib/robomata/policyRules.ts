@@ -1,4 +1,10 @@
 import type { RobomataAgentActionType } from "~~/lib/robomata/agents";
+import type { BorrowingBaseResult } from "~~/lib/robomata/borrowingBase";
+import type {
+  FacilityObservation,
+  PacketFreshnessStatus,
+  SuiRootVerificationStatus,
+} from "~~/lib/robomata/facilityMonitoring";
 
 export const ROBOMATA_DEFAULT_POLICY_VERSION = "submission-v1";
 export const ROBOMATA_DEFAULT_ADVANCE_RATE_BPS = 8200;
@@ -48,6 +54,29 @@ export type RobomataResolvedFacilityPolicyArtifact = {
     facilityId?: string;
     submissionId?: string;
   };
+};
+
+export type RobomataPolicyRuleEvaluationStatus = "failed" | "not_applicable" | "passed" | "warning";
+
+export type RobomataPolicyRuleEvaluation = {
+  ruleId: string;
+  label: string;
+  status: RobomataPolicyRuleEvaluationStatus;
+  summary: string;
+  value?: string;
+  detail?: string;
+  subjectIds?: string[];
+};
+
+export type RobomataPolicyEvaluationSummary = {
+  artifactId: string;
+  artifactName: string;
+  artifactVersion: string;
+  evaluatedAt: string;
+  ruleSetId: string;
+  ruleSetLabel: string;
+  result: Exclude<RobomataPolicyRuleEvaluationStatus, "not_applicable">;
+  rules: RobomataPolicyRuleEvaluation[];
 };
 
 function formatBps(bps: number): string {
@@ -299,3 +328,320 @@ export const ROBOMATA_PACKET_FRESHNESS_POLICY_RULES =
 export const ROBOMATA_SUI_ROOT_POLICY_RULES = ROBOMATA_DEFAULT_FACILITY_POLICY_ARTIFACT.ruleSets.suiRoot.rules;
 export const ROBOMATA_AGENT_SUPERVISION_POLICY_RULES =
   ROBOMATA_DEFAULT_FACILITY_POLICY_ARTIFACT.ruleSets.agentSupervision.rules;
+
+function ruleById<T extends RobomataPolicyRule>(rules: T[], id: string): T {
+  const rule = rules.find(candidate => candidate.id === id);
+  if (!rule) throw new Error(`Missing Robomata policy rule metadata for ${id}.`);
+  return rule;
+}
+
+function evaluationFromRule(
+  rule: RobomataPolicyRule,
+  input: {
+    detail?: string;
+    status: RobomataPolicyRuleEvaluationStatus;
+    subjectIds?: string[];
+  },
+): RobomataPolicyRuleEvaluation {
+  return {
+    ruleId: rule.id,
+    label: rule.label,
+    status: input.status,
+    summary: rule.summary,
+    value: rule.value,
+    detail: input.detail,
+    subjectIds: input.subjectIds,
+  };
+}
+
+function summaryResult(
+  rules: RobomataPolicyRuleEvaluation[],
+): Exclude<RobomataPolicyRuleEvaluationStatus, "not_applicable"> {
+  if (rules.some(rule => rule.status === "failed")) return "failed";
+  if (rules.some(rule => rule.status === "warning")) return "warning";
+  return "passed";
+}
+
+function buildEvaluationSummary(input: {
+  artifact?: RobomataFacilityPolicyArtifact;
+  evaluatedAt: string;
+  ruleSet: RobomataFacilityPolicyArtifactRuleSet;
+  rules: RobomataPolicyRuleEvaluation[];
+}): RobomataPolicyEvaluationSummary {
+  const artifact = input.artifact ?? ROBOMATA_DEFAULT_FACILITY_POLICY_ARTIFACT;
+  return {
+    artifactId: artifact.id,
+    artifactName: artifact.name,
+    artifactVersion: artifact.version,
+    evaluatedAt: input.evaluatedAt,
+    ruleSetId: input.ruleSet.id,
+    ruleSetLabel: input.ruleSet.label,
+    result: summaryResult(input.rules),
+    rules: input.rules,
+  };
+}
+
+function receivableIdsWithReason(result: BorrowingBaseResult, reason: string): string[] {
+  return result.receivableResults
+    .filter(receivable => receivable.ineligibleReasons.some(candidate => candidate.toLowerCase().includes(reason)))
+    .map(receivable => receivable.id);
+}
+
+export function buildBorrowingBasePolicyEvaluation(input: {
+  artifact?: RobomataFacilityPolicyArtifact;
+  borrowingBase: BorrowingBaseResult;
+  evaluatedAt: string;
+}): RobomataPolicyEvaluationSummary {
+  const artifact = input.artifact ?? ROBOMATA_DEFAULT_FACILITY_POLICY_ARTIFACT;
+  const ruleSet = artifact.ruleSets.borrowingBase;
+  const rules = ruleSet.rules;
+  const daysPastDueIds = receivableIdsWithReason(input.borrowingBase, "days past due");
+  const insuranceIds = receivableIdsWithReason(input.borrowingBase, "insurance");
+  const titleLienIds = receivableIdsWithReason(input.borrowingBase, "title or lien");
+  const lockboxIds = receivableIdsWithReason(input.borrowingBase, "lockbox");
+  const utilizationIds = receivableIdsWithReason(input.borrowingBase, "utilization");
+  const manualExclusionIds = receivableIdsWithReason(input.borrowingBase, "manually excluded");
+
+  return buildEvaluationSummary({
+    artifact,
+    evaluatedAt: input.evaluatedAt,
+    ruleSet,
+    rules: [
+      evaluationFromRule(ruleById(rules, "advance-rate"), {
+        detail: `Applied ${formatBps(input.borrowingBase.portfolio.advanceRateBps)} advance rate.`,
+        status:
+          input.borrowingBase.portfolio.advanceRateBps === ROBOMATA_DEFAULT_ADVANCE_RATE_BPS ? "passed" : "warning",
+      }),
+      evaluationFromRule(ruleById(rules, "concentration-reserve"), {
+        detail: `${input.borrowingBase.concentrationReserveCents} cents reserved for concentration.`,
+        status: input.borrowingBase.concentrationReserveCents > 0 ? "warning" : "passed",
+      }),
+      evaluationFromRule(ruleById(rules, "days-past-due"), {
+        detail: daysPastDueIds.length ? `${daysPastDueIds.length} receivable(s) exceeded DPD policy.` : undefined,
+        status: daysPastDueIds.length ? "failed" : "passed",
+        subjectIds: daysPastDueIds,
+      }),
+      evaluationFromRule(ruleById(rules, "insurance"), {
+        detail: insuranceIds.length ? `${insuranceIds.length} receivable(s) missing insurance evidence.` : undefined,
+        status: insuranceIds.length ? "failed" : "passed",
+        subjectIds: insuranceIds,
+      }),
+      evaluationFromRule(ruleById(rules, "title-lien"), {
+        detail: titleLienIds.length ? `${titleLienIds.length} receivable(s) missing title/lien evidence.` : undefined,
+        status: titleLienIds.length ? "failed" : "passed",
+        subjectIds: titleLienIds,
+      }),
+      evaluationFromRule(ruleById(rules, "lockbox"), {
+        detail: lockboxIds.length ? `${lockboxIds.length} receivable(s) missing lockbox mapping.` : undefined,
+        status: lockboxIds.length ? "failed" : "passed",
+        subjectIds: lockboxIds,
+      }),
+      evaluationFromRule(ruleById(rules, "utilization"), {
+        detail: utilizationIds.length ? `${utilizationIds.length} receivable(s) below utilization floor.` : undefined,
+        status: utilizationIds.length ? "failed" : "passed",
+        subjectIds: utilizationIds,
+      }),
+      evaluationFromRule(ruleById(rules, "evidence-status"), {
+        detail: input.borrowingBase.evidenceExceptions.length
+          ? `${input.borrowingBase.evidenceExceptions.length} evidence package(s) pending or in exception.`
+          : undefined,
+        status: input.borrowingBase.evidenceExceptions.length ? "failed" : "passed",
+        subjectIds: input.borrowingBase.evidenceExceptions.map(evidence => evidence.id),
+      }),
+      evaluationFromRule(ruleById(rules, "manual-exclusion"), {
+        detail: manualExclusionIds.length ? `${manualExclusionIds.length} receivable(s) manually excluded.` : undefined,
+        status: manualExclusionIds.length ? "warning" : "passed",
+        subjectIds: manualExclusionIds,
+      }),
+    ],
+  });
+}
+
+export function buildEvidenceFreshnessPolicyEvaluation(input: {
+  artifact?: RobomataFacilityPolicyArtifact;
+  evaluatedAt: string;
+  observations: FacilityObservation[];
+}): RobomataPolicyEvaluationSummary {
+  const artifact = input.artifact ?? ROBOMATA_DEFAULT_FACILITY_POLICY_ARTIFACT;
+  const ruleSet = artifact.ruleSets.evidenceFreshness;
+  const rules = ruleSet.rules;
+  const verifiedIds = input.observations
+    .filter(observation => observation.status === "fresh")
+    .map(observation => observation.id);
+  const pendingIds = input.observations
+    .filter(observation => observation.status === "pending" || observation.status === "warning")
+    .map(observation => observation.id);
+  const exceptionIds = input.observations
+    .filter(observation => observation.status === "exception" || observation.status === "expired")
+    .map(observation => observation.id);
+  const systemVerifiedIds = input.observations
+    .filter(observation => observation.confidence === "system_verified")
+    .map(observation => observation.id);
+
+  return buildEvaluationSummary({
+    artifact,
+    evaluatedAt: input.evaluatedAt,
+    ruleSet,
+    rules: [
+      evaluationFromRule(ruleById(rules, "verified-evidence"), {
+        detail: `${verifiedIds.length} fresh observation(s).`,
+        status: verifiedIds.length || !input.observations.length ? "passed" : "warning",
+        subjectIds: verifiedIds,
+      }),
+      evaluationFromRule(ruleById(rules, "pending-evidence"), {
+        detail: pendingIds.length ? `${pendingIds.length} pending/warning observation(s).` : undefined,
+        status: pendingIds.length ? "warning" : "passed",
+        subjectIds: pendingIds,
+      }),
+      evaluationFromRule(ruleById(rules, "exception-evidence"), {
+        detail: exceptionIds.length ? `${exceptionIds.length} exception/expired observation(s).` : undefined,
+        status: exceptionIds.length ? "failed" : "passed",
+        subjectIds: exceptionIds,
+      }),
+      evaluationFromRule(ruleById(rules, "system-verified-evidence"), {
+        detail: `${systemVerifiedIds.length} system-verified observation(s).`,
+        status: systemVerifiedIds.length ? "passed" : "not_applicable",
+        subjectIds: systemVerifiedIds,
+      }),
+    ],
+  });
+}
+
+export function buildPacketFreshnessPolicyEvaluation(input: {
+  artifact?: RobomataFacilityPolicyArtifact;
+  evaluatedAt: string;
+  freshnessStatus: PacketFreshnessStatus;
+  hasComputation: boolean;
+  openExceptionCount: number;
+  observations: FacilityObservation[];
+}): RobomataPolicyEvaluationSummary {
+  const artifact = input.artifact ?? ROBOMATA_DEFAULT_FACILITY_POLICY_ARTIFACT;
+  const ruleSet = artifact.ruleSets.packetFreshness;
+  const rules = ruleSet.rules;
+  const exceptionExpiredIds = input.observations
+    .filter(observation => observation.status === "exception" || observation.status === "expired")
+    .map(observation => observation.id);
+  const staleIds = input.observations
+    .filter(observation => observation.status === "stale" || observation.status === "superseded")
+    .map(observation => observation.id);
+  const pendingWarningIds = input.observations
+    .filter(observation => observation.status === "pending" || observation.status === "warning")
+    .map(observation => observation.id);
+  const packetNeedsRefresh = ["refresh_available", "stale", "superseded"].includes(input.freshnessStatus);
+
+  return buildEvaluationSummary({
+    artifact,
+    evaluatedAt: input.evaluatedAt,
+    ruleSet,
+    rules: [
+      evaluationFromRule(ruleById(rules, "missing-computation"), {
+        status: input.hasComputation ? "passed" : "failed",
+      }),
+      evaluationFromRule(ruleById(rules, "open-exceptions"), {
+        detail: input.openExceptionCount ? `${input.openExceptionCount} open exception(s).` : undefined,
+        status: input.openExceptionCount ? "failed" : "passed",
+      }),
+      evaluationFromRule(ruleById(rules, "exception-expired-observations"), {
+        detail: exceptionExpiredIds.length
+          ? `${exceptionExpiredIds.length} exception/expired observation(s).`
+          : undefined,
+        status: exceptionExpiredIds.length ? "failed" : "passed",
+        subjectIds: exceptionExpiredIds,
+      }),
+      evaluationFromRule(ruleById(rules, "stale-observations"), {
+        detail: staleIds.length ? `${staleIds.length} stale/superseded observation(s).` : undefined,
+        status: staleIds.length ? "warning" : "passed",
+        subjectIds: staleIds,
+      }),
+      evaluationFromRule(ruleById(rules, "newer-observations"), {
+        detail: packetNeedsRefresh
+          ? `Packet freshness is ${input.freshnessStatus.replace(/_/g, " ")} and requires review or refresh.`
+          : undefined,
+        status: packetNeedsRefresh ? "warning" : "passed",
+      }),
+      evaluationFromRule(ruleById(rules, "pending-warning-observations"), {
+        detail: pendingWarningIds.length ? `${pendingWarningIds.length} pending/warning observation(s).` : undefined,
+        status: pendingWarningIds.length ? "warning" : "passed",
+        subjectIds: pendingWarningIds,
+      }),
+    ],
+  });
+}
+
+export function buildSuiRootPolicyEvaluation(input: {
+  artifact?: RobomataFacilityPolicyArtifact;
+  evaluatedAt: string;
+  suiRootStatus: SuiRootVerificationStatus;
+}): RobomataPolicyEvaluationSummary {
+  const artifact = input.artifact ?? ROBOMATA_DEFAULT_FACILITY_POLICY_ARTIFACT;
+  const ruleSet = artifact.ruleSets.suiRoot;
+  const rules = ruleSet.rules;
+  const activeRuleStatus = input.suiRootStatus === "committing" ? "pending" : input.suiRootStatus;
+
+  return buildEvaluationSummary({
+    artifact,
+    evaluatedAt: input.evaluatedAt,
+    ruleSet,
+    rules: rules.map(rule => {
+      const activeRule =
+        rule.id.replace(/-/g, "_") === activeRuleStatus ||
+        (rule.id === "retryable" && input.suiRootStatus === "failed");
+
+      return evaluationFromRule(rule, {
+        detail: activeRule ? "Current Sui root status." : undefined,
+        status: activeRule
+          ? input.suiRootStatus === "verified"
+            ? "passed"
+            : input.suiRootStatus === "mismatch" || input.suiRootStatus === "failed"
+              ? "failed"
+              : "warning"
+          : "not_applicable",
+      });
+    }),
+  });
+}
+
+export function buildAgentActionPolicyEvaluation(input: {
+  actionType: RobomataAgentActionType;
+  artifact?: RobomataFacilityPolicyArtifact;
+  evaluatedAt: string;
+  permissionDeniedReason?: string;
+}): RobomataPolicyEvaluationSummary {
+  const artifact = input.artifact ?? ROBOMATA_DEFAULT_FACILITY_POLICY_ARTIFACT;
+  const ruleSet = artifact.ruleSets.agentSupervision;
+  const rule = ruleSet.rules.find(candidate => candidate.actionType === input.actionType);
+
+  return buildEvaluationSummary({
+    artifact,
+    evaluatedAt: input.evaluatedAt,
+    ruleSet,
+    rules: rule
+      ? [
+          evaluationFromRule(rule, {
+            detail: input.permissionDeniedReason,
+            status: input.permissionDeniedReason ? "failed" : "passed",
+          }),
+        ]
+      : [],
+  });
+}
+
+export function summarizeRobomataPolicyEvaluations(evaluations: RobomataPolicyEvaluationSummary[] | undefined) {
+  const rules = evaluations?.flatMap(evaluation => evaluation.rules) ?? [];
+  const failedCount = rules.filter(rule => rule.status === "failed").length;
+  const warningCount = rules.filter(rule => rule.status === "warning").length;
+  const passedCount = rules.filter(rule => rule.status === "passed").length;
+
+  return {
+    failedCount,
+    passedCount,
+    summary: !rules.length
+      ? "No policy evaluations recorded"
+      : failedCount
+        ? `${failedCount} failed rule evaluation${failedCount === 1 ? "" : "s"}`
+        : warningCount
+          ? `${warningCount} warning rule evaluation${warningCount === 1 ? "" : "s"}`
+          : `${passedCount} passed rule evaluation${passedCount === 1 ? "" : "s"}`,
+    warningCount,
+  };
+}
