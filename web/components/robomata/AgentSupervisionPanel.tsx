@@ -65,6 +65,10 @@ function formatActionTypes(values: string[]) {
   return values.length ? values.map(formatStatus).join(", ") : "none";
 }
 
+function shortDigest(value?: string) {
+  return value ? value.slice(0, 14) : "n/a";
+}
+
 const CLIENT_EXECUTABLE_AGENT_ACTION_TYPES = new Set<RobomataAgentActionType>(["evidence_review", "sui_root_review"]);
 
 export const AgentSupervisionPanel = ({
@@ -455,6 +459,27 @@ export const AgentSupervisionPanel = ({
               {plannerBoundary?.model ? (
                 <div className="mt-1 break-all text-xs text-base-content/60">{plannerBoundary.model}</div>
               ) : null}
+              {plannerBoundary ? (
+                <div className="mt-2 space-y-1 text-xs text-base-content/60">
+                  <div>
+                    Prompt {plannerBoundary.promptVersion ?? "n/a"} · schema{" "}
+                    {plannerBoundary.outputSchemaVersion ?? "n/a"}
+                  </div>
+                  <div>
+                    Input {shortDigest(plannerBoundary.plannerInputDigest)} · source{" "}
+                    {shortDigest(plannerBoundary.sourceDataDigest)} · output{" "}
+                    {shortDigest(plannerBoundary.plannerOutputDigest)}
+                  </div>
+                  {plannerBoundary.inputControls ? (
+                    <div>
+                      Controls: {plannerBoundary.candidateActionCount ?? 0} candidates ·{" "}
+                      {plannerBoundary.recentRunCount ?? 0} runs · {plannerBoundary.recentActionCount ?? 0} actions ·
+                      raw evidence {plannerBoundary.inputControls.rawEvidenceIncluded ? "included" : "excluded"} ·
+                      secrets {plannerBoundary.inputControls.secretMaterialIncluded ? "included" : "excluded"}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
             <div className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
               <div className="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">Open actions</div>
@@ -524,6 +549,10 @@ export const AgentSupervisionPanel = ({
                     <div className="mt-1 text-xs text-base-content/60 capitalize">
                       Planner: {formatStatus(metadataValue(action, "plannerProvider") ?? "rules")} /{" "}
                       {formatStatus(metadataValue(action, "proposalSource") ?? "deterministic_rules")}
+                    </div>
+                    <div className="mt-1 text-xs text-base-content/60">
+                      Planner digests: input {shortDigest(metadataValue(action, "plannerInputDigest"))} · output{" "}
+                      {shortDigest(metadataValue(action, "plannerOutputDigest"))}
                     </div>
                     {policyRuleId ? (
                       <div className="mt-1 text-xs text-base-content/60">

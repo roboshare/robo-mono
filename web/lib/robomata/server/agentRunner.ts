@@ -165,10 +165,21 @@ export async function runRobomataAgentForSubmission(input: RunAgentForSubmission
   const startedAt = new Date().toISOString();
   const projection = await getFacilityMonitoringStore().getProjectionForSubmission(input.submission);
   const candidateActions = buildAgentActionDrafts(input.submission, policy, projection);
+  const policyArtifact = resolveRobomataFacilityPolicyArtifact({
+    facilityId: projection.facility.id,
+    submissionId: input.submission.id,
+  }).artifact;
+  const [recentRuns, recentActions] = await Promise.all([
+    store.listRuns(input.submission.id, input.submission.partnerAddress),
+    store.listActions(input.submission.id, input.submission.partnerAddress),
+  ]);
   const { actions: actionDrafts, plannerBoundary } = await planRobomataAgentActions({
     candidateActions,
+    policyArtifact,
     policy,
     projection,
+    recentActions,
+    recentRuns,
     submission: input.submission,
   });
   const completedAt = new Date().toISOString();

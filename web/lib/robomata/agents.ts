@@ -31,6 +31,7 @@ export type RobomataAgentPlannerProvider = "anthropic" | "google" | "openai" | "
 export type RobomataAgentPlannerMode = "deterministic_fallback" | "deterministic_rules" | "llm_live" | "llm_stubbed";
 
 export type RobomataAgentPlannerStatus =
+  | "schema_invalid_fallback"
   | "configured_without_feature_flag"
   | "configured_without_key"
   | "configured_without_model"
@@ -55,12 +56,35 @@ export type RobomataAgentEventType =
 
 export type RobomataAgentMetadata = Record<string, string | number | boolean | null>;
 
+export type RobomataAgentPlannerInputControls = {
+  allowedFields: string[];
+  excludedMaterial: string[];
+  generatedAt: string;
+  maxCandidateActions: number;
+  maxRecentActions: number;
+  maxRecentRuns: number;
+  maxTextLength: number;
+  rawEvidenceIncluded: false;
+  secretMaterialIncluded: false;
+};
+
 export type RobomataAgentPlannerBoundary = {
   provider: RobomataAgentPlannerProvider;
   status: RobomataAgentPlannerStatus;
   mode: RobomataAgentPlannerMode;
   model?: string;
+  allowedToolCount?: number;
+  candidateActionCount?: number;
+  generatedAt?: string;
+  inputControls?: RobomataAgentPlannerInputControls;
+  outputSchemaVersion?: "agent-supervision-plan-output-v1";
+  plannerInputDigest?: string;
+  plannerOutputDigest?: string;
+  promptVersion?: "agent-supervision-planner-v1";
+  recentActionCount?: number;
+  recentRunCount?: number;
   sourceOfTruth: "agent_policy_rules";
+  sourceDataDigest?: string;
   version: "agent-supervision-v1";
 };
 

@@ -340,9 +340,17 @@ function buildActions(input: RecordAgentRunInput, run: RobomataAgentRun): Roboma
       decisionReason: permissionDenialReason,
       metadata: {
         ...draft.metadata,
+        plannerInputDigest: input.plannerBoundary.plannerInputDigest ?? draft.metadata?.plannerInputDigest ?? null,
         plannerMode: input.plannerBoundary.mode,
+        plannerModel: input.plannerBoundary.model ?? null,
+        plannerOutputDigest: input.plannerBoundary.plannerOutputDigest ?? draft.metadata?.plannerOutputDigest ?? null,
+        plannerOutputSchemaVersion: input.plannerBoundary.outputSchemaVersion ?? null,
         plannerProvider: input.plannerBoundary.provider,
+        plannerPromptVersion: input.plannerBoundary.promptVersion ?? draft.metadata?.plannerPromptVersion ?? null,
+        plannerSourceDataDigest:
+          input.plannerBoundary.sourceDataDigest ?? draft.metadata?.plannerSourceDataDigest ?? null,
         plannerStatus: input.plannerBoundary.status,
+        plannerGeneratedAt: input.plannerBoundary.generatedAt ?? null,
         policyArtifactId: policyArtifact.id,
         policyArtifactVersion: policyArtifact.version,
         policyEvaluationResult: policyEvaluation.result,
