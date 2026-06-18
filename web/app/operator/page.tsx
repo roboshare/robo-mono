@@ -181,9 +181,9 @@ const calculateResidualSettlementTopUp = ({
 
 const PartnerDashboard: NextPage = () => {
   const { address: accountAddress, chainId: accountChainId, connectedAddress } = useTransactingAccount();
-  const { data: latestBlock } = useBlock({ watch: true });
   const selectedNetwork = useSelectedNetwork(accountChainId);
   const chainId = selectedNetwork.id;
+  const { data: latestBlock } = useBlock({ chainId });
   const chains = useChains();
   const currentChain = chains.find(c => c.id === chainId);
   const networkName = currentChain?.name || selectedNetwork.name || "Localhost";
