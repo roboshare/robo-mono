@@ -72,7 +72,7 @@ function RuleDisclosure<T extends RobomataPolicyRule>({
 
 function evaluationBadgeClass(result: string) {
   if (result === "passed") return "badge-success";
-  if (result === "warning" || result === "not_applicable") return "badge-warning";
+  if (result === "warning") return "badge-warning";
   if (result === "failed") return "badge-error";
   return "badge-ghost";
 }
