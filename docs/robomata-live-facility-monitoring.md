@@ -142,6 +142,13 @@ Live facility monitoring is additive and default-off:
   `POST /api/robomata/agents/tick`; the route also requires
   `ROBOMATA_AGENT_TICK_SECRET` and callers must send the same value in
   `x-robomata-agent-tick-secret`.
+- `ROBOMATA_AGENT_PLANNER_PROVIDER=rules|openai|anthropic|google` selects the
+  planner boundary recorded on supervised agent runs. The default is `rules`.
+- `ROBOMATA_AGENT_PLANNER_ENABLED=true` allows a non-rules planner provider to
+  move past deterministic fallback checks. Current non-rules providers remain
+  stubbed until provider-specific planning controls are implemented.
+- `ROBOMATA_AGENT_PLANNER_MODEL=<model id>` labels a configured non-rules
+  planner boundary when the provider requires a model.
 - `ROBOMATA_AGENTS_FILE=/local/path/agents.json` is an optional local-only JSON
   fallback when `POSTGRES_URL` is not configured.
 
@@ -165,6 +172,13 @@ Operators remain the execution boundary. They activate or pause policy, trigger
 manual checks, and approve, reject, complete, or skip proposed actions. Scheduled
 ticks can create proposed actions, but they do not approve their own work, mutate
 submissions, or execute Sui/EVM writes.
+
+Agent policies now record the appointed supervised agent name, the appointer,
+and the planner boundary used for each run. The current appointer path is the
+authenticated operator/partner address. Lender-appointed agents require a
+separate lender-authorized policy endpoint before the UI should claim lender
+appointment. Non-rules planner providers only change recorded boundary state;
+they do not generate actions until live planning controls are implemented.
 
 Sui and EVM writes remain explicit operator-signed product paths or separately
 configured legacy/test paths:

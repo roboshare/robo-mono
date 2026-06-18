@@ -7,6 +7,7 @@ import {
   isAgentActionAllowed,
 } from "~~/lib/robomata/agents";
 import type { FacilityMonitoringProjection, FacilityObservationStatus } from "~~/lib/robomata/facilityMonitoring";
+import { plannerBoundarySummary, resolveRobomataAgentPlannerBoundary } from "~~/lib/robomata/server/agentPlanner";
 import { getRobomataAgentStore } from "~~/lib/robomata/server/agentStore";
 import { getFacilityMonitoringStore } from "~~/lib/robomata/server/facilityMonitoringStore";
 import type { FacilitySubmission } from "~~/lib/robomata/submissions";
@@ -134,11 +135,13 @@ export async function runRobomataAgentForSubmission(input: RunAgentForSubmission
 
   const startedAt = new Date().toISOString();
   const projection = await getFacilityMonitoringStore().getProjectionForSubmission(input.submission);
+  const plannerBoundary = resolveRobomataAgentPlannerBoundary();
   const actionDrafts = buildAgentActionDrafts(input.submission, policy, projection);
   const completedAt = new Date().toISOString();
-  const summary = actionDrafts.length
+  const proposalSummary = actionDrafts.length
     ? `Proposed ${actionDrafts.length} supervised agent action${actionDrafts.length === 1 ? "" : "s"}.`
     : "No supervised agent actions proposed.";
+  const summary = `${proposalSummary} ${plannerBoundarySummary(plannerBoundary)}`;
 
   return store.recordRun({
     policy,
@@ -148,6 +151,7 @@ export async function runRobomataAgentForSubmission(input: RunAgentForSubmission
     completedAt,
     summary,
     actionDrafts,
+    plannerBoundary,
     suppressAutoApprove: input.suppressAutoApprove,
   });
 }

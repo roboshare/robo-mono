@@ -431,6 +431,12 @@ This work follows the current repo policy:
 - Do not conflate the deterministic LLM diligence memo with supervised agent
   policies, runs, actions, or events. Current agents monitor, evaluate, propose
   actions, and produce audit records; they do not execute Sui/EVM writes.
+- Do not claim lender-appointed agents are active through the operator policy
+  endpoint. Current supervision policies are operator-appointed; lender
+  appointment requires a lender-authorized policy endpoint.
+- Do not claim non-rules agent planners generate action proposals yet.
+  `ROBOMATA_AGENT_PLANNER_PROVIDER` records the planner boundary, but current
+  action proposals remain deterministic until live planner controls are built.
 - Do not treat `ROBOMATA_AGENT_PROVIDER` or provider API keys as sufficient to
   activate live LLM credit review. Live review also requires
   `ROBOMATA_LLM_REVIEW_ENABLED=true`; OpenAI review also requires

@@ -10,6 +10,7 @@ import {
   type RobomataAgentActionStatus,
   type RobomataAgentEvent,
   type RobomataAgentEventType,
+  type RobomataAgentPlannerBoundary,
   type RobomataAgentPolicy,
   type RobomataAgentPolicyStatus,
   type RobomataAgentRun,
@@ -26,6 +27,7 @@ export type UpdateAgentPolicyInput = {
   status?: RobomataAgentPolicyStatus;
   allowedActionTypes?: unknown;
   autoApproveActionTypes?: unknown;
+  appointedAgentName?: unknown;
 };
 
 export type RecordAgentRunInput = {
@@ -36,6 +38,7 @@ export type RecordAgentRunInput = {
   completedAt: string;
   summary: string;
   actionDrafts: RobomataAgentActionDraft[];
+  plannerBoundary: RobomataAgentPlannerBoundary;
   errorMessage?: string;
   suppressAutoApprove?: boolean;
 };
@@ -188,6 +191,10 @@ function buildUpdatedPolicy(input: UpdateAgentPolicyInput, existing?: RobomataAg
   const now = nowIsoString();
   const base = existing ?? createDefaultAgentPolicy(input.submission, now);
   const status = input.status ?? base.status;
+  const appointedAgentName =
+    typeof input.appointedAgentName === "string" && input.appointedAgentName.trim()
+      ? input.appointedAgentName.trim().slice(0, 80)
+      : (base.appointedAgentName ?? "Robomata supervised facility agent");
   const allowedActionTypes =
     input.allowedActionTypes === undefined
       ? base.allowedActionTypes
@@ -201,6 +208,9 @@ function buildUpdatedPolicy(input: UpdateAgentPolicyInput, existing?: RobomataAg
     ...base,
     facilityId: input.submission.facilityMonitoring?.facilityId ?? base.facilityId,
     partnerAddress: input.submission.partnerAddress,
+    appointedAgentName,
+    appointedBy: base.appointedBy ?? "operator",
+    appointerAddress: base.appointerAddress ?? input.submission.partnerAddress,
     status,
     allowedActionTypes,
     autoApproveActionTypes: autoApproveActionTypes.filter(type => allowedActionTypes.includes(type)),
@@ -221,6 +231,7 @@ function buildRun(input: RecordAgentRunInput): RobomataAgentRun {
     completedAt: input.completedAt,
     actionCount: input.actionDrafts.length,
     summary: input.summary,
+    plannerBoundary: input.plannerBoundary,
     projectionStatus: input.projection.facility.status,
     freshnessStatus: input.projection.freshnessStatus,
     suiRootStatus: input.projection.suiRootStatus,
@@ -231,6 +242,13 @@ function buildRun(input: RecordAgentRunInput): RobomataAgentRun {
 function buildActions(input: RecordAgentRunInput, run: RobomataAgentRun): RobomataAgentAction[] {
   return input.actionDrafts.map(draft => ({
     ...draft,
+    metadata: {
+      ...draft.metadata,
+      plannerMode: input.plannerBoundary.mode,
+      plannerProvider: input.plannerBoundary.provider,
+      plannerStatus: input.plannerBoundary.status,
+      proposalSource: "deterministic_rules",
+    },
     id: createActionId(),
     runId: run.id,
     policyId: input.policy.id,

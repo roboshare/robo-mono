@@ -65,6 +65,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ s
 
     const body = (await request.json().catch(() => ({}))) as {
       allowedActionTypes?: unknown;
+      appointedAgentName?: unknown;
       autoApproveActionTypes?: unknown;
       status?: unknown;
     };
@@ -78,6 +79,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ s
       status,
       allowedActionTypes: body.allowedActionTypes,
       autoApproveActionTypes: body.autoApproveActionTypes,
+      appointedAgentName: body.appointedAgentName,
     });
 
     return NextResponse.json({ policy });

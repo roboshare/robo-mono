@@ -20,6 +20,21 @@ export type RobomataAgentActionSeverity = "low" | "medium" | "high";
 
 export type RobomataAgentRunStatus = "completed" | "failed";
 
+export type RobomataAgentAppointer = "lender" | "operator" | "platform";
+
+export type RobomataAgentPlannerProvider = "anthropic" | "google" | "openai" | "rules";
+
+export type RobomataAgentPlannerMode = "deterministic_fallback" | "deterministic_rules" | "llm_live" | "llm_stubbed";
+
+export type RobomataAgentPlannerStatus =
+  | "configured_without_feature_flag"
+  | "configured_without_key"
+  | "configured_without_model"
+  | "live_completed"
+  | "live_error_fallback"
+  | "rules_engine"
+  | "stubbed_pending_controls";
+
 export type RobomataAgentEventType =
   | "policy_created"
   | "policy_updated"
@@ -32,6 +47,15 @@ export type RobomataAgentEventType =
   | "action_skipped";
 
 export type RobomataAgentMetadata = Record<string, string | number | boolean | null>;
+
+export type RobomataAgentPlannerBoundary = {
+  provider: RobomataAgentPlannerProvider;
+  status: RobomataAgentPlannerStatus;
+  mode: RobomataAgentPlannerMode;
+  model?: string;
+  sourceOfTruth: "agent_policy_rules";
+  version: "agent-supervision-v1";
+};
 
 export const ROBOMATA_AGENT_ACTION_TYPES: RobomataAgentActionType[] = [
   "evidence_review",
@@ -46,6 +70,9 @@ export type RobomataAgentPolicy = {
   submissionId: string;
   facilityId: string;
   partnerAddress: string;
+  appointedAgentName?: string;
+  appointedBy?: RobomataAgentAppointer;
+  appointerAddress?: string;
   status: RobomataAgentPolicyStatus;
   allowedActionTypes: RobomataAgentActionType[];
   autoApproveActionTypes: RobomataAgentActionType[];
@@ -85,6 +112,7 @@ export type RobomataAgentRun = {
   completedAt: string;
   actionCount: number;
   summary: string;
+  plannerBoundary?: RobomataAgentPlannerBoundary;
   projectionStatus: FacilityMonitoringProjection["facility"]["status"];
   freshnessStatus: PacketFreshnessStatus;
   suiRootStatus: SuiRootVerificationStatus;
@@ -121,6 +149,9 @@ export function createDefaultAgentPolicy(
     submissionId: submission.id,
     facilityId: submission.facilityMonitoring?.facilityId ?? `facility_${submission.id}`,
     partnerAddress: submission.partnerAddress,
+    appointedAgentName: "Robomata supervised facility agent",
+    appointedBy: "operator",
+    appointerAddress: submission.partnerAddress,
     status: "paused",
     allowedActionTypes: defaultAllowedAgentActionTypes(),
     autoApproveActionTypes: [],

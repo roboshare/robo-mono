@@ -44,6 +44,11 @@ function statusBadgeClass(status: string) {
   return "badge-ghost";
 }
 
+function metadataValue(action: RobomataAgentAction, key: string): string | undefined {
+  const value = action.metadata?.[key];
+  return typeof value === "string" ? value : undefined;
+}
+
 export const AgentSupervisionPanel = ({
   chainId,
   getAuthHeaders,
@@ -52,6 +57,7 @@ export const AgentSupervisionPanel = ({
 }: AgentSupervisionPanelProps) => {
   const featureEnabled = isRobomataAgentsClientEnabled();
   const [actions, setActions] = useState<RobomataAgentAction[]>([]);
+  const [appointmentNameDraft, setAppointmentNameDraft] = useState("Robomata supervised facility agent");
   const [isLoading, setIsLoading] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
   const [policy, setPolicy] = useState<RobomataAgentPolicy | null>(null);
@@ -100,6 +106,7 @@ export const AgentSupervisionPanel = ({
       }
 
       setPolicy(policyPayload.policy);
+      setAppointmentNameDraft(policyPayload.policy.appointedAgentName ?? "Robomata supervised facility agent");
       setRuns(runsPayload.runs);
       setActions(runsPayload.actions);
     } catch (error) {
@@ -128,9 +135,33 @@ export const AgentSupervisionPanel = ({
       const payload = await readJsonResponse<{ policy?: RobomataAgentPolicy }>(response);
       if (!response.ok || !payload.policy) throw new Error(payload.error ?? "Failed to update agent policy.");
       setPolicy(payload.policy);
+      setAppointmentNameDraft(payload.policy.appointedAgentName ?? "Robomata supervised facility agent");
       notification.success(status === "active" ? "Robomata agent policy activated." : "Robomata agent policy paused.");
     } catch (error) {
       notification.error(error instanceof Error ? error.message : "Failed to update agent policy.");
+    } finally {
+      setIsMutating(false);
+    }
+  };
+
+  const updateAppointment = async () => {
+    setIsMutating(true);
+    try {
+      const response = await fetch(policyPath, {
+        body: JSON.stringify({ appointedAgentName: appointmentNameDraft }),
+        headers: {
+          "content-type": "application/json",
+          ...(await getAuthHeaders({ chainId, method: "PATCH", path: policyPath, signerAddress })),
+        },
+        method: "PATCH",
+      });
+      const payload = await readJsonResponse<{ policy?: RobomataAgentPolicy }>(response);
+      if (!response.ok || !payload.policy) throw new Error(payload.error ?? "Failed to update agent appointment.");
+      setPolicy(payload.policy);
+      setAppointmentNameDraft(payload.policy.appointedAgentName ?? "Robomata supervised facility agent");
+      notification.success("Agent appointment updated.");
+    } catch (error) {
+      notification.error(error instanceof Error ? error.message : "Failed to update agent appointment.");
     } finally {
       setIsMutating(false);
     }
@@ -187,6 +218,10 @@ export const AgentSupervisionPanel = ({
 
   const latestRun = runs[0];
   const openActions = actions.filter(action => action.status === "proposed" || action.status === "approved");
+  const appointedAgentName = policy?.appointedAgentName ?? "Robomata supervised facility agent";
+  const appointedBy = policy?.appointedBy ?? "operator";
+  const appointerAddress = policy?.appointerAddress ?? policy?.partnerAddress;
+  const plannerBoundary = latestRun?.plannerBoundary;
 
   return (
     <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
@@ -200,6 +235,10 @@ export const AgentSupervisionPanel = ({
             <div className="mt-3 flex flex-wrap gap-2">
               <span className={`badge ${statusBadgeClass(policy.status)} capitalize`}>{policy.status}</span>
               <span className="badge badge-ghost">{policy.allowedActionTypes.length} action types allowed</span>
+              <span className="badge badge-ghost capitalize">appointed by {formatStatus(appointedBy)}</span>
+              <span className="badge badge-ghost capitalize">
+                planner {formatStatus(plannerBoundary?.provider ?? "rules")}
+              </span>
               {latestRun ? (
                 <span className={`badge ${statusBadgeClass(latestRun.status)} capitalize`}>
                   last run {formatStatus(latestRun.status)}
@@ -239,7 +278,7 @@ export const AgentSupervisionPanel = ({
         </div>
       ) : policy ? (
         <div className="mt-5 space-y-4">
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <div className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
               <div className="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">Policy</div>
               <div className="mt-2 break-all text-sm font-semibold text-base-content">{policy.id}</div>
@@ -248,11 +287,53 @@ export const AgentSupervisionPanel = ({
               </div>
             </div>
             <div className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">Appointment</div>
+              <div className="mt-2 text-sm font-semibold text-base-content">{appointedAgentName}</div>
+              <div className="mt-1 text-sm text-base-content/70 capitalize">
+                Appointed by {formatStatus(appointedBy)}
+              </div>
+              {appointerAddress ? (
+                <div className="mt-1 break-all text-xs text-base-content/60">{appointerAddress}</div>
+              ) : null}
+              <div className="mt-3 flex flex-col gap-2">
+                <input
+                  className="input input-bordered input-xs w-full rounded-full"
+                  value={appointmentNameDraft}
+                  onChange={event => setAppointmentNameDraft(event.target.value)}
+                  maxLength={80}
+                  disabled={isMutating}
+                  aria-label="Appointed agent name"
+                />
+                <button
+                  className="btn btn-xs btn-outline rounded-full"
+                  disabled={isMutating || appointmentNameDraft.trim() === appointedAgentName}
+                  onClick={updateAppointment}
+                >
+                  Save appointment
+                </button>
+              </div>
+            </div>
+            <div className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
               <div className="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">Latest run</div>
               <div className="mt-2 text-sm font-semibold text-base-content">{latestRun?.summary ?? "No run yet"}</div>
               <div className="mt-1 text-sm text-base-content/70">
                 {latestRun ? new Date(latestRun.completedAt).toLocaleString() : "Activate policy to run checks"}
               </div>
+            </div>
+            <div className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">Planner</div>
+              <div className="mt-2 text-sm font-semibold text-base-content capitalize">
+                {formatStatus(plannerBoundary?.provider ?? "rules")}
+              </div>
+              <div className="mt-1 text-sm text-base-content/70 capitalize">
+                {plannerBoundary ? formatStatus(plannerBoundary.mode) : "deterministic rules"}
+              </div>
+              <div className="mt-1 text-xs text-base-content/60 capitalize">
+                {plannerBoundary ? formatStatus(plannerBoundary.status) : "no run yet"}
+              </div>
+              {plannerBoundary?.model ? (
+                <div className="mt-1 break-all text-xs text-base-content/60">{plannerBoundary.model}</div>
+              ) : null}
             </div>
             <div className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
               <div className="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">Open actions</div>
@@ -285,6 +366,10 @@ export const AgentSupervisionPanel = ({
                   </div>
                   <div className="mt-3 text-xs text-base-content/60">
                     {formatStatus(action.type)} - proposed {new Date(action.proposedAt).toLocaleString()}
+                  </div>
+                  <div className="mt-1 text-xs text-base-content/60 capitalize">
+                    Planner: {formatStatus(metadataValue(action, "plannerProvider") ?? "rules")} /{" "}
+                    {formatStatus(metadataValue(action, "proposalSource") ?? "deterministic_rules")}
                   </div>
                   <div className="mt-2 text-sm text-base-content/70">{action.reason}</div>
                   {action.status === "proposed" ? (
