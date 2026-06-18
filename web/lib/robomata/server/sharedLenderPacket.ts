@@ -7,7 +7,11 @@ import {
   isRobomataLenderMonitoringShareEnabled,
   isRobomataShareLinksEnabled,
 } from "~~/lib/featureFlags";
-import { resolveRobomataFacilityPolicyArtifact, summarizeRobomataPolicyEvaluations } from "~~/lib/robomata/policyRules";
+import {
+  type RobomataPolicyEvaluationSummary,
+  resolveRobomataFacilityPolicyArtifact,
+  summarizeRobomataPolicyEvaluations,
+} from "~~/lib/robomata/policyRules";
 import { getRobomataAgentStore } from "~~/lib/robomata/server/agentStore";
 import { getFacilityMonitoringStore } from "~~/lib/robomata/server/facilityMonitoringStore";
 import {
@@ -73,6 +77,18 @@ function monitoringBindingFromMetadata(
     runPolicyVersion: stringMetadata(metadata, "runPolicyVersion"),
     runRootDigest: stringMetadata(metadata, "runRootDigest"),
   };
+}
+
+function omitLenderHiddenSubjectIds(evaluations: RobomataPolicyEvaluationSummary[]): RobomataPolicyEvaluationSummary[] {
+  return evaluations.map(evaluation => ({
+    ...evaluation,
+    rules: evaluation.rules.map(rule => {
+      if (!rule.subjectIds?.length) return rule;
+      const safeRule = { ...rule };
+      delete safeRule.subjectIds;
+      return safeRule;
+    }),
+  }));
 }
 
 export async function buildShareLinkMonitoringMetadata(
@@ -141,7 +157,10 @@ export async function buildResolvedSharedLenderPacketView(input: {
     facilityId: projection.facility.id,
     submissionId: input.submission.id,
   }).artifact;
-  const policyEvaluations = [...(run.policyEvaluations ?? []), ...(packetManifest.policyEvaluations ?? [])];
+  const policyEvaluations = [
+    ...omitLenderHiddenSubjectIds(run.policyEvaluations ?? []),
+    ...(packetManifest.policyEvaluations ?? []),
+  ];
 
   const currentPacketFreshnessStatus =
     projection.latestPacket &&
