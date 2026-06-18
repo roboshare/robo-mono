@@ -145,7 +145,8 @@ Live facility monitoring is additive and default-off:
 - `ROBOMATA_AGENT_PLANNER_PROVIDER=rules|openai|anthropic|google` selects the
   planner boundary recorded on supervised agent runs. The default is `rules`.
 - `ROBOMATA_AGENT_PLANNER_ENABLED=true` allows a non-rules planner provider to
-  move past deterministic fallback checks. Current non-rules providers remain
+  move past deterministic fallback checks. OpenAI can refine deterministic
+  candidate action copy when configured; other non-rules providers remain
   stubbed until provider-specific planning controls are implemented.
 - `ROBOMATA_AGENT_PLANNER_MODEL=<model id>` labels a configured non-rules
   planner boundary when the provider requires a model.
@@ -177,8 +178,11 @@ Agent policies now record the appointed supervised agent name, the appointer,
 and the planner boundary used for each run. The current appointer path is the
 authenticated operator/partner address. Lender-appointed agents require a
 separate lender-authorized policy endpoint before the UI should claim lender
-appointment. Non-rules planner providers only change recorded boundary state;
-they do not generate actions until live planning controls are implemented.
+appointment. OpenAI planner output is constrained to the deterministic candidate
+action set: it may refine operator-facing title, message, and reason text, but
+it cannot add action types, drop rule-triggered candidates, approve actions, or
+execute writes. Other non-rules planner providers only change recorded boundary
+state until their live planning controls are implemented.
 
 Sui and EVM writes remain explicit operator-signed product paths or separately
 configured legacy/test paths:
