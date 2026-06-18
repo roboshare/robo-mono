@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  isRobomataAgentAdvisoryExecutionEnabled,
+  isRobomataAgentExecutionEnabled,
   isRobomataAgentMutationsEnabled,
   isRobomataAgentsEnabled,
   isRobomataWorkflowServerEnabled,
 } from "~~/lib/featureFlags";
-import type { RobomataAgentActionStatus } from "~~/lib/robomata/agents";
+import type { RobomataAgentAction, RobomataAgentActionStatus } from "~~/lib/robomata/agents";
 import { executeRobomataAgentAction } from "~~/lib/robomata/server/agentExecution";
 import { RobomataAgentPermissionDeniedError } from "~~/lib/robomata/server/agentPermissions";
 import { RobomataAgentPolicyRevokedMutationError, getRobomataAgentStore } from "~~/lib/robomata/server/agentStore";
@@ -23,6 +25,23 @@ function requireRobomataAgents() {
 function requireAgentMutations() {
   if (isRobomataAgentMutationsEnabled()) return null;
   return NextResponse.json({ error: "Robomata agent mutations are not enabled." }, { status: 403 });
+}
+
+function requireAgentExecution() {
+  if (!isRobomataAgentExecutionEnabled()) {
+    return NextResponse.json({ error: "Delegated agent execution is disabled by feature flag." }, { status: 403 });
+  }
+  if (!isRobomataAgentAdvisoryExecutionEnabled()) {
+    return NextResponse.json(
+      { error: "Robomata advisory execution adapter is disabled by feature flag." },
+      { status: 403 },
+    );
+  }
+  return null;
+}
+
+function hasSuccessfulExecutionAudit(action: RobomataAgentAction): boolean {
+  return action.status === "completed" && action.metadata?.executionStatus === "succeeded";
 }
 
 export async function PATCH(
@@ -57,6 +76,10 @@ export async function PATCH(
     if (shouldExecute && body.status !== "completed") {
       return NextResponse.json({ error: "Agent execution can only complete approved actions." }, { status: 400 });
     }
+    if (shouldExecute) {
+      const executionError = requireAgentExecution();
+      if (executionError) return executionError;
+    }
 
     const store = getRobomataAgentStore();
     const policy = await store.getPolicy(submission.id, partnerAddress);
@@ -74,6 +97,9 @@ export async function PATCH(
     const actionToExecute = shouldExecute ? await store.getAction(submission.id, partnerAddress, actionId) : null;
     if (shouldExecute && !actionToExecute) {
       return NextResponse.json({ error: "Agent action not found." }, { status: 404 });
+    }
+    if (shouldExecute && actionToExecute && hasSuccessfulExecutionAudit(actionToExecute)) {
+      return NextResponse.json({ action: actionToExecute });
     }
 
     const executionAudit =

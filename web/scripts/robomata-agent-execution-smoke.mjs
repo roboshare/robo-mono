@@ -42,6 +42,8 @@ assertIncludes(executionAdapter, "inputDigest", "execution adapter");
 assertIncludes(executionAdapter, "outputDigest", "execution adapter");
 
 assertIncludes(actionRoute, "shouldExecute", "agent action route");
+assertIncludes(actionRoute, "requireAgentExecution", "agent action route");
+assertIncludes(actionRoute, "hasSuccessfulExecutionAudit", "agent action route");
 assertIncludes(actionRoute, "recordActionExecutionAudit", "agent action route");
 assertIncludes(agentStore, "action_execution_failed", "agent store");
 assertIncludes(agentStore, "executionAuditMetadata", "agent store");
