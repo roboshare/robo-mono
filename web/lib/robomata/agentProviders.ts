@@ -50,6 +50,8 @@ type AgentProvider = {
 };
 
 const supportedProviders: AgentProviderName[] = ["mock", "openai", "anthropic", "google", "disabled"];
+const openAiReviewTimeoutMs = 8_000;
+const openAiExceptionRowLimit = 25;
 
 const openAiReviewSchema = {
   type: "object",
@@ -94,6 +96,23 @@ type OpenAiResponseBody = {
   };
   output?: OpenAiResponseOutputItem[];
   output_text?: string;
+};
+
+type OpenAiReviewPrompt = {
+  instruction: string;
+  portfolio: AgentReviewInput["portfolio"];
+  availableBorrowingBaseCents: number;
+  exceptionCount: number;
+  receivableSummary: {
+    totalReceivables: number;
+    eligibleReceivables: number;
+    ineligibleReceivables: number;
+    includedExceptionRows: number;
+    omittedExceptionRows: number;
+  };
+  receivableExceptions: AgentReviewInput["receivableResults"];
+  evidenceExceptions: AgentReviewInput["evidenceExceptions"];
+  omittedEvidenceExceptions: number;
 };
 
 function normalizeProviderName(value: string | undefined): AgentProviderName {
@@ -212,27 +231,42 @@ function outputTextFromOpenAiResponse(body: OpenAiResponseBody): string | undefi
     .find((text): text is string => Boolean(text?.trim()));
 }
 
-function parseOpenAiReviewPayload(text: string, fallback: AgentReview): OpenAiReviewPayload {
+function parseOpenAiReviewPayload(text: string, fallback: AgentReview, result: AgentReviewInput): OpenAiReviewPayload {
   const parsed = JSON.parse(text) as Partial<OpenAiReviewPayload>;
+  const exceptionReview =
+    result.exceptionCount === 0 ? [] : boundedStringList(parsed.exceptionReview, fallback.exceptionReview, 12, 240);
 
   return {
     headline: boundedText(parsed.headline, fallback.headline, 160),
     memo: boundedText(parsed.memo, fallback.memo, 1_200),
-    exceptionReview: boundedStringList(parsed.exceptionReview, fallback.exceptionReview, 12, 240),
+    exceptionReview,
     nextActions: boundedStringList(parsed.nextActions, fallback.nextActions, 8, 220),
   };
 }
 
 function openAiReviewPrompt(result: AgentReviewInput): string {
-  return JSON.stringify({
+  const receivableExceptions = result.receivableResults.filter(receivable => !receivable.eligible);
+  const includedReceivableExceptions = receivableExceptions.slice(0, openAiExceptionRowLimit);
+  const includedEvidenceExceptions = result.evidenceExceptions.slice(0, openAiExceptionRowLimit);
+  const prompt: OpenAiReviewPrompt = {
     instruction:
       "Prepare advisory lender diligence text. Do not recalculate availability, eligibility, exceptions, or reserves. The deterministic borrowing-base rules are the source of credit truth.",
     portfolio: result.portfolio,
     availableBorrowingBaseCents: result.availableBorrowingBaseCents,
     exceptionCount: result.exceptionCount,
-    receivableResults: result.receivableResults,
-    evidenceExceptions: result.evidenceExceptions,
-  });
+    receivableSummary: {
+      totalReceivables: result.receivableResults.length,
+      eligibleReceivables: result.receivableResults.length - receivableExceptions.length,
+      ineligibleReceivables: receivableExceptions.length,
+      includedExceptionRows: includedReceivableExceptions.length,
+      omittedExceptionRows: Math.max(receivableExceptions.length - includedReceivableExceptions.length, 0),
+    },
+    receivableExceptions: includedReceivableExceptions,
+    evidenceExceptions: includedEvidenceExceptions,
+    omittedEvidenceExceptions: Math.max(result.evidenceExceptions.length - includedEvidenceExceptions.length, 0),
+  };
+
+  return JSON.stringify(prompt);
 }
 
 async function reviewWithOpenAi(result: AgentReviewInput, fallback: AgentReview): Promise<AgentReview> {
@@ -254,46 +288,54 @@ async function reviewWithOpenAi(result: AgentReviewInput, fallback: AgentReview)
   }
 
   try {
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      body: JSON.stringify({
-        input: [
-          {
-            role: "system",
-            content:
-              "You are a private-credit diligence reviewer. Return only schema-compliant JSON. Never override deterministic borrowing-base results.",
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), openAiReviewTimeoutMs);
+    try {
+      const response = await fetch("https://api.openai.com/v1/responses", {
+        body: JSON.stringify({
+          input: [
+            {
+              role: "system",
+              content:
+                "You are a private-credit diligence reviewer. Return only schema-compliant JSON. Never override deterministic borrowing-base results.",
+            },
+            {
+              role: "user",
+              content: openAiReviewPrompt(result),
+            },
+          ],
+          model,
+          store: false,
+          text: {
+            format: {
+              type: "json_schema",
+              name: "robomata_borrowing_base_review",
+              schema: openAiReviewSchema,
+              strict: true,
+            },
           },
-          {
-            role: "user",
-            content: openAiReviewPrompt(result),
-          },
-        ],
-        model,
-        text: {
-          format: {
-            type: "json_schema",
-            name: "robomata_borrowing_base_review",
-            schema: openAiReviewSchema,
-            strict: true,
-          },
+        }),
+        headers: {
+          authorization: `Bearer ${apiKey}`,
+          "content-type": "application/json",
         },
-      }),
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        "content-type": "application/json",
-      },
-      method: "POST",
-    });
-    const body = (await response.json().catch(() => ({}))) as OpenAiResponseBody;
-    if (!response.ok) throw new Error(body.error?.message ?? `OpenAI review failed with ${response.status}.`);
+        method: "POST",
+        signal: controller.signal,
+      });
+      const body = (await response.json().catch(() => ({}))) as OpenAiResponseBody;
+      if (!response.ok) throw new Error(body.error?.message ?? `OpenAI review failed with ${response.status}.`);
 
-    const outputText = outputTextFromOpenAiResponse(body);
-    if (!outputText) throw new Error("OpenAI review response did not include output text.");
+      const outputText = outputTextFromOpenAiResponse(body);
+      if (!outputText) throw new Error("OpenAI review response did not include output text.");
 
-    return {
-      ...parseOpenAiReviewPayload(outputText, fallback),
-      ...reviewBoundary("openai", "live_completed", "llm_live"),
-      model,
-    };
+      return {
+        ...parseOpenAiReviewPayload(outputText, fallback, result),
+        ...reviewBoundary("openai", "live_completed", "llm_live"),
+        model,
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
   } catch (error) {
     void error;
     return {

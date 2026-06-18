@@ -434,8 +434,9 @@ This work follows the current repo policy:
 - Do not treat `ROBOMATA_AGENT_PROVIDER` or provider API keys as sufficient to
   activate live LLM credit review. Live review also requires
   `ROBOMATA_LLM_REVIEW_ENABLED=true`; OpenAI review also requires
-  `ROBOMATA_AGENT_REVIEW_MODEL`. LLM memo output remains advisory and must fall
-  back to deterministic review output on provider errors.
+  `ROBOMATA_AGENT_REVIEW_MODEL`. LLM memo output remains advisory, uses capped
+  exception-only inputs with `store: false`, and must fall back to deterministic
+  review output on provider errors or timeouts.
 - Do not present the current platform-default policy rules as lender-authored
   artifacts. The visible `submission-v1` rules are a transparency baseline until
   lender policy artifacts are implemented.
