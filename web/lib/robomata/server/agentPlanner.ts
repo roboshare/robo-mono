@@ -1,15 +1,24 @@
 import { createHash } from "node:crypto";
 import "server-only";
-import { isRobomataAgentPlannerEnabled } from "~~/lib/featureFlags";
+import {
+  isRobomataAgentAdvisoryExecutionEnabled,
+  isRobomataAgentExecutionEnabled,
+  isRobomataAgentPlannerEnabled,
+} from "~~/lib/featureFlags";
 import type {
   RobomataAgentAction,
   RobomataAgentActionDraft,
+  RobomataAgentActionSeverity,
   RobomataAgentActionType,
   RobomataAgentPlannerBoundary,
+  RobomataAgentPlannerExecutionBoundary,
   RobomataAgentPlannerInputControls,
   RobomataAgentPlannerMode,
   RobomataAgentPlannerProvider,
+  RobomataAgentPlannerRequiredApproval,
+  RobomataAgentPlannerRiskLevel,
   RobomataAgentPlannerStatus,
+  RobomataAgentPlannerSuggestedTool,
   RobomataAgentPolicy,
 } from "~~/lib/robomata/agents";
 import { ROBOMATA_AGENT_ACTION_TYPES } from "~~/lib/robomata/agents";
@@ -18,7 +27,7 @@ import type { RobomataFacilityPolicyArtifact } from "~~/lib/robomata/policyRules
 import type { FacilitySubmission } from "~~/lib/robomata/submissions";
 
 export const ROBOMATA_AGENT_PLANNER_PROMPT_VERSION = "agent-supervision-planner-v1";
-export const ROBOMATA_AGENT_PLANNER_OUTPUT_SCHEMA_VERSION = "agent-supervision-plan-output-v1";
+export const ROBOMATA_AGENT_PLANNER_OUTPUT_SCHEMA_VERSION = "agent-supervision-plan-output-v2";
 export const ROBOMATA_AGENT_PLANNER_MAX_CANDIDATE_ACTIONS = 8;
 export const ROBOMATA_AGENT_PLANNER_MAX_RECENT_ACTIONS = 12;
 export const ROBOMATA_AGENT_PLANNER_MAX_RECENT_RUNS = 5;
@@ -26,6 +35,9 @@ export const ROBOMATA_AGENT_PLANNER_MAX_TEXT_LENGTH = 260;
 
 const supportedPlannerProviders: RobomataAgentPlannerProvider[] = ["rules", "openai", "anthropic", "google"];
 const openAiPlannerTimeoutMs = 8_000;
+const plannerRiskRank: Record<RobomataAgentPlannerRiskLevel, number> = { low: 1, medium: 2, high: 3 };
+const plannerRequiredApprovals: Exclude<RobomataAgentPlannerRequiredApproval, "none_auto_approved">[] = ["operator"];
+const plannerSuggestedTools: RobomataAgentPlannerSuggestedTool[] = ["none", "robomata.agent.advisory_audit.v1"];
 
 const providerKeyEnv: Record<Exclude<RobomataAgentPlannerProvider, "rules">, string> = {
   anthropic: "ANTHROPIC_API_KEY",
@@ -98,8 +110,41 @@ const openAiPlannerSchema = {
             type: "string",
             description: "Why the supervised agent proposed this action.",
           },
+          riskLevel: {
+            type: "string",
+            enum: ["low", "medium", "high"],
+            description: "Must not understate the deterministic candidate severity.",
+          },
+          requiredApprovals: {
+            type: "array",
+            items: {
+              type: "string",
+              enum: plannerRequiredApprovals,
+            },
+            description:
+              "Use [] only for action types explicitly auto-approved by the appointment; otherwise use operator.",
+          },
+          suggestedTool: {
+            type: "string",
+            enum: plannerSuggestedTools,
+            description:
+              "Use none unless the supplied allowed tool surface permits the advisory audit adapter for this action type.",
+          },
+          toolIntentReason: {
+            type: "string",
+            description: "Why this suggested tool remains proposal-only or audit-only.",
+          },
         },
-        required: ["type", "title", "message", "reason"],
+        required: [
+          "type",
+          "title",
+          "message",
+          "reason",
+          "riskLevel",
+          "requiredApprovals",
+          "suggestedTool",
+          "toolIntentReason",
+        ],
       },
     },
   },
@@ -109,7 +154,11 @@ const openAiPlannerSchema = {
 type OpenAiPlannerActionPayload = {
   message?: unknown;
   reason?: unknown;
+  requiredApprovals?: unknown;
+  riskLevel?: unknown;
+  suggestedTool?: unknown;
   title?: unknown;
+  toolIntentReason?: unknown;
   type?: unknown;
 };
 
@@ -157,6 +206,7 @@ type PlanAgentActionsInput = {
     summary: string;
   }>;
   submission: FacilitySubmission;
+  suppressAutoApprove?: boolean;
 };
 
 type PlanAgentActionsResult = {
@@ -217,20 +267,181 @@ function statusCounts(values: string[]): Record<string, number> {
   }, {});
 }
 
-function buildAllowedToolSurface(policy: RobomataAgentPolicy) {
+function isPlannerRiskLevel(value: unknown): value is RobomataAgentPlannerRiskLevel {
+  return value === "low" || value === "medium" || value === "high";
+}
+
+function isPlannerSuggestedTool(value: unknown): value is RobomataAgentPlannerSuggestedTool {
+  return typeof value === "string" && plannerSuggestedTools.includes(value as RobomataAgentPlannerSuggestedTool);
+}
+
+function plannerExecutionBoundaryForAction(type: RobomataAgentActionType): RobomataAgentPlannerExecutionBoundary {
+  return type === "evidence_review" || type === "sui_root_review" ? "audit_only_adapter_flagged" : "proposal_only";
+}
+
+function isActionWithinAppointment(policy: RobomataAgentPolicy, type: RobomataAgentActionType): boolean {
+  return policy.allowedActionTypes.includes(type);
+}
+
+function isActionAutoApproved(
+  policy: RobomataAgentPolicy,
+  type: RobomataAgentActionType,
+  suppressAutoApprove?: boolean,
+): boolean {
+  if (policy.status !== "active") return false;
+  if (suppressAutoApprove) return false;
+  return policy.autoApproveActionTypes.includes(type);
+}
+
+function isAdvisoryAuditToolEnabled(): boolean {
+  return isRobomataAgentExecutionEnabled() && isRobomataAgentAdvisoryExecutionEnabled();
+}
+
+function canSuggestAdvisoryAuditTool(policy: RobomataAgentPolicy | undefined, type: RobomataAgentActionType): boolean {
+  if (policy && policy.status !== "active") return false;
+  if (policy && !isActionWithinAppointment(policy, type)) return false;
+  if (!isAdvisoryAuditToolEnabled()) return false;
+  return plannerExecutionBoundaryForAction(type) === "audit_only_adapter_flagged";
+}
+
+function defaultSuggestedToolForAction(
+  type: RobomataAgentActionType,
+  policy?: RobomataAgentPolicy,
+): RobomataAgentPlannerSuggestedTool {
+  return canSuggestAdvisoryAuditTool(policy, type) ? "robomata.agent.advisory_audit.v1" : "none";
+}
+
+function defaultExecutionBoundaryForAction(
+  type: RobomataAgentActionType,
+  policy?: RobomataAgentPolicy,
+): RobomataAgentPlannerExecutionBoundary {
+  return canSuggestAdvisoryAuditTool(policy, type) ? "audit_only_adapter_flagged" : "proposal_only";
+}
+
+function validateSuggestedToolForAction(
+  type: RobomataAgentActionType,
+  suggestedTool: RobomataAgentPlannerSuggestedTool,
+  policy: RobomataAgentPolicy,
+): void {
+  if (suggestedTool === "none") return;
+  if (defaultSuggestedToolForAction(type, policy) === suggestedTool) return;
+  throw new OpenAiPlannerSchemaError("OpenAI planner suggested an unsupported tool for the action type.");
+}
+
+function validateRequiredApprovals(
+  value: unknown,
+  type: RobomataAgentActionType,
+  policy: RobomataAgentPolicy,
+  suppressAutoApprove?: boolean,
+): RobomataAgentPlannerRequiredApproval {
+  if (!Array.isArray(value)) {
+    throw new OpenAiPlannerSchemaError("OpenAI planner required approvals must be an array.");
+  }
+  if (isActionAutoApproved(policy, type, suppressAutoApprove)) {
+    if (value.length === 0) return "none_auto_approved";
+    if (value.length === 1 && value[0] === "operator") return "operator";
+    throw new OpenAiPlannerSchemaError("OpenAI planner auto-approved action required approvals are invalid.");
+  }
+  if (value.length !== 1 || value[0] !== "operator") {
+    throw new OpenAiPlannerSchemaError("OpenAI planner required approvals must include operator.");
+  }
+  return "operator";
+}
+
+function validateRiskLevel(
+  value: unknown,
+  deterministicSeverity: RobomataAgentActionSeverity,
+): RobomataAgentPlannerRiskLevel {
+  if (!isPlannerRiskLevel(value)) throw new OpenAiPlannerSchemaError("OpenAI planner risk level is not supported.");
+  if (plannerRiskRank[value] < plannerRiskRank[deterministicSeverity]) {
+    throw new OpenAiPlannerSchemaError("OpenAI planner risk level understated deterministic severity.");
+  }
+  return value;
+}
+
+function defaultPlannerToolIntentReason(
+  type: RobomataAgentActionType,
+  policy: RobomataAgentPolicy,
+  suppressAutoApprove?: boolean,
+): string {
+  if (!isActionWithinAppointment(policy, type)) {
+    return "Appointment does not allow this action type; retain only as a skipped audit record.";
+  }
+  if (policy.autoApproveActionTypes.includes(type) && suppressAutoApprove) {
+    return "Auto-approval is suppressed for this run; operator approval is required before the action can advance.";
+  }
+  if (isActionAutoApproved(policy, type, suppressAutoApprove)) {
+    return "Appointment auto-approval covers this action type, but planner output still cannot execute or mutate state.";
+  }
+  if (defaultSuggestedToolForAction(type, policy) === "robomata.agent.advisory_audit.v1") {
+    return "Advisory audit adapter only; operator approval remains required before any retained action changes state.";
+  }
+  if (plannerExecutionBoundaryForAction(type) === "audit_only_adapter_flagged" && !isAdvisoryAuditToolEnabled()) {
+    return "Advisory execution flags are disabled; retain as a proposal for operator review.";
+  }
+  return "No executable tool is authorized for this action; retain as a proposal for operator review.";
+}
+
+function defaultPlannerRequiredApprovals(
+  action: RobomataAgentActionDraft,
+  policy: RobomataAgentPolicy,
+  suppressAutoApprove?: boolean,
+): RobomataAgentPlannerRequiredApproval {
+  if (isActionAutoApproved(policy, action.type, suppressAutoApprove)) return "none_auto_approved";
+  return "operator";
+}
+
+function withPlannerRecommendationDefaults(
+  action: RobomataAgentActionDraft,
+  policy: RobomataAgentPolicy,
+  suppressAutoApprove?: boolean,
+): RobomataAgentActionDraft {
+  const riskLevel = isPlannerRiskLevel(action.metadata?.plannerRiskLevel)
+    ? action.metadata.plannerRiskLevel
+    : action.severity;
+  const suggestedTool = isPlannerSuggestedTool(action.metadata?.plannerSuggestedTool)
+    ? action.metadata.plannerSuggestedTool
+    : defaultSuggestedToolForAction(action.type, policy);
+  const suggestedToolAllowed =
+    isActionWithinAppointment(policy, action.type) &&
+    (suggestedTool === "none" || suggestedTool === defaultSuggestedToolForAction(action.type, policy));
+  const executionBoundary = defaultExecutionBoundaryForAction(action.type, policy);
+  return {
+    ...action,
+    metadata: {
+      ...action.metadata,
+      plannerExecutionBoundary: executionBoundary,
+      plannerRecommendationSource: action.metadata?.proposalSource ?? "deterministic_rules",
+      plannerRequiredApprovals: defaultPlannerRequiredApprovals(action, policy, suppressAutoApprove),
+      plannerRiskLevel: riskLevel,
+      plannerSuggestedTool: suggestedToolAllowed ? suggestedTool : "none",
+      plannerSuggestedToolAllowed: suggestedToolAllowed,
+      plannerToolIntentReason:
+        typeof action.metadata?.plannerToolIntentReason === "string"
+          ? boundedText(
+              action.metadata.plannerToolIntentReason,
+              defaultPlannerToolIntentReason(action.type, policy, suppressAutoApprove),
+              180,
+            )
+          : defaultPlannerToolIntentReason(action.type, policy, suppressAutoApprove),
+    },
+  };
+}
+
+function buildAllowedToolSurface(policy: RobomataAgentPolicy, suppressAutoApprove?: boolean) {
   return ROBOMATA_AGENT_ACTION_TYPES.map(type => ({
-    approvalRequired: !policy.autoApproveActionTypes.includes(type),
-    autoApproved: policy.autoApproveActionTypes.includes(type),
-    executionBoundary:
-      type === "evidence_review" || type === "sui_root_review" ? "audit_only_adapter_flagged" : "proposal_only",
+    approvalRequired: !isActionAutoApproved(policy, type, suppressAutoApprove),
+    autoApproved: isActionAutoApproved(policy, type, suppressAutoApprove),
+    executionBoundary: defaultExecutionBoundaryForAction(type, policy),
+    suggestedTool: defaultSuggestedToolForAction(type, policy),
     type,
-    withinAppointment: policy.allowedActionTypes.includes(type),
+    withinAppointment: isActionWithinAppointment(policy, type),
   }));
 }
 
 function buildPlannerProviderInput(input: PlanAgentActionsInput, generatedAt: string) {
   return {
-    allowedToolSurface: buildAllowedToolSurface(input.policy),
+    allowedToolSurface: buildAllowedToolSurface(input.policy, input.suppressAutoApprove),
     candidateActions: input.candidateActions.slice(0, ROBOMATA_AGENT_PLANNER_MAX_CANDIDATE_ACTIONS).map(action => ({
       message: compactText(action.message),
       policyArtifactId: action.metadata?.policyArtifactId ?? input.policyArtifact.id,
@@ -260,6 +471,7 @@ function buildPlannerProviderInput(input: PlanAgentActionsInput, generatedAt: st
       appointedBy: input.policy.appointedBy ?? null,
       appointmentAuthorizationSurface: input.policy.appointmentAuthorizationSurface ?? null,
       autoApproveActionTypes: input.policy.autoApproveActionTypes,
+      autoApprovalSuppressedForRun: Boolean(input.suppressAutoApprove),
       policyId: input.policy.id,
       status: input.policy.status,
     },
@@ -324,6 +536,7 @@ function sourceDataDigestSource(input: PlanAgentActionsInput) {
       autoApproveActionTypes: input.policy.autoApproveActionTypes,
       id: input.policy.id,
       status: input.policy.status,
+      suppressAutoApprove: Boolean(input.suppressAutoApprove),
     },
     policyArtifact: {
       id: input.policyArtifact.id,
@@ -358,6 +571,13 @@ function plannerOutputDigestSource(actions: RobomataAgentActionDraft[]) {
   return {
     actions: actions.map(action => ({
       message: action.message,
+      plannerExecutionBoundary: action.metadata?.plannerExecutionBoundary ?? null,
+      plannerRecommendationSource: action.metadata?.plannerRecommendationSource ?? null,
+      plannerRequiredApprovals: action.metadata?.plannerRequiredApprovals ?? null,
+      plannerRiskLevel: action.metadata?.plannerRiskLevel ?? null,
+      plannerSuggestedTool: action.metadata?.plannerSuggestedTool ?? null,
+      plannerSuggestedToolAllowed: action.metadata?.plannerSuggestedToolAllowed ?? null,
+      plannerToolIntentReason: action.metadata?.plannerToolIntentReason ?? null,
       proposalSource: action.metadata?.proposalSource ?? "deterministic_rules",
       reason: action.reason,
       severity: action.severity,
@@ -373,11 +593,16 @@ function withPlannerProvenance(input: {
   baseBoundary: RobomataAgentPlannerBoundary;
   controls: RobomataAgentPlannerInputControls;
   generatedAt: string;
+  policy: RobomataAgentPolicy;
   providerInput: PlannerProviderInput;
   sourceDataDigest: string;
+  suppressAutoApprove?: boolean;
 }): PlanAgentActionsResult {
+  const actionsWithRecommendationDefaults = input.actions.map(action =>
+    withPlannerRecommendationDefaults(action, input.policy, input.suppressAutoApprove),
+  );
   const plannerInputDigest = digest(input.providerInput);
-  const plannerOutputDigest = digest(plannerOutputDigestSource(input.actions));
+  const plannerOutputDigest = digest(plannerOutputDigestSource(actionsWithRecommendationDefaults));
   const plannerBoundary: RobomataAgentPlannerBoundary = {
     ...input.baseBoundary,
     allowedToolCount: input.providerInput.allowedToolSurface.length,
@@ -394,7 +619,7 @@ function withPlannerProvenance(input: {
   };
 
   return {
-    actions: input.actions.map(action => ({
+    actions: actionsWithRecommendationDefaults.map(action => ({
       ...action,
       metadata: {
         ...action.metadata,
@@ -417,9 +642,14 @@ function outputTextFromOpenAiResponse(body: OpenAiResponseBody): string | undefi
     .find((text): text is string => Boolean(text?.trim()));
 }
 
-function parseOpenAiPlannerPayload(text: string, candidateActions: RobomataAgentActionDraft[]): OpenAiPlannerPayload {
+function parseOpenAiPlannerPayload(
+  text: string,
+  candidateActions: RobomataAgentActionDraft[],
+  policy: RobomataAgentPolicy,
+  suppressAutoApprove?: boolean,
+): OpenAiPlannerPayload {
   const parsed = JSON.parse(text) as Partial<OpenAiPlannerPayload>;
-  const candidateTypes = new Set(candidateActions.map(action => action.type));
+  const candidatesByType = new Map(candidateActions.map(action => [action.type, action]));
   if (!Array.isArray(parsed.actions)) {
     throw new OpenAiPlannerSchemaError("OpenAI planner response actions must be an array.");
   }
@@ -431,16 +661,33 @@ function parseOpenAiPlannerPayload(text: string, candidateActions: RobomataAgent
       typeof action.type !== "string" ||
       typeof action.title !== "string" ||
       typeof action.message !== "string" ||
-      typeof action.reason !== "string"
+      typeof action.reason !== "string" ||
+      typeof action.toolIntentReason !== "string"
     ) {
       throw new OpenAiPlannerSchemaError("OpenAI planner response action fields must be strings.");
     }
     if (!ROBOMATA_AGENT_ACTION_TYPES.includes(action.type as RobomataAgentActionType)) {
       throw new OpenAiPlannerSchemaError("OpenAI planner response action type is not supported.");
     }
-    if (!candidateTypes.has(action.type as RobomataAgentActionType)) {
+    const candidate = candidatesByType.get(action.type as RobomataAgentActionType);
+    if (!candidate) {
       throw new OpenAiPlannerSchemaError("OpenAI planner response action type was not a deterministic candidate.");
     }
+    const riskLevel = validateRiskLevel(action.riskLevel, candidate.severity);
+    const suggestedTool = action.suggestedTool;
+    if (!isPlannerSuggestedTool(suggestedTool)) {
+      throw new OpenAiPlannerSchemaError("OpenAI planner suggested tool is not supported.");
+    }
+    const requiredApproval = validateRequiredApprovals(
+      action.requiredApprovals,
+      candidate.type,
+      policy,
+      suppressAutoApprove,
+    );
+    validateSuggestedToolForAction(candidate.type, suggestedTool, policy);
+    action.riskLevel = riskLevel;
+    action.requiredApprovals = requiredApproval === "none_auto_approved" ? [] : ["operator"];
+    action.suggestedTool = suggestedTool;
   }
   return {
     actions: parsed.actions,
@@ -450,7 +697,7 @@ function parseOpenAiPlannerPayload(text: string, candidateActions: RobomataAgent
 function openAiPlannerPrompt(providerInput: PlannerProviderInput): string {
   return JSON.stringify({
     instruction:
-      "Refine operator-facing copy for the supplied supervised-agent candidate actions. Do not add action types, remove required candidates, approve actions, execute actions, or change credit truth.",
+      "Refine operator-facing copy and structured recommendation intent for the supplied supervised-agent candidate actions. Do not add action types, remove required candidates, understate deterministic risk, approve actions, execute actions, or change credit truth. Required approvals must be [] only for explicitly auto-approved action types and otherwise operator-only. Suggested tools must match the allowed tool surface and remain proposal-only or audit-only.",
     inputControls: {
       rawEvidenceIncluded: false,
       secretMaterialIncluded: false,
@@ -462,6 +709,8 @@ function openAiPlannerPrompt(providerInput: PlannerProviderInput): string {
 function applyOpenAiPlannerPayload(
   candidateActions: RobomataAgentActionDraft[],
   payload: OpenAiPlannerPayload,
+  policy: RobomataAgentPolicy,
+  suppressAutoApprove?: boolean,
 ): RobomataAgentActionDraft[] {
   const candidatesByType = new Map(candidateActions.map(action => [action.type, action]));
   const plannedByType = new Map<RobomataAgentActionType, OpenAiPlannerActionPayload>();
@@ -484,6 +733,20 @@ function applyOpenAiPlannerPayload(
       metadata: {
         ...candidate.metadata,
         llmPlannerApplied: true,
+        plannerExecutionBoundary: plannerExecutionBoundaryForAction(candidate.type),
+        plannerRecommendationSource: "llm_refined_rules",
+        plannerRequiredApprovals:
+          Array.isArray(planned.requiredApprovals) && planned.requiredApprovals.length === 0
+            ? "none_auto_approved"
+            : "operator",
+        plannerRiskLevel: planned.riskLevel as RobomataAgentPlannerRiskLevel,
+        plannerSuggestedTool: planned.suggestedTool as RobomataAgentPlannerSuggestedTool,
+        plannerSuggestedToolAllowed: isActionWithinAppointment(policy, candidate.type),
+        plannerToolIntentReason: boundedText(
+          planned.toolIntentReason,
+          defaultPlannerToolIntentReason(candidate.type, policy, suppressAutoApprove),
+          180,
+        ),
         proposalSource: "llm_refined_rules",
       },
     };
@@ -565,10 +828,15 @@ async function planWithOpenAi(
       const outputText = outputTextFromOpenAiResponse(body);
       if (!outputText) throw new Error("OpenAI planner response did not include output text.");
 
-      const payload = parseOpenAiPlannerPayload(outputText, input.candidateActions);
+      const payload = parseOpenAiPlannerPayload(
+        outputText,
+        input.candidateActions,
+        input.policy,
+        input.suppressAutoApprove,
+      );
 
       return {
-        actions: applyOpenAiPlannerPayload(input.candidateActions, payload),
+        actions: applyOpenAiPlannerPayload(input.candidateActions, payload, input.policy, input.suppressAutoApprove),
         plannerBoundary,
       };
     } finally {
@@ -604,6 +872,8 @@ function withDeterministicPlannerProvenance(
   return withPlannerProvenance({
     actions: input.candidateActions,
     baseBoundary,
+    policy: input.policy,
+    suppressAutoApprove: input.suppressAutoApprove,
     ...context,
   });
 }
@@ -617,6 +887,8 @@ async function withLivePlannerProvenance(
   return withPlannerProvenance({
     actions: planned.actions,
     baseBoundary: planned.plannerBoundary,
+    policy: input.policy,
+    suppressAutoApprove: input.suppressAutoApprove,
     ...context,
   });
 }
