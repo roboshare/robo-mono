@@ -144,6 +144,7 @@ type AssetAction = {
 };
 
 const SUBGRAPH_REFRESH_DELAYS_MS = [1500, 5000, 12000, 25000];
+const CHAIN_CLOCK_REFRESH_MS = 60_000;
 const TOKENIZED_FACILITY_STATUSES: ReadonlySet<FacilitySubmission["tokenization"]["status"]> = new Set([
   "registered",
   "offering_created",
@@ -184,6 +185,7 @@ const PartnerDashboard: NextPage = () => {
   const selectedNetwork = useSelectedNetwork(accountChainId);
   const chainId = selectedNetwork.id;
   const { data: latestBlock } = useBlock({ chainId });
+  const [currentTimeSec, setCurrentTimeSec] = useState(() => Math.floor(Date.now() / 1000));
   const chains = useChains();
   const currentChain = chains.find(c => c.id === chainId);
   const networkName = currentChain?.name || selectedNetwork.name || "Localhost";
@@ -697,7 +699,16 @@ const PartnerDashboard: NextPage = () => {
     }
   }, [assetRecords.length, refreshCounter]);
 
-  const chainNowSec = latestBlock?.timestamp ? Number(latestBlock.timestamp) : Math.floor(Date.now() / 1000);
+  useEffect(() => {
+    const refreshClock = () => setCurrentTimeSec(Math.floor(Date.now() / 1000));
+    refreshClock();
+
+    const intervalId = window.setInterval(refreshClock, CHAIN_CLOCK_REFRESH_MS);
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  const latestBlockTimeSec = latestBlock?.timestamp ? Number(latestBlock.timestamp) : 0;
+  const chainNowSec = Math.max(latestBlockTimeSec, currentTimeSec);
   const assetMaturityDateById = new Map<string, bigint>(
     assetRecords.map((asset, index) => [asset.id, (tokenMaturityDates?.[index]?.result as bigint | undefined) ?? 0n]),
   );

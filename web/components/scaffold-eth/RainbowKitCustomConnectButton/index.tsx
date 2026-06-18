@@ -28,6 +28,7 @@ const ConnectedWalletSummary = ({ address, chainName }: { address: Address; chai
   const { data: paymentTokenBalance } = useWatchTokenBalance({
     tokenAddress: paymentTokenAddress,
     ownerAddress: address,
+    watch: true,
   });
 
   const formattedPaymentTokenBalance =

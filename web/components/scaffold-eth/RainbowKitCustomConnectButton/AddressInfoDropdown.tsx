@@ -49,10 +49,11 @@ export const AddressInfoDropdown = ({
     symbol: paymentTokenSymbol,
     decimals: paymentTokenDecimals,
   } = usePaymentToken();
-  const { data: nativeBalance } = useWatchBalance({ address });
+  const { data: nativeBalance } = useWatchBalance({ address, watch: true });
   const { data: paymentTokenBalance } = useWatchTokenBalance({
     tokenAddress: paymentTokenAddress,
     ownerAddress: address,
+    watch: true,
   });
 
   const formattedNativeBalance =
