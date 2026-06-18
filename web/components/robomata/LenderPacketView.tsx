@@ -5,6 +5,7 @@ import {
   ExclamationTriangleIcon,
   LockClosedIcon,
 } from "@heroicons/react/24/outline";
+import { LenderAgentAppointmentPanel } from "~~/components/robomata/LenderAgentAppointmentPanel";
 import {
   BorrowingBasePolicyDisclosure,
   PacketFreshnessPolicyDisclosure,
@@ -15,6 +16,7 @@ import type { SharedLenderPacketView } from "~~/lib/robomata/shareLinks";
 
 type LenderPacketViewProps = {
   packet: SharedLenderPacketView;
+  shareToken: string;
 };
 
 function evidenceBadgeClass(status: string) {
@@ -42,7 +44,7 @@ function formatStatus(value: string) {
   return value.replace(/_/g, " ");
 }
 
-export const LenderPacketView = ({ packet }: LenderPacketViewProps) => {
+export const LenderPacketView = ({ packet, shareToken }: LenderPacketViewProps) => {
   const { borrowingBase } = packet;
 
   return (
@@ -104,6 +106,9 @@ export const LenderPacketView = ({ packet }: LenderPacketViewProps) => {
         </div>
         <div className="mt-5">
           <ReviewBoundaryPanel boundary={packet.lenderPacket.reviewBoundary} />
+        </div>
+        <div className="mt-5">
+          <LenderAgentAppointmentPanel appointment={packet.agentAppointment} shareToken={shareToken} />
         </div>
         <div className="mt-5">
           <BorrowingBasePolicyDisclosure />

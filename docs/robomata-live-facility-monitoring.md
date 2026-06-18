@@ -138,6 +138,11 @@ Live facility monitoring is additive and default-off:
   supervision panel.
 - `ROBOMATA_AGENT_MUTATIONS_ENABLED=true` enables policy activation, manual
   agent runs, and operator action decisions.
+- `ROBOMATA_LENDER_AGENT_APPOINTMENT_ENABLED=true` enables protected lender
+  share links to appoint or rename a lender-side supervised agent through
+  `PATCH /api/robomata/share/:token/agent-policy`. The route also requires
+  share links, agents, and agent mutations to be enabled, and it records the
+  protected share-link id as the authorization surface.
 - `ROBOMATA_AGENT_REFRESH_ENABLED=true` enables scheduled agent ticks at
   `POST /api/robomata/agents/tick`; the route also requires
   `ROBOMATA_AGENT_TICK_SECRET` and callers must send the same value in
@@ -168,6 +173,13 @@ Supervised agent actions are separate from the deterministic LLM diligence memo
 used in the borrowing-base workflow. The diligence memo can summarize the
 rules-based credit package, but it is not an agent policy, not an executable
 action queue, and not the source of credit truth.
+
+Lender-appointed agents are scoped to protected lender share links. A lender
+share link can record a lender appointment when
+`ROBOMATA_LENDER_AGENT_APPOINTMENT_ENABLED=true`, but that appointment does not
+grant delegated execution, Sui/EVM writes, or automatic action approval. Those
+capabilities require later permission, revocation, and bounded-execution
+controls.
 
 Operators remain the execution boundary. They activate or pause policy, trigger
 manual checks, and approve, reject, complete, or skip proposed actions. Scheduled

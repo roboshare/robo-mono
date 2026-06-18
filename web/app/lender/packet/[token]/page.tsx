@@ -110,7 +110,7 @@ const LenderPacketPage = async ({ params }: LenderPacketPageProps) => {
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6">
-      <LenderPacketView packet={state.packet} />
+      <LenderPacketView packet={state.packet} shareToken={token} />
     </div>
   );
 };

@@ -1,5 +1,13 @@
 import "server-only";
-import { isRobomataFacilityMonitoringEnabled, isRobomataLenderMonitoringShareEnabled } from "~~/lib/featureFlags";
+import {
+  isRobomataAgentMutationsEnabled,
+  isRobomataAgentsEnabled,
+  isRobomataFacilityMonitoringEnabled,
+  isRobomataLenderAgentAppointmentEnabled,
+  isRobomataLenderMonitoringShareEnabled,
+  isRobomataShareLinksEnabled,
+} from "~~/lib/featureFlags";
+import { getRobomataAgentStore } from "~~/lib/robomata/server/agentStore";
 import { getFacilityMonitoringStore } from "~~/lib/robomata/server/facilityMonitoringStore";
 import {
   type SharedLenderPacketView,
@@ -79,19 +87,21 @@ export async function buildResolvedSharedLenderPacketView(input: {
   shareLink: SubmissionShareLink;
   submission: FacilitySubmission;
 }): Promise<SharedLenderPacketView> {
+  const agentAppointment = await buildSharedLenderAgentAppointment(input.submission);
+
   if (!isRobomataFacilityMonitoringEnabled() || !isRobomataLenderMonitoringShareEnabled()) {
-    return buildSharedLenderPacketView(input);
+    return buildSharedLenderPacketView({ ...input, agentAppointment });
   }
 
   const binding = monitoringBindingFromMetadata(input.shareLink.metadata);
-  if (!binding) return buildSharedLenderPacketView(input);
+  if (!binding) return buildSharedLenderPacketView({ ...input, agentAppointment });
 
   const projection = await getFacilityMonitoringStore().getProjectionForSubmission(input.submission);
   const packetManifest =
     projection.packetManifests.find(packet => packet.id === binding.packetManifestId) ??
     projection.packetManifests.find(packet => packet.runId === binding.runId);
   const run = projection.runHistory.find(candidate => candidate.id === binding.runId);
-  if (!packetManifest || !run) return buildSharedLenderPacketView(input);
+  if (!packetManifest || !run) return buildSharedLenderPacketView({ ...input, agentAppointment });
 
   const currentPacketFreshnessStatus =
     projection.latestPacket &&
@@ -109,9 +119,40 @@ export async function buildResolvedSharedLenderPacketView(input: {
       currentPacketFreshnessStatus,
       pinnedAtShare: true,
     },
+    agentAppointment,
   });
 }
 
 export function shareLinkHasMonitoringMetadata(shareLink: Pick<SubmissionShareLink, "metadata">) {
   return MONITORING_METADATA_KEYS.some(key => shareLink.metadata?.[key] !== undefined);
+}
+
+async function buildSharedLenderAgentAppointment(
+  submission: FacilitySubmission,
+): Promise<SharedLenderPacketView["agentAppointment"]> {
+  const flags = {
+    agentsEnabled: isRobomataAgentsEnabled(),
+    lenderAppointmentEnabled: isRobomataLenderAgentAppointmentEnabled(),
+    mutationsEnabled: isRobomataAgentMutationsEnabled(),
+    shareLinksEnabled: isRobomataShareLinksEnabled(),
+  };
+
+  if (!flags.agentsEnabled) return { flags };
+
+  const policy = await getRobomataAgentStore().getPolicy(submission.id, submission.partnerAddress);
+  if (!policy) return { flags };
+
+  return {
+    flags,
+    policy: {
+      appointedAgentName: policy.appointedAgentName,
+      appointedAt: policy.appointedAt,
+      appointedBy: policy.appointedBy,
+      appointmentAuthorizationId: policy.appointmentAuthorizationId,
+      appointmentAuthorizationSurface: policy.appointmentAuthorizationSurface,
+      id: policy.id,
+      status: policy.status,
+      updatedAt: policy.updatedAt,
+    },
+  };
 }

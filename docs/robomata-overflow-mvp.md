@@ -432,8 +432,9 @@ This work follows the current repo policy:
   policies, runs, actions, or events. Current agents monitor, evaluate, propose
   actions, and produce audit records; they do not execute Sui/EVM writes.
 - Do not claim lender-appointed agents are active through the operator policy
-  endpoint. Current supervision policies are operator-appointed; lender
-  appointment requires a lender-authorized policy endpoint.
+  endpoint. Lender appointment is scoped to protected share links behind
+  `ROBOMATA_LENDER_AGENT_APPOINTMENT_ENABLED`; it records appointment provenance
+  but does not grant delegated execution or automatic approval.
 - Do not claim non-rules agent planners generate action proposals yet.
   `ROBOMATA_AGENT_PLANNER_PROVIDER=openai` can refine deterministic candidate
   action copy when fully gated and configured, but current action types remain

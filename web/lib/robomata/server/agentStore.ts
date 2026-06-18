@@ -8,6 +8,8 @@ import {
   type RobomataAgentAction,
   type RobomataAgentActionDraft,
   type RobomataAgentActionStatus,
+  type RobomataAgentAppointer,
+  type RobomataAgentAppointmentAuthorizationSurface,
   type RobomataAgentEvent,
   type RobomataAgentEventType,
   type RobomataAgentPlannerBoundary,
@@ -28,6 +30,10 @@ export type UpdateAgentPolicyInput = {
   allowedActionTypes?: unknown;
   autoApproveActionTypes?: unknown;
   appointedAgentName?: unknown;
+  appointedBy?: RobomataAgentAppointer;
+  appointerAddress?: string;
+  appointmentAuthorizationId?: string;
+  appointmentAuthorizationSurface?: RobomataAgentAppointmentAuthorizationSurface;
 };
 
 export type RecordAgentRunInput = {
@@ -195,6 +201,11 @@ function buildUpdatedPolicy(input: UpdateAgentPolicyInput, existing?: RobomataAg
     typeof input.appointedAgentName === "string" && input.appointedAgentName.trim()
       ? input.appointedAgentName.trim().slice(0, 80)
       : (base.appointedAgentName ?? "Robomata supervised facility agent");
+  const isNewAppointment =
+    input.appointedBy !== undefined ||
+    input.appointerAddress !== undefined ||
+    input.appointmentAuthorizationId !== undefined ||
+    input.appointmentAuthorizationSurface !== undefined;
   const allowedActionTypes =
     input.allowedActionTypes === undefined
       ? base.allowedActionTypes
@@ -209,8 +220,13 @@ function buildUpdatedPolicy(input: UpdateAgentPolicyInput, existing?: RobomataAg
     facilityId: input.submission.facilityMonitoring?.facilityId ?? base.facilityId,
     partnerAddress: input.submission.partnerAddress,
     appointedAgentName,
-    appointedBy: base.appointedBy ?? "operator",
-    appointerAddress: base.appointerAddress ?? input.submission.partnerAddress,
+    appointedBy: input.appointedBy ?? base.appointedBy ?? "operator",
+    appointerAddress: input.appointerAddress ?? base.appointerAddress ?? input.submission.partnerAddress,
+    appointmentAuthorizationId:
+      input.appointmentAuthorizationId ?? base.appointmentAuthorizationId ?? input.submission.partnerAddress,
+    appointmentAuthorizationSurface:
+      input.appointmentAuthorizationSurface ?? base.appointmentAuthorizationSurface ?? "operator_submission_access",
+    appointedAt: isNewAppointment ? now : (base.appointedAt ?? now),
     status,
     allowedActionTypes,
     autoApproveActionTypes: autoApproveActionTypes.filter(type => allowedActionTypes.includes(type)),
@@ -385,7 +401,11 @@ function createFileStore(): RobomataAgentStore {
           createAgentEvent(existing ? "policy_updated" : "policy_created", {
             policy,
             message: `Robomata agent policy ${existing ? "updated" : "created"}.`,
-            metadata: { status: policy.status },
+            metadata: {
+              appointedBy: policy.appointedBy ?? null,
+              appointmentAuthorizationSurface: policy.appointmentAuthorizationSurface ?? null,
+              status: policy.status,
+            },
           }),
         );
         await writeFileStore(filePath, fileStore);
@@ -553,7 +573,11 @@ function createPostgresStore(): RobomataAgentStore {
           ${policy.submissionId},
           ${existing ? "policy_updated" : "policy_created"},
           ${`Robomata agent policy ${existing ? "updated" : "created"}.`},
-          ${JSON.stringify({ status: policy.status })}::jsonb,
+          ${JSON.stringify({
+            appointedBy: policy.appointedBy ?? null,
+            appointmentAuthorizationSurface: policy.appointmentAuthorizationSurface ?? null,
+            status: policy.status,
+          })}::jsonb,
           ${nowIsoString()}::timestamptz
         );
       `;
