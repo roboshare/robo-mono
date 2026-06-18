@@ -96,6 +96,14 @@ export function isRobomataAgentExecutionEnabled(): boolean {
   return isEnabled(process.env.ROBOMATA_AGENT_EXECUTION_ENABLED);
 }
 
+export function isRobomataAgentExecutionClientEnabled(): boolean {
+  return isEnabled(process.env.NEXT_PUBLIC_ROBOMATA_AGENT_EXECUTION_ENABLED);
+}
+
+export function isRobomataAgentAdvisoryExecutionEnabled(): boolean {
+  return isEnabled(process.env.ROBOMATA_AGENT_ADVISORY_EXECUTION_ENABLED);
+}
+
 export function isRobomataLenderAgentAppointmentEnabled(): boolean {
   return isEnabled(process.env.ROBOMATA_LENDER_AGENT_APPOINTMENT_ENABLED);
 }

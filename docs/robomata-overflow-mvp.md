@@ -437,6 +437,11 @@ This work follows the current repo policy:
   but does not grant delegated execution. Action approval/completion is bounded
   by the current active appointment, allowed action types, and the action's
   recorded appointment authorization snapshot.
+- Do not claim the first delegated execution slice can mutate credit, packet,
+  evidence, Sui, or EVM state. `ROBOMATA_AGENT_EXECUTION_ENABLED` plus
+  `ROBOMATA_AGENT_ADVISORY_EXECUTION_ENABLED` only enables audit-only execution
+  for approved `evidence_review` and `sui_root_review` actions; every other
+  supervised action type remains proposal-only.
 - Do not claim non-rules agent planners generate action proposals yet.
   `ROBOMATA_AGENT_PLANNER_PROVIDER=openai` can refine deterministic candidate
   action copy when fully gated and configured, but current action types remain
