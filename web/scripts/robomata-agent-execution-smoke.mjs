@@ -19,12 +19,26 @@ function assertNotIncludes(source, needle, label) {
   if (source.includes(needle)) throw new Error(`${label} unexpectedly includes: ${needle}`);
 }
 
-const [featureFlags, executionAdapter, actionRoute, agentStore, panel, liveMonitoringDoc, mvpDoc] = await Promise.all([
+const [
+  featureFlags,
+  executionAdapter,
+  actionRoute,
+  agentStore,
+  lenderAgentPolicyRoute,
+  sharedLenderPacket,
+  panel,
+  lenderAppointmentPanel,
+  liveMonitoringDoc,
+  mvpDoc,
+] = await Promise.all([
   readRepoFile("web/lib/featureFlags.ts"),
   readRepoFile("web/lib/robomata/server/agentExecution.ts"),
   readRepoFile("web/app/api/robomata/submissions/[submissionId]/agent-actions/[actionId]/route.ts"),
   readRepoFile("web/lib/robomata/server/agentStore.ts"),
+  readRepoFile("web/app/api/robomata/share/[token]/agent-policy/route.ts"),
+  readRepoFile("web/lib/robomata/server/sharedLenderPacket.ts"),
   readRepoFile("web/components/robomata/AgentSupervisionPanel.tsx"),
+  readRepoFile("web/components/robomata/LenderAgentAppointmentPanel.tsx"),
   readRepoFile("docs/robomata-live-facility-monitoring.md"),
   readRepoFile("docs/robomata-overflow-mvp.md"),
 ]);
@@ -48,6 +62,21 @@ assertIncludes(actionRoute, "recordActionExecutionAudit", "agent action route");
 assertIncludes(agentStore, "action_execution_failed", "agent store");
 assertIncludes(agentStore, "executionAuditMetadata", "agent store");
 assertIncludes(panel, "Execute audit", "agent supervision panel");
+assertIncludes(panel, "Latest permission denial", "agent supervision panel");
+assertIncludes(panel, "Historical authorization", "agent supervision panel");
+assertIncludes(panel, "metadataFlag(action, \"authorizationBackfilled\")", "agent supervision panel");
+assertIncludes(panel, "Authorization backfilled from current policy", "agent supervision panel");
+assertIncludes(panel, "historical authorization not stored", "agent supervision panel");
+assertIncludes(sharedLenderPacket, "allowedActionTypes: policy.allowedActionTypes", "shared lender packet");
+assertIncludes(sharedLenderPacket, "autoApproveActionTypes: policy.autoApproveActionTypes", "shared lender packet");
+assertIncludes(lenderAgentPolicyRoute, "allowedActionTypes: policy.allowedActionTypes", "lender agent policy route");
+assertIncludes(
+  lenderAgentPolicyRoute,
+  "autoApproveActionTypes: policy.autoApproveActionTypes",
+  "lender agent policy route",
+);
+assertIncludes(lenderAppointmentPanel, "Allowed actions", "lender appointment panel");
+assertIncludes(lenderAppointmentPanel, "Auto-approved actions", "lender appointment panel");
 
 assertIncludes(liveMonitoringDoc, "ROBOMATA_AGENT_ADVISORY_EXECUTION_ENABLED=true", "live monitoring docs");
 assertIncludes(liveMonitoringDoc, "remain proposal-only", "live monitoring docs");
