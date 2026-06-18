@@ -628,7 +628,7 @@ export const SubmissionWorkspace = ({
         const completePayload = (await completeResponse.json().catch(() => ({}))) as CommitEvidenceResponse;
         if (completePayload.submission) setSubmission(completePayload.submission);
         if (!completeResponse.ok || !completePayload.submission) {
-          const errorMessage = completePayload.error ?? "Failed to reconcile the operator Sui commit.";
+          const errorMessage = completePayload.error ?? "Failed to reconcile the evidence verification.";
           if (
             completePayload.submission?.evidenceCommit.status === "failed" ||
             (errorMessage.includes("Sui transaction") && errorMessage.includes("failed"))
@@ -641,7 +641,7 @@ export const SubmissionWorkspace = ({
         if (completeResponse.status === 202) {
           setPendingOperatorCommit({ ...commit, txDigest: completePayload.txDigest ?? commit.txDigest });
           notification.error(
-            completePayload.error ?? "Sui commit is awaiting event indexing. Retry completion shortly.",
+            completePayload.error ?? "Evidence anchoring is awaiting verification indexing. Retry completion shortly.",
           );
         } else {
           setPendingOperatorCommit(null);
@@ -666,7 +666,7 @@ export const SubmissionWorkspace = ({
         const releasePayload = (await releaseResponse.json().catch(() => ({}))) as CommitEvidenceResponse;
         if (releasePayload.submission) setSubmission(releasePayload.submission);
         if (!releaseResponse.ok) {
-          throw new Error(releasePayload.error ?? "Failed to release the prepared Sui commit.");
+          throw new Error(releasePayload.error ?? "Failed to release the prepared evidence anchor.");
         }
       };
 
@@ -679,7 +679,7 @@ export const SubmissionWorkspace = ({
         await completeOperatorCommit({
           submissionId: submission.id,
           rootDigest: submission.evidenceCommit.rootDigest ?? "",
-          walletName: "Sui wallet",
+          walletName: "verification wallet",
         });
         return;
       }
@@ -699,7 +699,7 @@ export const SubmissionWorkspace = ({
       });
       const preparePayload = (await prepareResponse.json().catch(() => ({}))) as CommitEvidenceResponse;
       if (!prepareResponse.ok || !preparePayload.submission || !preparePayload.operatorCommit) {
-        throw new Error(preparePayload.error ?? "Failed to prepare Sui transaction for operator signing.");
+        throw new Error(preparePayload.error ?? "Failed to prepare the evidence anchor for operator signing.");
       }
 
       setSubmission(preparePayload.submission);
@@ -726,7 +726,7 @@ export const SubmissionWorkspace = ({
       setPendingOperatorCommit(pendingCommit);
       await completeOperatorCommit(pendingCommit);
     } catch (error) {
-      notification.error(error instanceof Error ? error.message : "Operator Sui evidence commit failed.");
+      notification.error(error instanceof Error ? error.message : "Evidence anchoring failed.");
     } finally {
       setIsBusy(false);
     }
@@ -860,7 +860,7 @@ export const SubmissionWorkspace = ({
                   </label>
                   <div className="mt-4">
                     <textarea
-                      className="textarea textarea-bordered min-h-36 w-full text-sm"
+                      className="textarea textarea-bordered min-h-36 w-full rounded-xl px-4 py-3 text-sm leading-relaxed"
                       placeholder={`Or paste CSV:\nreceivable,obligor,vehicles,outstanding,dpd,utilization,insured,title,lockbox\nAR-1007,Northstar Delivery Co.,28,386400,12,91,yes,yes,yes`}
                       value={receivablesCsvText}
                       onChange={event => setReceivablesCsvText(event.target.value)}
@@ -882,37 +882,46 @@ export const SubmissionWorkspace = ({
                     Evidence upload
                   </div>
                   <div className="mt-4 grid gap-3">
-                    <input name="file" type="file" className="file-input file-input-bordered w-full" />
+                    <input name="file" type="file" className="file-input file-input-bordered w-full rounded-xl" />
                     <input
                       name="label"
-                      className="input input-bordered w-full"
+                      className="input input-bordered h-11 w-full rounded-xl px-4 text-sm"
                       placeholder="Insurance schedule"
                       required
                     />
                     <input
                       name="source"
-                      className="input input-bordered w-full"
+                      className="input input-bordered h-11 w-full rounded-xl px-4 text-sm"
                       placeholder="Operator-authorized insurance broker export"
                       required
                     />
-                    <input name="scope" className="input input-bordered w-full" placeholder="Insurance" required />
-                    <select name="status" className="select select-bordered w-full" defaultValue="pending">
+                    <input
+                      name="scope"
+                      className="input input-bordered h-11 w-full rounded-xl px-4 text-sm"
+                      placeholder="Insurance"
+                      required
+                    />
+                    <select
+                      name="status"
+                      className="select select-bordered h-11 w-full rounded-xl px-4 text-sm"
+                      defaultValue="pending"
+                    >
                       <option value="pending">Pending</option>
                       <option value="verified">Verified</option>
                       <option value="exception">Exception</option>
                     </select>
                     <input
                       name="sealPolicyId"
-                      className="input input-bordered w-full"
+                      className="input input-bordered h-11 w-full rounded-xl px-4 text-sm"
                       defaultValue="robomata_overflow::facility::seal_approve"
                     />
                     <input
                       name="linkedReceivableIds"
-                      className="input input-bordered w-full"
+                      className="input input-bordered h-11 w-full rounded-xl px-4 text-sm"
                       placeholder="Linked receivable ids (comma separated)"
                     />
                     <textarea
-                      className="textarea textarea-bordered min-h-28 w-full text-sm"
+                      className="textarea textarea-bordered min-h-28 w-full rounded-xl px-4 py-3 text-sm leading-relaxed"
                       placeholder="Or paste authorized evidence text when you do not have a local file handy."
                       value={evidenceText}
                       onChange={event => setEvidenceText(event.target.value)}
@@ -1306,7 +1315,7 @@ export const SubmissionWorkspace = ({
           <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
             <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
               <CheckCircleIcon className="h-4 w-4" />
-              Lender packet and Sui commit
+              Lender packet and evidence verification
             </div>
             {submission.computation ? (
               <div className="mt-4 space-y-4">
@@ -1334,13 +1343,13 @@ export const SubmissionWorkspace = ({
                   />
                 ) : null}
                 <div className="rounded-[1.5rem] border border-base-300 bg-base-200/50 p-4">
-                  <div className="text-sm font-semibold text-base-content">Evidence commit status</div>
+                  <div className="text-sm font-semibold text-base-content">Evidence verification status</div>
                   <div className="mt-2 text-sm text-base-content/70">
-                    {submission.evidenceCommit.status.replace(/_/g, " ")} · {submission.evidenceCommit.modulePath}
+                    {submission.evidenceCommit.status.replace(/_/g, " ")}
                   </div>
                   {submission.evidenceCommit.evidenceRoot ? (
                     <div className="mt-3 text-xs text-base-content/60 break-all">
-                      Root: {submission.evidenceCommit.evidenceRoot}
+                      Evidence root: {submission.evidenceCommit.evidenceRoot}
                     </div>
                   ) : null}
                   {submission.evidenceCommit.errorMessage ? (
@@ -1361,41 +1370,43 @@ export const SubmissionWorkspace = ({
                       }
                     >
                       {submission.evidenceCommit.status === "committing"
-                        ? "Reconcile Sui evidence commit"
+                        ? "Reconcile evidence verification"
                         : submission.evidenceCommit.status === "failed"
-                          ? "Retry Sui evidence commit"
+                          ? "Retry evidence verification"
                           : submission.evidenceCommit.commitMode === "operator_configured"
-                            ? "Sign and commit with Sui wallet"
-                            : "Commit evidence on Sui"}
+                            ? "Sign and anchor evidence"
+                            : "Anchor evidence"}
                     </button>
                   ) : null}
                   {!readOnly && submission.evidenceCommit.commitMode === "operator_configured" ? (
                     <div className="mt-3 rounded-2xl border border-info/20 bg-info/10 p-3 text-sm text-base-content/70">
-                      <div className="font-semibold text-base-content">Operator-owned commit is enabled.</div>
+                      <div className="font-semibold text-base-content">
+                        Operator-owned evidence anchoring is enabled.
+                      </div>
                       {privySuiBindingFeatureEnabled ? (
                         <div className="mt-2">
                           {isEnsuringPrivySuiBinding
-                            ? "Creating or locating the operator's Robomata Sui wallet..."
+                            ? "Creating or locating the operator's verification wallet..."
                             : privySuiBinding
-                              ? `Default operator Sui wallet: ${privySuiBinding.suiAddress}`
+                              ? `Default verification wallet: ${privySuiBinding.suiAddress}`
                               : privySuiBindingError
-                                ? `Privy Sui wallet binding is unavailable: ${privySuiBindingError}`
-                                : "Privy Sui wallet binding is enabled but no wallet is bound yet."}
+                                ? `Verification wallet binding is unavailable: ${privySuiBindingError}`
+                                : "Verification wallet binding is enabled but no wallet is bound yet."}
                         </div>
                       ) : null}
                       <div className="mt-2">
-                        Evidence signing currently uses a compatible Sui wallet-standard extension
+                        Evidence anchoring currently uses a compatible verification wallet extension
                         {suiWalletNames.length
                           ? ` (${suiWalletNames.join(", ")}).`
-                          : ". No compatible Sui wallet is available in this browser."}
+                          : ". No compatible verification wallet is available in this browser."}
                       </div>
                       {privySuiBinding?.suiAddress &&
                       submission.evidenceCommit.facilityOperatorAddress &&
                       privySuiBinding.suiAddress.toLowerCase() !==
                         submission.evidenceCommit.facilityOperatorAddress.toLowerCase() ? (
                         <div className="mt-2 text-warning">
-                          The bound Privy Sui wallet does not match this submission&apos;s configured facility operator.
-                          Update the facility operator mapping before using the embedded wallet as the signer.
+                          The bound verification wallet does not match this submission&apos;s configured facility
+                          operator. Update the facility operator mapping before using the embedded wallet as the signer.
                         </div>
                       ) : null}
                     </div>
@@ -1404,14 +1415,13 @@ export const SubmissionWorkspace = ({
                   submission.evidenceCommit.commitMode === "configured" &&
                   submission.evidenceCommit.status === "committing" ? (
                     <div className="mt-4 text-sm text-base-content/70">
-                      Sui commit is in progress. If this state becomes stale, retrying the API will reconcile Sui events
-                      before another transaction can be sent.
+                      Evidence anchoring is in progress. If this state becomes stale, retrying will reconcile
+                      verification events before another transaction can be sent.
                     </div>
                   ) : null}
                   {!readOnly && submission.evidenceCommit.commitMode === "prepared" ? (
                     <div className="mt-4 text-sm text-base-content/70">
-                      Sui commit is prepared, but the runtime is not configured with a facility/package/client config
-                      yet.
+                      Evidence anchoring is prepared, but the runtime is not fully configured yet.
                     </div>
                   ) : null}
                 </div>
@@ -1453,7 +1463,7 @@ export const SubmissionWorkspace = ({
                       <div className="break-all">Facility commitment: {tokenization.anchors.facilityCommitment}</div>
                     ) : null}
                     {tokenization.anchors.suiTxDigest ? (
-                      <div className="break-all">Sui tx: {tokenization.anchors.suiTxDigest}</div>
+                      <div className="break-all">Verification tx: {tokenization.anchors.suiTxDigest}</div>
                     ) : null}
                   </div>
                 ) : null}

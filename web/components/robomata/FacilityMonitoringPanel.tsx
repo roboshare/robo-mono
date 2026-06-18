@@ -76,6 +76,50 @@ function formatStatus(value: string) {
   return value.replace(/_/g, " ");
 }
 
+function facilityStatusLabel(status: FacilityMonitoringStatus) {
+  const labels: Record<FacilityMonitoringStatus, string> = {
+    commit_pending: "Verification Pending",
+    commit_verified: "Verified",
+    draft: "Setup Incomplete",
+    failed: "Needs Attention",
+    needs_evidence: "Needs Evidence",
+    needs_review: "Needs Review",
+    observing: "Monitoring",
+    packet_fresh: "Current",
+    packet_stale: "Needs Refresh",
+    ready_for_run: "Ready to Compute",
+    run_locked: "Run Locked",
+  };
+  return labels[status];
+}
+
+function packetStatusLabel(projection: FacilityMonitoringProjection) {
+  if (!projection.latestPacket) return "Packet Not Generated";
+
+  const labels: Record<PacketFreshnessStatus, string> = {
+    fresh: "Packet Fresh",
+    invalid: "Packet Needs Review",
+    refresh_available: "Packet Refresh Available",
+    stale: "Packet Stale",
+    superseded: "Packet Superseded",
+  };
+  return labels[projection.freshnessStatus];
+}
+
+function evidenceAnchorStatusLabel(status: SuiRootVerificationStatus) {
+  const labels: Record<SuiRootVerificationStatus, string> = {
+    committed: "Evidence Anchored",
+    committing: "Anchoring Evidence",
+    failed: "Verification Failed",
+    mismatch: "Evidence Mismatch",
+    not_started: "Evidence Anchor Pending",
+    pending: "Evidence Anchor Pending",
+    retryable: "Verification Retry Needed",
+    verified: "Evidence Verified",
+  };
+  return labels[status];
+}
+
 function formatDateTime(value: string | undefined) {
   return value ? new Date(value).toLocaleString() : "Not available";
 }
@@ -157,18 +201,18 @@ export const FacilityMonitoringPanel = ({
         <div>
           <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
             <CircleStackIcon className="h-4 w-4" />
-            Facility monitor
+            Facility evidence monitor
           </div>
           {projection ? (
             <div className="mt-3 flex flex-wrap gap-2">
-              <span className={`badge ${statusBadgeClass(projection.facility.status)} capitalize`}>
-                {formatStatus(projection.facility.status)}
+              <span className={`badge ${statusBadgeClass(projection.facility.status)}`}>
+                {facilityStatusLabel(projection.facility.status)}
               </span>
-              <span className={`badge ${statusBadgeClass(projection.freshnessStatus)} capitalize`}>
-                packet {formatStatus(projection.freshnessStatus)}
+              <span className={`badge ${statusBadgeClass(projection.latestPacket ? projection.freshnessStatus : "")}`}>
+                {packetStatusLabel(projection)}
               </span>
-              <span className={`badge ${statusBadgeClass(projection.suiRootStatus)} capitalize`}>
-                Sui {formatStatus(projection.suiRootStatus)}
+              <span className={`badge ${statusBadgeClass(projection.suiRootStatus)}`}>
+                {evidenceAnchorStatusLabel(projection.suiRootStatus)}
               </span>
             </div>
           ) : null}
@@ -270,8 +314,8 @@ export const FacilityMonitoringPanel = ({
                   facility.
                 </div>
               </div>
-              <span className={`badge ${statusBadgeClass(projection.freshnessStatus)} capitalize`}>
-                latest packet {formatStatus(projection.freshnessStatus)}
+              <span className={`badge ${statusBadgeClass(projection.latestPacket ? projection.freshnessStatus : "")}`}>
+                {packetStatusLabel(projection)}
               </span>
             </div>
 
