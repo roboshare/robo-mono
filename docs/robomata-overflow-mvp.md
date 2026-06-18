@@ -435,8 +435,9 @@ This work follows the current repo policy:
   endpoint. Current supervision policies are operator-appointed; lender
   appointment requires a lender-authorized policy endpoint.
 - Do not claim non-rules agent planners generate action proposals yet.
-  `ROBOMATA_AGENT_PLANNER_PROVIDER` records the planner boundary, but current
-  action proposals remain deterministic until live planner controls are built.
+  `ROBOMATA_AGENT_PLANNER_PROVIDER=openai` can refine deterministic candidate
+  action copy when fully gated and configured, but current action types remain
+  rule-triggered and require operator approval before completion.
 - Do not treat `ROBOMATA_AGENT_PROVIDER` or provider API keys as sufficient to
   activate live LLM credit review. Live review also requires
   `ROBOMATA_LLM_REVIEW_ENABLED=true`; OpenAI review also requires

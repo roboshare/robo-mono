@@ -247,7 +247,7 @@ function buildActions(input: RecordAgentRunInput, run: RobomataAgentRun): Roboma
       plannerMode: input.plannerBoundary.mode,
       plannerProvider: input.plannerBoundary.provider,
       plannerStatus: input.plannerBoundary.status,
-      proposalSource: "deterministic_rules",
+      proposalSource: draft.metadata?.proposalSource ?? "deterministic_rules",
     },
     id: createActionId(),
     runId: run.id,
