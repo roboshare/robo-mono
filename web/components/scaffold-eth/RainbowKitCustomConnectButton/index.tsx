@@ -41,7 +41,7 @@ const ConnectedWalletSummary = ({ address, chainName }: { address: Address; chai
 
   return (
     <div className="hidden sm:block mr-2 text-right leading-tight">
-      <Balance address={address} className="min-h-0 h-auto p-0 justify-end ml-auto" />
+      <Balance address={address} watch className="min-h-0 h-auto p-0 justify-end ml-auto" />
       {formattedPaymentTokenBalance !== null ? (
         <span className="block text-xs font-medium text-base-content/70">
           {formattedPaymentTokenBalance} {paymentTokenSymbol}
