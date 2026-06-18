@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowPathIcon, BoltIcon, CheckCircleIcon, ShieldCheckIcon, XCircleIcon } from "@heroicons/react/24/outline";
+import { AgentSupervisionPolicyDisclosure } from "~~/components/robomata/PolicyRulesPanel";
 import { isRobomataAgentsClientEnabled } from "~~/lib/featureFlags";
 import type { RobomataAgentAction, RobomataAgentPolicy, RobomataAgentRun } from "~~/lib/robomata/agents";
 import type { FacilitySubmission } from "~~/lib/robomata/submissions";
@@ -261,6 +262,8 @@ export const AgentSupervisionPanel = ({
               <div className="mt-1 text-sm text-base-content/70">{actions.length} total retained</div>
             </div>
           </div>
+
+          <AgentSupervisionPolicyDisclosure allowedActionTypes={policy.allowedActionTypes} />
 
           <div className="space-y-3">
             {actions.length ? (

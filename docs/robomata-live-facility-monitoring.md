@@ -179,6 +179,26 @@ configured legacy/test paths:
 Broader autonomous execution belongs to the follow-on Linear project
 `Robomata Agent-First Operating System`, not this live monitoring tranche.
 
+## Policy Visibility Baseline
+
+The current rules are platform-default policy rules, not lender-authored policy
+artifacts yet. The operator workspace, lender packet view, facility monitor, and
+agent supervision panel expose the active `submission-v1` rules so users can see
+the deterministic thresholds and proposal triggers before relying on the output.
+
+Visible policy rules cover borrowing-base eligibility, concentration reserves,
+packet freshness classification, and supervised agent action proposal triggers.
+The displayed rules are sourced from shared policy metadata and the numeric
+borrowing-base thresholds are reused by the computation path to avoid UI/runtime
+drift.
+Packet freshness rules also disclose that fresh observations recorded after a
+stored packet was generated mark that packet stale until reviewed or refreshed.
+
+The next agent-first tranche should replace these defaults with explicit lender
+policy artifacts, versioned approvals, and policy effective dates. Until then,
+the deterministic rules remain the source of credit truth and LLM output remains
+advisory diligence text.
+
 ## Scheduled Agent Tick Route
 
 `POST /api/robomata/agents/tick` is an operator-controlled scheduling target,

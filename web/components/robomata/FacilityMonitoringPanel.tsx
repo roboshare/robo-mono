@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowPathIcon, CheckCircleIcon, CircleStackIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
+import { PacketFreshnessPolicyDisclosure } from "~~/components/robomata/PolicyRulesPanel";
 import { isRobomataFacilityMonitoringClientEnabled } from "~~/lib/featureFlags";
 import { formatUsd } from "~~/lib/robomata/borrowingBase";
 import type {
@@ -256,6 +257,8 @@ export const FacilityMonitoringPanel = ({
               </div>
             </div>
           </div>
+
+          <PacketFreshnessPolicyDisclosure />
 
           {projection.warnings.length ? (
             <div className="rounded-[1.5rem] border border-warning/20 bg-warning/10 p-4">

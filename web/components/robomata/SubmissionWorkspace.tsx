@@ -15,6 +15,7 @@ import {
 import { AgentSupervisionPanel } from "~~/components/robomata/AgentSupervisionPanel";
 import { FacilityMonitoringPanel } from "~~/components/robomata/FacilityMonitoringPanel";
 import { PacketSharePanel } from "~~/components/robomata/PacketSharePanel";
+import { BorrowingBasePolicyDisclosure } from "~~/components/robomata/PolicyRulesPanel";
 import { useSelectedNetwork, useTransactor } from "~~/hooks/scaffold-eth";
 import { usePrivySuiWalletBinding } from "~~/hooks/usePrivySuiWalletBinding";
 import { useRobomataApiAuth } from "~~/hooks/useRobomataApiAuth";
@@ -831,6 +832,8 @@ export const SubmissionWorkspace = ({
           </div>
         </div>
       </section>
+
+      <BorrowingBasePolicyDisclosure />
 
       <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <div className="space-y-6">
