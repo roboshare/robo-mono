@@ -302,6 +302,7 @@ function sourceDataDigestSource(input: PlanAgentActionsInput) {
   return {
     candidateActions: input.candidateActions.map(action => ({
       metadata: action.metadata ?? null,
+      message: action.message,
       reason: action.reason,
       severity: action.severity,
       title: action.title,
@@ -416,8 +417,9 @@ function outputTextFromOpenAiResponse(body: OpenAiResponseBody): string | undefi
     .find((text): text is string => Boolean(text?.trim()));
 }
 
-function parseOpenAiPlannerPayload(text: string): OpenAiPlannerPayload {
+function parseOpenAiPlannerPayload(text: string, candidateActions: RobomataAgentActionDraft[]): OpenAiPlannerPayload {
   const parsed = JSON.parse(text) as Partial<OpenAiPlannerPayload>;
+  const candidateTypes = new Set(candidateActions.map(action => action.type));
   if (!Array.isArray(parsed.actions)) {
     throw new OpenAiPlannerSchemaError("OpenAI planner response actions must be an array.");
   }
@@ -432,6 +434,12 @@ function parseOpenAiPlannerPayload(text: string): OpenAiPlannerPayload {
       typeof action.reason !== "string"
     ) {
       throw new OpenAiPlannerSchemaError("OpenAI planner response action fields must be strings.");
+    }
+    if (!ROBOMATA_AGENT_ACTION_TYPES.includes(action.type as RobomataAgentActionType)) {
+      throw new OpenAiPlannerSchemaError("OpenAI planner response action type is not supported.");
+    }
+    if (!candidateTypes.has(action.type as RobomataAgentActionType)) {
+      throw new OpenAiPlannerSchemaError("OpenAI planner response action type was not a deterministic candidate.");
     }
   }
   return {
@@ -557,7 +565,7 @@ async function planWithOpenAi(
       const outputText = outputTextFromOpenAiResponse(body);
       if (!outputText) throw new Error("OpenAI planner response did not include output text.");
 
-      const payload = parseOpenAiPlannerPayload(outputText);
+      const payload = parseOpenAiPlannerPayload(outputText, input.candidateActions);
 
       return {
         actions: applyOpenAiPlannerPayload(input.candidateActions, payload),

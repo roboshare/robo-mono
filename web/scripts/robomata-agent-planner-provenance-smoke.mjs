@@ -52,6 +52,7 @@ for (const needle of [
   "plannerInputControls",
   "buildPlannerProviderInput",
   "sourceDataDigestSource",
+  "message: action.message",
   "recentActionHistory",
   "executionStatus",
   "decidedAt",
@@ -63,6 +64,8 @@ for (const needle of [
   "rawEvidenceIncluded: false",
   "secretMaterialIncluded: false",
   "OpenAiPlannerSchemaError",
+  "candidateTypes.has",
+  "action type was not a deterministic candidate",
   "store: false",
   "schema_invalid_fallback",
 ]) {
