@@ -24,6 +24,7 @@ const [
   executionAdapter,
   actionRoute,
   agentStore,
+  lenderAgentPolicyRoute,
   sharedLenderPacket,
   panel,
   lenderAppointmentPanel,
@@ -34,6 +35,7 @@ const [
   readRepoFile("web/lib/robomata/server/agentExecution.ts"),
   readRepoFile("web/app/api/robomata/submissions/[submissionId]/agent-actions/[actionId]/route.ts"),
   readRepoFile("web/lib/robomata/server/agentStore.ts"),
+  readRepoFile("web/app/api/robomata/share/[token]/agent-policy/route.ts"),
   readRepoFile("web/lib/robomata/server/sharedLenderPacket.ts"),
   readRepoFile("web/components/robomata/AgentSupervisionPanel.tsx"),
   readRepoFile("web/components/robomata/LenderAgentAppointmentPanel.tsx"),
@@ -64,6 +66,12 @@ assertIncludes(panel, "Latest permission denial", "agent supervision panel");
 assertIncludes(panel, "Historical authorization", "agent supervision panel");
 assertIncludes(sharedLenderPacket, "allowedActionTypes: policy.allowedActionTypes", "shared lender packet");
 assertIncludes(sharedLenderPacket, "autoApproveActionTypes: policy.autoApproveActionTypes", "shared lender packet");
+assertIncludes(lenderAgentPolicyRoute, "allowedActionTypes: policy.allowedActionTypes", "lender agent policy route");
+assertIncludes(
+  lenderAgentPolicyRoute,
+  "autoApproveActionTypes: policy.autoApproveActionTypes",
+  "lender agent policy route",
+);
 assertIncludes(lenderAppointmentPanel, "Allowed actions", "lender appointment panel");
 assertIncludes(lenderAppointmentPanel, "Auto-approved actions", "lender appointment panel");
 
