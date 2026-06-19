@@ -22,6 +22,7 @@
     "robomata:agent-execution-smoke": "node scripts/robomata-agent-execution-smoke.mjs",
     "robomata:agent-planner-intents-smoke": "node scripts/robomata-agent-planner-intents-smoke.mjs",
     "robomata:agent-planner-provenance-smoke": "node scripts/robomata-agent-planner-provenance-smoke.mjs",
+    "robomata:google-gemini-adapter-smoke": "node scripts/robomata-google-gemini-adapter-smoke.mjs",
     "robomata:llm-review-controls-smoke": "node scripts/robomata-llm-review-controls-smoke.mjs",
     "robomata:llm-review-provenance-smoke": "node scripts/robomata-llm-review-provenance-smoke.mjs",
     "robomata:policy-artifact-lookup-smoke": "node scripts/robomata-policy-artifact-lookup-smoke.mjs",

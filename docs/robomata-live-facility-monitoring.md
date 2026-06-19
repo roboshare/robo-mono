@@ -150,9 +150,9 @@ Live facility monitoring is additive and default-off:
 - `ROBOMATA_AGENT_PLANNER_PROVIDER=rules|openai|anthropic|google` selects the
   planner boundary recorded on supervised agent runs. The default is `rules`.
 - `ROBOMATA_AGENT_PLANNER_ENABLED=true` allows a non-rules planner provider to
-  move past deterministic fallback checks. OpenAI can refine deterministic
-  candidate action copy when configured; other non-rules providers remain
-  stubbed until provider-specific planning controls are implemented.
+  move past deterministic fallback checks. OpenAI and Google/Gemini can refine
+  deterministic candidate action copy when configured; other non-rules providers
+  remain stubbed until provider-specific planning controls are implemented.
 - `ROBOMATA_AGENT_PLANNER_MODEL=<model id>` labels a configured non-rules
   planner boundary when the provider requires a model.
 - `ROBOMATA_AGENT_EXECUTION_ENABLED=true` enables the delegated execution
@@ -220,12 +220,12 @@ Agent policies now record the appointed supervised agent name, the appointer,
 and the planner boundary used for each run. The current appointer path is the
 authenticated operator/partner address. Lender-appointed agents require a
 separate lender-authorized policy endpoint before the UI should claim lender
-appointment. OpenAI planner output is constrained to the deterministic candidate
+appointment. Live planner output is constrained to the deterministic candidate
 action set: it may refine operator-facing title, message, reason text, and
 structured recommendation intent, but it cannot add action types, drop
 rule-triggered candidates, understate deterministic risk, approve actions, or
-execute writes. Other non-rules planner providers only change recorded boundary
-state until their live planning controls are implemented.
+execute writes. Anthropic remains a stubbed non-rules planner provider until its
+live planning controls are implemented.
 
 ## Agent Supervision Planner Boundary
 
@@ -281,17 +281,25 @@ ciphertext, share-link tokens, wallet signatures, and raw prompts or provider
 responses. The Agent Supervision panel exposes the boundary, digest, version,
 and control summary rather than raw prompts or provider responses.
 
-OpenAI is the first live planner adapter. It requires:
+OpenAI planner refinement requires:
 
 - `ROBOMATA_AGENT_PLANNER_PROVIDER=openai`
 - `ROBOMATA_AGENT_PLANNER_ENABLED=true`
 - `OPENAI_API_KEY=<secret>`
 - `ROBOMATA_AGENT_PLANNER_MODEL=<model id>`
 
-Responses use structured output, `store: false`, a short timeout, and
-deterministic fallback if the provider call fails or returns schema-invalid
-output. Anthropic and Google remain stubbed planner boundaries until equivalent
-provider-specific controls are implemented.
+Google/Gemini planner refinement requires:
+
+- `ROBOMATA_AGENT_PLANNER_PROVIDER=google`
+- `ROBOMATA_AGENT_PLANNER_ENABLED=true`
+- `GOOGLE_GENERATIVE_AI_API_KEY=<secret>`
+- `ROBOMATA_AGENT_PLANNER_MODEL=<model id>`
+
+OpenAI planner requests use Responses structured output with `store: false`.
+Google planner requests use Gemini `generateContent` with JSON response MIME.
+Both use a short timeout and deterministic fallback if the provider call fails
+or returns schema-invalid output. Anthropic remains a stubbed planner boundary
+until equivalent provider-specific controls are implemented.
 
 Sui and EVM writes remain explicit operator-signed product paths or separately
 configured legacy/test paths:
@@ -368,25 +376,36 @@ so users can distinguish deterministic review text from future live LLM review.
 
 Live LLM review attempts require both a selected provider and the server-side
 `ROBOMATA_LLM_REVIEW_ENABLED=true` gate. Provider API keys alone are not enough
-to switch credit review into a live LLM path. Until provider-specific prompts,
-logging, retention, and data controls are approved, live provider selections use
-deterministic fallback or an explicitly stubbed review mode.
+to switch credit review into a live LLM path. Provider selection is server-side
+configuration, not selectable by operators or lenders in the UI. Operator and
+lender views display the selected provider, model, mode, status, and digests so
+users can audit which boundary produced the advisory text.
 
-OpenAI review is the first live adapter. It requires:
+OpenAI review requires:
 
 - `ROBOMATA_AGENT_PROVIDER=openai`
 - `ROBOMATA_LLM_REVIEW_ENABLED=true`
 - `OPENAI_API_KEY=<secret>`
 - `ROBOMATA_AGENT_REVIEW_MODEL=<model id>`
 
-The adapter uses OpenAI Responses structured output for advisory memo text only.
-It sends aggregates plus capped receivable/evidence exception rows, not raw
-evidence files or every eligible receivable. Requests set `store: false`, use a
-short provider timeout, and fall back to deterministic review output if the API
-key, model, response, or provider call fails. When deterministic rules report no
-open exceptions, model-provided exception notes are discarded so the lender
-packet remains clean. The resulting lender packet records whether review output
-was `llm_live` or deterministic fallback.
+Google/Gemini review requires:
+
+- `ROBOMATA_AGENT_PROVIDER=google`
+- `ROBOMATA_LLM_REVIEW_ENABLED=true`
+- `GOOGLE_GENERATIVE_AI_API_KEY=<secret>`
+- `ROBOMATA_AGENT_REVIEW_MODEL=<model id>`
+
+The OpenAI adapter uses Responses structured output. The Google adapter uses the
+Gemini `generateContent` API with JSON response MIME. Both adapters are advisory
+memo paths only. They send aggregates plus capped receivable/evidence exception
+rows, not raw evidence files or every eligible receivable. OpenAI requests set
+`store: false`; both adapters use a short provider timeout and fall back to
+deterministic review output if the API key, model, response, or provider call
+fails. This means live adapters still fall back to deterministic review output
+instead of accepting partial or unvalidated text. When deterministic rules
+report no open exceptions, model-provided exception notes are discarded so the
+lender packet remains clean. The resulting lender packet records whether review
+output was `llm_live` or deterministic fallback.
 
 The live provider input control boundary is explicit:
 
