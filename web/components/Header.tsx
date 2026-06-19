@@ -110,25 +110,25 @@ const HeaderProductsMenu = () => {
           }}
         >
           <li>
-            <Link href="/products/robomata" className="justify-between gap-4 rounded-xl text-sm">
+            <a href="/products/robomata" className="justify-between gap-4 rounded-xl text-sm">
               <span>Robomata</span>
               <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-[0.12em] text-primary">
                 Active
               </span>
-            </Link>
+            </a>
           </li>
           <li>
-            <Link href="/products/robomarkets" className="justify-between gap-4 rounded-xl text-sm">
+            <a href="/products/robomarkets" className="justify-between gap-4 rounded-xl text-sm">
               <span>Robomarkets</span>
-            </Link>
+            </a>
           </li>
           <li>
-            <Link href="/products/robolend" className="justify-between gap-4 rounded-xl text-sm">
+            <a href="/products/robolend" className="justify-between gap-4 rounded-xl text-sm">
               <span>Robolend</span>
               <span className="whitespace-nowrap rounded-full bg-amber-100 px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-[0.12em] text-amber-700">
                 Soon
               </span>
-            </Link>
+            </a>
           </li>
         </ul>
       </details>
@@ -297,6 +297,7 @@ export const Header = () => {
         <Link
           href="/"
           aria-label="Roboshare home"
+          prefetch={false}
           className="ml-1 flex h-10 w-10 items-center justify-center rounded-full text-base-content hover:bg-secondary lg:hidden"
         >
           <svg viewBox="0 0 40 40" aria-hidden="true" className="h-7 w-7" fill="none">
@@ -309,7 +310,7 @@ export const Header = () => {
             />
           </svg>
         </Link>
-        <Link href="/" passHref className="hidden lg:flex items-center gap-2 ml-4 mr-6 shrink-0">
+        <Link href="/" prefetch={false} className="hidden lg:flex items-center gap-2 ml-4 mr-6 shrink-0">
           <div className="flex flex-col">
             <Image
               src="/logo.svg"

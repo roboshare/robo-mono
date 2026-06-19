@@ -144,6 +144,7 @@ type AssetAction = {
 };
 
 const SUBGRAPH_REFRESH_DELAYS_MS = [1500, 5000, 12000, 25000];
+const CHAIN_CLOCK_REFRESH_MS = 60_000;
 const TOKENIZED_FACILITY_STATUSES: ReadonlySet<FacilitySubmission["tokenization"]["status"]> = new Set([
   "registered",
   "offering_created",
@@ -181,9 +182,15 @@ const calculateResidualSettlementTopUp = ({
 
 const PartnerDashboard: NextPage = () => {
   const { address: accountAddress, chainId: accountChainId, connectedAddress } = useTransactingAccount();
-  const { data: latestBlock } = useBlock({ watch: true });
   const selectedNetwork = useSelectedNetwork(accountChainId);
   const chainId = selectedNetwork.id;
+  const { data: latestBlock } = useBlock({
+    chainId,
+    query: {
+      refetchInterval: CHAIN_CLOCK_REFRESH_MS,
+    },
+  });
+  const [currentTimeSec, setCurrentTimeSec] = useState(() => Math.floor(Date.now() / 1000));
   const chains = useChains();
   const currentChain = chains.find(c => c.id === chainId);
   const networkName = currentChain?.name || selectedNetwork.name || "Localhost";
@@ -697,7 +704,17 @@ const PartnerDashboard: NextPage = () => {
     }
   }, [assetRecords.length, refreshCounter]);
 
-  const chainNowSec = latestBlock?.timestamp ? Number(latestBlock.timestamp) : Math.floor(Date.now() / 1000);
+  useEffect(() => {
+    const refreshClock = () => setCurrentTimeSec(Math.floor(Date.now() / 1000));
+    refreshClock();
+
+    const intervalId = window.setInterval(refreshClock, CHAIN_CLOCK_REFRESH_MS);
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  const latestBlockTimeSec = latestBlock?.timestamp ? Number(latestBlock.timestamp) : undefined;
+  const settlementChainNowSec = latestBlockTimeSec ?? currentTimeSec;
+  const displayNowSec = Math.max(settlementChainNowSec, currentTimeSec);
   const assetMaturityDateById = new Map<string, bigint>(
     assetRecords.map((asset, index) => [asset.id, (tokenMaturityDates?.[index]?.result as bigint | undefined) ?? 0n]),
   );
@@ -812,7 +829,7 @@ const PartnerDashboard: NextPage = () => {
       const settlementTopUpMinimum = calculateResidualSettlementTopUp({
         immediateProceeds,
         maturityDate,
-        chainNowSec,
+        chainNowSec: settlementChainNowSec,
         unredeemedBasePrincipal,
         baseCollateral: investorLiquidity,
         lockedAt,
@@ -1542,7 +1559,7 @@ const PartnerDashboard: NextPage = () => {
               {activeFleet.map(asset =>
                 (() => {
                   const maturityDate = assetMaturityDateById.get(asset.id) ?? 0n;
-                  const isMaturedByTime = maturityDate > 0n && Number(maturityDate) <= chainNowSec;
+                  const isMaturedByTime = maturityDate > 0n && Number(maturityDate) <= displayNowSec;
                   const isMatured = isMaturedByTime;
                   const tokenId = BigInt(asset.id) + 1n;
                   const isPoolPaused = !!asset.primaryPoolPaused;
