@@ -9,7 +9,7 @@ export const toConfiguredAppHref = (href: string) => {
     return href;
   }
 
-  if (process.env.NODE_ENV === "development" && !configuredAppHost) {
+  if (!configuredAppHost) {
     return href;
   }
 
