@@ -8,6 +8,7 @@ import {
   ServerStackIcon,
   TruckIcon,
 } from "@heroicons/react/24/outline";
+import { toConfiguredAppHref } from "~~/lib/appNavigation";
 import { isRobomataWorkflowEnabled } from "~~/lib/featureFlags";
 
 const partnerCategories = [
@@ -35,6 +36,7 @@ const partnerCategories = [
 
 const PartnersPage = () => {
   const launchAppHref = isRobomataWorkflowEnabled() ? "/operator/submissions" : "/operator";
+  const resolvedLaunchAppHref = toConfiguredAppHref(launchAppHref);
 
   return (
     <div className="flex flex-1 justify-center px-4 py-8 sm:px-6 sm:py-10">
@@ -61,9 +63,9 @@ const PartnersPage = () => {
                   See Robomata
                   <ArrowRightIcon className="h-4 w-4" />
                 </Link>
-                <Link href={launchAppHref} className="btn btn-outline rounded-full sm:min-w-48">
+                <a href={resolvedLaunchAppHref} className="btn btn-outline rounded-full sm:min-w-48">
                   Launch App
-                </Link>
+                </a>
               </div>
             </div>
 

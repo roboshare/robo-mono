@@ -11,6 +11,7 @@ import { FaucetButton, RainbowKitCustomConnectButton } from "~~/components/scaff
 import { useOutsideClick, useTargetNetwork } from "~~/hooks/scaffold-eth";
 import { useIsAdmin } from "~~/hooks/useIsAdmin";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
+import { getConfiguredAppHost, toConfiguredAppHref } from "~~/lib/appNavigation";
 import {
   isRobomataRentalHostOpsClientEnabled,
   isRobomataRentalMarketplaceClientEnabled,
@@ -25,26 +26,14 @@ type HeaderMenuLink = {
 };
 
 const DEFAULT_MARKETING_HOSTS = ["roboshare.finance", "www.roboshare.finance"];
-const DEFAULT_APP_HOST = "app.roboshare.finance";
-const configuredAppHost = process.env.NEXT_PUBLIC_ROBOSHARE_APP_HOST?.trim().toLowerCase();
 const configuredMarketingHosts = process.env.NEXT_PUBLIC_ROBOSHARE_MARKETING_HOSTS?.split(",")
   .map(host => host.trim().toLowerCase())
   .filter(Boolean);
-
-const getConfiguredAppHost = () => configuredAppHost || DEFAULT_APP_HOST;
 
 const marketingHosts = configuredMarketingHosts?.length ? configuredMarketingHosts : DEFAULT_MARKETING_HOSTS;
 const isMarketingHost = (host: string | null) => !!host && marketingHosts.includes(host);
 const isLocalHost = (host: string | null) => host === "localhost" || host === "127.0.0.1" || host === "::1";
 const shouldUseAppHostNavigation = (host: string | null) => !!host && !isLocalHost(host) && isMarketingHost(host);
-
-const toAppHostHref = (href: string) => {
-  if (!href.startsWith("/")) {
-    return href;
-  }
-
-  return `https://${getConfiguredAppHost()}${href}`;
-};
 
 const HeaderAppAnchor = ({
   children,
@@ -152,8 +141,8 @@ export const HeaderMenuLinks = () => {
   const showRentalMarketplace = isRobomataRentalMarketplaceClientEnabled();
   const showRentalHostOps = isRobomataRentalHostOpsClientEnabled();
   const useAppHostNavigation = isHostResolved && !isAppHost && shouldUseAppHostNavigation(browserHost);
-  const resolvedLaunchAppHref = useAppHostNavigation ? toAppHostHref(launchAppHref) : launchAppHref;
-  const resolvedRentalOpsHref = useAppHostNavigation ? toAppHostHref("/operator/rentals") : "/operator/rentals";
+  const resolvedLaunchAppHref = useAppHostNavigation ? toConfiguredAppHref(launchAppHref) : launchAppHref;
+  const resolvedRentalOpsHref = useAppHostNavigation ? toConfiguredAppHref("/operator/rentals") : "/operator/rentals";
 
   useEffect(() => {
     const host = window.location.hostname.toLowerCase();
@@ -264,19 +253,34 @@ export const HeaderMenuLinks = () => {
   );
 };
 
-/**
- * Site header
- */
-export const Header = () => {
+const HeaderNetworkActions = () => {
   const { targetNetwork } = useTargetNetwork();
   const isLocalNetwork = targetNetwork.id === hardhat.id;
   const { isMockToken } = usePaymentToken();
   const showFaucet = isLocalNetwork || isMockToken;
 
+  return (
+    <>
+      <RainbowKitCustomConnectButton />
+      {showFaucet && <FaucetButton />}
+    </>
+  );
+};
+
+/**
+ * Site header
+ */
+export const Header = () => {
+  const [showNetworkActions, setShowNetworkActions] = useState(false);
   const burgerMenuRef = useRef<HTMLDetailsElement>(null);
   useOutsideClick(burgerMenuRef, () => {
     burgerMenuRef?.current?.removeAttribute("open");
   });
+
+  useEffect(() => {
+    const host = window.location.hostname.toLowerCase();
+    setShowNetworkActions(isLocalHost(host) || host === getConfiguredAppHost() || !isMarketingHost(host));
+  }, []);
 
   return (
     <div className="sticky lg:static top-0 navbar bg-base-100 min-h-0 shrink-0 justify-between z-20 shadow-md shadow-secondary px-0 sm:px-2">
@@ -335,10 +339,7 @@ export const Header = () => {
           <HeaderMenuLinks />
         </ul>
       </div>
-      <div className="navbar-end grow mr-4">
-        <RainbowKitCustomConnectButton />
-        {showFaucet && <FaucetButton />}
-      </div>
+      <div className="navbar-end grow mr-4">{showNetworkActions && <HeaderNetworkActions />}</div>
     </div>
   );
 };

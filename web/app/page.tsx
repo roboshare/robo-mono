@@ -8,6 +8,7 @@ import {
   CubeTransparentIcon,
   ShieldCheckIcon,
 } from "@heroicons/react/24/outline";
+import { toConfiguredAppHref } from "~~/lib/appNavigation";
 import { isRobomataWorkflowEnabled } from "~~/lib/featureFlags";
 
 const productFlow = [
@@ -51,6 +52,7 @@ const proofPoints = [
 
 const HomePage = () => {
   const launchAppHref = isRobomataWorkflowEnabled() ? "/operator/submissions" : "/operator";
+  const resolvedLaunchAppHref = toConfiguredAppHref(launchAppHref);
 
   return (
     <div className="flex flex-1 justify-center px-4 py-8 sm:px-6 sm:py-12">
@@ -75,9 +77,9 @@ const HomePage = () => {
                   Explore Robomata
                   <ArrowRightIcon className="h-4 w-4" />
                 </Link>
-                <Link href={launchAppHref} className="btn btn-outline rounded-full sm:min-w-48">
+                <a href={resolvedLaunchAppHref} className="btn btn-outline rounded-full sm:min-w-48">
                   Launch App
-                </Link>
+                </a>
               </div>
 
               <div className="grid flex-1 gap-3 sm:grid-cols-3">
