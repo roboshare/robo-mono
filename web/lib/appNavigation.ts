@@ -1,6 +1,7 @@
 const DEFAULT_APP_HOST = "app.roboshare.finance";
 
 const configuredAppHost = process.env.NEXT_PUBLIC_ROBOSHARE_APP_HOST?.trim().toLowerCase();
+const isProductionDeployment = process.env.VERCEL_ENV === "production";
 
 export const getConfiguredAppHost = () => configuredAppHost || DEFAULT_APP_HOST;
 
@@ -9,7 +10,7 @@ export const toConfiguredAppHref = (href: string) => {
     return href;
   }
 
-  if (!configuredAppHost) {
+  if (!configuredAppHost && !isProductionDeployment) {
     return href;
   }
 
