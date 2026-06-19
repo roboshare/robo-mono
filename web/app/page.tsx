@@ -13,20 +13,20 @@ import { isRobomataWorkflowEnabled } from "~~/lib/featureFlags";
 const productFlow = [
   {
     label: "Robomata",
-    title: "Operators become financeable",
-    copy: "Fleet operators turn receivables, evidence, exceptions, and borrowing-base output into lender-ready packets.",
+    title: "Operators prepare financeable facilities",
+    copy: "Turn receivables, evidence, exceptions, borrowing-base output, and monitoring state into lender-ready packets.",
     href: "/products/robomata",
   },
   {
     label: "Robolend",
-    title: "Capital providers review and monitor",
-    copy: "Credit teams get a cleaner path to packet review, freshness monitoring, and portfolio oversight. Coming soon.",
+    title: "Lenders review, monitor, and decide",
+    copy: "Capital providers get packet review, evidence freshness, policy observations, and portfolio oversight. Coming soon.",
     href: "/products/robolend",
   },
   {
     label: "Robomarkets",
     title: "Standardized exposure can distribute",
-    copy: "Committed facilities can move downstream into tokenized exposure and market distribution when ready.",
+    copy: "Facilities move toward tokenized exposure and market distribution only after they are structured, reviewed, and ready.",
     href: "/products/robomarkets",
   },
 ];
@@ -34,18 +34,18 @@ const productFlow = [
 const proofPoints = [
   {
     icon: ClipboardDocumentCheckIcon,
-    title: "Borrowing-base packets",
-    copy: "Eligibility, reserves, advance rates, and exceptions are prepared from operator-controlled submissions.",
+    title: "Borrowing-base readiness",
+    copy: "Compute eligibility, reserves, advance-rate output, and exceptions from operator-controlled submissions.",
   },
   {
     icon: ShieldCheckIcon,
-    title: "Controlled evidence rails",
-    copy: "Sensitive source files stay permissioned while commitments can support audit, monitoring, and packet freshness.",
+    title: "Evidence and monitoring",
+    copy: "Keep sensitive files permissioned while commitments, freshness checks, and policy observations stay auditable.",
   },
   {
     icon: CubeTransparentIcon,
-    title: "Programmable asset state",
-    copy: "Financeable facilities can become standardized primitives for tokenization and downstream capital access.",
+    title: "Supervised credit agents",
+    copy: "Surface packet gaps, proposed actions, and review boundaries without letting models override deterministic credit rules.",
   },
 ];
 
@@ -61,11 +61,12 @@ const HomePage = () => {
               <div className="space-y-4">
                 <p className="text-sm font-semibold uppercase tracking-[0.32em] text-base-content/50">Roboshare</p>
                 <h1 className="max-w-4xl text-4xl font-black tracking-tight text-base-content sm:text-6xl">
-                  Credit rails for productive assets.
+                  Agent-supervised programmable credit rails for asset-backed finance.
                 </h1>
                 <p className="max-w-3xl text-lg leading-relaxed text-base-content/70">
-                  Roboshare starts where private credit still breaks down: operators need cleaner evidence, lenders need
-                  better packets, and markets need standardized financial objects before exposure can distribute.
+                  Roboshare helps operators turn receivables, asset evidence, policy exceptions, and monitoring signals
+                  into lender-ready credit workflows. Robomata prepares the operator packet today; Robolend and
+                  Robomarkets extend it into lender review and distribution.
                 </p>
               </div>
 
@@ -127,8 +128,8 @@ const HomePage = () => {
             <BanknotesIcon className="h-7 w-7 text-primary" />
             <h2 className="mt-4 text-2xl font-black tracking-tight text-base-content">For Operators</h2>
             <p className="mt-3 text-sm leading-relaxed text-base-content/70">
-              Create a repeatable financing workflow around receivables, asset evidence, exception handling, lender
-              packets, and facility monitoring.
+              Prepare receivables, evidence, exception cures, borrowing-base runs, and monitored packets in one
+              repeatable workflow.
             </p>
             <Link href="/products/robomata" className="btn btn-ghost mt-5 rounded-full px-0 text-primary">
               See Robomata
@@ -140,8 +141,8 @@ const HomePage = () => {
             <BuildingLibraryIcon className="h-7 w-7 text-primary" />
             <h2 className="mt-4 text-2xl font-black tracking-tight text-base-content">For Capital Providers</h2>
             <p className="mt-3 text-sm leading-relaxed text-base-content/70">
-              Robolend will focus on reviewing lender-ready packets, monitoring evidence freshness, and organizing
-              credit exposure. It is not live yet.
+              Robolend is the planned lender workspace for packet review, policy observations, monitoring, and credit
+              approval history. It is not live yet.
             </p>
             <Link href="/products/robolend" className="btn btn-ghost mt-5 rounded-full px-0 text-primary">
               Preview Robolend
@@ -153,8 +154,8 @@ const HomePage = () => {
             <ChartBarSquareIcon className="h-7 w-7 text-primary" />
             <h2 className="mt-4 text-2xl font-black tracking-tight text-base-content">For Robomarkets</h2>
             <p className="mt-3 text-sm leading-relaxed text-base-content/70">
-              Robomarkets is the distribution layer after a facility is structured, committed, and tokenized. The public
-              market surface remains downstream from financeability.
+              Robomarkets is the downstream distribution layer after facilities become structured, reviewed, committed,
+              and tokenization-ready.
             </p>
             <Link href="/products/robomarkets" className="btn btn-ghost mt-5 rounded-full px-0 text-primary">
               Explore Robomarkets

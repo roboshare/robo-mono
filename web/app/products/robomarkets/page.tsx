@@ -34,12 +34,12 @@ const RobomarketsPage = () => (
             <div className="space-y-4">
               <p className="text-sm font-semibold uppercase tracking-[0.32em] text-base-content/50">Robomarkets</p>
               <h1 className="max-w-4xl text-4xl font-black tracking-tight text-base-content sm:text-6xl">
-                Distribution for financeable asset exposure.
+                Distribution after credit is structured.
               </h1>
               <p className="max-w-3xl text-lg leading-relaxed text-base-content/70">
-                Robomarkets is the downstream market layer for standardized and tokenized exposure. Facilities should
-                arrive here after Robomata has organized the operator packet and capital providers have a clear path to
-                review the underlying evidence.
+                Robomarkets is the downstream market layer for standardized, tokenized exposure. Facilities should
+                arrive here after Robomata organizes the operator packet and Robolend gives capital providers a clear
+                path to review, monitor, and approve the underlying credit.
               </p>
             </div>
 

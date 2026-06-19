@@ -11,16 +11,16 @@ import {
 
 const reviewSteps = [
   {
-    title: "Receive lender-ready packets",
-    copy: "Review borrowing-base output, exceptions, evidence status, and packet freshness from one controlled link.",
+    title: "Review lender-ready packets",
+    copy: "Inspect borrowing-base output, exceptions, evidence status, agent review boundaries, and freshness from one controlled view.",
   },
   {
     title: "Monitor facilities over time",
-    copy: "Track when receivables, evidence, or committed roots make an existing packet stale or ready for renewal.",
+    copy: "Track when receivables, evidence, policy observations, or committed roots make an existing packet stale or ready for renewal.",
   },
   {
-    title: "Allocate into standardized exposure",
-    copy: "Move from underwriting to distribution only after the facility object is structured and tokenization-ready.",
+    title: "Approve policy changes and scenarios",
+    copy: "Evaluate proposed credit changes or what-if scenarios only after the operator packet is structured.",
   },
 ];
 
@@ -37,11 +37,12 @@ const RobolendPage = () => (
               </div>
               <p className="text-sm font-semibold uppercase tracking-[0.3em] text-base-content/50">Robolend</p>
               <h1 className="max-w-4xl text-4xl font-black tracking-tight text-base-content sm:text-5xl lg:text-6xl">
-                Credit review and monitoring for capital providers.
+                Lender review and policy oversight for financeable facilities.
               </h1>
               <p className="max-w-3xl text-lg leading-relaxed text-base-content/70">
                 Robolend is the planned capital-provider workspace for reviewing Robomata packets, monitoring facility
-                freshness, and organizing credit exposure. It is not a live lender dashboard yet.
+                freshness, recording lender policy observations, and approving credit decisions. It is not a live lender
+                dashboard yet.
               </p>
             </div>
 

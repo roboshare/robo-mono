@@ -5,7 +5,11 @@ import { ThemeProvider } from "~~/components/ThemeProvider";
 import "~~/styles/globals.css";
 import { getMetadata } from "~~/utils/scaffold-eth/getMetadata";
 
-export const metadata = getMetadata({ title: "Roboshare", description: "Roboshare protocol app" });
+export const metadata = getMetadata({
+  title: "Roboshare",
+  description:
+    "Agent-supervised programmable credit rails for asset-backed finance, lender review, and downstream distribution.",
+});
 
 const ScaffoldEthApp = ({ children }: { children: React.ReactNode }) => {
   return (
