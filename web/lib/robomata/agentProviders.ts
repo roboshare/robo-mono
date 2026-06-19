@@ -1,5 +1,10 @@
 import { isRobomataLlmReviewEnabled } from "~~/lib/featureFlags";
 import type { BorrowingBaseResult } from "~~/lib/robomata/borrowingBase";
+import {
+  GOOGLE_GEMINI_API_KEY_ENV,
+  generateGoogleGeminiContent,
+  jsonTextFromProviderOutput,
+} from "~~/lib/robomata/googleGemini";
 
 export type AgentProviderName = "mock" | "openai" | "anthropic" | "google" | "disabled";
 export type AgentReviewMode = "disabled" | "deterministic" | "deterministic_fallback" | "llm_live" | "llm_stubbed";
@@ -77,6 +82,7 @@ const supportedProviders: AgentProviderName[] = ["mock", "openai", "anthropic", 
 export const ROBOMATA_AGENT_REVIEW_PROMPT_VERSION = "borrowing-base-review-v1";
 export const ROBOMATA_AGENT_REVIEW_OUTPUT_SCHEMA_VERSION = "borrowing-base-review-output-v2";
 const openAiReviewTimeoutMs = 8_000;
+const googleGeminiReviewTimeoutMs = 8_000;
 const openAiExceptionRowLimit = 25;
 const providerInputMaxTextLength = 180;
 
@@ -496,6 +502,14 @@ function openAiProviderInput(result: AgentReviewInput, model: string) {
   };
 }
 
+function googleProviderInput(result: AgentReviewInput, model: string) {
+  return {
+    ...openAiProviderInput(result, model),
+    endpoint: "google-generative-language-v1beta-generateContent",
+    provider: "google",
+  };
+}
+
 async function reviewWithOpenAi(result: AgentReviewInput, fallback: AgentReview): Promise<AgentReview> {
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   const model = process.env.ROBOMATA_AGENT_REVIEW_MODEL?.trim();
@@ -569,7 +583,7 @@ async function reviewWithOpenAi(result: AgentReviewInput, fallback: AgentReview)
         return buildReview(
           result,
           reviewBoundaryInput("openai", "live_completed", "llm_live", model),
-          parseOpenAiReviewPayload(outputText, fallback, result),
+          parseOpenAiReviewPayload(jsonTextFromProviderOutput(outputText), fallback, result),
           reviewOptions,
         );
       } catch (error) {
@@ -615,6 +629,85 @@ async function reviewWithOpenAi(result: AgentReviewInput, fallback: AgentReview)
   }
 }
 
+async function reviewWithGoogle(result: AgentReviewInput, fallback: AgentReview): Promise<AgentReview> {
+  const apiKey = process.env[GOOGLE_GEMINI_API_KEY_ENV]?.trim();
+  const model = process.env.ROBOMATA_AGENT_REVIEW_MODEL?.trim();
+
+  if (!apiKey) {
+    return buildReview(result, reviewBoundaryInput("google", "configured_without_key", "deterministic_fallback"), {
+      ...reviewContent(fallback),
+      memo: `${fallback.memo} google was selected, but ${GOOGLE_GEMINI_API_KEY_ENV} is not configured, so the review used deterministic fallback output.`,
+    });
+  }
+
+  if (!model) {
+    const missingModelFallback = await buildMockReview(
+      result,
+      reviewBoundaryInput("google", "configured_without_model", "deterministic_fallback"),
+    );
+    return buildReview(result, reviewBoundaryInput("google", "configured_without_model", "deterministic_fallback"), {
+      ...reviewContent(missingModelFallback),
+      memo: `${fallback.memo} google was selected, but ROBOMATA_AGENT_REVIEW_MODEL is not configured, so the review used deterministic fallback output.`,
+    });
+  }
+
+  const providerInput = googleProviderInput(result, model);
+  const providerInputDigest = await sha256Hex(providerInput);
+  const reviewOptions = {
+    inputDigestSource: providerInput,
+    providerInputControls: providerInput.userPrompt.inputControls,
+    providerInputDigest,
+  };
+
+  try {
+    const outputText = await generateGoogleGeminiContent({
+      apiKey,
+      model,
+      systemInstruction: providerInput.systemInstruction,
+      timeoutMs: googleGeminiReviewTimeoutMs,
+      userPrompt: JSON.stringify(providerInput.userPrompt),
+    });
+
+    try {
+      return buildReview(
+        result,
+        reviewBoundaryInput("google", "live_completed", "llm_live", model),
+        parseOpenAiReviewPayload(jsonTextFromProviderOutput(outputText), fallback, result),
+        reviewOptions,
+      );
+    } catch (error) {
+      if (error instanceof SyntaxError || error instanceof AgentReviewSchemaInvalidError) {
+        return buildReview(
+          result,
+          reviewBoundaryInput("google", "schema_invalid_fallback", "deterministic_fallback", model),
+          {
+            ...reviewContent(fallback),
+            memo: `${fallback.memo} Live google review returned invalid schema output, so the review used deterministic fallback output.`,
+          },
+          reviewOptions,
+        );
+      }
+
+      throw error;
+    }
+  } catch (error) {
+    void error;
+    const errorFallback = await buildMockReview(
+      result,
+      reviewBoundaryInput("google", "live_error_fallback", "deterministic_fallback", model),
+    );
+    return buildReview(
+      result,
+      reviewBoundaryInput("google", "live_error_fallback", "deterministic_fallback", model),
+      {
+        ...reviewContent(errorFallback),
+        memo: `${fallback.memo} Live google review failed, so the review used deterministic fallback output.`,
+      },
+      reviewOptions,
+    );
+  }
+}
+
 const disabledProvider: AgentProvider = {
   name: "disabled",
   review: async result =>
@@ -653,6 +746,7 @@ function liveProvider(name: Exclude<AgentProviderName, "mock" | "disabled">, req
       }
 
       if (name === "openai") return reviewWithOpenAi(result, mockReview);
+      if (name === "google") return reviewWithGoogle(result, mockReview);
 
       if (!process.env[requiredEnv]) {
         return buildReview(result, reviewBoundaryInput(name, "configured_without_key", "deterministic_fallback"), {

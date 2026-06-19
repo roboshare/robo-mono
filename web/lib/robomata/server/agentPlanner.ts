@@ -23,6 +23,11 @@ import type {
 } from "~~/lib/robomata/agents";
 import { ROBOMATA_AGENT_ACTION_TYPES } from "~~/lib/robomata/agents";
 import type { FacilityMonitoringProjection } from "~~/lib/robomata/facilityMonitoring";
+import {
+  GOOGLE_GEMINI_API_KEY_ENV,
+  generateGoogleGeminiContent,
+  jsonTextFromProviderOutput,
+} from "~~/lib/robomata/googleGemini";
 import type { RobomataFacilityPolicyArtifact } from "~~/lib/robomata/policyRules";
 import type { FacilitySubmission } from "~~/lib/robomata/submissions";
 
@@ -35,13 +40,14 @@ export const ROBOMATA_AGENT_PLANNER_MAX_TEXT_LENGTH = 260;
 
 const supportedPlannerProviders: RobomataAgentPlannerProvider[] = ["rules", "openai", "anthropic", "google"];
 const openAiPlannerTimeoutMs = 8_000;
+const googleGeminiPlannerTimeoutMs = 8_000;
 const plannerRiskRank: Record<RobomataAgentPlannerRiskLevel, number> = { low: 1, medium: 2, high: 3 };
 const plannerRequiredApprovals: Exclude<RobomataAgentPlannerRequiredApproval, "none_auto_approved">[] = ["operator"];
 const plannerSuggestedTools: RobomataAgentPlannerSuggestedTool[] = ["none", "robomata.agent.advisory_audit.v1"];
 
 const providerKeyEnv: Record<Exclude<RobomataAgentPlannerProvider, "rules">, string> = {
   anthropic: "ANTHROPIC_API_KEY",
-  google: "GOOGLE_GENERATIVE_AI_API_KEY",
+  google: GOOGLE_GEMINI_API_KEY_ENV,
   openai: "OPENAI_API_KEY",
 };
 
@@ -769,7 +775,7 @@ export function resolveRobomataAgentPlannerBoundary(): RobomataAgentPlannerBound
   }
   if (!model) return boundary(provider, "configured_without_model", "deterministic_fallback");
 
-  if (provider === "openai") return boundary(provider, "live_completed", "llm_live", model);
+  if (provider === "openai" || provider === "google") return boundary(provider, "live_completed", "llm_live", model);
 
   return boundary(provider, "stubbed_pending_controls", "llm_stubbed", model);
 }
@@ -829,7 +835,7 @@ async function planWithOpenAi(
       if (!outputText) throw new Error("OpenAI planner response did not include output text.");
 
       const payload = parseOpenAiPlannerPayload(
-        outputText,
+        jsonTextFromProviderOutput(outputText),
         input.candidateActions,
         input.policy,
         input.suppressAutoApprove,
@@ -852,6 +858,54 @@ async function planWithOpenAi(
     return {
       actions: input.candidateActions,
       plannerBoundary: boundary("openai", "live_error_fallback", "deterministic_fallback", plannerBoundary.model),
+    };
+  }
+}
+
+async function planWithGoogle(
+  input: PlanAgentActionsInput,
+  plannerBoundary: RobomataAgentPlannerBoundary,
+  providerInput: PlannerProviderInput,
+): Promise<PlanAgentActionsResult> {
+  const apiKey = process.env[GOOGLE_GEMINI_API_KEY_ENV]?.trim();
+  if (!apiKey || !plannerBoundary.model) {
+    return {
+      actions: input.candidateActions,
+      plannerBoundary: boundary("google", "configured_without_key", "deterministic_fallback", plannerBoundary.model),
+    };
+  }
+
+  try {
+    const outputText = await generateGoogleGeminiContent({
+      apiKey,
+      model: plannerBoundary.model,
+      systemInstruction:
+        "You are a supervised private-credit operations planner. Return only schema-compliant JSON. Never invent action types or execution status.",
+      timeoutMs: googleGeminiPlannerTimeoutMs,
+      userPrompt: openAiPlannerPrompt(providerInput),
+    });
+
+    const payload = parseOpenAiPlannerPayload(
+      jsonTextFromProviderOutput(outputText),
+      input.candidateActions,
+      input.policy,
+      input.suppressAutoApprove,
+    );
+
+    return {
+      actions: applyOpenAiPlannerPayload(input.candidateActions, payload, input.policy, input.suppressAutoApprove),
+      plannerBoundary,
+    };
+  } catch (error) {
+    if (error instanceof SyntaxError || error instanceof OpenAiPlannerSchemaError) {
+      return {
+        actions: input.candidateActions,
+        plannerBoundary: boundary("google", "schema_invalid_fallback", "deterministic_fallback", plannerBoundary.model),
+      };
+    }
+    return {
+      actions: input.candidateActions,
+      plannerBoundary: boundary("google", "live_error_fallback", "deterministic_fallback", plannerBoundary.model),
     };
   }
 }
@@ -883,7 +937,10 @@ async function withLivePlannerProvenance(
   baseBoundary: RobomataAgentPlannerBoundary,
 ): Promise<PlanAgentActionsResult> {
   const context = normalizedPlannerContext(input);
-  const planned = await planWithOpenAi(input, baseBoundary, context.providerInput);
+  const planned =
+    baseBoundary.provider === "google"
+      ? await planWithGoogle(input, baseBoundary, context.providerInput)
+      : await planWithOpenAi(input, baseBoundary, context.providerInput);
   return withPlannerProvenance({
     actions: planned.actions,
     baseBoundary: planned.plannerBoundary,
@@ -900,7 +957,10 @@ export async function planRobomataAgentActions(input: PlanAgentActionsInput): Pr
     return withDeterministicPlannerProvenance(input, plannerBoundary);
   }
 
-  if (plannerBoundary.provider === "openai" && plannerBoundary.mode === "llm_live") {
+  if (
+    (plannerBoundary.provider === "openai" || plannerBoundary.provider === "google") &&
+    plannerBoundary.mode === "llm_live"
+  ) {
     return withLivePlannerProvenance(input, plannerBoundary);
   }
 
@@ -910,13 +970,13 @@ export async function planRobomataAgentActions(input: PlanAgentActionsInput): Pr
 export function plannerBoundarySummary(boundaryValue: RobomataAgentPlannerBoundary): string {
   if (boundaryValue.provider === "rules") return "Action proposals used deterministic supervision rules.";
   if (boundaryValue.status === "live_completed") {
-    return "OpenAI planner completed against deterministic candidate actions; policy rules still defined the action set.";
+    return `${boundaryValue.provider} planner completed against deterministic candidate actions; policy rules still defined the action set.`;
   }
   if (boundaryValue.status === "live_error_fallback") {
-    return "OpenAI planner failed, so action proposals used deterministic fallback rules.";
+    return `${boundaryValue.provider} planner failed, so action proposals used deterministic fallback rules.`;
   }
   if (boundaryValue.status === "schema_invalid_fallback") {
-    return "OpenAI planner returned schema-invalid output, so action proposals used deterministic fallback rules.";
+    return `${boundaryValue.provider} planner returned schema-invalid output, so action proposals used deterministic fallback rules.`;
   }
   if (boundaryValue.mode === "llm_stubbed") {
     return `${boundaryValue.provider} planner is configured, but live action planning is stubbed until planner controls are approved.`;
