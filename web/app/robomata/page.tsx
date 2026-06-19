@@ -78,7 +78,7 @@ const railCards = [
   {
     label: "Programmable commit trail",
     icon: SparklesIcon,
-    copy: "Anchors the evidence root through the Sui facility path so future lenders can monitor the same financial object over time.",
+    copy: "Anchors evidence-root state through the Sui facility path so packet history and monitoring can reference the same facility over time.",
   },
 ];
 
@@ -94,13 +94,12 @@ const RobomataPage = () => {
               <div className="space-y-4">
                 <p className="text-sm font-semibold uppercase tracking-[0.3em] text-base-content/50">Robomata</p>
                 <h1 className="max-w-4xl text-4xl font-black tracking-tight text-base-content sm:text-5xl lg:text-6xl">
-                  Make fleet receivables financeable before the lender asks twice.
+                  Make asset-backed receivables financeable before the lender asks twice.
                 </h1>
                 <p className="max-w-3xl text-lg leading-relaxed text-base-content/70">
-                  Robomata helps fleet operators package receivables, evidence, exceptions, and borrowing-base output
-                  into lender-ready packets. Operators get a clearer path from monthly reporting to credit review, while
-                  lenders receive a cleaner file with eligibility, evidence status, and unresolved exceptions already
-                  organized.
+                  Robomata is the operator workspace for turning receivables, asset evidence, policy exceptions,
+                  borrowing-base runs, and facility monitoring into lender-ready packets. Deterministic rules calculate
+                  credit truth; supervised agents help operators surface gaps without exposing raw evidence.
                 </p>
               </div>
 
@@ -131,7 +130,7 @@ const RobomataPage = () => {
               <div className="mt-5 space-y-4">
                 <div className="rounded-2xl border border-base-300 bg-base-100/80 p-4">
                   <div className="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Prepare</div>
-                  <div className="mt-2 text-lg font-bold text-base-content">Operator-controlled workspace</div>
+                  <div className="mt-2 text-lg font-bold text-base-content">Operator-controlled credit workspace</div>
                   <p className="mt-2 text-sm leading-relaxed text-base-content/70">
                     Import receivables, attach evidence, calculate availability, and resolve exceptions before a lender
                     review starts.
@@ -139,7 +138,9 @@ const RobomataPage = () => {
                 </div>
                 <div className="rounded-2xl border border-base-300 bg-base-100/80 p-4">
                   <div className="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Share</div>
-                  <div className="mt-2 text-lg font-bold text-base-content">Lender-ready packet</div>
+                  <div className="mt-2 text-lg font-bold text-base-content">
+                    Lender-ready packet with review boundary
+                  </div>
                   <p className="mt-2 text-sm leading-relaxed text-base-content/70">
                     Send one controlled packet with borrowing-base output, exception status, and the evidence a credit
                     team needs to diligence the file.
@@ -147,7 +148,9 @@ const RobomataPage = () => {
                 </div>
                 <div className="rounded-2xl border border-base-300 bg-base-100/80 p-4">
                   <div className="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Monitor</div>
-                  <div className="mt-2 text-lg font-bold text-base-content">Verifiable evidence trail</div>
+                  <div className="mt-2 text-lg font-bold text-base-content">
+                    Freshness, evidence, and policy observations
+                  </div>
                   <p className="mt-2 text-sm leading-relaxed text-base-content/70">
                     Keep sensitive documents controlled while preserving a tamper-evident record of what supported the
                     borrowing-base calculation.
