@@ -34,6 +34,12 @@ const marketingHosts = configuredMarketingHosts?.length ? configuredMarketingHos
 const isMarketingHost = (host: string | null) => !!host && marketingHosts.includes(host);
 const isLocalHost = (host: string | null) => host === "localhost" || host === "127.0.0.1" || host === "::1";
 const shouldUseAppHostNavigation = (host: string | null) => !!host && !isLocalHost(host) && isMarketingHost(host);
+const isMarketingContentPath = (pathname: string | null) =>
+  pathname === "/" ||
+  pathname === "/robomata" ||
+  pathname?.startsWith("/products/") ||
+  pathname === "/partners" ||
+  pathname?.startsWith("/partners/");
 
 const HeaderAppAnchor = ({
   children,
@@ -271,6 +277,7 @@ const HeaderNetworkActions = () => {
  * Site header
  */
 export const Header = () => {
+  const pathname = usePathname();
   const [showNetworkActions, setShowNetworkActions] = useState(false);
   const burgerMenuRef = useRef<HTMLDetailsElement>(null);
   useOutsideClick(burgerMenuRef, () => {
@@ -279,8 +286,12 @@ export const Header = () => {
 
   useEffect(() => {
     const host = window.location.hostname.toLowerCase();
-    setShowNetworkActions(isLocalHost(host) || host === getConfiguredAppHost() || !isMarketingHost(host));
-  }, []);
+    setShowNetworkActions(
+      isLocalHost(host) ||
+        host === getConfiguredAppHost() ||
+        (!isMarketingHost(host) && !isMarketingContentPath(pathname)),
+    );
+  }, [pathname]);
 
   return (
     <div className="sticky lg:static top-0 navbar bg-base-100 min-h-0 shrink-0 justify-between z-20 shadow-md shadow-secondary px-0 sm:px-2">
