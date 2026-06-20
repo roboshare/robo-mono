@@ -164,7 +164,7 @@ const HeaderAdminMenuLinkItems = ({ pathname }: { pathname: string | null }) => 
   return <HeaderMenuLinkItems isAdmin={isAdmin} pathname={pathname} />;
 };
 
-const getLaunchAppHref = () => (isRobomataWorkflowEnabled() ? "/operator/submissions" : "/operator");
+const getLaunchAppHref = () => (isRobomataWorkflowEnabled() ? "/dashboard" : "/operator");
 
 const resolveAppHostHref = ({
   browserHost,

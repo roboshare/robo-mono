@@ -456,7 +456,7 @@ Verify:
   privileges
 - `/robomata` does not call private submission APIs or accept
   `?submission=<id>` as an access mechanism
-- primary CTA sends operators to `/operator/submissions`
+- primary CTA sends operators to `/robomata/submissions`
 - page presents product positioning, workflow steps, and evidence rails in
   customer-facing terms
 - page does not present demo-only controls such as `Keep Markets Live`,
@@ -515,7 +515,8 @@ Expected gate:
 - a submission with uncomputed borrowing base must not expose tokenization
 - a computed submission with open exceptions must not expose tokenization
 - a clean submission must still require Sui evidence commit before tokenization
-- a committed submission exposes `Tokenize facility`
+- a committed submission exposes Robolend handoff/tokenization status, with
+  tokenization controls framed as an internal preview path when enabled
 
 Expected tokenization behavior:
 
@@ -640,11 +641,7 @@ Non-secret local smoke result:
       "policyFinalStatus": "paused",
       "pausedRunConflict": true,
       "actionCount": 3,
-      "actionTypes": [
-        "evidence_review",
-        "packet_refresh",
-        "sui_root_review"
-      ],
+      "actionTypes": ["evidence_review", "packet_refresh", "sui_root_review"],
       "persistedActionStatuses": {
         "approvedThenCompleted": "completed",
         "rejected": "rejected",
@@ -661,10 +658,7 @@ Non-secret local smoke result:
       "wrongHeaderSecretStatus": "Invalid Robomata agent tick secret.",
       "zeroActivePolicyCount": 0,
       "firstTickCount": 2,
-      "firstTickStatuses": [
-        "completed",
-        "failed"
-      ],
+      "firstTickStatuses": ["completed", "failed"],
       "repeatedTickCount": 2,
       "scheduledActionsRemainProposed": true,
       "submissionsUnchangedAfterRepeatedTicks": true,
@@ -692,8 +686,8 @@ Covered behavior:
 
 - `/robomata` renders publicly with the partner submission CTA and without old
   demo/read-only projection copy.
-- `/partner/submissions` returns the operator submission app shell with the
-  workflow flags enabled.
+- `/robomata/submissions` returns the Robomata facility package workspace with
+  the workflow flags enabled.
 - A temporary partner signer can create a submission, import receivables,
   attach evidence, compute a zero-exception borrowing base, and generate a
   lender packet.

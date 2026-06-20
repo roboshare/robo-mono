@@ -84,7 +84,7 @@ const railCards = [
 
 const RobomataPage = () => {
   const isSubmissionWorkflowAvailable = isRobomataWorkflowEnabled() && isRobomataWorkflowServerEnabled();
-  const submissionHref = toConfiguredAppHref(isSubmissionWorkflowAvailable ? "/operator/submissions" : "/operator");
+  const submissionHref = toConfiguredAppHref(isSubmissionWorkflowAvailable ? "/robomata/submissions" : "/operator");
   const operatorHref = toConfiguredAppHref("/operator");
 
   return (
@@ -107,7 +107,7 @@ const RobomataPage = () => {
 
               <div className="flex flex-wrap gap-3">
                 <a href={submissionHref} className="btn btn-primary rounded-full">
-                  {isSubmissionWorkflowAvailable ? "Start a borrowing-base submission" : "Launch operator workflow"}
+                  {isSubmissionWorkflowAvailable ? "Open Robomata workspace" : "Launch operator workflow"}
                   <ArrowRightIcon className="h-4 w-4" />
                 </a>
                 {isSubmissionWorkflowAvailable ? (

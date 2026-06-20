@@ -167,9 +167,10 @@ Live facility monitoring is additive and default-off:
 - `ROBOMATA_AGENTS_FILE=/local/path/agents.json` is an optional local-only JSON
   fallback when `POSTGRES_URL` is not configured.
 
-When these flags are unset, `/robomata`, `/operator/submissions`, Robomata
-submission APIs, protected packet sharing, Walrus/Seal storage, and Sui evidence
-commits must behave as they do today.
+When these flags are unset, `/robomata`, `/robomata/submissions`, legacy
+`/operator/submissions` redirects, Robomata submission APIs, protected packet
+sharing, Walrus/Seal storage, and Sui evidence commits must behave as they do
+today.
 
 ## Supervised Agent Trust Boundary
 

@@ -58,7 +58,7 @@ landed on `dev`.
   - `/partners` targets integration partners.
   - `/markets` presents the downstream distribution story.
   - `/partner` redirects to `/operator`.
-  - `/partner/submissions` redirects to `/operator/submissions`.
+  - `/partner/submissions` redirects to `/robomata/submissions`.
   - Marketing host redirects app-only routes to `app.roboshare.finance`.
   - App host redirects marketing routes to `www.roboshare.finance`.
   - Protected packet routes remain available on app host.
