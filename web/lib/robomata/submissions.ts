@@ -361,15 +361,9 @@ export function canDeleteDraftFacilitySubmission(submission: FacilitySubmission)
       submission.evidenceCommit.facilityAssignmentErrorMessage?.trim() ||
       submission.facilityMonitoring,
   );
+  const hasActiveEvidenceCommit = ["committing", "committed"].includes(submission.evidenceCommit.status);
 
-  return (
-    submission.status === "draft" &&
-    submission.receivables.length === 0 &&
-    submission.evidence.length === 0 &&
-    !submission.computation &&
-    !hasFacilityArtifacts &&
-    submission.tokenization.status === "not_started"
-  );
+  return !hasActiveEvidenceCommit && !hasFacilityArtifacts && submission.tokenization.status === "not_started";
 }
 
 export function createSubmissionShell(input: CreateSubmissionInput): FacilitySubmission {

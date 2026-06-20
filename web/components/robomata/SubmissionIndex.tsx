@@ -210,12 +210,7 @@ function submissionEvidenceCount(submission: SubmissionIndexView) {
 }
 
 function canDeleteDraftFromIndex(submission: SubmissionIndexView) {
-  return (
-    submissionReceivableCount(submission) === 0 &&
-    submissionEvidenceCount(submission) === 0 &&
-    submission.hasComputation !== true &&
-    canDeleteDraftFacilitySubmission(submission)
-  );
+  return canDeleteDraftFacilitySubmission(submission);
 }
 
 function readSubmissionIndexCache(cacheKey: string | null): SubmissionIndexView[] | null {
