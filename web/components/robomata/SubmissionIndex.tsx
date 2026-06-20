@@ -54,13 +54,6 @@ const sourceOptions: Array<{
   value: FacilitySubmissionSource;
 }> = [
   {
-    description: "First-party rental operations and servicing data.",
-    disabled: true,
-    icon: BuildingStorefrontIcon,
-    label: "Rental platform facility",
-    value: "rental_platform",
-  },
-  {
     description: "Operator-submitted evidence from an outside operating system.",
     icon: CloudArrowUpIcon,
     label: "External asset pool",
@@ -72,6 +65,13 @@ const sourceOptions: Array<{
     icon: ArrowPathIcon,
     label: "Connected external system",
     value: "connected_external_system",
+  },
+  {
+    description: "First-party rental operations and servicing data.",
+    disabled: true,
+    icon: BuildingStorefrontIcon,
+    label: "Rental platform facility",
+    value: "rental_platform",
   },
 ];
 
@@ -483,11 +483,11 @@ const AuthorizedSubmissionIndex = () => {
     [getAuthHeaders, partnerAuthAddress, selectedNetwork.id, signerAddress, submissionCacheKey],
   );
 
-  const selectedSource = sourceOptions.find(option => option.value === form.facilitySource) ?? sourceOptions[1];
+  const selectedSource = sourceOptions.find(option => option.value === form.facilitySource) ?? sourceOptions[0];
   const SelectedSourceIcon = selectedSource.icon;
 
   const newFacilityPackagePanel = (
-    <div className="rounded-[1.5rem] border border-base-300 bg-base-200/60 p-5">
+    <div className="min-w-0 rounded-[1.25rem] border border-base-300 bg-base-200/60 p-4 sm:rounded-[1.5rem] sm:p-5">
       <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.2em] text-base-content/50">
         <PlusIcon className="h-4 w-4" />
         New facility package
@@ -537,24 +537,24 @@ const AuthorizedSubmissionIndex = () => {
             })}
           </ul>
         </details>
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className="rounded-2xl border border-base-300 bg-base-100 px-4 py-3">
+        <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+          <div className="min-w-0 rounded-2xl border border-base-300 bg-base-100 px-4 py-3">
             <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Operator</div>
             <div className="mt-1 truncate text-sm font-semibold text-base-content">{operatorDisplayName}</div>
           </div>
-          <label className="form-control">
+          <label className="form-control min-w-0">
             <span className="label-text">As-of date</span>
             <input
               type="date"
-              className="input input-bordered"
+              className="input input-bordered w-full min-w-0"
               value={form.asOfDate}
               onChange={event => setForm(current => ({ ...current, asOfDate: event.target.value }))}
             />
           </label>
-          <label className="form-control md:col-span-2">
+          <label className="form-control min-w-0 sm:col-span-2">
             <span className="label-text">Facility or asset pool name</span>
             <input
-              className="input input-bordered"
+              className="input input-bordered w-full min-w-0"
               value={form.facilityName}
               onChange={event => setForm(current => ({ ...current, facilityName: event.target.value }))}
               placeholder="MetroFleet 2026 Fleet Receivables Facility"
@@ -569,14 +569,14 @@ const AuthorizedSubmissionIndex = () => {
   );
 
   const actionQueuePanel = (
-    <div className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30 sm:p-8">
+    <div className="min-w-0 rounded-[1.5rem] border border-base-300 bg-base-100 p-4 shadow-lg shadow-base-300/30 sm:rounded-[2rem] sm:p-6">
       <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
         <ClipboardDocumentCheckIcon className="h-4 w-4" />
         Action queue
       </div>
-      <h2 className="mt-2 text-2xl font-black tracking-tight text-base-content">Next best work</h2>
+      <h2 className="mt-2 text-xl font-black tracking-tight text-base-content sm:text-2xl">Next best work</h2>
       {isLoading ? (
-        <div className="py-16 text-center">
+        <div className="py-10 text-center sm:py-16">
           <span className="loading loading-spinner loading-lg text-primary"></span>
         </div>
       ) : actionQueue.length === 0 ? (
@@ -589,12 +589,12 @@ const AuthorizedSubmissionIndex = () => {
             <Link
               key={submission.id}
               href={action.href}
-              className="block rounded-2xl border border-base-300 bg-base-200/50 p-4 transition hover:border-primary/40 hover:shadow-md"
+              className="block min-w-0 overflow-hidden rounded-2xl border border-base-300 bg-base-200/50 p-4 transition hover:border-primary/40 hover:shadow-md"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <span className={`badge ${actionToneClass(action.tone)}`}>{action.stage}</span>
-                  <h3 className="mt-3 truncate text-lg font-bold text-base-content">{submission.facilityName}</h3>
+                  <h3 className="mt-3 break-words text-lg font-bold text-base-content">{submission.facilityName}</h3>
                   <p className="mt-1 text-sm leading-relaxed text-base-content/70">{action.description}</p>
                 </div>
                 <ArrowRightIcon className="mt-1 h-5 w-5 shrink-0 text-primary" />
@@ -608,23 +608,23 @@ const AuthorizedSubmissionIndex = () => {
   );
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-8 sm:px-6 sm:py-10">
-      <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30 sm:p-8">
-        <div className="grid gap-7 xl:grid-cols-[1.05fr_0.95fr]">
-          <div className="max-w-3xl">
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 overflow-x-hidden px-3 py-5 sm:gap-6 sm:px-6 sm:py-10">
+      <section className="min-w-0 rounded-[1.5rem] border border-base-300 bg-base-100 p-4 shadow-lg shadow-base-300/30 sm:rounded-[2rem] sm:p-8">
+        <div className="grid min-w-0 items-start gap-5 xl:grid-cols-[1.05fr_0.95fr] xl:gap-7">
+          <div className="min-w-0 max-w-3xl">
             <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">Robomata</p>
-            <h1 className="mt-3 text-4xl font-black tracking-tight text-base-content sm:text-5xl">
+            <h1 className="mt-3 break-words text-3xl font-black tracking-tight text-base-content sm:text-5xl">
               Capital readiness workspace
             </h1>
-            <p className="mt-4 text-lg leading-relaxed text-base-content/70">
+            <p className="mt-4 text-base leading-relaxed text-base-content/70 sm:text-lg">
               Prepare asset-pool evidence, borrowing-base runs, exception trails, and lender packets before the facility
               moves to Robolend review or downstream tokenization.
             </p>
-            <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
               {packageStats.map(item => (
-                <div key={item.label} className="rounded-2xl border border-base-300 bg-base-200/60 p-4">
-                  <div className="text-3xl font-black text-base-content">{item.value}</div>
-                  <div className="mt-1 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/50">
+                <div key={item.label} className="min-w-0 rounded-2xl border border-base-300 bg-base-200/60 p-3 sm:p-4">
+                  <div className="text-2xl font-black text-base-content sm:text-3xl">{item.value}</div>
+                  <div className="mt-1 text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-base-content/50 sm:text-xs sm:tracking-[0.18em]">
                     {item.label}
                   </div>
                 </div>
@@ -636,15 +636,15 @@ const AuthorizedSubmissionIndex = () => {
         </div>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-        {hasDraftPackage ? newFacilityPackagePanel : actionQueuePanel}
+      <section className="grid min-w-0 gap-5 sm:gap-6">
+        <div className="min-w-0 lg:max-w-3xl">{hasDraftPackage ? newFacilityPackagePanel : actionQueuePanel}</div>
 
-        <div className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30 sm:p-8">
+        <div className="min-w-0 rounded-[1.5rem] border border-base-300 bg-base-100 p-4 shadow-lg shadow-base-300/30 sm:rounded-[2rem] sm:p-8">
           <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
             <CircleStackIcon className="h-4 w-4" />
             Facility packages
           </div>
-          <h2 className="mt-2 text-2xl font-black tracking-tight text-base-content">
+          <h2 className="mt-2 text-xl font-black tracking-tight text-base-content sm:text-2xl">
             Source systems and lender status
           </h2>
 
@@ -666,7 +666,7 @@ const AuthorizedSubmissionIndex = () => {
                 return (
                   <div
                     key={submission.id}
-                    className="rounded-[1.5rem] border border-base-300 bg-base-200/50 p-5 transition hover:border-primary/40 hover:shadow-md"
+                    className="min-w-0 rounded-[1.5rem] border border-base-300 bg-base-200/50 p-4 transition hover:border-primary/40 hover:shadow-md sm:p-5"
                   >
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                       <Link href={`/robomata/submissions/${submission.id}`} className="min-w-0 flex-1">
@@ -680,14 +680,14 @@ const AuthorizedSubmissionIndex = () => {
                               </span>
                             ) : null}
                           </div>
-                          <h3 className="mt-3 truncate text-xl font-bold text-base-content">
+                          <h3 className="mt-3 break-words text-xl font-bold text-base-content">
                             {submission.facilityName}
                           </h3>
                           <p className="mt-2 text-sm text-base-content/70">{submission.operatorName}</p>
                           <p className="mt-2 text-sm leading-relaxed text-base-content/60">{source.description}</p>
                         </div>
                       </Link>
-                      <div className="grid gap-2 text-sm text-base-content/70 lg:min-w-44 lg:text-right">
+                      <div className="grid min-w-0 gap-2 text-sm text-base-content/70 lg:min-w-44 lg:text-right">
                         <div>As of {submission.asOfDate}</div>
                         <div>{submissionReceivableCount(submission)} receivables</div>
                         <div>{submissionEvidenceCount(submission)} evidence packages</div>
