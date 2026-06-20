@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { type Hex, decodeEventLog, encodeFunctionData } from "viem";
 import { usePublicClient, useWriteContract } from "wagmi";
 import {
@@ -11,6 +12,7 @@ import {
   DocumentArrowUpIcon,
   ExclamationTriangleIcon,
   ShieldCheckIcon,
+  TrashIcon,
 } from "@heroicons/react/24/outline";
 import { AgentSupervisionPanel } from "~~/components/robomata/AgentSupervisionPanel";
 import { FacilityMonitoringPanel } from "~~/components/robomata/FacilityMonitoringPanel";
@@ -30,7 +32,12 @@ import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
 import { isRobomataTokenizationClientEnabled } from "~~/lib/featureFlags";
 import { formatPercentFromBps, formatUsd } from "~~/lib/robomata/borrowingBase";
 import { resolveRobomataFacilityPolicyArtifact } from "~~/lib/robomata/policyRules";
-import type { FacilitySubmission, SubmissionComputation, SubmissionReceivable } from "~~/lib/robomata/submissions";
+import {
+  type FacilitySubmission,
+  type SubmissionComputation,
+  type SubmissionReceivable,
+  canDeleteDraftFacilitySubmission,
+} from "~~/lib/robomata/submissions";
 import { notification } from "~~/utils/scaffold-eth";
 
 type SubmissionWorkspaceProps = {
@@ -164,6 +171,7 @@ export const SubmissionWorkspace = ({
   readOnly = false,
   loadLatest = false,
 }: SubmissionWorkspaceProps) => {
+  const router = useRouter();
   const [submission, setSubmission] = useState<FacilitySubmission | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isBusy, setIsBusy] = useState(false);
@@ -226,6 +234,7 @@ export const SubmissionWorkspace = ({
   const canComputeBorrowingBase = Boolean(
     submission && submission.receivables.length > 0 && submission.evidence.length > 0,
   );
+  const canDeleteDraft = Boolean(submission && canMutate && canDeleteDraftFacilitySubmission(submission));
   const canRetryPendingOperatorCommit = Boolean(
     submission &&
       pendingOperatorCommit?.submissionId === submission.id &&
@@ -395,6 +404,38 @@ export const SubmissionWorkspace = ({
       return;
     }
     await updateSubmission(`/api/robomata/submissions/${submission.id}/compute`, { method: "POST" });
+  };
+
+  const deleteDraftSubmission = async () => {
+    if (!submission || !canDeleteDraft) return;
+    if (!window.confirm(`Delete draft facility package "${submission.facilityName}"?`)) return;
+
+    if (!partnerAuthAddress) {
+      notification.error("Connect a partner wallet before deleting the submission.");
+      return;
+    }
+
+    const path = `/api/robomata/submissions/${submission.id}`;
+    setIsBusy(true);
+    try {
+      const response = await fetch(path, {
+        method: "DELETE",
+        headers: await getAuthHeaders({ chainId: selectedNetwork.id, method: "DELETE", path, signerAddress }),
+      });
+      const payload = await readJsonResponse<Record<string, never>>(response);
+      if (!response.ok) {
+        notification.error(payload.error ?? `Failed to delete draft package (${response.status}).`);
+        return;
+      }
+
+      notification.success("Draft facility package deleted.");
+      router.push("/robomata/submissions");
+      router.refresh();
+    } catch (error) {
+      notification.error(error instanceof Error ? error.message : "Failed to delete draft package.");
+    } finally {
+      setIsBusy(false);
+    }
   };
 
   const tokenizationTermsBody = () => ({
@@ -836,6 +877,16 @@ export const SubmissionWorkspace = ({
                     <ArrowPathIcon className="h-4 w-4" />
                     Compute borrowing base
                   </button>
+                  {canDeleteDraft ? (
+                    <button
+                      className="btn btn-outline rounded-full text-error hover:border-error hover:bg-error/10"
+                      onClick={deleteDraftSubmission}
+                      disabled={isBusy}
+                    >
+                      <TrashIcon className="h-4 w-4" />
+                      Delete draft
+                    </button>
+                  ) : null}
                 </>
               )}
             </div>
