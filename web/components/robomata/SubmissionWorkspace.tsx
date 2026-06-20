@@ -1169,6 +1169,7 @@ export const SubmissionWorkspace = ({
                       address: accountAddress,
                       chainId: selectedNetwork.id,
                       chainName: selectedNetwork.name,
+                      feesSponsored: isSmartWallet,
                       flowLabel: "Tokenization wallet",
                       paymentToken: {
                         address: paymentTokenAddress,

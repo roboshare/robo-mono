@@ -9,6 +9,7 @@ type EvmBalanceFlow = {
   address?: Address;
   chainId: number;
   chainName: string;
+  feesSponsored?: boolean;
   flowLabel: string;
   paymentToken?: {
     address?: Address;
@@ -133,7 +134,7 @@ function EvmFlowBalanceCard({ flow }: { flow: EvmBalanceFlow }) {
         ) : (
           <NoPaymentTokenRow sublabel="No token configured for this network" />
         )}
-        <SponsoredFeesRow />
+        <NetworkFeesRow sponsored={Boolean(flow.feesSponsored)} />
       </div>
     </section>
   );
@@ -221,7 +222,7 @@ function SuiFlowBalanceCard({ flow }: { flow: SuiBalanceFlow }) {
                 : "Bind the operator Sui wallet to load balances."}
           </div>
         )}
-        <SponsoredFeesRow />
+        <NetworkFeesRow sponsored />
       </div>
     </section>
   );
@@ -239,14 +240,16 @@ function NoPaymentTokenRow({ sublabel }: { sublabel: string }) {
   );
 }
 
-function SponsoredFeesRow() {
+function NetworkFeesRow({ sponsored }: { sponsored: boolean }) {
   return (
     <div className={rowClass}>
       <div className="min-w-0">
         <div className="truncate text-sm font-semibold text-base-content">Network fees</div>
-        <div className="truncate text-xs text-base-content/50">Sponsored for this flow</div>
+        <div className="truncate text-xs text-base-content/50">
+          {sponsored ? "Sponsored for this flow" : "Native gas may be required"}
+        </div>
       </div>
-      <ShieldCheckIcon className="h-5 w-5 shrink-0 text-success" />
+      <ShieldCheckIcon className={`h-5 w-5 shrink-0 ${sponsored ? "text-success" : "text-base-content/40"}`} />
     </div>
   );
 }

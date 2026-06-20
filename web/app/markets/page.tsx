@@ -125,7 +125,7 @@ const METADATA_FETCH_MAX_ATTEMPTS = 3;
 const MARKETS_PAGE_PREFS_KEY = "roboshare:markets-page-prefs";
 
 const MarketsPage: NextPage = () => {
-  const { address } = useTransactingAccount();
+  const { address, isSmartWallet } = useTransactingAccount();
   const rentalInvestorReportingEnabled = isRobomataRentalInvestorReportingClientEnabled();
   // State
   const [listings, setListings] = useState<SubgraphListing[]>([]);
@@ -1588,6 +1588,7 @@ const MarketsPage: NextPage = () => {
             address,
             chainId,
             chainName: networkName,
+            feesSponsored: isSmartWallet,
             flowLabel: "Markets wallet",
             paymentToken: {
               address: paymentTokenAddress,

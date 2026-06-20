@@ -7,6 +7,7 @@ const SUI_METADATA = {
   decimals: 9,
   symbol: "SUI",
 };
+const MAX_NON_NATIVE_BALANCES = 3;
 
 function coinTypeLabel(coinType: string) {
   const parts = coinType.split("::");
@@ -23,9 +24,15 @@ export async function GET(request: NextRequest) {
     const client = getRobomataSuiClient();
     const network = getRobomataSuiNetwork();
     const balances = await client.getAllBalances({ owner: normalizeSuiAddress(address) });
+    const nativeBalance = balances.find(balance => balance.coinType === SUI_TYPE_ARG);
+    const nonNativeBalances = balances
+      .filter(balance => balance.coinType !== SUI_TYPE_ARG)
+      .sort((left, right) => left.coinType.localeCompare(right.coinType))
+      .slice(0, MAX_NON_NATIVE_BALANCES);
+    const returnedBalances = nativeBalance ? [nativeBalance, ...nonNativeBalances] : nonNativeBalances;
 
     const enrichedBalances = await Promise.all(
-      balances.map(async balance => {
+      returnedBalances.map(async balance => {
         if (balance.coinType === SUI_TYPE_ARG) {
           return {
             coinType: balance.coinType,
