@@ -122,16 +122,16 @@ const HeaderProductsMenu = () => {
             </a>
           </li>
           <li>
-            <a href="/products/robomarkets" className="justify-between gap-4 rounded-xl text-sm">
-              <span>Robomarkets</span>
-            </a>
-          </li>
-          <li>
             <a href="/products/robolend" className="justify-between gap-4 rounded-xl text-sm">
               <span>Robolend</span>
               <span className="whitespace-nowrap rounded-full bg-amber-100 px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-[0.12em] text-amber-700">
                 Soon
               </span>
+            </a>
+          </li>
+          <li>
+            <a href="/products/robomarkets" className="justify-between gap-4 rounded-xl text-sm">
+              <span>Robomarkets</span>
             </a>
           </li>
         </ul>
