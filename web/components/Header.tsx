@@ -131,9 +131,38 @@ const HeaderProductsMenu = () => {
   );
 };
 
+const HeaderMenuLinkItems = ({ isAdmin = false, pathname }: { isAdmin?: boolean; pathname: string | null }) => (
+  <>
+    {menuLinks
+      .filter(link => !link.adminOnly || isAdmin)
+      .map(({ label, href, icon }) => {
+        const isActive = pathname === href;
+        return (
+          <li key={href}>
+            <Link
+              href={href}
+              passHref
+              className={`${
+                isActive ? "bg-secondary shadow-md" : ""
+              } hover:bg-secondary hover:shadow-md focus:!bg-secondary active:!text-neutral py-1.5 px-3 text-sm rounded-full gap-2 grid grid-flow-col`}
+            >
+              {icon}
+              <span>{label}</span>
+            </Link>
+          </li>
+        );
+      })}
+  </>
+);
+
+const HeaderAdminMenuLinkItems = ({ pathname }: { pathname: string | null }) => {
+  const { isAdmin } = useIsAdmin();
+
+  return <HeaderMenuLinkItems isAdmin={isAdmin} pathname={pathname} />;
+};
+
 export const HeaderMenuLinks = () => {
   const pathname = usePathname();
-  const { isAdmin } = useIsAdmin({ enabled: !isMarketingContentPath(pathname) });
   const [isAppHost, setIsAppHost] = useState(false);
   const [isHostResolved, setIsHostResolved] = useState(false);
   const [browserHost, setBrowserHost] = useState<string | null>(null);
@@ -146,6 +175,7 @@ export const HeaderMenuLinks = () => {
   const showLaunchApp = !isAppHost && !isOperatorPath;
   const showRentalMarketplace = isRobomataRentalMarketplaceClientEnabled();
   const showRentalHostOps = isRobomataRentalHostOpsClientEnabled();
+  const showAdminLinks = !isMarketingContentPath(pathname);
   const useAppHostNavigation = isHostResolved && !isAppHost && shouldUseAppHostNavigation(browserHost);
   const resolvedLaunchAppHref = useAppHostNavigation
     ? toConfiguredAppHref(launchAppHref, { forceDefaultHost: true })
@@ -216,25 +246,7 @@ export const HeaderMenuLinks = () => {
           </Link>
         </li>
       )}
-      {menuLinks
-        .filter(link => !link.adminOnly || isAdmin)
-        .map(({ label, href, icon }) => {
-          const isActive = pathname === href;
-          return (
-            <li key={href}>
-              <Link
-                href={href}
-                passHref
-                className={`${
-                  isActive ? "bg-secondary shadow-md" : ""
-                } hover:bg-secondary hover:shadow-md focus:!bg-secondary active:!text-neutral py-1.5 px-3 text-sm rounded-full gap-2 grid grid-flow-col`}
-              >
-                {icon}
-                <span>{label}</span>
-              </Link>
-            </li>
-          );
-        })}
+      {showAdminLinks ? <HeaderAdminMenuLinkItems pathname={pathname} /> : <HeaderMenuLinkItems pathname={pathname} />}
       {showRentalHostOps && (
         <li>
           <HeaderAppAnchor
