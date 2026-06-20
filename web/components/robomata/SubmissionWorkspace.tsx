@@ -18,7 +18,6 @@ import { PacketSharePanel } from "~~/components/robomata/PacketSharePanel";
 import { OperatorPolicyReviewPanel } from "~~/components/robomata/PolicyReviewPanels";
 import { BorrowingBasePolicyDisclosure } from "~~/components/robomata/PolicyRulesPanel";
 import { ReviewBoundaryPanel } from "~~/components/robomata/ReviewBoundaryPanel";
-import { FlowWalletBalances } from "~~/components/wallet/FlowWalletBalances";
 import { useSelectedNetwork, useTransactor } from "~~/hooks/scaffold-eth";
 import { usePrivySuiWalletBinding } from "~~/hooks/usePrivySuiWalletBinding";
 import { useRobomataApiAuth } from "~~/hooks/useRobomataApiAuth";
@@ -150,10 +149,6 @@ function dollarsToCents(value: string): number {
   return Math.round(Number(value) * 100);
 }
 
-function sameSuiAddress(left?: string, right?: string) {
-  return Boolean(left && right && left.toLowerCase() === right.toLowerCase());
-}
-
 function buildSubmissionSummaryCards(computation: SubmissionComputation) {
   const { borrowingBase } = computation;
   return [
@@ -240,12 +235,6 @@ export const SubmissionWorkspace = ({
   );
   const isTokenizationVerificationPending = tokenization?.status === "registered";
   const isTokenized = tokenization?.status === "offering_created";
-  const configuredOperatorSuiAddress = submission?.evidenceCommit.facilityOperatorAddress;
-  const boundOperatorSuiAddress = privySuiBinding?.suiAddress;
-  const operatorSuiAddress =
-    boundOperatorSuiAddress && sameSuiAddress(boundOperatorSuiAddress, configuredOperatorSuiAddress)
-      ? boundOperatorSuiAddress
-      : (configuredOperatorSuiAddress ?? boundOperatorSuiAddress);
   const canRetryTokenizationVerification = Boolean(
     isTokenizationVerificationPending &&
       tokenization?.evm.registryAddress &&
@@ -1164,15 +1153,6 @@ export const SubmissionWorkspace = ({
         </div>
 
         <div className="space-y-6">
-          {!readOnly && submission.evidenceCommit.commitMode === "operator_configured" ? (
-            <FlowWalletBalances
-              sui={{
-                address: operatorSuiAddress,
-                flowLabel: "Evidence wallet",
-              }}
-            />
-          ) : null}
-
           <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
             <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
               <ExclamationTriangleIcon className="h-4 w-4" />
