@@ -9,6 +9,7 @@ import { getFacilityMonitoringStore } from "~~/lib/robomata/server/facilityMonit
 import { getPrivyUserFromRequest, requirePartnerAddress } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
 import { ensureSubmissionSuiFacility } from "~~/lib/robomata/server/suiFacilityAssignment";
+import type { FacilitySubmissionSource } from "~~/lib/robomata/submissions";
 
 export const runtime = "nodejs";
 
@@ -28,6 +29,14 @@ function normalizeRequiredString(value: unknown, field: string): string {
   }
 
   return value.trim();
+}
+
+function normalizeFacilitySource(value: unknown): FacilitySubmissionSource {
+  if (value === "rental_platform" || value === "external_asset_pool" || value === "connected_external_system") {
+    return value;
+  }
+
+  return "external_asset_pool";
 }
 
 export async function GET(request: NextRequest) {
@@ -54,11 +63,13 @@ export async function POST(request: NextRequest) {
       operatorName?: unknown;
       facilityName?: unknown;
       asOfDate?: unknown;
+      facilitySource?: unknown;
     };
 
     let operatorName: string;
     let facilityName: string;
     let asOfDate: string;
+    const facilitySource = normalizeFacilitySource(body.facilitySource);
     try {
       operatorName = normalizeRequiredString(body.operatorName, "operatorName");
       facilityName = normalizeRequiredString(body.facilityName, "facilityName");
@@ -73,6 +84,7 @@ export async function POST(request: NextRequest) {
     const store = getSubmissionStore();
     const submission = await store.create({
       partnerAddress,
+      facilitySource,
       operatorName,
       facilityName,
       asOfDate,

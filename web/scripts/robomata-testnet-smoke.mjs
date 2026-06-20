@@ -107,7 +107,7 @@ async function waitForServer() {
   const deadline = Date.now() + serverTimeoutMs;
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(`${baseUrl}/partner/submissions`);
+      const response = await fetch(`${baseUrl}/robomata/submissions`);
       if (response.ok) return;
     } catch {
       // Keep polling until the local dev server is ready.
@@ -236,8 +236,8 @@ async function verifyPublicRoutes() {
   if (!robomataHtml.includes("Make fleet receivables financeable before the lender asks twice.")) {
     throw new Error("Expected /robomata to render the public product headline.");
   }
-  if (!robomataHtml.includes("/operator/submissions")) {
-    throw new Error("Expected /robomata to include the operator submissions CTA.");
+  if (!robomataHtml.includes("/robomata/submissions")) {
+    throw new Error("Expected /robomata to include the Robomata submissions CTA.");
   }
   if (
     robomataHtml.includes("Keep Markets Live") ||
@@ -250,14 +250,20 @@ async function verifyPublicRoutes() {
     throw new Error("Expected /robomata not to embed private submission API references.");
   }
 
-  const submissionsHtml = await fetchText(`${baseUrl}/operator/submissions`);
+  const dashboardHtml = await fetchText(`${baseUrl}/dashboard`);
+  if (!dashboardHtml.includes("Robomata") || !dashboardHtml.includes("/robomata/submissions")) {
+    throw new Error("Expected /dashboard to render the Robomata workspace entry.");
+  }
+
+  const submissionsHtml = await fetchText(`${baseUrl}/robomata/submissions`);
   if (!submissionsHtml.includes("<html") || !submissionsHtml.includes("__next")) {
-    throw new Error("Expected /operator/submissions to return the operator submissions app shell.");
+    throw new Error("Expected /robomata/submissions to return the Robomata submissions app shell.");
   }
 
   return {
     publicRobomataRoute: "passed",
-    operatorSubmissionsRoute: "passed",
+    dashboardRoute: "passed",
+    robomataSubmissionsRoute: "passed",
   };
 }
 
@@ -517,10 +523,7 @@ async function seedDanglingActiveAgentPolicy({ agentsFile, sourceSubmissionId })
     status: "active",
     updatedAt: new Date().toISOString(),
   };
-  agentStore.policies = [
-    danglingPolicy,
-    ...agentStore.policies.filter(policy => policy.id !== danglingPolicy.id),
-  ];
+  agentStore.policies = [danglingPolicy, ...agentStore.policies.filter(policy => policy.id !== danglingPolicy.id)];
   await writeFile(agentsFile, JSON.stringify(agentStore, null, 2), "utf8");
   return danglingPolicy;
 }
@@ -856,9 +859,7 @@ async function verifyAgentSupervisionLifecycle({ authHeaders, otherAuthHeaders, 
   );
 
   const persistedPayload = await getAgentRuns({ authHeaders, submissionId });
-  const persistedStatuses = Object.fromEntries(
-    persistedPayload.actions.map(action => [action.id, action.status]),
-  );
+  const persistedStatuses = Object.fromEntries(persistedPayload.actions.map(action => [action.id, action.status]));
   const expectedStatuses = {
     [approveTarget.id]: "completed",
     [rejectTarget.id]: "rejected",

@@ -51,7 +51,7 @@ const proofPoints = [
 ];
 
 const HomePage = () => {
-  const launchAppHref = isRobomataWorkflowEnabled() ? "/operator/submissions" : "/operator";
+  const launchAppHref = isRobomataWorkflowEnabled() ? "/dashboard" : "/operator";
   const resolvedLaunchAppHref = toConfiguredAppHref(launchAppHref);
 
   return (

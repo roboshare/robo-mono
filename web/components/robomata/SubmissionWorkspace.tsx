@@ -780,8 +780,8 @@ export const SubmissionWorkspace = ({
               : "Create a submission from the submissions index first."}
           </p>
           <div className="mt-6 flex justify-center gap-3">
-            <Link href="/operator/submissions" className="btn btn-primary rounded-full">
-              Open operator submissions
+            <Link href="/robomata/submissions" className="btn btn-primary rounded-full">
+              Open Robomata workspace
             </Link>
             {!readOnly ? null : (
               <Link href="/operator" className="btn btn-outline rounded-full">
@@ -816,7 +816,7 @@ export const SubmissionWorkspace = ({
             </p>
             <div className="mt-5 flex flex-wrap gap-3">
               {readOnly ? (
-                <Link href={`/operator/submissions/${submission.id}`} className="btn btn-primary rounded-full">
+                <Link href={`/robomata/submissions/${submission.id}`} className="btn btn-primary rounded-full">
                   Manage in operator workflow
                 </Link>
               ) : isCommitted ? (
@@ -1511,7 +1511,7 @@ export const SubmissionWorkspace = ({
             <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
               <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
                 <ShieldCheckIcon className="h-4 w-4" />
-                Tokenize facility
+                Robolend handoff and tokenization status
               </div>
               <div className="mt-4 rounded-[1.5rem] border border-base-300 bg-base-200/50 p-4">
                 <div className="text-sm font-semibold text-base-content">
@@ -1519,7 +1519,7 @@ export const SubmissionWorkspace = ({
                     ? "Facility offering created"
                     : isTokenizationVerificationPending
                       ? "Facility registration is pending verification"
-                      : "Committed borrowing base is ready for tokenization"}
+                      : "Committed packet is ready for lender review"}
                 </div>
                 <div className="mt-2 text-sm text-base-content/70">
                   {isTokenized
@@ -1528,7 +1528,7 @@ export const SubmissionWorkspace = ({
                       }`
                     : isTokenizationVerificationPending
                       ? "The EVM transaction was submitted, but the server has not verified the registry events yet. Retry verification before submitting another registration."
-                      : "Create a facility-level asset and paired revenue-token offering from this committed submission."}
+                      : "Share the anchored lender packet for Robolend or lender approval before downstream tokenization."}
                 </div>
                 {tokenization?.anchors.rootDigest ? (
                   <div className="mt-3 space-y-1 text-xs text-base-content/60">
@@ -1565,15 +1565,26 @@ export const SubmissionWorkspace = ({
                     ) : null}
                   </div>
                 ) : tokenization?.status === "not_started" ? (
-                  <button
-                    className="btn btn-primary mt-4 rounded-full"
-                    onClick={startTokenizationDraft}
-                    disabled={isBusy}
-                  >
-                    Start tokenization draft
-                  </button>
+                  <div className="mt-4 rounded-2xl border border-base-300 bg-base-100 p-4">
+                    <div className="text-sm font-semibold text-base-content">Internal tokenization preview</div>
+                    <p className="mt-2 text-sm text-base-content/70">
+                      This testnet path remains available for controlled validation. The operator workflow should treat
+                      tokenization as a lender-approved downstream step.
+                    </p>
+                    <button
+                      className="btn btn-outline mt-4 rounded-full"
+                      onClick={startTokenizationDraft}
+                      disabled={isBusy}
+                    >
+                      Start internal tokenization draft
+                    </button>
+                  </div>
                 ) : (
                   <div className="mt-5 grid gap-4 md:grid-cols-2">
+                    <div className="md:col-span-2 rounded-2xl border border-base-300 bg-base-100 p-4 text-sm text-base-content/70">
+                      Internal preview controls are available because tokenization is enabled in this environment. Use
+                      these only after the packet has been approved for downstream tokenization.
+                    </div>
                     <label className="form-control">
                       <span className="label-text mb-1 text-sm font-medium">Offering limit</span>
                       <input

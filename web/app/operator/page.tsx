@@ -1260,8 +1260,8 @@ const PartnerDashboard: NextPage = () => {
               {tokenization.evm.txHash && <div className="break-all">Transaction: {tokenization.evm.txHash}</div>}
             </div>
           </div>
-          <Link href={`/operator/submissions/${submission.id}`} className="btn btn-primary w-full sm:w-auto">
-            Open Submission
+          <Link href={`/robomata/submissions/${submission.id}`} className="btn btn-primary w-full sm:w-auto">
+            Open Robomata package
           </Link>
         </div>
       </div>
@@ -1309,7 +1309,7 @@ const PartnerDashboard: NextPage = () => {
 
           <div className="flex flex-col items-stretch gap-3 sm:flex-row">
             {isRobomataWorkflowEnabled() && (
-              <Link href="/operator/submissions" className="btn btn-outline rounded-full">
+              <Link href="/robomata/submissions" className="btn btn-outline rounded-full">
                 Borrowing Base Submissions
               </Link>
             )}

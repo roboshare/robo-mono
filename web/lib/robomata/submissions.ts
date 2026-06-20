@@ -12,6 +12,8 @@ export type FacilitySubmissionStatus =
   | "ready_for_lender"
   | "committed";
 
+export type FacilitySubmissionSource = "rental_platform" | "external_asset_pool" | "connected_external_system";
+
 export type SubmissionStorageBackend = "walrus" | "walrus-mock";
 export type SubmissionEncryptionBackend = "none" | "seal";
 
@@ -197,6 +199,7 @@ export type SubmissionTokenization = {
 export type FacilitySubmission = {
   id: string;
   partnerAddress: string;
+  facilitySource: FacilitySubmissionSource;
   operatorName: string;
   facilityName: string;
   asOfDate: string;
@@ -216,6 +219,7 @@ export type FacilitySubmission = {
 
 export type CreateSubmissionInput = {
   partnerAddress: string;
+  facilitySource?: FacilitySubmissionSource;
   operatorName: string;
   facilityName: string;
   asOfDate: string;
@@ -305,6 +309,7 @@ export function createDefaultSubmissionTokenization(): SubmissionTokenization {
 }
 
 export function normalizeSubmissionTokenization(submission: FacilitySubmission): FacilitySubmission {
+  submission.facilitySource = submission.facilitySource ?? "external_asset_pool";
   submission.policyReviews = submission.policyReviews ?? [];
   submission.tokenization = {
     ...createDefaultSubmissionTokenization(),
@@ -351,6 +356,7 @@ export function createSubmissionShell(input: CreateSubmissionInput): FacilitySub
   const shell: FacilitySubmission = {
     id: createSubmissionId(),
     partnerAddress: input.partnerAddress,
+    facilitySource: input.facilitySource ?? "external_asset_pool",
     operatorName: input.operatorName,
     facilityName: input.facilityName,
     asOfDate: input.asOfDate,

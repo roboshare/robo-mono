@@ -35,7 +35,7 @@ const partnerCategories = [
 ];
 
 const PartnersPage = () => {
-  const launchAppHref = isRobomataWorkflowEnabled() ? "/operator/submissions" : "/operator";
+  const launchAppHref = isRobomataWorkflowEnabled() ? "/dashboard" : "/operator";
   const resolvedLaunchAppHref = toConfiguredAppHref(launchAppHref);
 
   return (
