@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { PropsWithChildren, ReactNode } from "react";
-import { useReadContract } from "wagmi";
+import { useBlockNumber, useReadContract } from "wagmi";
 import { OperatorLoginRequired } from "~~/components/partner/OperatorLoginRequired";
 import { useSelectedNetwork } from "~~/hooks/scaffold-eth";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
@@ -15,6 +15,7 @@ type PartnerAccessGateProps = PropsWithChildren<{
 
 type SubgraphPartnerAuthorization = {
   isAuthorized?: boolean;
+  indexedBlockNumber?: bigint;
   isLoading: boolean;
 };
 
@@ -23,8 +24,16 @@ const PARTNER_AUTHORIZATION_QUERY = `
     partner(id: $id) {
       isAuthorized
     }
+    _meta {
+      block {
+        number
+      }
+    }
   }
 `;
+
+// Authorization is revocation-sensitive, so only an indexer caught up to the observed head is authoritative.
+const SUBGRAPH_AUTH_MAX_BLOCK_LAG = 0n;
 
 const useSubgraphPartnerAuthorization = (
   accountAddress: string | undefined,
@@ -32,17 +41,20 @@ const useSubgraphPartnerAuthorization = (
 ): SubgraphPartnerAuthorization => {
   const subgraphUrl = useMemo(() => getSubgraphQueryUrl(chainId), [chainId]);
   const [isAuthorized, setIsAuthorized] = useState<boolean | undefined>(undefined);
+  const [indexedBlockNumber, setIndexedBlockNumber] = useState<bigint | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     if (!accountAddress || !subgraphUrl) {
       setIsAuthorized(undefined);
+      setIndexedBlockNumber(undefined);
       setIsLoading(false);
       return;
     }
 
     let cancelled = false;
     setIsAuthorized(undefined);
+    setIndexedBlockNumber(undefined);
     setIsLoading(true);
 
     fetch(subgraphUrl, {
@@ -55,7 +67,10 @@ const useSubgraphPartnerAuthorization = (
     })
       .then(async response => {
         const payload = (await response.json()) as {
-          data?: { partner?: { isAuthorized?: boolean } | null };
+          data?: {
+            partner?: { isAuthorized?: boolean } | null;
+            _meta?: { block?: { number?: number | string | null } | null } | null;
+          };
           errors?: Array<{ message?: string }>;
         };
 
@@ -63,11 +78,16 @@ const useSubgraphPartnerAuthorization = (
           throw new Error(payload.errors?.[0]?.message ?? "Failed to read partner authorization from subgraph.");
         }
 
-        if (!cancelled) setIsAuthorized(payload.data?.partner?.isAuthorized === true);
+        if (!cancelled) {
+          const indexedBlock = payload.data?._meta?.block?.number;
+          setIsAuthorized(payload.data?.partner?.isAuthorized === true);
+          setIndexedBlockNumber(indexedBlock === undefined || indexedBlock === null ? undefined : BigInt(indexedBlock));
+        }
       })
       .catch(() => {
         if (!cancelled) {
           setIsAuthorized(undefined);
+          setIndexedBlockNumber(undefined);
         }
       })
       .finally(() => {
@@ -79,7 +99,7 @@ const useSubgraphPartnerAuthorization = (
     };
   }, [accountAddress, subgraphUrl]);
 
-  return { isAuthorized, isLoading };
+  return { isAuthorized, indexedBlockNumber, isLoading };
 };
 
 export const PartnerAccessGate = ({ children, loadingMessage }: PartnerAccessGateProps) => {
@@ -87,6 +107,30 @@ export const PartnerAccessGate = ({ children, loadingMessage }: PartnerAccessGat
   const selectedNetwork = useSelectedNetwork(accountChainId);
   const partnerManagerContract = getDeployedContract(selectedNetwork.id, "PartnerManager");
   const subgraphAuthorization = useSubgraphPartnerAuthorization(accountAddress, selectedNetwork.id);
+  const {
+    data: latestBlockNumber,
+    isLoading: isCheckingLatestBlock,
+    isError: isLatestBlockCheckError,
+  } = useBlockNumber({
+    chainId: selectedNetwork.id,
+    query: { enabled: !!accountAddress && subgraphAuthorization.indexedBlockNumber !== undefined },
+  });
+
+  const subgraphBlockLag =
+    latestBlockNumber !== undefined && subgraphAuthorization.indexedBlockNumber !== undefined
+      ? latestBlockNumber > subgraphAuthorization.indexedBlockNumber
+        ? latestBlockNumber - subgraphAuthorization.indexedBlockNumber
+        : 0n
+      : undefined;
+  const isSubgraphFresh =
+    subgraphBlockLag !== undefined && subgraphBlockLag <= SUBGRAPH_AUTH_MAX_BLOCK_LAG && !isLatestBlockCheckError;
+  const shouldCheckContract =
+    !!accountAddress &&
+    !!partnerManagerContract &&
+    !subgraphAuthorization.isLoading &&
+    (subgraphAuthorization.indexedBlockNumber === undefined ||
+      isLatestBlockCheckError ||
+      (latestBlockNumber !== undefined && !isSubgraphFresh));
 
   const {
     data: isAuthorizedPartner,
@@ -98,18 +142,23 @@ export const PartnerAccessGate = ({ children, loadingMessage }: PartnerAccessGat
     abi: partnerManagerContract?.abi,
     functionName: "isAuthorizedPartner",
     args: [accountAddress as string],
-    query: { enabled: !!accountAddress && !!partnerManagerContract },
+    query: { enabled: shouldCheckContract },
   });
-  const contractAuthorized = isAuthorizedPartner === true;
-  const contractDenied = isPartnerContractCheckSuccess && isAuthorizedPartner === false;
-  const contractUnavailable = !partnerManagerContract || isPartnerContractCheckError;
-  const subgraphAuthorized = subgraphAuthorization.isAuthorized === true;
-  const isAuthorized = contractAuthorized || (contractUnavailable && subgraphAuthorized);
+  const contractAuthorized = shouldCheckContract && isAuthorizedPartner === true;
+  const contractDenied = shouldCheckContract && isPartnerContractCheckSuccess && isAuthorizedPartner === false;
+  const subgraphAuthorized = isSubgraphFresh && subgraphAuthorization.isAuthorized === true;
+  const subgraphDenied = isSubgraphFresh && subgraphAuthorization.isAuthorized === false;
+  const isAuthorized = subgraphAuthorized || contractAuthorized;
   const isVerifyingAuthorization =
     !isAuthorized &&
     !contractDenied &&
-    ((!!partnerManagerContract && !isPartnerContractCheckError && isCheckingPartner) ||
-      (contractUnavailable && subgraphAuthorization.isLoading));
+    !subgraphDenied &&
+    (subgraphAuthorization.isLoading ||
+      (subgraphAuthorization.indexedBlockNumber !== undefined &&
+        latestBlockNumber === undefined &&
+        !isLatestBlockCheckError &&
+        isCheckingLatestBlock) ||
+      (shouldCheckContract && !isPartnerContractCheckError && isCheckingPartner));
 
   if (!accountAddress) {
     return <OperatorLoginRequired />;
