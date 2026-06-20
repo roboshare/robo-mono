@@ -23,6 +23,7 @@ import { RedeemLiquidityModal } from "~~/components/markets/RedeemLiquidityModal
 import { CreateSecondaryListingModal } from "~~/components/partner/CreateSecondaryListingModal";
 import { EndSecondaryListingModal } from "~~/components/partner/EndSecondaryListingModal";
 import { WithdrawProceedsModal } from "~~/components/partner/WithdrawProceedsModal";
+import { FlowWalletBalances } from "~~/components/wallet/FlowWalletBalances";
 import { ASSET_REGISTRIES, AssetType } from "~~/config/assetTypes";
 import { PROTOCOL_BENCHMARK_YIELD_BP } from "~~/config/protocol";
 import { BP_PRECISION, SECONDS_PER_YEAR } from "~~/config/units";
@@ -240,7 +241,7 @@ const MarketsPage: NextPage = () => {
   const registryRouterContract = getDeployedContract(chainId, "RegistryRouter");
   const vehicleRegistryContract = getDeployedContract(chainId, "VehicleRegistry");
   const earningsManagerContract = getDeployedContract(chainId, "EarningsManager");
-  const { symbol, decimals } = usePaymentToken();
+  const { address: paymentTokenAddress, symbol, decimals } = usePaymentToken();
   const { writeContractAsync: writeTreasury } = useScaffoldWriteContract({ contractName: "Treasury" });
   const { writeContractAsync: writeEarningsManager } = useScaffoldWriteContract({ contractName: "EarningsManager" });
   const { data: positionManagerAddressData } = useReadContract({
@@ -1581,6 +1582,20 @@ const MarketsPage: NextPage = () => {
             Explore live offerings and secondary listings for standardized asset-backed revenue exposure.
           </p>
         </div>
+
+        <FlowWalletBalances
+          evm={{
+            address,
+            chainId,
+            chainName: networkName,
+            flowLabel: "Markets wallet",
+            paymentToken: {
+              address: paymentTokenAddress,
+              decimals,
+              symbol,
+            },
+          }}
+        />
 
         {/* Filters & Sort */}
         <div className="flex flex-col lg:flex-row lg:items-center gap-4 p-4 bg-base-200 rounded-xl overflow-hidden">

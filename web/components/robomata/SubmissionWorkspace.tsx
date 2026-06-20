@@ -18,7 +18,9 @@ import { PacketSharePanel } from "~~/components/robomata/PacketSharePanel";
 import { OperatorPolicyReviewPanel } from "~~/components/robomata/PolicyReviewPanels";
 import { BorrowingBasePolicyDisclosure } from "~~/components/robomata/PolicyRulesPanel";
 import { ReviewBoundaryPanel } from "~~/components/robomata/ReviewBoundaryPanel";
+import { FlowWalletBalances } from "~~/components/wallet/FlowWalletBalances";
 import { useSelectedNetwork, useTransactor } from "~~/hooks/scaffold-eth";
+import { usePaymentToken } from "~~/hooks/usePaymentToken";
 import { usePrivySuiWalletBinding } from "~~/hooks/usePrivySuiWalletBinding";
 import { useRobomataApiAuth } from "~~/hooks/useRobomataApiAuth";
 import { sendSmartWalletCalls } from "~~/hooks/useSmartWalletTransaction";
@@ -193,6 +195,11 @@ export const SubmissionWorkspace = ({
   const publicClient = usePublicClient({ chainId: selectedNetwork.id });
   const { writeContractAsync: writeFacilityRegistry } = useWriteContract();
   const writeTokenizationTransaction = useTransactor();
+  const {
+    address: paymentTokenAddress,
+    decimals: paymentTokenDecimals,
+    symbol: paymentTokenSymbol,
+  } = usePaymentToken();
   const partnerAuthAddress = accountAddress;
   const signerAddress = connectedAddress ?? accountAddress;
   const getAuthHeaders = useRobomataApiAuth(partnerAuthAddress);
@@ -235,6 +242,7 @@ export const SubmissionWorkspace = ({
   );
   const isTokenizationVerificationPending = tokenization?.status === "registered";
   const isTokenized = tokenization?.status === "offering_created";
+  const operatorSuiAddress = privySuiBinding?.suiAddress ?? submission?.evidenceCommit.facilityOperatorAddress;
   const canRetryTokenizationVerification = Boolean(
     isTokenizationVerificationPending &&
       tokenization?.evm.registryAddress &&
@@ -1153,6 +1161,34 @@ export const SubmissionWorkspace = ({
         </div>
 
         <div className="space-y-6">
+          {!readOnly && (submission.evidenceCommit.commitMode === "operator_configured" || canShowTokenization) ? (
+            <FlowWalletBalances
+              evm={
+                canShowTokenization
+                  ? {
+                      address: accountAddress,
+                      chainId: selectedNetwork.id,
+                      chainName: selectedNetwork.name,
+                      flowLabel: "Tokenization wallet",
+                      paymentToken: {
+                        address: paymentTokenAddress,
+                        decimals: paymentTokenDecimals,
+                        symbol: paymentTokenSymbol,
+                      },
+                    }
+                  : undefined
+              }
+              sui={
+                submission.evidenceCommit.commitMode === "operator_configured"
+                  ? {
+                      address: operatorSuiAddress,
+                      flowLabel: "Evidence wallet",
+                    }
+                  : undefined
+              }
+            />
+          ) : null}
+
           <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
             <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
               <ExclamationTriangleIcon className="h-4 w-4" />
