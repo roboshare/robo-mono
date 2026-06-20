@@ -351,6 +351,16 @@ export function deriveSubmissionStatus(submission: FacilitySubmission): Facility
   return "draft";
 }
 
+export function canDeleteDraftFacilitySubmission(submission: FacilitySubmission): boolean {
+  return (
+    submission.status === "draft" &&
+    submission.receivables.length === 0 &&
+    submission.evidence.length === 0 &&
+    !submission.computation &&
+    submission.tokenization.status === "not_started"
+  );
+}
+
 export function createSubmissionShell(input: CreateSubmissionInput): FacilitySubmission {
   const createdAt = nowIsoString();
   const shell: FacilitySubmission = {
