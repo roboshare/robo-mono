@@ -312,7 +312,13 @@ export async function DELETE(request: NextRequest, context: { params: Promise<{ 
     if (accessError) return accessError;
 
     if (!canDeleteDraftFacilitySubmission(submission)) {
-      return NextResponse.json({ error: "Only empty draft facility packages can be deleted." }, { status: 409 });
+      return NextResponse.json(
+        {
+          error:
+            "Facility packages with committed evidence, facility artifacts, or tokenization activity cannot be deleted.",
+        },
+        { status: 409 },
+      );
     }
 
     const deleted = await store.deleteDraft(submission.id, submission.updatedAt);

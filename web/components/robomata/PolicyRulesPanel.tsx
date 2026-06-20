@@ -162,6 +162,40 @@ export function BorrowingBasePolicyDisclosure({
   );
 }
 
+export function BorrowingBasePolicySummaryCard({
+  policyArtifact = ROBOMATA_DEFAULT_FACILITY_POLICY_ARTIFACT,
+}: {
+  policyArtifact?: RobomataFacilityPolicyArtifact;
+}) {
+  const ruleSet = policyArtifact.ruleSets.borrowingBase;
+  const rules = ruleSet.rules ?? ROBOMATA_BORROWING_BASE_POLICY_RULES;
+  const previewRules = rules.filter(rule =>
+    ["advance-rate", "concentration-reserve", "days-past-due", "evidence-status"].includes(rule.id),
+  );
+
+  return (
+    <div className="rounded-[1.5rem] border border-base-300 bg-base-200/50 p-4">
+      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">Active policy</div>
+      <div className="mt-1 text-sm font-semibold text-base-content">{ruleSet.label}</div>
+      <div className="mt-1 text-sm leading-relaxed text-base-content/70">{ruleSet.description}</div>
+      <div className="mt-3 rounded-2xl border border-base-300 bg-base-100/70 p-3 text-xs text-base-content/60">
+        <div className="font-medium text-base-content">{policyArtifact.name}</div>
+        <div className="mt-1 break-all">
+          {policyArtifact.id} · {policyArtifact.version} · {policyArtifact.scope.replace(/_/g, " ")}
+        </div>
+      </div>
+      <div className="mt-3 grid gap-2">
+        {previewRules.map(rule => (
+          <div key={rule.id} className="flex items-start justify-between gap-3 text-sm">
+            <span className="text-base-content/70">{rule.label}</span>
+            {rule.value ? <span className="shrink-0 font-semibold text-base-content">{rule.value}</span> : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function EvidenceFreshnessPolicyDisclosure({
   policyArtifact = ROBOMATA_DEFAULT_FACILITY_POLICY_ARTIFACT,
 }: {
