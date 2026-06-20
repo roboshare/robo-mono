@@ -28,6 +28,7 @@ import { ASSET_REGISTRIES, AssetType } from "~~/config/assetTypes";
 import { PROTOCOL_BENCHMARK_YIELD_BP } from "~~/config/protocol";
 import { BP_PRECISION, SECONDS_PER_YEAR } from "~~/config/units";
 import { useScaffoldWriteContract, useSelectedNetwork } from "~~/hooks/scaffold-eth";
+import { useAtomicCalls } from "~~/hooks/useAtomicCalls";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
 import { isRobomataRentalInvestorReportingClientEnabled } from "~~/lib/featureFlags";
@@ -126,6 +127,7 @@ const MARKETS_PAGE_PREFS_KEY = "roboshare:markets-page-prefs";
 
 const MarketsPage: NextPage = () => {
   const { address, isSmartWallet } = useTransactingAccount();
+  const { supportsPaymasterService } = useAtomicCalls();
   const rentalInvestorReportingEnabled = isRobomataRentalInvestorReportingClientEnabled();
   // State
   const [listings, setListings] = useState<SubgraphListing[]>([]);
@@ -1588,7 +1590,7 @@ const MarketsPage: NextPage = () => {
             address,
             chainId,
             chainName: networkName,
-            feesSponsored: isSmartWallet,
+            feesSponsored: isSmartWallet && supportsPaymasterService,
             flowLabel: "Markets wallet",
             paymentToken: {
               address: paymentTokenAddress,
