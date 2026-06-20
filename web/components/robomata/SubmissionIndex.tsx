@@ -4,9 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  ArrowPathIcon,
   ArrowRightIcon,
-  BuildingStorefrontIcon,
   CircleStackIcon,
   ClipboardDocumentCheckIcon,
   CloudArrowUpIcon,
@@ -26,31 +24,7 @@ import { notification } from "~~/utils/scaffold-eth";
 
 type ApiPayload<T> = T & { diagnostics?: unknown; error?: string };
 
-const sourceOptions: Array<{
-  description: string;
-  icon: typeof BuildingStorefrontIcon;
-  label: string;
-  value: FacilitySubmissionSource;
-}> = [
-  {
-    description: "First-party rental operations and servicing data.",
-    icon: BuildingStorefrontIcon,
-    label: "Rental platform facility",
-    value: "rental_platform",
-  },
-  {
-    description: "Operator-submitted evidence from an outside operating system.",
-    icon: CloudArrowUpIcon,
-    label: "External asset pool",
-    value: "external_asset_pool",
-  },
-  {
-    description: "A refreshable servicer, accounting, or source-system feed.",
-    icon: ArrowPathIcon,
-    label: "Connected external system",
-    value: "connected_external_system",
-  },
-];
+const LIVE_FACILITY_SOURCE: FacilitySubmissionSource = "external_asset_pool";
 
 function actionToneClass(tone: ReturnType<typeof submissionNextAction>["tone"]) {
   if (tone === "success") return "badge-success";
@@ -91,7 +65,7 @@ const AuthorizedSubmissionIndex = () => {
   const [form, setForm] = useState({
     asOfDate: new Date().toISOString().slice(0, 10),
     facilityName: "",
-    facilitySource: "external_asset_pool" as FacilitySubmissionSource,
+    facilitySource: LIVE_FACILITY_SOURCE,
     operatorName: "",
   });
 
@@ -220,32 +194,14 @@ const AuthorizedSubmissionIndex = () => {
               New facility package
             </div>
             <div className="mt-4 grid gap-3">
-              <div className="grid gap-2">
-                {sourceOptions.map(option => {
-                  const Icon = option.icon;
-                  const checked = form.facilitySource === option.value;
-
-                  return (
-                    <label
-                      key={option.value}
-                      className={`flex cursor-pointer gap-3 rounded-2xl border p-3 transition ${
-                        checked ? "border-primary bg-primary/10" : "border-base-300 bg-base-100"
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        className="radio radio-primary mt-1"
-                        checked={checked}
-                        onChange={() => setForm(current => ({ ...current, facilitySource: option.value }))}
-                      />
-                      <Icon className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-                      <span className="min-w-0">
-                        <span className="block text-sm font-semibold text-base-content">{option.label}</span>
-                        <span className="block text-xs leading-relaxed text-base-content/60">{option.description}</span>
-                      </span>
-                    </label>
-                  );
-                })}
+              <div className="flex gap-3 rounded-2xl border border-primary bg-primary/10 p-3">
+                <CloudArrowUpIcon className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-base-content">External asset pool</span>
+                  <span className="block text-xs leading-relaxed text-base-content/60">
+                    Operator-submitted evidence from an outside operating system.
+                  </span>
+                </span>
               </div>
               <div className="grid gap-3 md:grid-cols-2">
                 <label className="form-control">
