@@ -20,6 +20,7 @@ import { BorrowingBasePolicyDisclosure } from "~~/components/robomata/PolicyRule
 import { ReviewBoundaryPanel } from "~~/components/robomata/ReviewBoundaryPanel";
 import { FlowWalletBalances } from "~~/components/wallet/FlowWalletBalances";
 import { useSelectedNetwork, useTransactor } from "~~/hooks/scaffold-eth";
+import { useAtomicCalls } from "~~/hooks/useAtomicCalls";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
 import { usePrivySuiWalletBinding } from "~~/hooks/usePrivySuiWalletBinding";
 import { useRobomataApiAuth } from "~~/hooks/useRobomataApiAuth";
@@ -151,6 +152,10 @@ function dollarsToCents(value: string): number {
   return Math.round(Number(value) * 100);
 }
 
+function sameSuiAddress(left?: string, right?: string) {
+  return Boolean(left && right && left.toLowerCase() === right.toLowerCase());
+}
+
 function buildSubmissionSummaryCards(computation: SubmissionComputation) {
   const { borrowingBase } = computation;
   return [
@@ -191,6 +196,7 @@ export const SubmissionWorkspace = ({
     getSmartWalletClientForChain,
     isSmartWallet,
   } = useTransactingAccount();
+  const { supportsPaymasterService } = useAtomicCalls();
   const selectedNetwork = useSelectedNetwork(accountChainId);
   const publicClient = usePublicClient({ chainId: selectedNetwork.id });
   const { writeContractAsync: writeFacilityRegistry } = useWriteContract();
@@ -242,7 +248,12 @@ export const SubmissionWorkspace = ({
   );
   const isTokenizationVerificationPending = tokenization?.status === "registered";
   const isTokenized = tokenization?.status === "offering_created";
-  const operatorSuiAddress = privySuiBinding?.suiAddress ?? submission?.evidenceCommit.facilityOperatorAddress;
+  const configuredOperatorSuiAddress = submission?.evidenceCommit.facilityOperatorAddress;
+  const boundOperatorSuiAddress = privySuiBinding?.suiAddress;
+  const operatorSuiAddress =
+    boundOperatorSuiAddress && sameSuiAddress(boundOperatorSuiAddress, configuredOperatorSuiAddress)
+      ? boundOperatorSuiAddress
+      : (configuredOperatorSuiAddress ?? boundOperatorSuiAddress);
   const canRetryTokenizationVerification = Boolean(
     isTokenizationVerificationPending &&
       tokenization?.evm.registryAddress &&
@@ -1169,7 +1180,7 @@ export const SubmissionWorkspace = ({
                       address: accountAddress,
                       chainId: selectedNetwork.id,
                       chainName: selectedNetwork.name,
-                      feesSponsored: isSmartWallet,
+                      feesSponsored: supportsPaymasterService,
                       flowLabel: "Tokenization wallet",
                       paymentToken: {
                         address: paymentTokenAddress,

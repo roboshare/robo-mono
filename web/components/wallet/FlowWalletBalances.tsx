@@ -71,7 +71,7 @@ function BalanceRow({
   isLoading?: boolean;
   label: string;
   sublabel?: string;
-  symbol: string;
+  symbol?: string;
   value: string;
 }) {
   return (
@@ -86,7 +86,7 @@ function BalanceRow({
         ) : (
           <>
             <div className="font-mono text-sm font-semibold text-base-content">{value}</div>
-            <div className="text-xs font-semibold text-base-content/50">{symbol}</div>
+            {symbol ? <div className="text-xs font-semibold text-base-content/50">{symbol}</div> : null}
           </>
         )}
       </div>
@@ -101,6 +101,11 @@ function EvmFlowBalanceCard({ flow }: { flow: EvmBalanceFlow }) {
     token: flow.paymentToken?.address,
     query: { enabled: Boolean(flow.address && flow.paymentToken?.address) },
   });
+  const paymentTokenValue = flow.address
+    ? paymentTokenBalance.data
+      ? formatAmount(paymentTokenBalance.data.value, paymentTokenBalance.data.decimals)
+      : "Pending"
+    : "Connect";
 
   return (
     <section className="rounded-[1.5rem] border border-base-300 bg-base-200/50 p-4">
@@ -122,14 +127,11 @@ function EvmFlowBalanceCard({ flow }: { flow: EvmBalanceFlow }) {
       <div className="mt-4 grid gap-2 sm:grid-cols-2">
         {flow.paymentToken?.address ? (
           <BalanceRow
-            isLoading={paymentTokenBalance.isLoading}
+            isLoading={Boolean(flow.address && paymentTokenBalance.isLoading)}
             label="Payment token"
             sublabel={shortAddress(flow.paymentToken.address)}
             symbol={paymentTokenBalance.data?.symbol ?? flow.paymentToken.symbol}
-            value={formatAmount(
-              paymentTokenBalance.data?.value,
-              paymentTokenBalance.data?.decimals ?? flow.paymentToken.decimals,
-            )}
+            value={paymentTokenValue}
           />
         ) : (
           <NoPaymentTokenRow sublabel="No token configured for this network" />
