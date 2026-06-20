@@ -200,7 +200,7 @@ export const HeaderMenuLinks = () => {
     pathname?.startsWith("/operator/") ||
     pathname === "/partner" ||
     pathname?.startsWith("/partner/");
-  const showLaunchApp = !isMarketingContent && !isAppHost && !isOperatorPath;
+  const showLaunchApp = (!isMarketingContent || isLocalHost(browserHost)) && !isAppHost && !isOperatorPath;
   const showRentalMarketplace = isRobomataRentalMarketplaceClientEnabled();
   const showRentalHostOps = isRobomataRentalHostOpsClientEnabled();
   const showAdminLinks = !isMarketingContentPath(pathname);
