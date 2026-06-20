@@ -59,21 +59,20 @@ export async function POST(request: NextRequest) {
     const partnerAddress = await requirePartnerAddress(request);
     if (partnerAddress instanceof NextResponse) return partnerAddress;
 
-    const body = (await request.json()) as {
-      operatorName?: unknown;
-      facilityName?: unknown;
-      asOfDate?: unknown;
-      facilitySource?: unknown;
-    };
+    const body = (await request.json()) as unknown;
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ error: "Submission create payload must be a JSON object." }, { status: 400 });
+    }
+    const fields = body as Record<string, unknown>;
 
     let operatorName: string;
     let facilityName: string;
     let asOfDate: string;
-    const facilitySource = normalizeFacilitySource(body.facilitySource);
+    const facilitySource = normalizeFacilitySource(fields.facilitySource);
     try {
-      operatorName = normalizeRequiredString(body.operatorName, "operatorName");
-      facilityName = normalizeRequiredString(body.facilityName, "facilityName");
-      asOfDate = normalizeRequiredString(body.asOfDate, "asOfDate");
+      operatorName = normalizeRequiredString(fields.operatorName, "operatorName");
+      facilityName = normalizeRequiredString(fields.facilityName, "facilityName");
+      asOfDate = normalizeRequiredString(fields.asOfDate, "asOfDate");
     } catch (error) {
       return NextResponse.json(
         { error: error instanceof Error ? error.message : "Invalid submission create fields." },
