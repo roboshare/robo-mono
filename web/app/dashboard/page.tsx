@@ -7,7 +7,11 @@ import {
   ClipboardDocumentCheckIcon,
   Squares2X2Icon,
 } from "@heroicons/react/24/outline";
-import { isRobomataRentalHostOpsClientEnabled, isRobomataWorkflowEnabled } from "~~/lib/featureFlags";
+import {
+  isRobomataRentalHostOpsClientEnabled,
+  isRobomataWorkflowEnabled,
+  isRobomataWorkflowServerEnabled,
+} from "~~/lib/featureFlags";
 
 const workspaceCards = [
   {
@@ -49,7 +53,7 @@ const workspaceCards = [
 ];
 
 const DashboardPage = () => {
-  const robomataEnabled = isRobomataWorkflowEnabled();
+  const robomataEnabled = isRobomataWorkflowEnabled() && isRobomataWorkflowServerEnabled();
   const rentalOpsEnabled = isRobomataRentalHostOpsClientEnabled();
 
   return (
