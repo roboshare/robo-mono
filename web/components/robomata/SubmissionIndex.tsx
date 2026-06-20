@@ -544,9 +544,7 @@ const AuthorizedSubmissionIndex = () => {
           </details>
           <div
             className={`grid min-w-0 gap-3 ${
-              isRailVariant
-                ? "sm:grid-cols-2"
-                : "md:grid-cols-[minmax(0,0.85fr)_minmax(12rem,0.55fr)_auto] md:items-end"
+              isRailVariant ? "sm:grid-cols-2" : "md:grid-cols-[minmax(0,0.85fr)_minmax(12rem,0.55fr)]"
             }`}
           >
             <div className="min-w-0 rounded-2xl border border-base-300 bg-base-100 px-4 py-3">
@@ -562,14 +560,7 @@ const AuthorizedSubmissionIndex = () => {
                 onChange={event => setForm(current => ({ ...current, asOfDate: event.target.value }))}
               />
             </label>
-            <button
-              className={`btn btn-primary w-full rounded-full ${isRailVariant ? "sm:col-span-2" : "md:w-auto md:self-end"}`}
-              onClick={createSubmission}
-              disabled={isCreating}
-            >
-              {isCreating ? "Creating..." : "Create facility package"}
-            </button>
-            <label className={`form-control min-w-0 ${isRailVariant ? "sm:col-span-2" : "md:col-span-3"}`}>
+            <label className={`form-control min-w-0 ${isRailVariant ? "sm:col-span-2" : "md:col-span-2"}`}>
               <span className="label-text">Facility or asset pool name</span>
               <input
                 className="input input-bordered w-full min-w-0"
@@ -578,6 +569,13 @@ const AuthorizedSubmissionIndex = () => {
                 placeholder="MetroFleet 2026 Fleet Receivables Facility"
               />
             </label>
+            <button
+              className={`btn btn-primary w-full rounded-full ${isRailVariant ? "sm:col-span-2" : "md:w-auto"}`}
+              onClick={createSubmission}
+              disabled={isCreating}
+            >
+              {isCreating ? "Creating..." : "Create facility package"}
+            </button>
           </div>
         </div>
       </div>
