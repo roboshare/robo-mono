@@ -487,14 +487,14 @@ const AuthorizedSubmissionIndex = () => {
   const SelectedSourceIcon = selectedSource.icon;
 
   const newFacilityPackagePanel = (
-    <div className="min-w-0 rounded-[1.25rem] border border-base-300 bg-base-200/60 p-4 sm:rounded-[1.5rem] sm:p-5">
+    <div className="min-w-0 rounded-[1.25rem] border border-base-300 bg-base-200/60 p-4 sm:rounded-[1.5rem] sm:p-6">
       <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.2em] text-base-content/50">
         <PlusIcon className="h-4 w-4" />
         New facility package
       </div>
-      <div className="mt-4 grid gap-3">
+      <div className="mt-4 grid gap-4 xl:grid-cols-[0.85fr_1.15fr] xl:items-start">
         <details className="dropdown w-full">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-2xl border border-primary bg-primary/10 p-3 transition hover:border-primary">
+          <summary className="flex min-h-16 cursor-pointer list-none items-center justify-between gap-3 rounded-2xl border border-primary bg-primary/10 p-3 transition hover:border-primary">
             <span className="flex min-w-0 gap-3">
               <SelectedSourceIcon className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
               <span className="min-w-0">
@@ -523,7 +523,7 @@ const AuthorizedSubmissionIndex = () => {
                   >
                     <Icon className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
                     <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-2 text-sm font-semibold text-base-content">
+                      <span className="flex flex-wrap items-center gap-2 text-sm font-semibold text-base-content">
                         {option.label}
                         {option.disabled ? <span className="badge badge-warning badge-sm">Soon</span> : null}
                       </span>
@@ -537,7 +537,7 @@ const AuthorizedSubmissionIndex = () => {
             })}
           </ul>
         </details>
-        <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+        <div className="grid min-w-0 gap-3 md:grid-cols-[minmax(0,0.85fr)_minmax(12rem,0.55fr)_auto] md:items-end">
           <div className="min-w-0 rounded-2xl border border-base-300 bg-base-100 px-4 py-3">
             <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Operator</div>
             <div className="mt-1 truncate text-sm font-semibold text-base-content">{operatorDisplayName}</div>
@@ -551,7 +551,14 @@ const AuthorizedSubmissionIndex = () => {
               onChange={event => setForm(current => ({ ...current, asOfDate: event.target.value }))}
             />
           </label>
-          <label className="form-control min-w-0 sm:col-span-2">
+          <button
+            className="btn btn-primary w-full rounded-full md:w-auto md:self-end"
+            onClick={createSubmission}
+            disabled={isCreating}
+          >
+            {isCreating ? "Creating..." : "Create facility package"}
+          </button>
+          <label className="form-control min-w-0 md:col-span-3">
             <span className="label-text">Facility or asset pool name</span>
             <input
               className="input input-bordered w-full min-w-0"
@@ -562,9 +569,6 @@ const AuthorizedSubmissionIndex = () => {
           </label>
         </div>
       </div>
-      <button className="btn btn-primary mt-5 rounded-full" onClick={createSubmission} disabled={isCreating}>
-        {isCreating ? "Creating..." : "Create facility package"}
-      </button>
     </div>
   );
 
@@ -637,7 +641,7 @@ const AuthorizedSubmissionIndex = () => {
       </section>
 
       <section className="grid min-w-0 gap-5 sm:gap-6">
-        <div className="min-w-0 lg:max-w-3xl">{hasDraftPackage ? newFacilityPackagePanel : actionQueuePanel}</div>
+        <div className="min-w-0">{hasDraftPackage ? newFacilityPackagePanel : actionQueuePanel}</div>
 
         <div className="min-w-0 rounded-[1.5rem] border border-base-300 bg-base-100 p-4 shadow-lg shadow-base-300/30 sm:rounded-[2rem] sm:p-8">
           <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
@@ -668,7 +672,7 @@ const AuthorizedSubmissionIndex = () => {
                     key={submission.id}
                     className="min-w-0 rounded-[1.5rem] border border-base-300 bg-base-200/50 p-4 transition hover:border-primary/40 hover:shadow-md sm:p-5"
                   >
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(14rem,18rem)] lg:items-start">
                       <Link href={`/robomata/submissions/${submission.id}`} className="min-w-0 flex-1">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
@@ -687,7 +691,7 @@ const AuthorizedSubmissionIndex = () => {
                           <p className="mt-2 text-sm leading-relaxed text-base-content/60">{source.description}</p>
                         </div>
                       </Link>
-                      <div className="grid min-w-0 gap-2 text-sm text-base-content/70 lg:min-w-44 lg:text-right">
+                      <div className="grid min-w-0 gap-2 rounded-2xl border border-base-300 bg-base-100/70 p-3 text-sm text-base-content/70 lg:text-right">
                         <div>As of {submission.asOfDate}</div>
                         <div>{submissionReceivableCount(submission)} receivables</div>
                         <div>{submissionEvidenceCount(submission)} evidence packages</div>
