@@ -119,9 +119,6 @@ const HeaderProductsMenu = () => {
           <li>
             <a href="/products/robomata" className="justify-between gap-4 rounded-xl text-sm">
               <span>Robomata</span>
-              <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-[0.12em] text-primary">
-                Active
-              </span>
             </a>
           </li>
           <li>
@@ -432,7 +429,6 @@ export const Header = () => {
               className="hidden h-10 w-auto dark:block"
               priority
             />
-            <span className="pl-12 text-xs dark:text-base-content/80">Tokenized revenue streams</span>
           </div>
         </Link>
         <ul className="hidden lg:flex lg:flex-nowrap menu menu-horizontal px-1 gap-2">

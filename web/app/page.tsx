@@ -58,8 +58,8 @@ const HomePage = () => {
     <div className="flex flex-1 justify-center px-4 py-8 sm:px-6 sm:py-12">
       <div className="w-full max-w-7xl space-y-10">
         <section className="overflow-hidden rounded-[2.25rem] border border-base-300 bg-base-100 shadow-xl shadow-base-300/40">
-          <div className="grid items-stretch gap-8 px-6 py-9 sm:px-9 sm:py-12 lg:grid-cols-[1.12fr_0.88fr] lg:px-12">
-            <div className="flex h-full flex-col space-y-7">
+          <div className="grid items-start gap-8 px-6 py-9 sm:px-9 sm:py-12 lg:grid-cols-[1.12fr_0.88fr] lg:px-12">
+            <div className="flex flex-col space-y-7">
               <div className="space-y-4">
                 <p className="text-sm font-semibold uppercase tracking-[0.32em] text-base-content/50">Roboshare</p>
                 <h1 className="max-w-4xl text-4xl font-black tracking-tight text-base-content sm:text-6xl">
@@ -73,13 +73,13 @@ const HomePage = () => {
               </div>
 
               <div className="flex flex-col gap-3 sm:flex-row">
-                <Link href="/products/robomata" className="btn btn-primary rounded-full sm:min-w-48">
+                <a href={resolvedLaunchAppHref} className="btn btn-primary rounded-full sm:min-w-48">
+                  Launch App
+                </a>
+                <Link href="/products/robomata" className="btn btn-outline rounded-full sm:min-w-48">
                   Explore Robomata
                   <ArrowRightIcon className="h-4 w-4" />
                 </Link>
-                <a href={resolvedLaunchAppHref} className="btn btn-outline rounded-full sm:min-w-48">
-                  Launch App
-                </a>
               </div>
 
               <div className="grid flex-1 gap-3 sm:grid-cols-3">
@@ -97,9 +97,9 @@ const HomePage = () => {
               </div>
             </div>
 
-            <div className="flex h-full flex-col rounded-[1.75rem] border border-base-300 bg-base-200/70 p-5 sm:p-6">
+            <div className="flex flex-col rounded-[1.75rem] border border-base-300 bg-base-200/70 p-5 sm:p-6">
               <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">System Flow</p>
-              <div className="mt-5 flex flex-1 flex-col gap-4">
+              <div className="mt-5 flex flex-col gap-4">
                 {productFlow.map((item, index) => (
                   <Link
                     key={item.label}
@@ -154,10 +154,10 @@ const HomePage = () => {
 
           <div className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
             <ChartBarSquareIcon className="h-7 w-7 text-primary" />
-            <h2 className="mt-4 text-2xl font-black tracking-tight text-base-content">For Robomarkets</h2>
+            <h2 className="mt-4 text-2xl font-black tracking-tight text-base-content">For Investors</h2>
             <p className="mt-3 text-sm leading-relaxed text-base-content/70">
-              Robomarkets is the downstream distribution layer after facilities become structured, reviewed, committed,
-              and tokenization-ready.
+              Access standardized exposure only after facilities become structured, reviewed, committed, and ready for
+              downstream distribution.
             </p>
             <Link href="/products/robomarkets" className="btn btn-ghost mt-5 rounded-full px-0 text-primary">
               Explore Robomarkets

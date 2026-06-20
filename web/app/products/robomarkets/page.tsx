@@ -29,8 +29,8 @@ const RobomarketsPage = () => (
   <div className="flex flex-1 justify-center px-4 py-8 sm:px-6 sm:py-12">
     <div className="w-full max-w-7xl space-y-10">
       <section className="overflow-hidden rounded-[2.25rem] border border-base-300 bg-base-100 shadow-xl shadow-base-300/40">
-        <div className="grid items-stretch gap-8 px-6 py-9 sm:px-9 sm:py-12 lg:grid-cols-[1.12fr_0.88fr] lg:px-12">
-          <div className="flex h-full flex-col gap-7">
+        <div className="grid items-start gap-8 px-6 py-9 sm:px-9 sm:py-12 lg:grid-cols-[1.12fr_0.88fr] lg:px-12">
+          <div className="flex flex-col gap-7">
             <div className="space-y-4">
               <p className="text-sm font-semibold uppercase tracking-[0.32em] text-base-content/50">Robomarkets</p>
               <h1 className="max-w-4xl text-4xl font-black tracking-tight text-base-content sm:text-6xl">
@@ -57,14 +57,14 @@ const RobomarketsPage = () => (
             </div>
           </div>
 
-          <div className="flex h-full flex-col rounded-[1.75rem] border border-base-300 bg-base-200/70 p-5 sm:p-6">
+          <div className="flex flex-col rounded-[1.75rem] border border-base-300 bg-base-200/70 p-5 sm:p-6">
             <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">Market Role</p>
-            <div className="mt-5 flex flex-1 flex-col gap-4">
+            <div className="mt-5 flex flex-col gap-4">
               {marketRoles.map(item => {
                 const Icon = item.icon;
 
                 return (
-                  <div key={item.title} className="flex-1 rounded-2xl border border-base-300 bg-base-100/85 p-4">
+                  <div key={item.title} className="rounded-2xl border border-base-300 bg-base-100/85 p-4">
                     <Icon className="h-6 w-6 text-primary" />
                     <h2 className="mt-3 text-lg font-black tracking-tight text-base-content">{item.title}</h2>
                     <p className="mt-2 text-sm leading-relaxed text-base-content/70">{item.copy}</p>
