@@ -33,7 +33,7 @@ const workspaceCards = [
     icon: Squares2X2Icon,
   },
   {
-    title: "Markets",
+    title: "Robomarkets",
     eyebrow: "Distribution",
     description: "Review primary pools, secondary listings, holdings, and market activity.",
     href: "/markets",
@@ -43,7 +43,7 @@ const workspaceCards = [
     title: "Robolend",
     eyebrow: "Future lender workspace",
     description: "Lender model review and tokenization approvals will live here as the capital-provider layer matures.",
-    href: "/products/robolend",
+    href: "/robolend",
     icon: BanknotesIcon,
   },
 ];

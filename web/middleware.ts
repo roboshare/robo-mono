@@ -38,8 +38,12 @@ const isAppOnlyPath = (pathname: string) =>
   pathname.startsWith("/operator/") ||
   pathname === "/partner" ||
   pathname.startsWith("/partner/") ||
+  pathname === "/markets" ||
+  pathname.startsWith("/markets/") ||
   pathname === "/robomata/submissions" ||
   pathname.startsWith("/robomata/submissions/") ||
+  pathname === "/robolend" ||
+  pathname.startsWith("/robolend/") ||
   pathname === "/subgraph" ||
   pathname.startsWith("/subgraph/") ||
   pathname === "/debug" ||

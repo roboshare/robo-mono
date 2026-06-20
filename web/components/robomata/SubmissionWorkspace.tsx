@@ -20,8 +20,6 @@ import { BorrowingBasePolicyDisclosure } from "~~/components/robomata/PolicyRule
 import { ReviewBoundaryPanel } from "~~/components/robomata/ReviewBoundaryPanel";
 import { FlowWalletBalances } from "~~/components/wallet/FlowWalletBalances";
 import { useSelectedNetwork, useTransactor } from "~~/hooks/scaffold-eth";
-import { useAtomicCalls } from "~~/hooks/useAtomicCalls";
-import { usePaymentToken } from "~~/hooks/usePaymentToken";
 import { usePrivySuiWalletBinding } from "~~/hooks/usePrivySuiWalletBinding";
 import { useRobomataApiAuth } from "~~/hooks/useRobomataApiAuth";
 import { sendSmartWalletCalls } from "~~/hooks/useSmartWalletTransaction";
@@ -196,16 +194,10 @@ export const SubmissionWorkspace = ({
     getSmartWalletClientForChain,
     isSmartWallet,
   } = useTransactingAccount();
-  const { supportsPaymasterService } = useAtomicCalls();
   const selectedNetwork = useSelectedNetwork(accountChainId);
   const publicClient = usePublicClient({ chainId: selectedNetwork.id });
   const { writeContractAsync: writeFacilityRegistry } = useWriteContract();
   const writeTokenizationTransaction = useTransactor();
-  const {
-    address: paymentTokenAddress,
-    decimals: paymentTokenDecimals,
-    symbol: paymentTokenSymbol,
-  } = usePaymentToken();
   const partnerAuthAddress = accountAddress;
   const signerAddress = connectedAddress ?? accountAddress;
   const getAuthHeaders = useRobomataApiAuth(partnerAuthAddress);
@@ -1172,32 +1164,12 @@ export const SubmissionWorkspace = ({
         </div>
 
         <div className="space-y-6">
-          {!readOnly && (submission.evidenceCommit.commitMode === "operator_configured" || canShowTokenization) ? (
+          {!readOnly && submission.evidenceCommit.commitMode === "operator_configured" ? (
             <FlowWalletBalances
-              evm={
-                canShowTokenization
-                  ? {
-                      address: accountAddress,
-                      chainId: selectedNetwork.id,
-                      chainName: selectedNetwork.name,
-                      feesSponsored: isSmartWallet && supportsPaymasterService,
-                      flowLabel: "Tokenization wallet",
-                      paymentToken: {
-                        address: paymentTokenAddress,
-                        decimals: paymentTokenDecimals,
-                        symbol: paymentTokenSymbol,
-                      },
-                    }
-                  : undefined
-              }
-              sui={
-                submission.evidenceCommit.commitMode === "operator_configured"
-                  ? {
-                      address: operatorSuiAddress,
-                      flowLabel: "Evidence wallet",
-                    }
-                  : undefined
-              }
+              sui={{
+                address: operatorSuiAddress,
+                flowLabel: "Evidence wallet",
+              }}
             />
           ) : null}
 

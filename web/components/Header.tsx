@@ -5,7 +5,16 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { hardhat } from "viem/chains";
-import { Bars3Icon, BugAntIcon, KeyIcon, RocketLaunchIcon } from "@heroicons/react/24/outline";
+import {
+  BanknotesIcon,
+  Bars3Icon,
+  BugAntIcon,
+  ChartBarSquareIcon,
+  ClipboardDocumentCheckIcon,
+  KeyIcon,
+  RocketLaunchIcon,
+  Squares2X2Icon,
+} from "@heroicons/react/24/outline";
 import { CubeTransparentIcon, MagnifyingGlassIcon, UserGroupIcon } from "@heroicons/react/24/outline";
 import { FaucetButton, RainbowKitCustomConnectButton } from "~~/components/scaffold-eth";
 import { useOutsideClick, useTargetNetwork } from "~~/hooks/scaffold-eth";
@@ -220,23 +229,47 @@ export const HeaderMenuLinks = () => {
   }, []);
 
   if (isHostResolved && isAppHost) {
+    const robomataEnabled = isRobomataWorkflowEnabled();
     const appLinks: HeaderMenuLink[] = [
-      {
-        label: "Markets",
-        href: "/markets",
-        icon: <CubeTransparentIcon className="h-4 w-4" />,
-      },
       {
         label: "Dashboard",
         href: launchAppHref,
-        icon: <UserGroupIcon className="h-4 w-4" />,
+        icon: <Squares2X2Icon className="h-4 w-4" />,
       },
+      ...(robomataEnabled
+        ? [
+            {
+              label: "Robomata",
+              href: "/robomata/submissions",
+              icon: <ClipboardDocumentCheckIcon className="h-4 w-4" />,
+            },
+          ]
+        : []),
+      {
+        label: "Robolend",
+        href: "/robolend",
+        icon: <BanknotesIcon className="h-4 w-4" />,
+      },
+      {
+        label: "Robomarkets",
+        href: "/markets",
+        icon: <ChartBarSquareIcon className="h-4 w-4" />,
+      },
+      ...(showRentalHostOps
+        ? [
+            {
+              label: "Rental Ops",
+              href: "/operator/rentals",
+              icon: <KeyIcon className="h-4 w-4" />,
+            },
+          ]
+        : []),
     ];
 
     return (
       <>
         {appLinks.map(({ label, href, icon }) => {
-          const isActive = pathname === href || (href !== "/markets" && pathname?.startsWith(`${href}/`));
+          const isActive = pathname === href || pathname?.startsWith(`${href}/`);
 
           return (
             <li key={href}>
