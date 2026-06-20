@@ -1,52 +1,26 @@
 import Link from "next/link";
-import {
-  ArrowRightIcon,
-  BanknotesIcon,
-  BuildingLibraryIcon,
-  ChartBarSquareIcon,
-  ClipboardDocumentCheckIcon,
-  CubeTransparentIcon,
-  ShieldCheckIcon,
-} from "@heroicons/react/24/outline";
+import { ArrowRightIcon, BanknotesIcon, BuildingLibraryIcon, ChartBarSquareIcon } from "@heroicons/react/24/outline";
 import { toConfiguredAppHref } from "~~/lib/appNavigation";
 import { isRobomataWorkflowEnabled } from "~~/lib/featureFlags";
 
 const productFlow = [
   {
     label: "Robomata",
-    title: "Operators prepare financeable facilities",
-    copy: "Turn receivables, evidence, exceptions, borrowing-base output, and monitoring state into lender-ready packets.",
+    title: "Prepare the packet",
+    copy: "Operators structure receivables, evidence, exceptions, and borrowing-base output.",
     href: "/products/robomata",
   },
   {
     label: "Robolend",
-    title: "Lenders review, monitor, and decide",
-    copy: "Capital providers get packet review today; evidence freshness, policy observations, and portfolio oversight are coming soon.",
+    title: "Review the facility",
+    copy: "Capital providers review packets now; monitoring and policy history follow.",
     href: "/products/robolend",
   },
   {
     label: "Robomarkets",
-    title: "Standardized exposure can be distributed",
-    copy: "Facilities move toward tokenized exposure and market distribution only after they are structured, reviewed, and ready.",
+    title: "Distribute exposure",
+    copy: "Standardized offerings and secondary access follow once the facility is ready.",
     href: "/products/robomarkets",
-  },
-];
-
-const proofPoints = [
-  {
-    icon: ClipboardDocumentCheckIcon,
-    title: "Borrowing-base readiness",
-    copy: "Compute eligibility, reserves, advance-rate output, and exceptions from operator-controlled submissions.",
-  },
-  {
-    icon: ShieldCheckIcon,
-    title: "Evidence and monitoring",
-    copy: "Keep sensitive files permissioned while commitments, freshness checks, and policy observations stay auditable.",
-  },
-  {
-    icon: CubeTransparentIcon,
-    title: "Supervised credit agents",
-    copy: "Surface packet gaps, proposed actions, and review boundaries without letting models override deterministic credit rules.",
   },
 ];
 
@@ -59,7 +33,7 @@ const HomePage = () => {
       <div className="w-full max-w-7xl space-y-10">
         <section className="overflow-hidden rounded-[2.25rem] border border-base-300 bg-base-100 shadow-xl shadow-base-300/40">
           <div className="grid items-start gap-8 px-6 py-9 sm:px-9 sm:py-12 lg:grid-cols-[1.12fr_0.88fr] lg:px-12">
-            <div className="flex flex-col space-y-7">
+            <div className="space-y-7">
               <div className="space-y-4">
                 <p className="text-sm font-semibold uppercase tracking-[0.32em] text-base-content/50">Roboshare</p>
                 <h1 className="max-w-4xl text-4xl font-black tracking-tight text-base-content sm:text-6xl">
@@ -82,29 +56,20 @@ const HomePage = () => {
                 </Link>
               </div>
 
-              <div className="grid flex-1 gap-3 sm:grid-cols-3">
-                {proofPoints.map(item => {
-                  const Icon = item.icon;
-
-                  return (
-                    <div key={item.title} className="rounded-3xl border border-base-300 bg-base-200/60 p-4">
-                      <Icon className="h-6 w-6 text-primary" />
-                      <h2 className="mt-3 text-sm font-bold text-base-content">{item.title}</h2>
-                      <p className="mt-2 text-sm leading-relaxed text-base-content/70">{item.copy}</p>
-                    </div>
-                  );
-                })}
-              </div>
+              <p className="max-w-2xl text-sm leading-relaxed text-base-content/60">
+                Robomata is the live operator workspace. Robolend and Robomarkets sit downstream for capital-provider
+                review and distribution.
+              </p>
             </div>
 
-            <div className="flex flex-col rounded-[1.75rem] border border-base-300 bg-base-200/70 p-5 sm:p-6">
+            <div className="self-start rounded-[1.75rem] border border-base-300 bg-base-200/70 p-5 sm:p-6">
               <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">System Flow</p>
-              <div className="mt-5 flex flex-col gap-4">
+              <div className="mt-5 flex flex-col gap-3">
                 {productFlow.map((item, index) => (
                   <Link
                     key={item.label}
                     href={item.href}
-                    className="group block rounded-2xl border border-base-300 bg-base-100/85 p-4 transition hover:border-primary/40 hover:bg-base-100"
+                    className="group block rounded-2xl border border-base-300 bg-base-100/85 p-3.5 transition hover:border-primary/40 hover:bg-base-100"
                   >
                     <div className="flex items-start gap-4">
                       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-black text-primary">
@@ -114,7 +79,7 @@ const HomePage = () => {
                         <div className="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">
                           {item.label}
                         </div>
-                        <h3 className="mt-1 text-lg font-black tracking-tight text-base-content">{item.title}</h3>
+                        <h3 className="mt-1 text-base font-black tracking-tight text-base-content">{item.title}</h3>
                         <p className="mt-2 text-sm leading-relaxed text-base-content/70">{item.copy}</p>
                       </div>
                     </div>

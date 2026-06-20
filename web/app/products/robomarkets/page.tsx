@@ -72,17 +72,19 @@ const RobomarketsPage = () => (
             </div>
           </div>
 
-          <div className="flex flex-col rounded-[1.75rem] border border-base-300 bg-base-200/70 p-5 sm:p-6">
+          <div className="self-start rounded-[1.75rem] border border-base-300 bg-base-200/70 p-5 sm:p-6">
             <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">Market Role</p>
-            <div className="mt-5 flex flex-col gap-4">
+            <div className="mt-5 space-y-3">
               {marketRoles.map(item => {
                 const Icon = item.icon;
 
                 return (
-                  <div key={item.title} className="rounded-2xl border border-base-300 bg-base-100/85 p-4">
-                    <Icon className="h-6 w-6 text-primary" />
-                    <h2 className="mt-3 text-lg font-black tracking-tight text-base-content">{item.title}</h2>
-                    <p className="mt-2 text-sm leading-relaxed text-base-content/70">{item.copy}</p>
+                  <div key={item.title} className="flex gap-3 rounded-2xl border border-base-300 bg-base-100/85 p-3.5">
+                    <Icon className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+                    <div>
+                      <h2 className="text-base font-black tracking-tight text-base-content">{item.title}</h2>
+                      <p className="mt-1 text-sm leading-relaxed text-base-content/70">{item.copy}</p>
+                    </div>
                   </div>
                 );
               })}

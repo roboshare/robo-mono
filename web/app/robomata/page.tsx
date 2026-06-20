@@ -82,10 +82,12 @@ const railCards = [
   },
 ];
 
+const workflowColumns = [workflowSteps.slice(0, 3), workflowSteps.slice(3)];
+
 const RobomataPage = () => {
   const isSubmissionWorkflowAvailable = isRobomataWorkflowEnabled() && isRobomataWorkflowServerEnabled();
-  const submissionHref = toConfiguredAppHref(isSubmissionWorkflowAvailable ? "/robomata/submissions" : "/operator");
-  const operatorHref = toConfiguredAppHref("/operator");
+  const submissionHref = toConfiguredAppHref(isSubmissionWorkflowAvailable ? "/robomata/submissions" : "/dashboard");
+  const dashboardHref = toConfiguredAppHref("/dashboard");
 
   return (
     <div className="flex flex-1 justify-center px-4 py-8 sm:px-6 sm:py-10">
@@ -107,12 +109,12 @@ const RobomataPage = () => {
 
               <div className="flex flex-wrap gap-3">
                 <a href={submissionHref} className="btn btn-primary rounded-full">
-                  {isSubmissionWorkflowAvailable ? "Open Robomata workspace" : "Launch operator workflow"}
+                  {isSubmissionWorkflowAvailable ? "Open Robomata workspace" : "Open dashboard"}
                   <ArrowRightIcon className="h-4 w-4" />
                 </a>
                 {isSubmissionWorkflowAvailable ? (
-                  <a href={operatorHref} className="btn btn-outline rounded-full">
-                    Open operator dashboard
+                  <a href={dashboardHref} className="btn btn-outline rounded-full">
+                    Open dashboard
                   </a>
                 ) : null}
               </div>
@@ -186,15 +188,19 @@ const RobomataPage = () => {
             </p>
 
             <div className="mt-6 grid gap-3 lg:grid-cols-2">
-              {workflowSteps.map((step, index) => (
-                <div key={step.title} className="flex gap-4 rounded-2xl border border-base-300 bg-base-200/50 p-4">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-black text-primary-content">
-                    {index + 1}
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-base-content">{step.title}</h3>
-                    <p className="mt-1 text-sm leading-relaxed text-base-content/70">{step.description}</p>
-                  </div>
+              {workflowColumns.map((column, columnIndex) => (
+                <div key={columnIndex} className="space-y-3">
+                  {column.map((step, stepIndex) => (
+                    <div key={step.title} className="flex gap-4 rounded-2xl border border-base-300 bg-base-200/50 p-4">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-black text-primary-content">
+                        {columnIndex * 3 + stepIndex + 1}
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-base-content">{step.title}</h3>
+                        <p className="mt-1 text-sm leading-relaxed text-base-content/70">{step.description}</p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ))}
             </div>
