@@ -55,6 +55,9 @@ const HeaderAppAnchor = ({
   </a>
 );
 
+const launchAppButtonClassName =
+  "grid grid-flow-col gap-2 rounded-full border border-primary/70 bg-primary px-3 py-1.5 text-sm font-semibold text-primary-content shadow-md shadow-primary/20 hover:bg-primary/90 focus:!bg-primary active:!text-primary-content";
+
 export const menuLinks: HeaderMenuLink[] = [
   {
     label: "Partners",
@@ -161,28 +164,53 @@ const HeaderAdminMenuLinkItems = ({ pathname }: { pathname: string | null }) => 
   return <HeaderMenuLinkItems isAdmin={isAdmin} pathname={pathname} />;
 };
 
+const getLaunchAppHref = () => (isRobomataWorkflowEnabled() ? "/operator/submissions" : "/operator");
+
+const resolveAppHostHref = ({
+  browserHost,
+  href,
+  isAppHost,
+  isHostResolved,
+}: {
+  browserHost: string | null;
+  href: string;
+  isAppHost: boolean;
+  isHostResolved: boolean;
+}) =>
+  isHostResolved && !isAppHost && shouldUseAppHostNavigation(browserHost)
+    ? toConfiguredAppHref(href, { forceDefaultHost: true })
+    : href;
+
+const HeaderLaunchAppButton = ({ href }: { href: string }) => (
+  <HeaderAppAnchor href={href} className={launchAppButtonClassName}>
+    <RocketLaunchIcon className="h-4 w-4" />
+    <span>Launch App</span>
+  </HeaderAppAnchor>
+);
+
 export const HeaderMenuLinks = () => {
   const pathname = usePathname();
   const [isAppHost, setIsAppHost] = useState(false);
   const [isHostResolved, setIsHostResolved] = useState(false);
   const [browserHost, setBrowserHost] = useState<string | null>(null);
-  const launchAppHref = isRobomataWorkflowEnabled() ? "/operator/submissions" : "/operator";
+  const launchAppHref = getLaunchAppHref();
+  const isMarketingContent = isMarketingContentPath(pathname);
   const isOperatorPath =
     pathname === "/operator" ||
     pathname?.startsWith("/operator/") ||
     pathname === "/partner" ||
     pathname?.startsWith("/partner/");
-  const showLaunchApp = !isAppHost && !isOperatorPath;
+  const showLaunchApp = (!isMarketingContent || isLocalHost(browserHost)) && !isAppHost && !isOperatorPath;
   const showRentalMarketplace = isRobomataRentalMarketplaceClientEnabled();
   const showRentalHostOps = isRobomataRentalHostOpsClientEnabled();
   const showAdminLinks = !isMarketingContentPath(pathname);
-  const useAppHostNavigation = isHostResolved && !isAppHost && shouldUseAppHostNavigation(browserHost);
-  const resolvedLaunchAppHref = useAppHostNavigation
-    ? toConfiguredAppHref(launchAppHref, { forceDefaultHost: true })
-    : launchAppHref;
-  const resolvedRentalOpsHref = useAppHostNavigation
-    ? toConfiguredAppHref("/operator/rentals", { forceDefaultHost: true })
-    : "/operator/rentals";
+  const resolvedLaunchAppHref = resolveAppHostHref({ browserHost, href: launchAppHref, isAppHost, isHostResolved });
+  const resolvedRentalOpsHref = resolveAppHostHref({
+    browserHost,
+    href: "/operator/rentals",
+    isAppHost,
+    isHostResolved,
+  });
 
   useEffect(() => {
     const host = window.location.hostname.toLowerCase();
@@ -262,13 +290,7 @@ export const HeaderMenuLinks = () => {
       )}
       {showLaunchApp ? (
         <li>
-          <HeaderAppAnchor
-            href={resolvedLaunchAppHref}
-            className="grid grid-flow-col gap-2 rounded-full border border-primary/70 bg-primary px-3 py-1.5 text-sm font-semibold text-primary-content shadow-md shadow-primary/20 hover:bg-primary/90 focus:!bg-primary active:!text-primary-content"
-          >
-            <RocketLaunchIcon className="h-4 w-4" />
-            <span>Launch App</span>
-          </HeaderAppAnchor>
+          <HeaderLaunchAppButton href={resolvedLaunchAppHref} />
         </li>
       ) : null}
     </>
@@ -289,12 +311,34 @@ const HeaderNetworkActions = () => {
   );
 };
 
+const HeaderMarketingAction = () => {
+  const [browserHost, setBrowserHost] = useState<string | null>(null);
+  const [isAppHost, setIsAppHost] = useState(false);
+  const [isHostResolved, setIsHostResolved] = useState(false);
+  const href = resolveAppHostHref({
+    browserHost,
+    href: getLaunchAppHref(),
+    isAppHost,
+    isHostResolved,
+  });
+
+  useEffect(() => {
+    const host = window.location.hostname.toLowerCase();
+    setBrowserHost(host);
+    setIsAppHost(host === getConfiguredAppHost());
+    setIsHostResolved(true);
+  }, []);
+
+  return <HeaderLaunchAppButton href={href} />;
+};
+
 /**
  * Site header
  */
 export const Header = () => {
   const pathname = usePathname();
   const [showNetworkActions, setShowNetworkActions] = useState(false);
+  const showMarketingAction = isMarketingContentPath(pathname) && !showNetworkActions;
   const burgerMenuRef = useRef<HTMLDetailsElement>(null);
   useOutsideClick(burgerMenuRef, () => {
     burgerMenuRef?.current?.removeAttribute("open");
@@ -362,7 +406,9 @@ export const Header = () => {
           <HeaderMenuLinks />
         </ul>
       </div>
-      <div className="navbar-end grow mr-4">{showNetworkActions && <HeaderNetworkActions />}</div>
+      <div className="navbar-end grow mr-4">
+        {showNetworkActions ? <HeaderNetworkActions /> : showMarketingAction ? <HeaderMarketingAction /> : null}
+      </div>
     </div>
   );
 };
