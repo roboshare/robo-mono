@@ -36,7 +36,7 @@ import { getSubgraphQueryUrl } from "~~/utils/subgraph";
 type ApiPayload<T> = T & { diagnostics?: unknown; error?: string };
 
 const LIVE_FACILITY_SOURCE: FacilitySubmissionSource = "external_asset_pool";
-const SUBMISSION_INDEX_CACHE_VERSION = 1;
+const SUBMISSION_INDEX_CACHE_VERSION = 2;
 const PARTNER_PROFILE_QUERY = `
   query PartnerProfile($id: ID!) {
     partner(id: $id) {
@@ -77,8 +77,45 @@ const sourceOptions: Array<{
 
 type SubmissionIndexCachePayload = {
   cachedAt: number;
-  submissions: FacilitySubmission[];
+  submissions: CompactSubmissionIndexEntry[];
   version: number;
+};
+
+type CompactSubmissionIndexEntry = Pick<
+  FacilitySubmission,
+  | "asOfDate"
+  | "createdAt"
+  | "facilityMonitoring"
+  | "facilityName"
+  | "facilitySource"
+  | "id"
+  | "operatorName"
+  | "partnerAddress"
+  | "status"
+  | "updatedAt"
+> & {
+  evidenceCommit: Pick<
+    FacilitySubmission["evidenceCommit"],
+    | "commitMode"
+    | "facilityAssignmentErrorMessage"
+    | "facilityAssignmentOperatorAddress"
+    | "facilityAssignmentRootDigest"
+    | "facilityAssignmentStartedAt"
+    | "facilityObjectId"
+    | "facilityOperatorAddress"
+    | "modulePath"
+    | "status"
+  >;
+  evidenceCount: number;
+  hasComputation: boolean;
+  receivableCount: number;
+  tokenization: Pick<FacilitySubmission["tokenization"], "status">;
+};
+
+type SubmissionIndexView = FacilitySubmission & {
+  evidenceCount?: number;
+  hasComputation?: boolean;
+  receivableCount?: number;
 };
 
 function actionToneClass(tone: ReturnType<typeof submissionNextAction>["tone"]) {
@@ -102,26 +139,109 @@ function submissionIndexCacheKey(partnerAddress: string | undefined, chainId: nu
   return partnerAddress ? `robomata-submissions:${chainId}:${partnerAddress.toLowerCase()}` : null;
 }
 
-function readSubmissionIndexCache(cacheKey: string | null) {
+function compactSubmissionIndexEntry(submission: SubmissionIndexView): CompactSubmissionIndexEntry {
+  return {
+    asOfDate: submission.asOfDate,
+    createdAt: submission.createdAt,
+    evidenceCommit: {
+      commitMode: submission.evidenceCommit.commitMode,
+      facilityAssignmentErrorMessage: submission.evidenceCommit.facilityAssignmentErrorMessage,
+      facilityAssignmentOperatorAddress: submission.evidenceCommit.facilityAssignmentOperatorAddress,
+      facilityAssignmentRootDigest: submission.evidenceCommit.facilityAssignmentRootDigest,
+      facilityAssignmentStartedAt: submission.evidenceCommit.facilityAssignmentStartedAt,
+      facilityObjectId: submission.evidenceCommit.facilityObjectId,
+      facilityOperatorAddress: submission.evidenceCommit.facilityOperatorAddress,
+      modulePath: submission.evidenceCommit.modulePath,
+      status: submission.evidenceCommit.status,
+    },
+    evidenceCount: typeof submission.evidenceCount === "number" ? submission.evidenceCount : submission.evidence.length,
+    facilityMonitoring: submission.facilityMonitoring,
+    facilityName: submission.facilityName,
+    facilitySource: submission.facilitySource,
+    hasComputation:
+      typeof submission.hasComputation === "boolean" ? submission.hasComputation : Boolean(submission.computation),
+    id: submission.id,
+    operatorName: submission.operatorName,
+    partnerAddress: submission.partnerAddress,
+    receivableCount:
+      typeof submission.receivableCount === "number" ? submission.receivableCount : submission.receivables.length,
+    status: submission.status,
+    tokenization: { status: submission.tokenization.status },
+    updatedAt: submission.updatedAt,
+  };
+}
+
+function hydrateSubmissionIndexEntry(entry: CompactSubmissionIndexEntry): SubmissionIndexView {
+  return {
+    asOfDate: entry.asOfDate,
+    auditEvents: [],
+    computation: entry.hasComputation ? ({} as FacilitySubmission["computation"]) : null,
+    createdAt: entry.createdAt,
+    evidence: [],
+    evidenceCommit: entry.evidenceCommit,
+    evidenceCount: entry.evidenceCount,
+    exceptions: [],
+    facilityMonitoring: entry.facilityMonitoring,
+    facilityName: entry.facilityName,
+    facilitySource: entry.facilitySource,
+    hasComputation: entry.hasComputation,
+    id: entry.id,
+    operatorName: entry.operatorName,
+    partnerAddress: entry.partnerAddress,
+    receivableCount: entry.receivableCount,
+    receivables: [],
+    status: entry.status,
+    tokenization: {
+      anchors: {},
+      evm: {},
+      status: entry.tokenization.status,
+      terms: {},
+    },
+    updatedAt: entry.updatedAt,
+  };
+}
+
+function submissionReceivableCount(submission: SubmissionIndexView) {
+  return typeof submission.receivableCount === "number" ? submission.receivableCount : submission.receivables.length;
+}
+
+function submissionEvidenceCount(submission: SubmissionIndexView) {
+  return typeof submission.evidenceCount === "number" ? submission.evidenceCount : submission.evidence.length;
+}
+
+function canDeleteDraftFromIndex(submission: SubmissionIndexView) {
+  return (
+    submissionReceivableCount(submission) === 0 &&
+    submissionEvidenceCount(submission) === 0 &&
+    submission.hasComputation !== true &&
+    canDeleteDraftFacilitySubmission(submission)
+  );
+}
+
+function readSubmissionIndexCache(cacheKey: string | null): SubmissionIndexView[] | null {
   if (!cacheKey || typeof window === "undefined") return null;
 
   try {
     const parsed = JSON.parse(window.sessionStorage.getItem(cacheKey) ?? "") as SubmissionIndexCachePayload;
     if (parsed.version !== SUBMISSION_INDEX_CACHE_VERSION || !Array.isArray(parsed.submissions)) return null;
-    return parsed.submissions;
+    return parsed.submissions.map(hydrateSubmissionIndexEntry);
   } catch {
     return null;
   }
 }
 
-function writeSubmissionIndexCache(cacheKey: string | null, submissions: FacilitySubmission[]) {
+function writeSubmissionIndexCache(cacheKey: string | null, submissions: SubmissionIndexView[]) {
   if (!cacheKey || typeof window === "undefined") return;
   const payload: SubmissionIndexCachePayload = {
     cachedAt: Date.now(),
-    submissions,
+    submissions: submissions.map(compactSubmissionIndexEntry),
     version: SUBMISSION_INDEX_CACHE_VERSION,
   };
-  window.sessionStorage.setItem(cacheKey, JSON.stringify(payload));
+  try {
+    window.sessionStorage.setItem(cacheKey, JSON.stringify(payload));
+  } catch (error) {
+    console.warn("Unable to cache Robomata submission index", error);
+  }
 }
 
 async function readJsonResponse<T>(response: Response): Promise<ApiPayload<T>> {
@@ -148,6 +268,7 @@ function useSubgraphPartnerName(accountAddress: string | undefined, chainId: num
     }
 
     let cancelled = false;
+    setPartnerName(null);
 
     fetch(subgraphUrl, {
       method: "POST",
@@ -191,14 +312,14 @@ const AuthorizedSubmissionIndex = () => {
   const getAuthHeaders = useRobomataApiAuth(partnerAuthAddress);
   const partnerManagerContract = getDeployedContract(selectedNetwork.id, "PartnerManager");
   const subgraphPartnerName = useSubgraphPartnerName(partnerAuthAddress, selectedNetwork.id);
-  const { data: onchainPartnerName } = useReadContract({
+  const { data: onchainPartnerName, isFetching: isFetchingOnchainPartnerName } = useReadContract({
     address: partnerManagerContract?.address,
     abi: partnerManagerContract?.abi,
     functionName: "getPartnerName",
     args: partnerAuthAddress ? [partnerAuthAddress] : undefined,
     query: { enabled: !!partnerAuthAddress && !!partnerManagerContract },
   });
-  const [submissions, setSubmissions] = useState<FacilitySubmission[]>([]);
+  const [submissions, setSubmissions] = useState<SubmissionIndexView[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [deletingSubmissionId, setDeletingSubmissionId] = useState<string | null>(null);
@@ -217,7 +338,9 @@ const AuthorizedSubmissionIndex = () => {
   );
   const partnerName =
     subgraphPartnerName ??
-    (typeof onchainPartnerName === "string" && onchainPartnerName.trim() ? onchainPartnerName.trim() : null);
+    (!isFetchingOnchainPartnerName && typeof onchainPartnerName === "string" && onchainPartnerName.trim()
+      ? onchainPartnerName.trim()
+      : null);
   const operatorName = partnerName ?? partnerAuthAddress ?? "";
   const operatorDisplayName =
     partnerName ?? (partnerAuthAddress ? abbreviatedAddress(partnerAuthAddress) : "Connect wallet");
@@ -328,7 +451,7 @@ const AuthorizedSubmissionIndex = () => {
   const deleteDraftSubmission = useCallback(
     async (submission: FacilitySubmission) => {
       if (!partnerAuthAddress || !signerAddress) return;
-      if (!canDeleteDraftFacilitySubmission(submission)) return;
+      if (!canDeleteDraftFromIndex(submission)) return;
       if (!window.confirm(`Delete draft facility package "${submission.facilityName}"?`)) return;
 
       setDeletingSubmissionId(submission.id);
@@ -538,7 +661,7 @@ const AuthorizedSubmissionIndex = () => {
               {submissions.map(submission => {
                 const action = submissionNextAction(submission);
                 const source = facilitySourceLabel(submission.facilitySource);
-                const canDeleteDraft = canDeleteDraftFacilitySubmission(submission);
+                const canDeleteDraft = canDeleteDraftFromIndex(submission);
 
                 return (
                   <div
@@ -566,8 +689,8 @@ const AuthorizedSubmissionIndex = () => {
                       </Link>
                       <div className="grid gap-2 text-sm text-base-content/70 lg:min-w-44 lg:text-right">
                         <div>As of {submission.asOfDate}</div>
-                        <div>{submission.receivables.length} receivables</div>
-                        <div>{submission.evidence.length} evidence packages</div>
+                        <div>{submissionReceivableCount(submission)} receivables</div>
+                        <div>{submissionEvidenceCount(submission)} evidence packages</div>
                         <div>Updated {new Date(submission.updatedAt).toLocaleString()}</div>
                         {canDeleteDraft ? (
                           <button

@@ -14,6 +14,7 @@ import {
 import {
   type CreateSubmissionInput,
   type FacilitySubmission,
+  canDeleteDraftFacilitySubmission,
   createAuditEvent,
   createSubmissionShell,
   normalizeSubmissionTokenization,
@@ -488,7 +489,9 @@ function createFileStore(): SubmissionStore {
       return withWriteLock(async () => {
         const submissions = await readFileStore(filePath);
         const current = submissions.find(candidate => candidate.id === id);
-        if (!current || current.updatedAt !== expectedUpdatedAt) return false;
+        if (!current || current.updatedAt !== expectedUpdatedAt || !canDeleteDraftFacilitySubmission(current)) {
+          return false;
+        }
         await writeAll(submissions.filter(candidate => candidate.id !== id));
         return true;
       });
@@ -678,6 +681,11 @@ function createPostgresStore(): SubmissionStore {
     },
     async deleteDraft(id, expectedUpdatedAt) {
       await ensurePostgresTable();
+      const current = await this.get(id);
+      if (!current || current.updatedAt !== expectedUpdatedAt || !canDeleteDraftFacilitySubmission(current)) {
+        return false;
+      }
+
       const rows = await db
         .delete(submissionsTable)
         .where(and(eq(submissionsTable.id, id), eq(submissionsTable.updatedAt, new Date(expectedUpdatedAt))))
