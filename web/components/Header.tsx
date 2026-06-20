@@ -133,7 +133,7 @@ const HeaderProductsMenu = () => {
 
 export const HeaderMenuLinks = () => {
   const pathname = usePathname();
-  const { isAdmin } = useIsAdmin();
+  const { isAdmin } = useIsAdmin({ enabled: !isMarketingContentPath(pathname) });
   const [isAppHost, setIsAppHost] = useState(false);
   const [isHostResolved, setIsHostResolved] = useState(false);
   const [browserHost, setBrowserHost] = useState<string | null>(null);
@@ -147,8 +147,12 @@ export const HeaderMenuLinks = () => {
   const showRentalMarketplace = isRobomataRentalMarketplaceClientEnabled();
   const showRentalHostOps = isRobomataRentalHostOpsClientEnabled();
   const useAppHostNavigation = isHostResolved && !isAppHost && shouldUseAppHostNavigation(browserHost);
-  const resolvedLaunchAppHref = useAppHostNavigation ? toConfiguredAppHref(launchAppHref) : launchAppHref;
-  const resolvedRentalOpsHref = useAppHostNavigation ? toConfiguredAppHref("/operator/rentals") : "/operator/rentals";
+  const resolvedLaunchAppHref = useAppHostNavigation
+    ? toConfiguredAppHref(launchAppHref, { forceDefaultHost: true })
+    : launchAppHref;
+  const resolvedRentalOpsHref = useAppHostNavigation
+    ? toConfiguredAppHref("/operator/rentals", { forceDefaultHost: true })
+    : "/operator/rentals";
 
   useEffect(() => {
     const host = window.location.hostname.toLowerCase();
@@ -286,11 +290,7 @@ export const Header = () => {
 
   useEffect(() => {
     const host = window.location.hostname.toLowerCase();
-    setShowNetworkActions(
-      isLocalHost(host) ||
-        host === getConfiguredAppHost() ||
-        (!isMarketingHost(host) && !isMarketingContentPath(pathname)),
-    );
+    setShowNetworkActions(isLocalHost(host) || host === getConfiguredAppHost() || !isMarketingContentPath(pathname));
   }, [pathname]);
 
   return (
