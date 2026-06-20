@@ -16,6 +16,7 @@ dataSources:
       apiVersion: 0.0.6
       language: wasm/assemblyscript
       entities: &entities
+        - Partner
         - Vehicle
         - Facility
         - Listing
@@ -29,6 +30,29 @@ dataSources:
           handler: handleVehicleAssetRegistered
         - event: VehicleMetadataUpdated(indexed uint256,string,string)
           handler: handleVehicleMetadataUpdated
+      file: ./src/mapping.ts
+  - kind: ethereum/contract
+    name: PartnerManager
+    network: {{network}}
+    source:
+      abi: PartnerManager
+      address: "{{PartnerManager.address}}"
+      startBlock: {{PartnerManager.startBlock}}
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.6
+      language: wasm/assemblyscript
+      entities: *entities
+      abis:
+        - name: PartnerManager
+          file: ./abis/PartnerManager.json
+      eventHandlers:
+        - event: PartnerAuthorized(indexed address,string)
+          handler: handlePartnerAuthorized
+        - event: PartnerRevoked(indexed address)
+          handler: handlePartnerRevoked
+        - event: PartnerNameUpdated(indexed address,string)
+          handler: handlePartnerNameUpdated
       file: ./src/mapping.ts
   - kind: ethereum/contract
     name: FacilityRegistry
