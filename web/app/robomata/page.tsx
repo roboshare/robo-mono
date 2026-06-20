@@ -174,7 +174,7 @@ const RobomataPage = () => {
           })}
         </section>
 
-        <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+        <section className="space-y-6">
           <div className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30 sm:p-8">
             <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">Working Flow</p>
             <h2 className="mt-2 text-3xl font-black tracking-tight text-base-content">
@@ -185,7 +185,7 @@ const RobomataPage = () => {
               credit package with clear eligibility, evidence, and exception status.
             </p>
 
-            <div className="mt-6 space-y-3">
+            <div className="mt-6 grid gap-3 lg:grid-cols-2">
               {workflowSteps.map((step, index) => (
                 <div key={step.title} className="flex gap-4 rounded-2xl border border-base-300 bg-base-200/50 p-4">
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-black text-primary-content">
@@ -205,7 +205,7 @@ const RobomataPage = () => {
             <h2 className="mt-2 text-3xl font-black tracking-tight text-base-content">
               Financeability first, programmable evidence underneath.
             </h2>
-            <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               {railCards.map(item => {
                 const Icon = item.icon;
 

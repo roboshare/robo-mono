@@ -21,12 +21,12 @@ const productFlow = [
   {
     label: "Robolend",
     title: "Lenders review, monitor, and decide",
-    copy: "Capital providers get packet review, evidence freshness, policy observations, and portfolio oversight. Coming soon.",
+    copy: "Capital providers get packet review today; evidence freshness, policy observations, and portfolio oversight are coming soon.",
     href: "/products/robolend",
   },
   {
     label: "Robomarkets",
-    title: "Standardized exposure can distribute",
+    title: "Standardized exposure can be distributed",
     copy: "Facilities move toward tokenized exposure and market distribution only after they are structured, reviewed, and ready.",
     href: "/products/robomarkets",
   },
@@ -143,8 +143,8 @@ const HomePage = () => {
             <BuildingLibraryIcon className="h-7 w-7 text-primary" />
             <h2 className="mt-4 text-2xl font-black tracking-tight text-base-content">For Capital Providers</h2>
             <p className="mt-3 text-sm leading-relaxed text-base-content/70">
-              Robolend is the planned lender workspace for packet review, policy observations, monitoring, and credit
-              approval history. It is not live yet.
+              Robolend supports packet review now; policy observations, monitoring, and credit approval history are
+              coming soon.
             </p>
             <Link href="/products/robolend" className="btn btn-ghost mt-5 rounded-full px-0 text-primary">
               Preview Robolend

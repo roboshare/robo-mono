@@ -55,6 +55,21 @@ const RobomarketsPage = () => (
                 Start with Robomata
               </Link>
             </div>
+
+            <div className="grid gap-3 rounded-2xl border border-dashed border-base-300 bg-base-200/50 p-4 text-sm text-base-content/70 sm:grid-cols-3">
+              <div>
+                <div className="font-bold text-base-content">Structured</div>
+                <p className="mt-1 leading-relaxed">Borrowing-base output and exception state are ready.</p>
+              </div>
+              <div>
+                <div className="font-bold text-base-content">Reviewed</div>
+                <p className="mt-1 leading-relaxed">Capital-provider packet review has a clear boundary.</p>
+              </div>
+              <div>
+                <div className="font-bold text-base-content">Distributed</div>
+                <p className="mt-1 leading-relaxed">Primary and secondary access can follow standardization.</p>
+              </div>
+            </div>
           </div>
 
           <div className="flex flex-col rounded-[1.75rem] border border-base-300 bg-base-200/70 p-5 sm:p-6">
