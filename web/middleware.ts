@@ -32,10 +32,14 @@ const appHost =
     : parseHost(publicAppHost || serverAppHost, DEFAULT_APP_HOST);
 
 const isAppOnlyPath = (pathname: string) =>
+  pathname === "/dashboard" ||
+  pathname.startsWith("/dashboard/") ||
   pathname === "/operator" ||
   pathname.startsWith("/operator/") ||
   pathname === "/partner" ||
   pathname.startsWith("/partner/") ||
+  pathname === "/robomata/submissions" ||
+  pathname.startsWith("/robomata/submissions/") ||
   pathname === "/subgraph" ||
   pathname.startsWith("/subgraph/") ||
   pathname === "/debug" ||
