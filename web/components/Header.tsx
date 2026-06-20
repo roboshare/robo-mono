@@ -328,14 +328,16 @@ export const HeaderMenuLinks = () => {
 };
 
 const HeaderNetworkActions = () => {
+  const pathname = usePathname();
   const { targetNetwork } = useTargetNetwork();
   const isLocalNetwork = targetNetwork.id === hardhat.id;
   const { isMockToken } = usePaymentToken();
-  const showFaucet = isLocalNetwork || isMockToken;
+  const isRobomataWorkspace = pathname === "/robomata" || pathname?.startsWith("/robomata/");
+  const showFaucet = !isRobomataWorkspace && (isLocalNetwork || isMockToken);
 
   return (
     <>
-      <RainbowKitCustomConnectButton />
+      <RainbowKitCustomConnectButton showSummary={!isRobomataWorkspace} />
       {showFaucet && <FaucetButton />}
     </>
   );

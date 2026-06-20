@@ -351,6 +351,27 @@ export function deriveSubmissionStatus(submission: FacilitySubmission): Facility
   return "draft";
 }
 
+export function canDeleteDraftFacilitySubmission(submission: FacilitySubmission): boolean {
+  const hasFacilityArtifacts = Boolean(
+    submission.evidenceCommit.facilityObjectId?.trim() ||
+      submission.evidenceCommit.facilityOperatorAddress?.trim() ||
+      submission.evidenceCommit.facilityAssignmentStartedAt?.trim() ||
+      submission.evidenceCommit.facilityAssignmentRootDigest?.trim() ||
+      submission.evidenceCommit.facilityAssignmentOperatorAddress?.trim() ||
+      submission.evidenceCommit.facilityAssignmentErrorMessage?.trim() ||
+      submission.facilityMonitoring,
+  );
+
+  return (
+    submission.status === "draft" &&
+    submission.receivables.length === 0 &&
+    submission.evidence.length === 0 &&
+    !submission.computation &&
+    !hasFacilityArtifacts &&
+    submission.tokenization.status === "not_started"
+  );
+}
+
 export function createSubmissionShell(input: CreateSubmissionInput): FacilitySubmission {
   const createdAt = nowIsoString();
   const shell: FacilitySubmission = {

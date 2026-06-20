@@ -62,6 +62,7 @@ type ConnectedWalletContentProps = {
   displayName: string;
   ensAvatar?: string;
   onDisconnect?: () => void | Promise<void>;
+  showSummary?: boolean;
 };
 
 const ConnectedWalletContent = ({
@@ -70,6 +71,7 @@ const ConnectedWalletContent = ({
   displayName,
   ensAvatar,
   onDisconnect,
+  showSummary = true,
 }: ConnectedWalletContentProps) => {
   const { targetNetwork } = useTargetNetwork();
   const blockExplorerAddressLink = getBlockExplorerAddressLink(targetNetwork, address);
@@ -78,7 +80,7 @@ const ConnectedWalletContent = ({
     <>
       <div className="flex flex-col items-end">
         <div className="flex items-center">
-          <ConnectedWalletSummary address={address} chainName={chainName} />
+          {showSummary ? <ConnectedWalletSummary address={address} chainName={chainName} /> : null}
           <AddressInfoDropdown
             address={address}
             displayName={displayName}
@@ -94,7 +96,11 @@ const ConnectedWalletContent = ({
   );
 };
 
-const LegacyRainbowKitConnectButton = () => {
+type RainbowKitCustomConnectButtonProps = {
+  showSummary?: boolean;
+};
+
+const LegacyRainbowKitConnectButton = ({ showSummary = true }: RainbowKitCustomConnectButtonProps) => {
   const { targetNetwork } = useTargetNetwork();
 
   return (
@@ -123,6 +129,7 @@ const LegacyRainbowKitConnectButton = () => {
                   chainName={chain.name}
                   displayName={account.displayName}
                   ensAvatar={account.ensAvatar}
+                  showSummary={showSummary}
                 />
               );
             })()}
@@ -133,7 +140,7 @@ const LegacyRainbowKitConnectButton = () => {
   );
 };
 
-const PrivyConnectButton = () => {
+const PrivyConnectButton = ({ showSummary = true }: RainbowKitCustomConnectButtonProps) => {
   const { targetNetwork } = useTargetNetwork();
   const { chain, connector } = useAccount();
   const { address: transactingAddress, chainId: transactingChainId } = useTransactingAccount();
@@ -232,6 +239,7 @@ const PrivyConnectButton = () => {
         `${transactingAddress.slice(0, 6)}...${transactingAddress.slice(-4)}`
       }
       onDisconnect={handleDisconnect}
+      showSummary={showSummary}
     />
   );
 };
@@ -239,6 +247,10 @@ const PrivyConnectButton = () => {
 /**
  * Custom Wagmi Connect Button (watch balance + custom design)
  */
-export const RainbowKitCustomConnectButton = () => {
-  return isPrivyEnabled() ? <PrivyConnectButton /> : <LegacyRainbowKitConnectButton />;
+export const RainbowKitCustomConnectButton = ({ showSummary = true }: RainbowKitCustomConnectButtonProps) => {
+  return isPrivyEnabled() ? (
+    <PrivyConnectButton showSummary={showSummary} />
+  ) : (
+    <LegacyRainbowKitConnectButton showSummary={showSummary} />
+  );
 };

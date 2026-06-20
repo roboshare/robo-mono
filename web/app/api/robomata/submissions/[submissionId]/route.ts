@@ -9,6 +9,7 @@ import {
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
 import {
   addAuditEvent,
+  canDeleteDraftFacilitySubmission,
   createSubmissionPolicyReview,
   invalidateSubmissionArtifacts,
   upsertSubmissionPolicyReview,
@@ -284,6 +285,48 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ s
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to update submission." },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest, context: { params: Promise<{ submissionId: string }> }) {
+  try {
+    const featureError = requireRobomataWorkflow();
+    if (featureError) return featureError;
+    const mutationError = requireRobomataMutation();
+    if (mutationError) return mutationError;
+
+    const { submissionId } = await context.params;
+    const store = getSubmissionStore();
+    const submission = await store.get(submissionId);
+
+    if (!submission) {
+      return NextResponse.json({ error: "Submission not found." }, { status: 404 });
+    }
+
+    const partnerAddress = await requirePartnerAddress(request);
+    if (partnerAddress instanceof NextResponse) return partnerAddress;
+
+    const accessError = requireSubmissionAccess(submission, partnerAddress);
+    if (accessError) return accessError;
+
+    if (!canDeleteDraftFacilitySubmission(submission)) {
+      return NextResponse.json({ error: "Only empty draft facility packages can be deleted." }, { status: 409 });
+    }
+
+    const deleted = await store.deleteDraft(submission.id, submission.updatedAt);
+    if (!deleted) {
+      return NextResponse.json(
+        { error: "Submission changed while this delete was in progress. Reload and try again." },
+        { status: 409 },
+      );
+    }
+
+    return new NextResponse(null, { status: 204 });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to delete submission." },
       { status: 500 },
     );
   }

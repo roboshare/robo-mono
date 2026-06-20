@@ -14,6 +14,7 @@ import {
 import {
   type CreateSubmissionInput,
   type FacilitySubmission,
+  canDeleteDraftFacilitySubmission,
   createAuditEvent,
   createSubmissionShell,
   normalizeSubmissionTokenization,
@@ -38,6 +39,7 @@ type SubmissionStore = {
   getLatest: () => Promise<FacilitySubmission | null>;
   create: (input: CreateSubmissionInput) => Promise<FacilitySubmission>;
   save: (submission: FacilitySubmission) => Promise<FacilitySubmission>;
+  deleteDraft: (id: string, expectedUpdatedAt: string) => Promise<boolean>;
   beginSuiFacilityAssignment: (
     id: string,
     input: BeginSuiFacilityAssignmentInput,
@@ -483,6 +485,17 @@ function createFileStore(): SubmissionStore {
         return markLoadedSubmission(nextSubmission);
       });
     },
+    async deleteDraft(id, expectedUpdatedAt) {
+      return withWriteLock(async () => {
+        const submissions = await readFileStore(filePath);
+        const current = submissions.find(candidate => candidate.id === id);
+        if (!current || current.updatedAt !== expectedUpdatedAt || !canDeleteDraftFacilitySubmission(current)) {
+          return false;
+        }
+        await writeAll(submissions.filter(candidate => candidate.id !== id));
+        return true;
+      });
+    },
     async beginSuiFacilityAssignment(id, input) {
       return withWriteLock(async () => {
         const submissions = await readFileStore(filePath);
@@ -665,6 +678,20 @@ function createPostgresStore(): SubmissionStore {
       }
 
       return nextSubmission;
+    },
+    async deleteDraft(id, expectedUpdatedAt) {
+      await ensurePostgresTable();
+      const current = await this.get(id);
+      if (!current || current.updatedAt !== expectedUpdatedAt || !canDeleteDraftFacilitySubmission(current)) {
+        return false;
+      }
+
+      const rows = await db
+        .delete(submissionsTable)
+        .where(and(eq(submissionsTable.id, id), eq(submissionsTable.updatedAt, new Date(expectedUpdatedAt))))
+        .returning({ id: submissionsTable.id });
+
+      return rows.length > 0;
     },
     async beginSuiFacilityAssignment(id, input) {
       await ensurePostgresTable();
