@@ -1,4 +1,3 @@
-import Link from "next/link";
 import {
   ArrowRightIcon,
   BanknotesIcon,
@@ -9,6 +8,7 @@ import {
   ShieldCheckIcon,
   SparklesIcon,
 } from "@heroicons/react/24/outline";
+import { toConfiguredAppHref } from "~~/lib/appNavigation";
 import { isRobomataWorkflowEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
 
 const workflowSteps = [
@@ -84,6 +84,8 @@ const railCards = [
 
 const RobomataPage = () => {
   const isSubmissionWorkflowAvailable = isRobomataWorkflowEnabled() && isRobomataWorkflowServerEnabled();
+  const submissionHref = toConfiguredAppHref(isSubmissionWorkflowAvailable ? "/operator/submissions" : "/operator");
+  const operatorHref = toConfiguredAppHref("/operator");
 
   return (
     <div className="flex flex-1 justify-center px-4 py-8 sm:px-6 sm:py-10">
@@ -104,17 +106,14 @@ const RobomataPage = () => {
               </div>
 
               <div className="flex flex-wrap gap-3">
-                <Link
-                  href={isSubmissionWorkflowAvailable ? "/operator/submissions" : "/operator"}
-                  className="btn btn-primary rounded-full"
-                >
+                <a href={submissionHref} className="btn btn-primary rounded-full">
                   {isSubmissionWorkflowAvailable ? "Start a borrowing-base submission" : "Launch operator workflow"}
                   <ArrowRightIcon className="h-4 w-4" />
-                </Link>
+                </a>
                 {isSubmissionWorkflowAvailable ? (
-                  <Link href="/operator" className="btn btn-outline rounded-full">
+                  <a href={operatorHref} className="btn btn-outline rounded-full">
                     Open operator dashboard
-                  </Link>
+                  </a>
                 ) : null}
               </div>
 

@@ -11,6 +11,9 @@ export const metadata = getMetadata({
     "Agent-supervised programmable credit rails for asset-backed finance, lender review, and downstream distribution.",
 });
 
+const shouldEnableAnalytics =
+  process.env.NEXT_PUBLIC_ENABLE_VERCEL_ANALYTICS === "true" || process.env.VERCEL_ENV === "production";
+
 const ScaffoldEthApp = ({ children }: { children: React.ReactNode }) => {
   return (
     <html suppressHydrationWarning>
@@ -18,7 +21,7 @@ const ScaffoldEthApp = ({ children }: { children: React.ReactNode }) => {
         <ThemeProvider enableSystem>
           <ScaffoldEthAppWithProviders>{children}</ScaffoldEthAppWithProviders>
         </ThemeProvider>
-        <Analytics />
+        {shouldEnableAnalytics && <Analytics />}
       </body>
     </html>
   );
