@@ -486,87 +486,101 @@ const AuthorizedSubmissionIndex = () => {
   const selectedSource = sourceOptions.find(option => option.value === form.facilitySource) ?? sourceOptions[0];
   const SelectedSourceIcon = selectedSource.icon;
 
-  const newFacilityPackagePanel = (
-    <div className="min-w-0 rounded-[1.25rem] border border-base-300 bg-base-200/60 p-4 sm:rounded-[1.5rem] sm:p-5">
-      <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.2em] text-base-content/50">
-        <PlusIcon className="h-4 w-4" />
-        New facility package
-      </div>
-      <div className="mt-4 grid gap-3">
-        <details className="dropdown w-full">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-2xl border border-primary bg-primary/10 p-3 transition hover:border-primary">
-            <span className="flex min-w-0 gap-3">
-              <SelectedSourceIcon className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-              <span className="min-w-0">
-                <span className="block text-sm font-semibold text-base-content">{selectedSource.label}</span>
-                <span className="block text-xs leading-relaxed text-base-content/60">{selectedSource.description}</span>
-              </span>
-            </span>
-            <ChevronDownIcon className="h-4 w-4 shrink-0 text-base-content/50" />
-          </summary>
-          <ul className="dropdown-content z-10 mt-2 w-full rounded-2xl border border-base-300 bg-base-100 p-2 shadow-xl">
-            {sourceOptions.map(option => {
-              const Icon = option.icon;
-              const isSelected = option.value === form.facilitySource;
+  const renderNewFacilityPackagePanel = (variant: "workspace" | "rail" = "workspace") => {
+    const isRailVariant = variant === "rail";
 
-              return (
-                <li key={option.value}>
-                  <button
-                    type="button"
-                    disabled={option.disabled}
-                    className={`flex w-full items-start gap-3 rounded-xl p-3 text-left transition ${
-                      isSelected ? "bg-primary/10" : "hover:bg-base-200"
-                    } disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent`}
-                    onClick={() => {
-                      if (!option.disabled) setForm(current => ({ ...current, facilitySource: option.value }));
-                    }}
-                  >
-                    <Icon className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-2 text-sm font-semibold text-base-content">
-                        {option.label}
-                        {option.disabled ? <span className="badge badge-warning badge-sm">Soon</span> : null}
+    return (
+      <div className="min-w-0 rounded-[1.25rem] border border-base-300 bg-base-200/60 p-4 sm:rounded-[1.5rem] sm:p-6">
+        <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.2em] text-base-content/50">
+          <PlusIcon className="h-4 w-4" />
+          New facility package
+        </div>
+        <div className={`mt-4 grid gap-4 ${isRailVariant ? "" : "xl:grid-cols-[0.85fr_1.15fr] xl:items-start"}`}>
+          <details className="dropdown w-full">
+            <summary className="flex min-h-16 cursor-pointer list-none items-center justify-between gap-3 rounded-2xl border border-primary bg-primary/10 p-3 transition hover:border-primary">
+              <span className="flex min-w-0 gap-3">
+                <SelectedSourceIcon className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-base-content">{selectedSource.label}</span>
+                  <span className="block text-xs leading-relaxed text-base-content/60">
+                    {selectedSource.description}
+                  </span>
+                </span>
+              </span>
+              <ChevronDownIcon className="h-4 w-4 shrink-0 text-base-content/50" />
+            </summary>
+            <ul className="dropdown-content z-10 mt-2 w-full rounded-2xl border border-base-300 bg-base-100 p-2 shadow-xl">
+              {sourceOptions.map(option => {
+                const Icon = option.icon;
+                const isSelected = option.value === form.facilitySource;
+
+                return (
+                  <li key={option.value}>
+                    <button
+                      type="button"
+                      disabled={option.disabled}
+                      className={`flex w-full items-start gap-3 rounded-xl p-3 text-left transition ${
+                        isSelected ? "bg-primary/10" : "hover:bg-base-200"
+                      } disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent`}
+                      onClick={() => {
+                        if (!option.disabled) setForm(current => ({ ...current, facilitySource: option.value }));
+                      }}
+                    >
+                      <Icon className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex flex-wrap items-center gap-2 text-sm font-semibold text-base-content">
+                          {option.label}
+                          {option.disabled ? <span className="badge badge-warning badge-sm">Soon</span> : null}
+                        </span>
+                        <span className="mt-0.5 block text-xs leading-relaxed text-base-content/60">
+                          {option.description}
+                        </span>
                       </span>
-                      <span className="mt-0.5 block text-xs leading-relaxed text-base-content/60">
-                        {option.description}
-                      </span>
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </details>
-        <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-          <div className="min-w-0 rounded-2xl border border-base-300 bg-base-100 px-4 py-3">
-            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Operator</div>
-            <div className="mt-1 truncate text-sm font-semibold text-base-content">{operatorDisplayName}</div>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </details>
+          <div
+            className={`grid min-w-0 gap-3 ${
+              isRailVariant ? "sm:grid-cols-2" : "md:grid-cols-[minmax(0,0.85fr)_minmax(12rem,0.55fr)]"
+            }`}
+          >
+            <div className="min-w-0 rounded-2xl border border-base-300 bg-base-100 px-4 py-3">
+              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Operator</div>
+              <div className="mt-1 truncate text-sm font-semibold text-base-content">{operatorDisplayName}</div>
+            </div>
+            <label className="form-control min-w-0">
+              <span className="label-text">As-of date</span>
+              <input
+                type="date"
+                className="input input-bordered w-full min-w-0"
+                value={form.asOfDate}
+                onChange={event => setForm(current => ({ ...current, asOfDate: event.target.value }))}
+              />
+            </label>
+            <label className={`form-control min-w-0 ${isRailVariant ? "sm:col-span-2" : "md:col-span-2"}`}>
+              <span className="label-text">Facility or asset pool name</span>
+              <input
+                className="input input-bordered w-full min-w-0"
+                value={form.facilityName}
+                onChange={event => setForm(current => ({ ...current, facilityName: event.target.value }))}
+                placeholder="MetroFleet 2026 Fleet Receivables Facility"
+              />
+            </label>
+            <button
+              className={`btn btn-primary w-full rounded-full ${isRailVariant ? "sm:col-span-2" : "md:w-auto"}`}
+              onClick={createSubmission}
+              disabled={isCreating}
+            >
+              {isCreating ? "Creating..." : "Create facility package"}
+            </button>
           </div>
-          <label className="form-control min-w-0">
-            <span className="label-text">As-of date</span>
-            <input
-              type="date"
-              className="input input-bordered w-full min-w-0"
-              value={form.asOfDate}
-              onChange={event => setForm(current => ({ ...current, asOfDate: event.target.value }))}
-            />
-          </label>
-          <label className="form-control min-w-0 sm:col-span-2">
-            <span className="label-text">Facility or asset pool name</span>
-            <input
-              className="input input-bordered w-full min-w-0"
-              value={form.facilityName}
-              onChange={event => setForm(current => ({ ...current, facilityName: event.target.value }))}
-              placeholder="MetroFleet 2026 Fleet Receivables Facility"
-            />
-          </label>
         </div>
       </div>
-      <button className="btn btn-primary mt-5 rounded-full" onClick={createSubmission} disabled={isCreating}>
-        {isCreating ? "Creating..." : "Create facility package"}
-      </button>
-    </div>
-  );
+    );
+  };
 
   const actionQueuePanel = (
     <div className="min-w-0 rounded-[1.5rem] border border-base-300 bg-base-100 p-4 shadow-lg shadow-base-300/30 sm:rounded-[2rem] sm:p-6">
@@ -632,12 +646,12 @@ const AuthorizedSubmissionIndex = () => {
             </div>
           </div>
 
-          {hasDraftPackage ? actionQueuePanel : newFacilityPackagePanel}
+          {hasDraftPackage ? actionQueuePanel : renderNewFacilityPackagePanel("rail")}
         </div>
       </section>
 
       <section className="grid min-w-0 gap-5 sm:gap-6">
-        <div className="min-w-0 lg:max-w-3xl">{hasDraftPackage ? newFacilityPackagePanel : actionQueuePanel}</div>
+        <div className="min-w-0">{hasDraftPackage ? renderNewFacilityPackagePanel() : actionQueuePanel}</div>
 
         <div className="min-w-0 rounded-[1.5rem] border border-base-300 bg-base-100 p-4 shadow-lg shadow-base-300/30 sm:rounded-[2rem] sm:p-8">
           <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
@@ -668,7 +682,7 @@ const AuthorizedSubmissionIndex = () => {
                     key={submission.id}
                     className="min-w-0 rounded-[1.5rem] border border-base-300 bg-base-200/50 p-4 transition hover:border-primary/40 hover:shadow-md sm:p-5"
                   >
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(14rem,18rem)] lg:items-start">
                       <Link href={`/robomata/submissions/${submission.id}`} className="min-w-0 flex-1">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
@@ -687,7 +701,7 @@ const AuthorizedSubmissionIndex = () => {
                           <p className="mt-2 text-sm leading-relaxed text-base-content/60">{source.description}</p>
                         </div>
                       </Link>
-                      <div className="grid min-w-0 gap-2 text-sm text-base-content/70 lg:min-w-44 lg:text-right">
+                      <div className="grid min-w-0 gap-2 rounded-2xl border border-base-300 bg-base-100/70 p-3 text-sm text-base-content/70 lg:text-right">
                         <div>As of {submission.asOfDate}</div>
                         <div>{submissionReceivableCount(submission)} receivables</div>
                         <div>{submissionEvidenceCount(submission)} evidence packages</div>
