@@ -42,12 +42,12 @@ export function classifyEvidenceKind(
 }
 
 function normalizedEvidenceText(input: { evidenceText?: string }) {
-  return (input.evidenceText ?? "").toLowerCase();
+  return (input.evidenceText ?? "").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
 function hasNegativeEvidenceCue(text: string, kind: Exclude<EvidenceStatusKind, "receivables">) {
   if (kind === "insurance") {
-    return /\b(uninsured|(?:policy|coverage|insurance)\b.{0,16}\b(?:cancel(?:led|ed)|expired|inactive|lapsed|missing|exception|not\s+(?:active|current|in force))|(?:cancel(?:led|ed)|expired|inactive|lapsed|missing|exception|not\s+(?:active|current|in force))\b.{0,16}\b(?:policy|coverage|insurance)|coverage\s+(?:is\s+)?not\s+(?:active|current|in force)|(?:not|without)\s+(?:currently\s+)?(?:covered|insured|coverage|insurance))\b/.test(
+    return /\b(uninsured|(?:policy|coverage|insurance)\b.{0,16}\b(?:cancel(?:led|ed)|expired|inactive|lapsed|missing|exception|not\s+(?:active|current|in force))|(?:cancel(?:led|ed)|expired|inactive|lapsed|missing|exception|not\s+(?:active|current|in force))\b.{0,16}\b(?:policy|coverage|insurance)|coverage\s+(?:is\s+)?not\s+(?:active|current|in force)|(?:not|without)\s+(?:currently\s+)?(?:covered|insured|coverage(?!\s+gaps?)|insurance))\b/.test(
       text,
     );
   }
