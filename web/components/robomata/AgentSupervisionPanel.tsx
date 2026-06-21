@@ -69,6 +69,10 @@ function shortDigest(value?: string) {
   return value ? value.slice(0, 14) : "n/a";
 }
 
+function responseErrorMessage(response: Response, payload: { error?: string }, fallback: string) {
+  return payload.error ?? `${fallback} (${response.status}).`;
+}
+
 const CLIENT_EXECUTABLE_AGENT_ACTION_TYPES = new Set<RobomataAgentActionType>(["evidence_review", "sui_root_review"]);
 
 export const AgentSupervisionPanel = ({
@@ -85,6 +89,7 @@ export const AgentSupervisionPanel = ({
   const [isMutating, setIsMutating] = useState(false);
   const [policy, setPolicy] = useState<RobomataAgentPolicy | null>(null);
   const [runs, setRuns] = useState<RobomataAgentRun[]>([]);
+  const [runsLoadError, setRunsLoadError] = useState<string | null>(null);
   const [serverUnavailable, setServerUnavailable] = useState(false);
   const loadSequenceRef = useRef(0);
 
@@ -98,23 +103,16 @@ export const AgentSupervisionPanel = ({
     loadSequenceRef.current = loadSequence;
     const isCurrentLoad = () => loadSequenceRef.current === loadSequence;
     setIsLoading(true);
+    setRunsLoadError(null);
     setServerUnavailable(false);
     try {
-      const [policyResponse, runsResponse] = await Promise.all([
-        fetch(policyPath, {
-          headers: await getAuthHeaders({ chainId, method: "GET", path: policyPath, signerAddress }),
-        }),
-        fetch(runsPath, {
-          headers: await getAuthHeaders({ chainId, method: "GET", path: runsPath, signerAddress }),
-        }),
-      ]);
+      const policyResponse = await fetch(policyPath, {
+        headers: await getAuthHeaders({ chainId, method: "GET", path: policyPath, signerAddress }),
+      });
       const policyPayload = await readJsonResponse<{ policy?: RobomataAgentPolicy }>(policyResponse);
-      const runsPayload = await readJsonResponse<{ actions?: RobomataAgentAction[]; runs?: RobomataAgentRun[] }>(
-        runsResponse,
-      );
 
       if (!isCurrentLoad()) return;
-      if (policyResponse.status === 404 || runsResponse.status === 404) {
+      if (policyResponse.status === 404) {
         setServerUnavailable(true);
         setPolicy(null);
         setActions([]);
@@ -122,18 +120,44 @@ export const AgentSupervisionPanel = ({
         return;
       }
       if (!policyResponse.ok || !policyPayload.policy) {
-        throw new Error(policyPayload.error ?? "Failed to load agent policy.");
-      }
-      if (!runsResponse.ok || !runsPayload.runs || !runsPayload.actions) {
-        throw new Error(runsPayload.error ?? "Failed to load agent runs.");
+        throw new Error(responseErrorMessage(policyResponse, policyPayload, "Failed to load agent policy"));
       }
 
       setPolicy(policyPayload.policy);
       setAppointmentNameDraft(policyPayload.policy.appointedAgentName ?? "Robomata supervised facility agent");
-      setRuns(runsPayload.runs);
-      setActions(runsPayload.actions);
+
+      try {
+        const runsResponse = await fetch(runsPath, {
+          headers: await getAuthHeaders({ chainId, method: "GET", path: runsPath, signerAddress }),
+        });
+        const runsPayload = await readJsonResponse<{ actions?: RobomataAgentAction[]; runs?: RobomataAgentRun[] }>(
+          runsResponse,
+        );
+
+        if (!isCurrentLoad()) return;
+        if (runsResponse.status === 404) {
+          setRuns([]);
+          setActions([]);
+          setRunsLoadError("Agent run history is not enabled on this server.");
+          return;
+        }
+        if (!runsResponse.ok || !runsPayload.runs || !runsPayload.actions) {
+          throw new Error(responseErrorMessage(runsResponse, runsPayload, "Failed to load agent runs"));
+        }
+
+        setRuns(runsPayload.runs);
+        setActions(runsPayload.actions);
+      } catch (error) {
+        if (!isCurrentLoad()) return;
+        setRuns([]);
+        setActions([]);
+        setRunsLoadError(error instanceof Error ? error.message : "Failed to load agent runs.");
+      }
     } catch (error) {
       if (!isCurrentLoad()) return;
+      setPolicy(null);
+      setActions([]);
+      setRuns([]);
       notification.error(error instanceof Error ? error.message : "Failed to load Robomata agents.");
     } finally {
       if (isCurrentLoad()) setIsLoading(false);
@@ -218,6 +242,7 @@ export const AgentSupervisionPanel = ({
       const payload = await readJsonResponse<{ actions?: RobomataAgentAction[]; run?: RobomataAgentRun }>(response);
       if (!response.ok || !payload.run) throw new Error(payload.error ?? "Failed to run Robomata agent.");
       notification.success(payload.run.summary);
+      setRunsLoadError(null);
       await loadAgentState();
     } catch (error) {
       notification.error(error instanceof Error ? error.message : "Failed to run Robomata agent.");
@@ -489,6 +514,17 @@ export const AgentSupervisionPanel = ({
               <div className="mt-1 text-sm text-base-content/70">{actions.length} total retained</div>
             </div>
           </div>
+
+          {runsLoadError ? (
+            <div className="rounded-[1.5rem] border border-warning/30 bg-warning/10 p-4 text-sm text-base-content/70">
+              <div className="font-semibold text-base-content">Agent run history unavailable</div>
+              <p className="mt-1">
+                The agent appointment policy loaded, but previous runs and proposed actions could not be loaded. Policy
+                controls remain available.
+              </p>
+              <p className="mt-2 break-words text-xs text-base-content/60">{runsLoadError}</p>
+            </div>
+          ) : null}
 
           <AgentSupervisionPolicyDisclosure
             allowedActionTypes={policy.allowedActionTypes}
