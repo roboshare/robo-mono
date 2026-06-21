@@ -4,6 +4,7 @@ import { encryptEvidenceWithSeal, isSealEncryptionConfigured } from "~~/lib/robo
 import type { SubmissionEvidence, SubmissionStorageBackend } from "~~/lib/robomata/submissions";
 
 const DEFAULT_WALRUS_EPOCHS = 3;
+const DEFAULT_WALRUS_UPLOAD_TIMEOUT_MS = 20_000;
 const ENCRYPTED_EVIDENCE_CONTENT_TYPE = "application/octet-stream";
 
 type WalrusUploadResult = {
@@ -23,6 +24,33 @@ function digestBuffer(buffer: Buffer): string {
   return `0x${createHash("sha256").update(buffer).digest("hex")}`;
 }
 
+function parsePositiveInteger(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+async function withTimeout<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string,
+): Promise<T> {
+  const controller = new AbortController();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      controller.abort();
+      reject(new Error(timeoutMessage));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([operation(controller.signal), timeoutPromise]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
 async function uploadToWalrus(input: WalrusUploadInput): Promise<WalrusUploadResult> {
   const publisherUrl = process.env.WALRUS_PUBLISHER_URL;
 
@@ -31,13 +59,24 @@ async function uploadToWalrus(input: WalrusUploadInput): Promise<WalrusUploadRes
   }
 
   const epochs = process.env.WALRUS_STORAGE_EPOCHS ?? DEFAULT_WALRUS_EPOCHS.toString();
-  const response = await fetch(`${publisherUrl.replace(/\/$/, "")}/v1/blobs?epochs=${epochs}`, {
-    method: "PUT",
-    body: input.buffer,
-    headers: {
-      "content-type": input.contentType,
-    },
-  });
+  const timeoutMs = parsePositiveInteger(
+    process.env.ROBOMATA_WALRUS_UPLOAD_TIMEOUT_MS,
+    DEFAULT_WALRUS_UPLOAD_TIMEOUT_MS,
+  );
+  const uploadUrl = `${publisherUrl.replace(/\/$/, "")}/v1/blobs?epochs=${epochs}`;
+  const response = await withTimeout(
+    signal =>
+      fetch(uploadUrl, {
+        method: "PUT",
+        body: input.buffer,
+        headers: {
+          "content-type": input.contentType,
+        },
+        signal,
+      }),
+    timeoutMs,
+    `Walrus upload timed out after ${timeoutMs}ms.`,
+  );
 
   if (!response.ok) {
     const details = await response.text();
