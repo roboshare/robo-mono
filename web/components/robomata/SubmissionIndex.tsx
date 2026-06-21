@@ -187,6 +187,8 @@ const AuthorizedSubmissionIndex = () => {
   const [submissions, setSubmissions] = useState<SubmissionIndexView[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [isShowingCachedSubmissions, setIsShowingCachedSubmissions] = useState(false);
   const [deletingSubmissionId, setDeletingSubmissionId] = useState<string | null>(null);
   const [form, setForm] = useState<{
     asOfDate: string;
@@ -211,7 +213,12 @@ const AuthorizedSubmissionIndex = () => {
     partnerName ?? (partnerAuthAddress ? abbreviatedAddress(partnerAuthAddress) : "Connect wallet");
 
   useEffect(() => {
-    if (!partnerAuthAddress) return;
+    if (!partnerAuthAddress) {
+      setIsLoading(false);
+      setLoadError(null);
+      setIsShowingCachedSubmissions(false);
+      return;
+    }
 
     const load = async () => {
       const path = "/api/robomata/submissions";
@@ -219,9 +226,12 @@ const AuthorizedSubmissionIndex = () => {
       if (cachedSubmissions) {
         setSubmissions(cachedSubmissions);
         setIsLoading(false);
+        setIsShowingCachedSubmissions(true);
       } else {
         setIsLoading(true);
+        setIsShowingCachedSubmissions(false);
       }
+      setLoadError(null);
       try {
         const response = await fetch(path, {
           headers: await getAuthHeaders({ chainId: selectedNetwork.id, method: "GET", path, signerAddress }),
@@ -229,14 +239,19 @@ const AuthorizedSubmissionIndex = () => {
         const payload = await readJsonResponse<{ submissions?: FacilitySubmission[] }>(response);
         if (!response.ok) {
           logResponseDiagnostics(payload);
-          notification.error(payload.error ?? `Failed to load submissions (${response.status}).`);
+          const message = payload.error ?? `Failed to load submissions (${response.status}).`;
+          setLoadError(message);
+          if (!cachedSubmissions) notification.error(message);
           return;
         }
         const nextSubmissions = payload.submissions ?? [];
         setSubmissions(nextSubmissions);
         writeSubmissionIndexCache(submissionCacheKey, nextSubmissions);
+        setIsShowingCachedSubmissions(false);
       } catch (error) {
-        notification.error(error instanceof Error ? error.message : "Failed to load submissions.");
+        const message = error instanceof Error ? error.message : "Failed to load submissions.";
+        setLoadError(message);
+        if (!cachedSubmissions) notification.error(message);
       } finally {
         setIsLoading(false);
       }
@@ -350,6 +365,12 @@ const AuthorizedSubmissionIndex = () => {
 
   const selectedSource = sourceOptions.find(option => option.value === form.facilitySource) ?? sourceOptions[0];
   const SelectedSourceIcon = selectedSource.icon;
+  const createMissingFields = [
+    !operatorName.trim() ? "authorized operator" : null,
+    !form.facilityName.trim() ? "facility name" : null,
+    !form.asOfDate ? "as-of date" : null,
+  ].filter(Boolean);
+  const canCreateSubmission = createMissingFields.length === 0 && !isCreating;
 
   const renderNewFacilityPackagePanel = (variant: "workspace" | "rail" = "workspace") => {
     const isRailVariant = variant === "rail";
@@ -437,10 +458,17 @@ const AuthorizedSubmissionIndex = () => {
             <button
               className={`btn btn-primary w-full rounded-full ${isRailVariant ? "sm:col-span-2" : "md:w-auto"}`}
               onClick={createSubmission}
-              disabled={isCreating}
+              disabled={!canCreateSubmission}
             >
               {isCreating ? "Creating..." : "Create facility package"}
             </button>
+            {createMissingFields.length > 0 ? (
+              <div
+                className={`text-xs leading-relaxed text-base-content/60 ${isRailVariant ? "sm:col-span-2" : "md:col-span-2"}`}
+              >
+                Add {createMissingFields.join(", ")} before creating a package.
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
@@ -526,16 +554,31 @@ const AuthorizedSubmissionIndex = () => {
           <h2 className="mt-2 text-xl font-black tracking-tight text-base-content sm:text-2xl">
             Source systems and lender status
           </h2>
+          {loadError ? (
+            <div className="mt-5 rounded-2xl border border-warning/30 bg-warning/10 p-4 text-sm leading-relaxed text-base-content/70">
+              <div className="font-semibold text-base-content">
+                {isShowingCachedSubmissions ? "Showing cached packages" : "Unable to load packages"}
+              </div>
+              <div className="mt-1">{loadError}</div>
+              {isShowingCachedSubmissions ? (
+                <div className="mt-1">Counts and statuses may be stale until the workspace can refresh.</div>
+              ) : null}
+            </div>
+          ) : isShowingCachedSubmissions ? (
+            <div className="mt-5 rounded-2xl border border-info/20 bg-info/10 p-4 text-sm leading-relaxed text-base-content/70">
+              Showing cached packages while the latest workspace state refreshes.
+            </div>
+          ) : null}
 
           {isLoading ? (
             <div className="py-16 text-center">
               <span className="loading loading-spinner loading-lg text-primary"></span>
             </div>
-          ) : submissions.length === 0 ? (
+          ) : submissions.length === 0 && !loadError ? (
             <div className="mt-8 rounded-[1.5rem] border border-dashed border-base-300 bg-base-200/40 p-8 text-center text-base-content/70">
               No facility packages yet. Create the first package above.
             </div>
-          ) : (
+          ) : submissions.length === 0 ? null : (
             <div className="mt-6 grid gap-4">
               {submissions.map(submission => {
                 const action = submissionNextAction(submission);

@@ -49,6 +49,7 @@ const workspaceCards = [
     description: "Lender model review and tokenization approvals will live here as the capital-provider layer matures.",
     href: "/robolend",
     icon: BanknotesIcon,
+    planned: true,
   },
 ];
 
@@ -74,14 +75,20 @@ const DashboardPage = () => {
       <section className="grid gap-4 lg:grid-cols-2">
         {workspaceCards.map(card => {
           const Icon = card.icon;
-          const disabled =
-            (card.href === "/robomata/submissions" && !robomataEnabled) ||
-            (card.href === "/operator/rentals" && !rentalOpsEnabled);
+          const disabledReason =
+            card.href === "/robomata/submissions" && !robomataEnabled
+              ? "Not enabled in this environment"
+              : card.href === "/operator/rentals" && !rentalOpsEnabled
+                ? "Not enabled in this environment"
+                : card.planned
+                  ? "Coming next"
+                  : null;
+          const disabled = Boolean(disabledReason);
           const cardClassName = `group rounded-[1.5rem] border p-5 transition ${
             card.primary
               ? "border-primary/30 bg-primary/10 hover:border-primary/60"
               : "border-base-300 bg-base-100 hover:border-primary/40"
-          } ${disabled ? "opacity-55" : "hover:shadow-md"}`;
+          } ${disabled ? "cursor-not-allowed bg-base-100/70" : "hover:shadow-md"}`;
           const cardContent = (
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
@@ -91,13 +98,17 @@ const DashboardPage = () => {
                 </div>
                 <h2 className="mt-3 text-2xl font-black tracking-tight text-base-content">{card.title}</h2>
                 <p className="mt-2 text-sm leading-relaxed text-base-content/70">{card.description}</p>
-                {disabled ? (
-                  <div className="mt-4 text-sm font-semibold text-base-content/50">Not enabled in this environment</div>
+                {disabledReason ? (
+                  <div className="mt-4 inline-flex rounded-full border border-base-300 bg-base-200 px-3 py-1 text-sm font-semibold text-base-content/60">
+                    {disabledReason}
+                  </div>
                 ) : (
                   <div className="mt-4 text-sm font-semibold text-primary">Open workspace</div>
                 )}
               </div>
-              <ArrowRightIcon className="h-5 w-5 shrink-0 text-primary transition group-hover:translate-x-0.5" />
+              {disabled ? null : (
+                <ArrowRightIcon className="h-5 w-5 shrink-0 text-primary transition group-hover:translate-x-0.5" />
+              )}
             </div>
           );
 

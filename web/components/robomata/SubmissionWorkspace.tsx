@@ -17,6 +17,7 @@ import {
 import { AgentSupervisionPanel } from "~~/components/robomata/AgentSupervisionPanel";
 import { FacilityMonitoringPanel } from "~~/components/robomata/FacilityMonitoringPanel";
 import { PacketSharePanel } from "~~/components/robomata/PacketSharePanel";
+import { OperatorPolicyReviewPanel } from "~~/components/robomata/PolicyReviewPanels";
 import { BorrowingBasePolicySummaryCard } from "~~/components/robomata/PolicyRulesPanel";
 import { ReviewBoundaryPanel } from "~~/components/robomata/ReviewBoundaryPanel";
 import { useSelectedNetwork, useTransactor } from "~~/hooks/scaffold-eth";
@@ -125,6 +126,8 @@ const evidenceSealPolicyOptions = [
   },
 ] as const;
 
+const FACILITY_ASSIGNMENT_LOCK_STALE_MS = 5 * 60 * 1000;
+
 type PendingOperatorCommit = {
   operatorSignature?: string;
   sponsorGasObjectId?: string;
@@ -180,6 +183,87 @@ function buildSubmissionSummaryCards(computation: SubmissionComputation) {
   ];
 }
 
+function getFacilityAssignmentLockRemainingMs(startedAt: string | undefined) {
+  const startedAtMs = startedAt ? Date.parse(startedAt) : Number.NaN;
+
+  if (!startedAt || !Number.isFinite(startedAtMs)) return 0;
+
+  return Math.max(0, FACILITY_ASSIGNMENT_LOCK_STALE_MS - (Date.now() - startedAtMs));
+}
+
+function isFacilityAssignmentLockActive(submission: FacilitySubmission | null) {
+  return getFacilityAssignmentLockRemainingMs(submission?.evidenceCommit.facilityAssignmentStartedAt) > 0;
+}
+
+function submissionMutabilityLockReason(submission: FacilitySubmission | null) {
+  if (!submission) return null;
+  if (submission.evidenceCommit.status === "committed") {
+    return "Evidence is already committed for this submission. Create a new submission for further changes.";
+  }
+  if (submission.evidenceCommit.status === "committing") {
+    return "Evidence commit is in progress for this submission. Try again after it completes.";
+  }
+  if (isFacilityAssignmentLockActive(submission)) {
+    return "Sui facility assignment is in progress for this submission. Try again after it completes.";
+  }
+
+  return null;
+}
+
+function buildWorkspaceChecklist(submission: FacilitySubmission) {
+  const openExceptions = submission.exceptions.filter(exception => exception.actionStatus === "open");
+  const exceptionsResolved = Boolean(submission.computation && openExceptions.length === 0);
+  const evidenceCommitted = submission.evidenceCommit.status === "committed";
+  const tokenizationStarted = submission.tokenization.status !== "not_started";
+
+  return [
+    {
+      description: submission.receivables.length
+        ? `${submission.receivables.length} receivables imported.`
+        : "Import a receivables CSV before computing availability.",
+      done: submission.receivables.length > 0,
+      label: "Import receivables",
+    },
+    {
+      description: submission.evidence.length
+        ? `${submission.evidence.length} evidence packages attached.`
+        : "Attach insurance, servicing, title, lockbox, or other policy evidence.",
+      done: submission.evidence.length > 0,
+      label: "Attach evidence",
+    },
+    {
+      description: submission.computation
+        ? `Computed ${new Date(submission.computation.computedAt).toLocaleString()}.`
+        : "Compute the borrowing base after receivables and evidence are present.",
+      done: Boolean(submission.computation),
+      label: "Compute availability",
+    },
+    {
+      description: submission.computation
+        ? exceptionsResolved
+          ? "No open exceptions remain."
+          : `${openExceptions.length} open exceptions need operator action.`
+        : "Exception status appears after computation.",
+      done: exceptionsResolved,
+      label: "Resolve exceptions",
+    },
+    {
+      description: evidenceCommitted
+        ? "Evidence root is anchored for lender review."
+        : "Anchor evidence after the packet is clean enough to share.",
+      done: evidenceCommitted,
+      label: "Anchor evidence",
+    },
+    {
+      description: tokenizationStarted
+        ? `Tokenization status: ${submission.tokenization.status.replace(/_/g, " ")}.`
+        : "Optional downstream handoff after lender approval.",
+      done: tokenizationStarted || evidenceCommitted,
+      label: "Robolend handoff",
+    },
+  ];
+}
+
 export const SubmissionWorkspace = ({
   submissionId,
   readOnly = false,
@@ -188,7 +272,9 @@ export const SubmissionWorkspace = ({
   const router = useRouter();
   const [submission, setSubmission] = useState<FacilitySubmission | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const [, setFacilityAssignmentLockTick] = useState(0);
   const [editingReceivableId, setEditingReceivableId] = useState<string | null>(null);
   const [draftReceivable, setDraftReceivable] = useState<Partial<SubmissionReceivable>>({});
   const [receivablesCsvText, setReceivablesCsvText] = useState("");
@@ -243,8 +329,10 @@ export const SubmissionWorkspace = ({
     () => (submission?.computation ? buildSubmissionSummaryCards(submission.computation) : []),
     [submission],
   );
+  const facilityAssignmentStartedAt = submission?.evidenceCommit.facilityAssignmentStartedAt;
+  const mutabilityLockReason = submissionMutabilityLockReason(submission);
   const isCommitted = submission?.status === "committed" || submission?.evidenceCommit.status === "committed";
-  const canMutate = !readOnly && !isCommitted;
+  const canMutate = !readOnly && !mutabilityLockReason;
   const canComputeBorrowingBase = Boolean(
     submission && submission.receivables.length > 0 && submission.evidence.length > 0,
   );
@@ -271,6 +359,18 @@ export const SubmissionWorkspace = ({
       tokenization.evm.revenueTokenId &&
       tokenization.evm.txHash,
   );
+  const workspaceChecklist = useMemo(() => (submission ? buildWorkspaceChecklist(submission) : []), [submission]);
+
+  useEffect(() => {
+    const remainingMs = getFacilityAssignmentLockRemainingMs(facilityAssignmentStartedAt);
+    if (remainingMs <= 0) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setFacilityAssignmentLockTick(tick => tick + 1);
+    }, remainingMs + 250);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [facilityAssignmentStartedAt]);
 
   const loadSubmission = useCallback(async () => {
     setIsLoading(true);
@@ -289,6 +389,7 @@ export const SubmissionWorkspace = ({
         const payload = await readJsonResponse<{ submission?: FacilitySubmission }>(response);
         if (!response.ok || !payload.submission) throw new Error(payload.error ?? "Failed to load submission.");
         setSubmission(payload.submission);
+        setLoadError(null);
         setIsLoading(false);
         return;
       }
@@ -301,9 +402,13 @@ export const SubmissionWorkspace = ({
         const payload = await readJsonResponse<{ submissions?: FacilitySubmission[] }>(response);
         if (!response.ok) throw new Error(payload.error ?? "Failed to load submissions.");
         setSubmission(payload.submissions?.[0] ?? null);
+        setLoadError(null);
       }
     } catch (error) {
-      notification.error(error instanceof Error ? error.message : "Failed to load submission.");
+      const message = error instanceof Error ? error.message : "Failed to load submission.";
+      setSubmission(null);
+      setLoadError(message);
+      notification.error(message);
     } finally {
       setIsLoading(false);
     }
@@ -834,13 +939,25 @@ export const SubmissionWorkspace = ({
     return (
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-10 sm:px-6">
         <div className="rounded-[2rem] border border-base-300 bg-base-100 p-8 text-center shadow-lg shadow-base-300/30">
-          <h1 className="text-3xl font-black tracking-tight text-base-content">No submission available</h1>
+          <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
+            {loadError ? "Workspace unavailable" : "Empty workspace"}
+          </p>
+          <h1 className="mt-3 text-3xl font-black tracking-tight text-base-content">
+            {loadError ? "Unable to load this submission" : "No submission available"}
+          </h1>
           <p className="mt-4 text-base-content/70">
-            {readOnly
-              ? "Create a borrowing-base submission from the operator workflow first."
-              : "Create a submission from the submissions index first."}
+            {loadError
+              ? loadError
+              : readOnly
+                ? "Create a borrowing-base submission from the operator workflow first."
+                : "Create a submission from the submissions index first."}
           </p>
           <div className="mt-6 flex justify-center gap-3">
+            {loadError ? (
+              <button className="btn btn-primary rounded-full" onClick={() => void loadSubmission()}>
+                Retry
+              </button>
+            ) : null}
             <Link href="/robomata/submissions" className="btn btn-primary rounded-full">
               Open Robomata workspace
             </Link>
@@ -859,12 +976,12 @@ export const SubmissionWorkspace = ({
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 py-8 sm:px-6 sm:py-10">
       <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30 sm:p-8">
         <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
-          <div className="max-w-3xl">
+          <div className="min-w-0 max-w-3xl">
             <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
               {sectionTitle(readOnly)}
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-3">
-              <h1 className="text-4xl font-black tracking-tight text-base-content sm:text-5xl">
+              <h1 className="min-w-0 break-words text-4xl font-black tracking-tight text-base-content sm:text-5xl">
                 {submission.facilityName}
               </h1>
               <span className={`badge ${statusClass(submission.status)} capitalize`}>
@@ -912,6 +1029,16 @@ export const SubmissionWorkspace = ({
                 </>
               )}
             </div>
+            {!readOnly && mutabilityLockReason ? (
+              <div className="mt-5 rounded-2xl border border-warning/30 bg-warning/10 p-4 text-sm leading-relaxed text-base-content/70">
+                <div className="font-semibold text-base-content">Editing is temporarily locked</div>
+                <div className="mt-1">{mutabilityLockReason}</div>
+              </div>
+            ) : !readOnly && !canComputeBorrowingBase ? (
+              <div className="mt-5 rounded-2xl border border-base-300 bg-base-200/50 p-4 text-sm leading-relaxed text-base-content/70">
+                Import receivables and upload at least one evidence package before computing the borrowing base.
+              </div>
+            ) : null}
           </div>
 
           <div className="xl:w-[360px]">
@@ -928,6 +1055,31 @@ export const SubmissionWorkspace = ({
               <BorrowingBasePolicySummaryCard policyArtifact={policyArtifact} />
             )}
           </div>
+        </div>
+      </section>
+
+      <section className="rounded-[2rem] border border-base-300 bg-base-100 p-5 shadow-lg shadow-base-300/30 sm:p-6">
+        <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
+          <CheckCircleIcon className="h-4 w-4" />
+          Workspace progress
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {workspaceChecklist.map(step => (
+            <div
+              key={step.label}
+              className={`rounded-2xl border p-4 ${
+                step.done ? "border-success/30 bg-success/10" : "border-base-300 bg-base-200/40"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-sm font-semibold text-base-content">{step.label}</div>
+                <span className={`badge ${step.done ? "badge-success" : "badge-ghost"}`}>
+                  {step.done ? "Ready" : "Next"}
+                </span>
+              </div>
+              <p className="mt-2 text-sm leading-relaxed text-base-content/70">{step.description}</p>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -1286,11 +1438,11 @@ export const SubmissionWorkspace = ({
             </div>
             <div className="mt-4 space-y-4">
               {submission.evidence.map(evidence => (
-                <div key={evidence.id} className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="font-semibold text-base-content">{evidence.label}</div>
-                      <div className="text-sm text-base-content/70">{evidence.source}</div>
+                <div key={evidence.id} className="min-w-0 rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="break-words font-semibold text-base-content">{evidence.label}</div>
+                      <div className="break-words text-sm text-base-content/70">{evidence.source}</div>
                       <div className="mt-1 text-xs uppercase tracking-[0.16em] text-base-content/50">
                         {evidence.scope}
                       </div>
@@ -1299,7 +1451,7 @@ export const SubmissionWorkspace = ({
                       {evidence.status}
                     </span>
                   </div>
-                  <div className="mt-3 text-sm text-base-content/70">
+                  <div className="mt-3 break-words text-sm text-base-content/70">
                     Uploaded {new Date(evidence.uploadedAt).toLocaleString()} · {evidence.filename}
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.14em]">
@@ -1455,6 +1607,16 @@ export const SubmissionWorkspace = ({
                   ))}
                 </ul>
               </div>
+              {!readOnly ? (
+                <OperatorPolicyReviewPanel
+                  chainId={selectedNetwork.id}
+                  getAuthHeaders={getAuthHeaders}
+                  onSubmissionUpdated={setSubmission}
+                  policyArtifact={policyArtifact}
+                  signerAddress={signerAddress}
+                  submission={submission}
+                />
+              ) : null}
               {!readOnly ? (
                 <PacketSharePanel
                   chainId={selectedNetwork.id}
