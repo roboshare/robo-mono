@@ -47,24 +47,28 @@ function normalizedEvidenceText(input: { evidenceText?: string }) {
 
 function hasNegativeEvidenceCue(text: string, kind: Exclude<EvidenceStatusKind, "receivables">) {
   if (kind === "insurance") {
-    return /\b(uninsured|(?:policy|coverage|insurance)\s+(?:cancel(?:led|ed)|expired|inactive|lapsed|missing|exception)|coverage\s+(?:is\s+)?not\s+(?:active|current|in force)|(?:not|without)\s+(?:currently\s+)?(?:covered|insured|coverage|insurance))\b/.test(
+    return /\b(uninsured|(?:policy|coverage|insurance)\b.{0,16}\b(?:cancel(?:led|ed)|expired|inactive|lapsed|missing|exception)|(?:cancel(?:led|ed)|expired|inactive|lapsed|missing|exception)\b.{0,16}\b(?:policy|coverage|insurance)|coverage\s+(?:is\s+)?not\s+(?:active|current|in force)|(?:not|without)\s+(?:currently\s+)?(?:covered|insured|coverage|insurance))\b/.test(
       text,
     );
   }
 
   if (kind === "title_lien") {
-    return /\b(?:title|lien|ucc|collateral)\b.{0,24}\b(?:not\s+(?:clear|cleared|verified)|unverified|missing|exception)\b/.test(
+    return /\b((?:title|lien|ucc|collateral)\b.{0,24}\b(?:not\s+(?:clear|cleared|verified)|unverified|missing|exception)|(?:unverified|missing|exception)\b.{0,24}\b(?:clear|cleared|verified)?\s*(?:title|lien|ucc|collateral))\b/.test(
       text,
     );
   }
 
   if (kind === "lockbox") {
-    return /\b(?:lockbox|cash|bank|collection|collections)\b.{0,24}\b(?:not\s+(?:matched|verified|reconciled)|unmatched|unverified|missing|exception)\b/.test(
+    return /\b((?:lockbox|cash|bank|collection|collections)\b.{0,24}\b(?:not\s+(?:matched|verified|reconciled)|unmatched|unverified|missing|exception)|(?:unmatched|unverified|missing|exception)\b.{0,24}\b(?:matched|verified|reconciled)?\s*(?:lockbox|cash|bank|collection|collections))\b/.test(
       text,
     );
   }
 
-  return /\butili[sz]ation\b.{0,24}\b(?:below|missing|exception|stale|not\s+(?:current|verified))\b/.test(text);
+  const utilizationWindow = text.match(/\butili[sz]ation\b.{0,48}/)?.[0] ?? "";
+  return (
+    /\butili[sz]ation\b.{0,24}\b(?:missing|exception|stale|not\s+(?:current|verified))\b/.test(text) ||
+    (/\bbelow\b/.test(utilizationWindow) && !/\bnot\s+below\b/.test(utilizationWindow))
+  );
 }
 
 function hasPositiveEvidenceCue(text: string) {
