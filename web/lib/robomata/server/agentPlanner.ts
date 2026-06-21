@@ -981,6 +981,9 @@ export function plannerBoundarySummary(boundaryValue: RobomataAgentPlannerBounda
   if (boundaryValue.status === "live_error_fallback") {
     return `${boundaryValue.provider} planner failed, so action proposals used deterministic fallback rules.`;
   }
+  if (boundaryValue.status === "rate_limited_fallback") {
+    return `${boundaryValue.provider} planner was rate-limited, so action proposals used deterministic fallback rules.`;
+  }
   if (boundaryValue.status === "schema_invalid_fallback") {
     return `${boundaryValue.provider} planner returned schema-invalid output, so action proposals used deterministic fallback rules.`;
   }

@@ -66,6 +66,7 @@ for (const needle of [
   'boundary("google", "schema_invalid_fallback", "deterministic_fallback", plannerBoundary.model)',
   '"live_error_fallback"',
   '"rate_limited_fallback"',
+  "planner was rate-limited",
   "generateGoogleGeminiContent",
   "isGoogleGeminiRateLimitError(error)",
   "jsonTextFromProviderOutput(outputText)",
