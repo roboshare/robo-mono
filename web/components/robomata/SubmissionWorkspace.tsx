@@ -151,6 +151,14 @@ function sectionTitle(readOnly: boolean) {
   return readOnly ? "Lender-ready review surface" : "Operator submission workspace";
 }
 
+function getLatestReceivablesImportFilename(submission: FacilitySubmission | null): string | null {
+  const event = submission?.auditEvents.find(
+    auditEvent => auditEvent.type === "receivables_imported" && typeof auditEvent.metadata?.filename === "string",
+  );
+
+  return typeof event?.metadata?.filename === "string" ? event.metadata.filename : null;
+}
+
 async function readJsonResponse<T>(response: Response): Promise<T & { error?: string }> {
   const text = await response.text();
   if (!text.trim()) return {} as T & { error?: string };
@@ -298,6 +306,7 @@ export const SubmissionWorkspace = ({
   const [editingReceivableId, setEditingReceivableId] = useState<string | null>(null);
   const [draftReceivable, setDraftReceivable] = useState<Partial<SubmissionReceivable>>({});
   const [receivablesCsvText, setReceivablesCsvText] = useState("");
+  const [selectedReceivablesCsvFilename, setSelectedReceivablesCsvFilename] = useState<string | null>(null);
   const [evidenceText, setEvidenceText] = useState("");
   const [pendingOperatorCommit, setPendingOperatorCommit] = useState<PendingOperatorCommit | null>(null);
   const [tokenizationForm, setTokenizationForm] = useState({
@@ -380,6 +389,8 @@ export const SubmissionWorkspace = ({
       tokenization.evm.txHash,
   );
   const workspaceChecklist = useMemo(() => (submission ? buildWorkspaceChecklist(submission) : []), [submission]);
+  const latestReceivablesImportFilename = useMemo(() => getLatestReceivablesImportFilename(submission), [submission]);
+  const receivablesImportFilename = latestReceivablesImportFilename ?? selectedReceivablesCsvFilename;
 
   useEffect(() => {
     const remainingMs = getFacilityAssignmentLockRemainingMs(facilityAssignmentStartedAt);
@@ -491,13 +502,13 @@ export const SubmissionWorkspace = ({
 
   const importReceivables = async (file: File) => {
     if (!submission) return;
+    setSelectedReceivablesCsvFilename(file.name);
     const formData = new FormData();
     formData.set("file", file);
-    const didUpdate = await updateSubmission(`/api/robomata/submissions/${submission.id}/receivables/import`, {
+    await updateSubmission(`/api/robomata/submissions/${submission.id}/receivables/import`, {
       method: "POST",
       body: formData,
     });
-    if (didUpdate) setReceivablesCsvText("");
   };
 
   const importReceivablesFromText = async () => {
@@ -507,7 +518,7 @@ export const SubmissionWorkspace = ({
       return;
     }
 
-    await importReceivables(new File([csvText], "receivables.csv", { type: "text/csv" }));
+    await importReceivables(new File([csvText], "pasted-receivables.csv", { type: "text/csv" }));
   };
 
   const uploadEvidence = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -1113,10 +1124,10 @@ export const SubmissionWorkspace = ({
         {canMutate ? (
           <section
             id="workspace-import"
-            className="scroll-mt-24 rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30"
+            className="scroll-mt-24 overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 p-4 shadow-lg shadow-base-300/30 sm:p-6"
           >
-            <div className="grid gap-6 lg:grid-cols-2">
-              <div>
+            <div className="grid min-w-0 gap-6 lg:grid-cols-2 lg:items-stretch">
+              <div className="min-w-0">
                 <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.2em] text-base-content/50">
                   <DocumentArrowUpIcon className="h-4 w-4" />
                   Receivables import
@@ -1125,7 +1136,7 @@ export const SubmissionWorkspace = ({
                   Upload a lender-borrowing-base style CSV with receivable id, obligor, vehicles, amount, DPD,
                   utilization, insurance, title, and lockbox fields.
                 </p>
-                <label className="mt-4 flex cursor-pointer flex-col items-center justify-center rounded-[1.5rem] border border-dashed border-base-300 bg-base-200/40 p-6 text-center text-sm text-base-content/70">
+                <label className="mt-4 flex min-w-0 cursor-pointer flex-col items-center justify-center rounded-[1.5rem] border border-dashed border-base-300 bg-base-200/40 p-6 text-center text-sm text-base-content/70">
                   <input
                     type="file"
                     accept=".csv,text/csv"
@@ -1135,11 +1146,28 @@ export const SubmissionWorkspace = ({
                       if (file) void importReceivables(file);
                     }}
                   />
-                  Click to upload receivables CSV
+                  <span>Click to upload receivables CSV</span>
+                  {receivablesImportFilename ? (
+                    <span className="mt-2 max-w-full break-all text-xs font-semibold text-base-content">
+                      Current import: {receivablesImportFilename}
+                    </span>
+                  ) : null}
                 </label>
-                <div className="mt-4">
+                <div className="mt-4 min-w-0">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-base-content/60">
+                    <span className="font-semibold uppercase tracking-[0.16em]">Paste or edit CSV</span>
+                    {receivablesCsvText.trim() ? (
+                      <button
+                        className="btn btn-ghost btn-xs rounded-full"
+                        type="button"
+                        onClick={() => setReceivablesCsvText("")}
+                      >
+                        Clear pasted CSV
+                      </button>
+                    ) : null}
+                  </div>
                   <textarea
-                    className="textarea textarea-bordered min-h-36 w-full rounded-xl px-4 py-3 text-sm leading-relaxed"
+                    className="textarea textarea-bordered min-h-36 w-full min-w-0 resize-y rounded-xl px-4 py-3 font-mono text-xs leading-relaxed lg:min-h-[22rem]"
                     placeholder={`Or paste CSV:\nreceivable,obligor,vehicles,outstanding,dpd,utilization,insured,title,lockbox\nAR-1007,Northstar Delivery Co.,28,386400,12,91,yes,yes,yes`}
                     value={receivablesCsvText}
                     onChange={event => setReceivablesCsvText(event.target.value)}
@@ -1155,7 +1183,10 @@ export const SubmissionWorkspace = ({
                 </div>
               </div>
 
-              <form className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-5" onSubmit={uploadEvidence}>
+              <form
+                className="min-w-0 rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4 sm:p-5"
+                onSubmit={uploadEvidence}
+              >
                 <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.2em] text-base-content/50">
                   <CloudArrowUpIcon className="h-4 w-4" />
                   Evidence upload
@@ -1165,34 +1196,32 @@ export const SubmissionWorkspace = ({
                   servicing reports, utilization exports, or lockbox mapping.
                 </p>
                 <div className="mt-4 grid gap-3">
-                  <input name="file" type="file" className="file-input file-input-bordered w-full rounded-xl" />
+                  <input
+                    name="file"
+                    type="file"
+                    className="file-input file-input-bordered w-full min-w-0 rounded-xl text-sm"
+                  />
                   <input
                     name="label"
-                    className="input input-bordered h-11 w-full rounded-xl px-4 text-sm"
+                    className="input input-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
                     placeholder="Package name, e.g. June insurance schedule"
                     required
                   />
                   <input
                     name="source"
-                    className="input input-bordered h-11 w-full rounded-xl px-4 text-sm"
+                    className="input input-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
                     placeholder="Source, e.g. authorized broker export or servicing system"
                     required
                   />
                   <input
                     name="scope"
-                    className="input input-bordered h-11 w-full rounded-xl px-4 text-sm"
+                    className="input input-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
                     placeholder="Evidence type, e.g. Insurance, Title, Servicing, Lockbox"
                     required
                   />
-                  <select
-                    name="status"
-                    className="select select-bordered h-11 w-full rounded-xl px-4 text-sm"
-                    defaultValue="pending"
-                  >
-                    <option value="pending">Pending - needs review</option>
-                    <option value="verified">Verified - usable for borrowing base</option>
-                    <option value="exception">Exception - incomplete or stale</option>
-                  </select>
+                  <div className="break-words rounded-2xl border border-base-300 bg-base-100 px-4 py-3 text-sm text-base-content/70">
+                    Robomata derives evidence status from the active policy and imported receivable data after upload.
+                  </div>
                   <label className="form-control">
                     <span className="label pb-1 pt-0">
                       <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
@@ -1201,7 +1230,7 @@ export const SubmissionWorkspace = ({
                     </span>
                     <select
                       name="sealPolicyId"
-                      className="select select-bordered h-11 w-full rounded-xl px-4 text-sm"
+                      className="select select-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
                       defaultValue={evidenceSealPolicyOptions[0].value}
                     >
                       {evidenceSealPolicyOptions.map(option => (
@@ -1218,11 +1247,11 @@ export const SubmissionWorkspace = ({
                   </label>
                   <input
                     name="linkedReceivableIds"
-                    className="input input-bordered h-11 w-full rounded-xl px-4 text-sm"
+                    className="input input-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
                     placeholder="Related receivable IDs, e.g. AR-1007, AR-1011"
                   />
                   <textarea
-                    className="textarea textarea-bordered min-h-28 w-full rounded-xl px-4 py-3 text-sm leading-relaxed"
+                    className="textarea textarea-bordered min-h-28 w-full min-w-0 rounded-xl px-4 py-3 text-sm leading-relaxed"
                     placeholder="Or paste authorized evidence notes, report extracts, or source metadata when no local file is handy."
                     value={evidenceText}
                     onChange={event => setEvidenceText(event.target.value)}
@@ -1502,26 +1531,10 @@ export const SubmissionWorkspace = ({
                         : "Not encrypted"}
                     </span>
                   </div>
-                  {canMutate ? (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {(["verified", "pending", "exception"] as const).map(status => (
-                        <button
-                          key={status}
-                          type="button"
-                          className="btn btn-xs btn-outline rounded-full"
-                          onClick={() =>
-                            patchSubmission({
-                              action: "updateEvidenceStatus",
-                              evidenceId: evidence.id,
-                              status,
-                            })
-                          }
-                        >
-                          Mark {status}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
+                  <div className="mt-3 rounded-2xl border border-base-300 bg-base-100 px-4 py-3 text-sm text-base-content/70">
+                    Status is derived from the imported receivables and active policy. Update the receivable data or
+                    replace the evidence package, then recompute the submission.
+                  </div>
                   <details className="mt-4 rounded-2xl border border-base-300 bg-base-100 p-4">
                     <summary className="cursor-pointer text-sm font-semibold text-base-content">
                       Advanced details

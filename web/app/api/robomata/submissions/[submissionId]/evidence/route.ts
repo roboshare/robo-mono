@@ -5,6 +5,7 @@ import {
   isRobomataWorkflowMutationEnabled,
   isRobomataWorkflowServerEnabled,
 } from "~~/lib/featureFlags";
+import { deriveEvidenceStatus } from "~~/lib/robomata/evidenceStatus";
 import { createEvidenceRecord } from "~~/lib/robomata/server/evidenceStorage";
 import { getFacilityMonitoringStore } from "~~/lib/robomata/server/facilityMonitoringStore";
 import {
@@ -27,7 +28,6 @@ export const runtime = "nodejs";
 
 const DEFAULT_EVIDENCE_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
 const MULTIPART_UPLOAD_OVERHEAD_BYTES = 1024 * 1024;
-const evidenceStatuses = new Set(["verified", "exception", "pending"]);
 
 function requireRobomataWorkflow() {
   if (isRobomataWorkflowServerEnabled()) return null;
@@ -37,15 +37,6 @@ function requireRobomataWorkflow() {
 function requireRobomataMutation() {
   if (isRobomataWorkflowMutationEnabled()) return null;
   return NextResponse.json({ error: "Robomata submission writes are not enabled." }, { status: 403 });
-}
-
-function normalizeEvidenceStatus(value: FormDataEntryValue | null) {
-  const status = String(value ?? "pending").trim();
-  if (!evidenceStatuses.has(status)) {
-    throw new Error("Evidence status must be verified, exception, or pending.");
-  }
-
-  return status as "verified" | "exception" | "pending";
 }
 
 function isConcurrentSubmissionChange(error: unknown) {
@@ -208,10 +199,24 @@ async function saveEvidenceRecord({
       throw new Error("Evidence commit is in progress for this submission. Try again after it completes.");
     }
 
-    latestSubmission.evidence = [evidence, ...latestSubmission.evidence.filter(record => record.id !== evidence.id)];
+    const statusDerivation = deriveEvidenceStatus({
+      evidence,
+      receivables: latestSubmission.receivables,
+    });
+    const derivedEvidence: SubmissionEvidence = {
+      ...evidence,
+      status: statusDerivation.status,
+    };
+
+    latestSubmission.evidence = [
+      derivedEvidence,
+      ...latestSubmission.evidence.filter(record => record.id !== derivedEvidence.id),
+    ];
     invalidateSubmissionArtifacts(latestSubmission);
-    addAuditEvent(latestSubmission, "evidence_uploaded", `Uploaded evidence package ${evidence.label}.`, {
-      evidenceId: evidence.id,
+    addAuditEvent(latestSubmission, "evidence_uploaded", `Uploaded evidence package ${derivedEvidence.label}.`, {
+      evidenceId: derivedEvidence.id,
+      evidenceStatus: derivedEvidence.status,
+      evidenceStatusReason: statusDerivation.reason,
       storageBackend: evidence.storageBackend,
     });
 
@@ -269,7 +274,6 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     const label = String(formData.get("label") ?? "").trim();
     const source = String(formData.get("source") ?? "").trim();
     const scope = String(formData.get("scope") ?? "").trim();
-    const status = normalizeEvidenceStatus(formData.get("status"));
     const sealPolicyId = String(formData.get("sealPolicyId") ?? "seal://policy/lender-auditor-read").trim();
     const linkedReceivableIds = String(formData.get("linkedReceivableIds") ?? "")
       .split(",")
@@ -283,6 +287,15 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       return buildUploadTooLargeResponse(maxEvidenceUploadBytes);
     }
 
+    const statusDerivation = deriveEvidenceStatus({
+      evidence: {
+        label,
+        linkedReceivableIds,
+        scope,
+        source,
+      },
+      receivables: submission.receivables,
+    });
     const reservation = await reserveEvidenceUpload({ label, partnerAddress, submissionId, store });
 
     let evidence: SubmissionEvidence;
@@ -292,7 +305,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
         label,
         source,
         scope,
-        status,
+        status: statusDerivation.status,
         sealPolicyId,
         sealIdentity: resolveSubmissionFacilityObjectId(submission),
         linkedReceivableIds,
@@ -302,7 +315,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       throw error;
     }
 
-    const saved = await saveEvidenceRecord({ evidence, partnerAddress, submissionId, store });
+    const saved = await saveEvidenceRecord({
+      evidence,
+      partnerAddress,
+      submissionId,
+      store,
+    });
     if (isRobomataFacilityMonitoringEnabled()) {
       try {
         await getFacilityMonitoringStore().syncEvidenceObservations(saved);

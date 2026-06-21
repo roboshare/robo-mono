@@ -4,6 +4,7 @@ import {
   isRobomataWorkflowMutationEnabled,
   isRobomataWorkflowServerEnabled,
 } from "~~/lib/featureFlags";
+import { deriveSubmissionEvidenceStatuses } from "~~/lib/robomata/evidenceStatus";
 import { importReceivablesCsv } from "~~/lib/robomata/server/csv";
 import { getFacilityMonitoringStore } from "~~/lib/robomata/server/facilityMonitoringStore";
 import {
@@ -82,11 +83,22 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
 
     const receivables = importReceivablesCsv(await file.text());
     submission.receivables = receivables;
+    const evidenceStatusChanges = deriveSubmissionEvidenceStatuses(submission);
     invalidateSubmissionArtifacts(submission);
     addAuditEvent(submission, "receivables_imported", `Imported ${receivables.length} receivables from ${file.name}.`, {
       filename: file.name,
       receivableCount: receivables.length,
     });
+    if (evidenceStatusChanges.length > 0) {
+      addAuditEvent(
+        submission,
+        "evidence_updated",
+        `Updated ${evidenceStatusChanges.length} evidence status derivation(s) after receivables import.`,
+        {
+          evidenceStatusChangeCount: evidenceStatusChanges.length,
+        },
+      );
+    }
 
     const saved = await store.save(submission);
     if (isRobomataFacilityMonitoringEnabled()) {
