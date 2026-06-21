@@ -38,25 +38,40 @@ export function ReviewBoundaryPanel({ boundary }: ReviewBoundaryPanelProps) {
         </div>
         <span className="badge badge-ghost capitalize">{formatStatus(boundary?.reviewMode)}</span>
       </div>
-      <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
-        <div>Provider: {formatStatus(boundary?.provider)}</div>
-        <div>Status: {formatStatus(boundary?.providerStatus)}</div>
-        <div>Source of truth: {formatStatus(boundary?.sourceOfTruth)}</div>
-        <div>Model: {boundary?.model ?? "not configured"}</div>
-        <div>Prompt: {boundary?.promptVersion ?? "not recorded"}</div>
-        <div>Schema: {boundary?.outputSchemaVersion ?? "not recorded"}</div>
-        <div>Policy: {formatPolicyArtifact(boundary)}</div>
-        <div>Review input: {boundary?.reviewInputId ?? "not recorded"}</div>
-        <div>Input digest: {shortDigest(boundary?.inputDigest)}</div>
-        <div>Source data digest: {shortDigest(boundary?.sourceDataDigest)}</div>
-        <div>Provider input digest: {shortDigest(boundary?.providerInputDigest)}</div>
-        <div>Output digest: {shortDigest(boundary?.outputDigest)}</div>
-        <div>Provider input rows: {controls?.maxExceptionRows ?? "not recorded"}</div>
-        <div>Provider text cap: {controls?.maxTextLength ?? "not recorded"}</div>
-        <div>Raw evidence sent: {formatBooleanFlag(controls?.rawEvidenceIncluded)}</div>
-        <div>Secret material sent: {formatBooleanFlag(controls?.secretMaterialIncluded)}</div>
-        <div>Generated: {boundary?.generatedAt ? new Date(boundary.generatedAt).toLocaleString() : "not recorded"}</div>
+      <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
+        <div>
+          <span className="font-semibold text-base-content/80">Source of truth:</span>{" "}
+          {formatStatus(boundary?.sourceOfTruth)}
+        </div>
+        <div>
+          <span className="font-semibold text-base-content/80">Policy:</span> {formatPolicyArtifact(boundary)}
+        </div>
+        <div>
+          <span className="font-semibold text-base-content/80">Generated:</span>{" "}
+          {boundary?.generatedAt ? new Date(boundary.generatedAt).toLocaleString() : "not recorded"}
+        </div>
       </div>
+      <details className="mt-3 rounded-xl border border-base-300 bg-base-200/50 p-3">
+        <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">
+          Technical provenance
+        </summary>
+        <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+          <div>Provider: {formatStatus(boundary?.provider)}</div>
+          <div>Status: {formatStatus(boundary?.providerStatus)}</div>
+          <div>Model: {boundary?.model ?? "not configured"}</div>
+          <div>Prompt: {boundary?.promptVersion ?? "not recorded"}</div>
+          <div>Schema: {boundary?.outputSchemaVersion ?? "not recorded"}</div>
+          <div>Review input: {boundary?.reviewInputId ?? "not recorded"}</div>
+          <div>Input digest: {shortDigest(boundary?.inputDigest)}</div>
+          <div>Source data digest: {shortDigest(boundary?.sourceDataDigest)}</div>
+          <div>Provider input digest: {shortDigest(boundary?.providerInputDigest)}</div>
+          <div>Output digest: {shortDigest(boundary?.outputDigest)}</div>
+          <div>Provider input rows: {controls?.maxExceptionRows ?? "not recorded"}</div>
+          <div>Provider text cap: {controls?.maxTextLength ?? "not recorded"}</div>
+          <div>Raw evidence sent: {formatBooleanFlag(controls?.rawEvidenceIncluded)}</div>
+          <div>Secret material sent: {formatBooleanFlag(controls?.secretMaterialIncluded)}</div>
+        </div>
+      </details>
     </div>
   );
 }

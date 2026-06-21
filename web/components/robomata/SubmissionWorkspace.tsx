@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { type Hex, decodeEventLog, encodeFunctionData } from "viem";
 import { usePublicClient, useWriteContract } from "wagmi";
 import {
-  ArrowPathIcon,
   CheckCircleIcon,
   CloudArrowUpIcon,
   DocumentArrowUpIcon,
@@ -14,8 +13,6 @@ import {
   ShieldCheckIcon,
   TrashIcon,
 } from "@heroicons/react/24/outline";
-import { AgentSupervisionPanel } from "~~/components/robomata/AgentSupervisionPanel";
-import { FacilityMonitoringPanel } from "~~/components/robomata/FacilityMonitoringPanel";
 import { PacketSharePanel } from "~~/components/robomata/PacketSharePanel";
 import { OperatorPolicyReviewPanel } from "~~/components/robomata/PolicyReviewPanels";
 import { BorrowingBasePolicySummaryCard } from "~~/components/robomata/PolicyRulesPanel";
@@ -144,6 +141,7 @@ type WorkspaceProgressStatus = "ready" | "next" | "waiting";
 
 type WorkspaceChecklistStep = {
   actionLabel: string;
+  actionType: "commitEvidence" | "compute" | "navigate";
   description: string;
   href: string;
   label: string;
@@ -176,8 +174,17 @@ function workspaceProgressBadgeLabel(status: WorkspaceProgressStatus) {
   return "Waiting";
 }
 
-function WorkspaceProgressCard({ prominent = false, step }: { prominent?: boolean; step: WorkspaceChecklistStep }) {
+function WorkspaceProgressCard({
+  onAction,
+  prominent = false,
+  step,
+}: {
+  onAction?: () => void;
+  prominent?: boolean;
+  step: WorkspaceChecklistStep;
+}) {
   const isWaiting = step.status === "waiting";
+  const actionClass = `btn btn-sm mt-4 rounded-full ${step.status === "next" ? "btn-primary" : "btn-outline"}`;
 
   return (
     <div className={`rounded-2xl border ${prominent ? "p-5" : "p-4"} ${workspaceProgressCardClass(step.status)}`}>
@@ -192,11 +199,12 @@ function WorkspaceProgressCard({ prominent = false, step }: { prominent?: boolea
         <div className="mt-4 text-xs font-semibold uppercase tracking-[0.16em] text-base-content/45">
           {step.waitingLabel ?? "Complete the previous step"}
         </div>
+      ) : onAction ? (
+        <button className={actionClass} type="button" onClick={onAction}>
+          {step.actionLabel}
+        </button>
       ) : (
-        <a
-          className={`btn btn-sm mt-4 rounded-full ${step.status === "next" ? "btn-primary" : "btn-outline"}`}
-          href={step.href}
-        >
+        <a className={actionClass} href={step.href}>
           {step.actionLabel}
         </a>
       )}
@@ -299,6 +307,7 @@ function buildWorkspaceChecklist(submission: FacilitySubmission): WorkspaceCheck
   return [
     {
       actionLabel: hasReceivables ? "Review receivables" : "Import CSV",
+      actionType: "navigate",
       description: hasReceivables
         ? `${submission.receivables.length} receivables imported.`
         : "Import a receivables CSV before computing availability.",
@@ -308,6 +317,7 @@ function buildWorkspaceChecklist(submission: FacilitySubmission): WorkspaceCheck
     },
     {
       actionLabel: hasEvidence ? "Review evidence" : hasReceivables ? "Upload evidence" : "Import receivables first",
+      actionType: "navigate",
       description: hasEvidence
         ? `${submission.evidence.length} evidence packages attached.`
         : hasReceivables
@@ -324,12 +334,13 @@ function buildWorkspaceChecklist(submission: FacilitySubmission): WorkspaceCheck
     },
     {
       actionLabel: hasComputation ? "Review lender packet" : canCompute ? "Compute borrowing base" : prerequisiteAction,
+      actionType: hasComputation || !canCompute ? "navigate" : "compute",
       description: computedAt
         ? `Computed ${new Date(computedAt).toLocaleString()}.`
         : canCompute
           ? "Receivables and evidence are present. Compute availability next."
           : "Compute availability after receivables and evidence are present.",
-      href: hasComputation ? "#workspace-lender-packet" : canCompute ? "#workspace-overview" : prerequisiteHref,
+      href: hasComputation ? "#workspace-lender-packet" : canCompute ? "#workspace-progress" : prerequisiteHref,
       label: "Compute availability",
       status: hasComputation ? "ready" : canCompute ? "next" : "waiting",
       waitingLabel: !hasReceivables ? "Waiting for receivables import" : "Waiting for evidence upload",
@@ -342,12 +353,13 @@ function buildWorkspaceChecklist(submission: FacilitySubmission): WorkspaceCheck
         : canCompute
           ? "Compute first"
           : prerequisiteAction,
+      actionType: "navigate",
       description: hasComputation
         ? exceptionsResolved
           ? "No open exceptions remain."
           : `${openExceptions.length} open exceptions need operator action.`
         : "Exception status appears after computation.",
-      href: hasComputation ? "#workspace-exceptions" : canCompute ? "#workspace-overview" : prerequisiteHref,
+      href: hasComputation ? "#workspace-exceptions" : canCompute ? "#workspace-progress" : prerequisiteHref,
       label: "Resolve exceptions",
       status: exceptionsResolved ? "ready" : hasComputation ? "next" : "waiting",
       waitingLabel: "Waiting for computation",
@@ -362,6 +374,7 @@ function buildWorkspaceChecklist(submission: FacilitySubmission): WorkspaceCheck
           : canCompute
             ? "Compute first"
             : prerequisiteAction,
+      actionType: evidenceCommitted || !hasComputation || !exceptionsResolved ? "navigate" : "commitEvidence",
       description: evidenceCommitted
         ? "Evidence root is anchored for lender review."
         : hasComputation
@@ -376,7 +389,7 @@ function buildWorkspaceChecklist(submission: FacilitySubmission): WorkspaceCheck
             ? "#workspace-lender-packet"
             : "#workspace-exceptions"
           : canCompute
-            ? "#workspace-overview"
+            ? "#workspace-progress"
             : prerequisiteHref,
       label: "Anchor evidence",
       status: evidenceCommitted ? "ready" : hasComputation && exceptionsResolved ? "next" : "waiting",
@@ -394,6 +407,7 @@ function buildWorkspaceChecklist(submission: FacilitySubmission): WorkspaceCheck
             : canCompute
               ? "Compute first"
               : prerequisiteAction,
+      actionType: "navigate",
       description: tokenizationStarted
         ? `Tokenization status: ${submission.tokenization.status.replace(/_/g, " ")}.`
         : evidenceCommitted
@@ -408,7 +422,7 @@ function buildWorkspaceChecklist(submission: FacilitySubmission): WorkspaceCheck
               ? "#workspace-lender-packet"
               : "#workspace-exceptions"
             : canCompute
-              ? "#workspace-overview"
+              ? "#workspace-progress"
               : prerequisiteHref,
       label: "Robolend handoff",
       status: tokenizationStarted ? "ready" : evidenceCommitted ? "next" : "waiting",
@@ -729,6 +743,35 @@ export const SubmissionWorkspace = ({
       return;
     }
     await updateSubmission(`/api/robomata/submissions/${submission.id}/compute`, { method: "POST" });
+  };
+
+  const scrollToWorkspaceTarget = (targetId: string) => {
+    document.getElementById(targetId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const openReceivableEditor = (receivableId: string) => {
+    const receivable = submission?.receivables.find(item => item.id === receivableId);
+    if (!receivable) {
+      notification.error("Receivable row is no longer available.");
+      return;
+    }
+
+    setEditingReceivableId(receivable.id);
+    setDraftReceivable(receivable);
+    window.setTimeout(() => scrollToWorkspaceTarget("workspace-receivables"), 0);
+  };
+
+  const runWorkspaceStepAction = (step: WorkspaceChecklistStep) => {
+    if (step.actionType === "compute") {
+      void recompute();
+      return;
+    }
+    if (step.actionType === "commitEvidence") {
+      void commitEvidence();
+      return;
+    }
+
+    window.location.hash = step.href;
   };
 
   const deleteDraftSubmission = async () => {
@@ -1205,19 +1248,6 @@ export const SubmissionWorkspace = ({
                 </div>
               ) : (
                 <>
-                  <button
-                    className="btn btn-primary rounded-full"
-                    onClick={recompute}
-                    disabled={isBusy || !canComputeBorrowingBase}
-                    title={
-                      canComputeBorrowingBase
-                        ? "Compute borrowing base"
-                        : "Import receivables and upload evidence before computing"
-                    }
-                  >
-                    <ArrowPathIcon className="h-4 w-4" />
-                    Compute borrowing base
-                  </button>
                   {canDeleteDraft ? (
                     <button
                       className="btn btn-outline rounded-full text-error hover:border-error hover:bg-error/10"
@@ -1245,11 +1275,13 @@ export const SubmissionWorkspace = ({
 
           <div className="xl:w-[360px]">
             {summaryCards.length > 0 ? (
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid min-w-0 gap-3 sm:grid-cols-2">
                 {summaryCards.map(card => (
-                  <div key={card.label} className="rounded-2xl border border-base-300 bg-base-200/60 p-4">
+                  <div key={card.label} className="min-w-0 rounded-2xl border border-base-300 bg-base-200/60 p-4">
                     <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">{card.label}</div>
-                    <div className="mt-2 text-2xl font-bold text-base-content">{card.value}</div>
+                    <div className="mt-2 min-w-0 break-words text-[clamp(1.1rem,2vw,1.5rem)] font-bold leading-tight text-base-content [overflow-wrap:anywhere]">
+                      {card.value}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1260,14 +1292,25 @@ export const SubmissionWorkspace = ({
         </div>
       </section>
 
-      <section className="rounded-[2rem] border border-base-300 bg-base-100 p-5 shadow-lg shadow-base-300/30 sm:p-6">
+      <section
+        id="workspace-progress"
+        className="scroll-mt-24 rounded-[2rem] border border-base-300 bg-base-100 p-5 shadow-lg shadow-base-300/30 sm:p-6"
+      >
         <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
           <CheckCircleIcon className="h-4 w-4" />
           Workspace progress
         </div>
         {nextWorkspaceStep ? (
           <div className="mt-4">
-            <WorkspaceProgressCard step={nextWorkspaceStep} prominent />
+            <WorkspaceProgressCard
+              step={nextWorkspaceStep}
+              prominent
+              onAction={
+                nextWorkspaceStep.actionType === "compute" || nextWorkspaceStep.actionType === "commitEvidence"
+                  ? () => runWorkspaceStepAction(nextWorkspaceStep)
+                  : undefined
+              }
+            />
           </div>
         ) : null}
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -1759,18 +1802,98 @@ export const SubmissionWorkspace = ({
               </div>
             ) : (
               <div className="mt-4 space-y-3">
-                {submission.exceptions.map(exception => (
-                  <div key={exception.id} className="rounded-[1.5rem] border border-base-300 bg-base-200/50 p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="font-semibold text-base-content">{exception.title}</div>
-                        <div className="mt-2 text-sm text-base-content/70">{exception.message}</div>
-                        <div className="mt-2 text-sm font-medium text-base-content">{exception.nextAction}</div>
+                {submission.exceptions.map(exception => {
+                  const relatedReceivable = submission.receivables.find(item => item.id === exception.itemId);
+                  const relatedEvidence = submission.evidence.find(item => item.id === exception.itemId);
+                  const isOpen = exception.actionStatus === "open";
+
+                  return (
+                    <div key={exception.id} className="rounded-[1.5rem] border border-base-300 bg-base-200/50 p-4">
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="font-semibold text-base-content">{exception.title}</div>
+                            <span
+                              className={`badge badge-sm capitalize ${
+                                exception.severity === "high"
+                                  ? "badge-error"
+                                  : exception.severity === "medium"
+                                    ? "badge-warning"
+                                    : "badge-ghost"
+                              }`}
+                            >
+                              {exception.severity}
+                            </span>
+                          </div>
+                          <div className="mt-2 text-sm text-base-content/70">{exception.message}</div>
+                          <div className="mt-2 text-sm font-medium text-base-content">{exception.nextAction}</div>
+                          <div className="mt-3 text-xs uppercase tracking-[0.14em] text-base-content/45">
+                            {exception.kind}
+                            {exception.itemId ? ` · ${exception.itemId}` : ""}
+                          </div>
+                        </div>
+                        <span className="badge badge-warning shrink-0 capitalize">{exception.actionStatus}</span>
                       </div>
-                      <span className="badge badge-warning capitalize">{exception.actionStatus}</span>
+                      {canMutate && isOpen ? (
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {exception.kind === "receivable" && relatedReceivable ? (
+                            <>
+                              <button
+                                className="btn btn-outline btn-sm rounded-full"
+                                type="button"
+                                onClick={() => openReceivableEditor(relatedReceivable.id)}
+                              >
+                                Edit receivable
+                              </button>
+                              <button
+                                className="btn btn-outline btn-sm rounded-full"
+                                type="button"
+                                disabled={isBusy || relatedReceivable.excluded}
+                                onClick={() =>
+                                  patchSubmission({
+                                    action: "excludeReceivable",
+                                    receivableId: relatedReceivable.id,
+                                    excluded: true,
+                                  })
+                                }
+                              >
+                                {relatedReceivable.excluded ? "Excluded" : "Exclude receivable"}
+                              </button>
+                              <a className="btn btn-ghost btn-sm rounded-full" href="#workspace-evidence-upload">
+                                Upload supporting evidence
+                              </a>
+                            </>
+                          ) : null}
+                          {exception.kind === "evidence" ? (
+                            <>
+                              <a className="btn btn-outline btn-sm rounded-full" href="#workspace-evidence-upload">
+                                Upload corrected evidence
+                              </a>
+                              {relatedEvidence ? (
+                                <button
+                                  className="btn btn-ghost btn-sm rounded-full text-error"
+                                  type="button"
+                                  disabled={isBusy}
+                                  onClick={() => removeEvidencePackage(relatedEvidence.id, relatedEvidence.label)}
+                                >
+                                  Remove current package
+                                </button>
+                              ) : null}
+                            </>
+                          ) : null}
+                          <button
+                            className="btn btn-primary btn-sm rounded-full"
+                            type="button"
+                            onClick={recompute}
+                            disabled={isBusy || !canComputeBorrowingBase}
+                          >
+                            Recompute availability
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </section>
@@ -1904,20 +2027,37 @@ export const SubmissionWorkspace = ({
         ) : null}
 
         {!readOnly && submission.computation ? (
-          <>
-            <FacilityMonitoringPanel
-              chainId={selectedNetwork.id}
-              getAuthHeaders={getAuthHeaders}
-              signerAddress={signerAddress}
-              submission={submission}
-            />
-            <AgentSupervisionPanel
-              chainId={selectedNetwork.id}
-              getAuthHeaders={getAuthHeaders}
-              signerAddress={signerAddress}
-              submission={submission}
-            />
-          </>
+          <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
+                  <ShieldCheckIcon className="h-4 w-4" />
+                  Monitoring and diagnostics
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span className="badge badge-ghost capitalize">
+                    Monitoring: {submission.facilityMonitoring?.status?.replace(/_/g, " ") ?? "not loaded"}
+                  </span>
+                  <span className="badge badge-ghost capitalize">
+                    Packet: {submission.facilityMonitoring?.packetFreshnessStatus?.replace(/_/g, " ") ?? "pending"}
+                  </span>
+                  <span className="badge badge-ghost capitalize">
+                    Evidence anchor: {submission.evidenceCommit.status.replace(/_/g, " ")}
+                  </span>
+                </div>
+                <p className="mt-3 max-w-3xl text-sm leading-relaxed text-base-content/70">
+                  Monitoring, run history, policy diagnostics, evidence observations, and agent supervision live in a
+                  separate Robomata view so this workspace stays focused on operator execution.
+                </p>
+              </div>
+              <Link
+                href={`/robomata/submissions/${submission.id}/monitoring`}
+                className="btn btn-outline shrink-0 rounded-full"
+              >
+                View monitoring details
+              </Link>
+            </div>
+          </section>
         ) : null}
 
         {submission.computation ? (
