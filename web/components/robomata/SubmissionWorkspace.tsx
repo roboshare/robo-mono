@@ -1275,8 +1275,8 @@ export const SubmissionWorkspace = ({
         id="workspace-overview"
         className="min-w-0 max-w-full scroll-mt-24 overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 p-4 shadow-lg shadow-base-300/30 sm:p-8"
       >
-        <div className="flex min-w-0 flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
-          <div className="min-w-0 max-w-3xl">
+        <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(500px,540px)] xl:items-start">
+          <div className="min-w-0">
             <p className="break-words text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
               {sectionTitle(readOnly)}
             </p>
@@ -1328,11 +1328,14 @@ export const SubmissionWorkspace = ({
             ) : null}
           </div>
 
-          <div className="min-w-0 max-w-full xl:w-[420px]">
+          <div className="min-w-0 max-w-full">
             {summaryCards.length > 0 ? (
-              <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+              <div className="grid min-w-0 gap-3 sm:grid-cols-[repeat(2,minmax(0,1fr))]">
                 {summaryCards.map(card => (
-                  <div key={card.label} className="min-w-0 rounded-2xl border border-base-300 bg-base-200/60 p-4">
+                  <div
+                    key={card.label}
+                    className="min-w-0 rounded-2xl border border-base-300 bg-base-200/60 p-4 sm:min-w-60"
+                  >
                     <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">{card.label}</div>
                     <div className="mt-2 min-w-0 break-words text-[clamp(1.05rem,1.7vw,1.5rem)] font-bold leading-tight text-base-content tabular-nums [overflow-wrap:anywhere] sm:whitespace-nowrap sm:break-normal sm:[overflow-wrap:normal]">
                       {card.value}
