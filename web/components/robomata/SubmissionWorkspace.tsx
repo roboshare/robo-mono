@@ -166,7 +166,7 @@ function workspaceProgressCardClass(status: WorkspaceProgressStatus) {
 
 function workspaceProgressBadgeClass(status: WorkspaceProgressStatus) {
   if (status === "ready") return "badge-success";
-  if (status === "next") return "badge-primary";
+  if (status === "next") return "border-primary/30 bg-primary/10 text-primary shadow-none";
   return "badge-ghost";
 }
 
@@ -1602,6 +1602,9 @@ export const SubmissionWorkspace = ({
                     Attach policy support for the receivables file, such as insurance schedules, title and lien files,
                     servicing reports, utilization exports, or lockbox mapping.
                   </p>
+                  <p className={`mt-2 min-w-0 max-w-full ${evidenceHelperTextClass}`}>
+                    Evidence status is derived after upload from the active policy and imported receivable data.
+                  </p>
                   <div className="mt-4 grid w-full min-w-0 max-w-full gap-4 lg:grid-cols-2 lg:items-start">
                     <div className="grid min-w-0 max-w-full gap-3">
                       <div className="form-control min-w-0 max-w-full">
@@ -1641,19 +1644,6 @@ export const SubmissionWorkspace = ({
                       <label className="form-control min-w-0 max-w-full">
                         <span className="label pb-1 pt-0">
                           <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
-                            Source
-                          </span>
-                        </span>
-                        <input
-                          name="source"
-                          className="input input-bordered h-11 w-full !min-w-0 max-w-full rounded-xl px-4 text-sm"
-                          placeholder="e.g. authorized broker export or servicing system"
-                          required
-                        />
-                      </label>
-                      <label className="form-control min-w-0 max-w-full">
-                        <span className="label pb-1 pt-0">
-                          <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
                             Evidence type
                           </span>
                         </span>
@@ -1664,11 +1654,21 @@ export const SubmissionWorkspace = ({
                           required
                         />
                       </label>
-                      <p className={`min-w-0 max-w-full ${evidenceHelperTextClass}`}>
-                        Evidence status is derived after upload from the active policy and imported receivable data.
-                      </p>
                     </div>
                     <div className="grid min-w-0 max-w-full gap-3">
+                      <label className="form-control min-w-0 max-w-full">
+                        <span className="label pb-1 pt-0">
+                          <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
+                            Source
+                          </span>
+                        </span>
+                        <input
+                          name="source"
+                          className="input input-bordered h-11 w-full !min-w-0 max-w-full rounded-xl px-4 text-sm"
+                          placeholder="e.g. authorized broker export or servicing system"
+                          required
+                        />
+                      </label>
                       <label className="form-control min-w-0 max-w-full">
                         <span className="label pb-1 pt-0">
                           <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
@@ -1690,11 +1690,18 @@ export const SubmissionWorkspace = ({
                           Controls which reviewer role can access the committed evidence metadata.
                         </p>
                       </label>
-                      <input
-                        name="linkedReceivableIds"
-                        className="input input-bordered h-11 w-full !min-w-0 max-w-full rounded-xl px-4 text-sm"
-                        placeholder="Related receivable IDs, e.g. AR-1007, AR-1011"
-                      />
+                      <label className="form-control min-w-0 max-w-full">
+                        <span className="label pb-1 pt-0">
+                          <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
+                            Related receivable IDs
+                          </span>
+                        </span>
+                        <input
+                          name="linkedReceivableIds"
+                          className="input input-bordered h-11 w-full !min-w-0 max-w-full rounded-xl px-4 text-sm"
+                          placeholder="e.g. AR-1007, AR-1011"
+                        />
+                      </label>
                     </div>
                   </div>
                   <div className="mt-4 min-w-0 max-w-full rounded-2xl border border-dashed border-base-300 bg-base-100/70 p-4">
