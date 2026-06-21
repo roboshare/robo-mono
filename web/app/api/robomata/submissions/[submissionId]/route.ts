@@ -314,8 +314,7 @@ export async function DELETE(request: NextRequest, context: { params: Promise<{ 
     if (!canDeleteDraftFacilitySubmission(submission)) {
       return NextResponse.json(
         {
-          error:
-            "Facility packages with committed evidence, facility artifacts, or tokenization activity cannot be deleted.",
+          error: "Only draft facility packages without evidence commit or tokenization activity can be deleted.",
         },
         { status: 409 },
       );
