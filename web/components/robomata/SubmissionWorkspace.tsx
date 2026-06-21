@@ -1602,107 +1602,100 @@ export const SubmissionWorkspace = ({
                     Attach policy support for the receivables file, such as insurance schedules, title and lien files,
                     servicing reports, utilization exports, or lockbox mapping.
                   </p>
-                  <p className={`mt-2 min-w-0 max-w-full ${evidenceHelperTextClass}`}>
-                    Evidence status is derived after upload from the active policy and imported receivable data.
-                  </p>
-                  <div className="mt-4 grid w-full min-w-0 max-w-full gap-4 lg:grid-cols-2 lg:items-start">
-                    <div className="grid min-w-0 max-w-full gap-3">
-                      <div className="form-control min-w-0 max-w-full">
-                        <span className="label pb-1 pt-0">
-                          <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
-                            Evidence file
-                          </span>
+                  <div className="mt-4 grid w-full min-w-0 max-w-full gap-3 lg:grid-cols-2 lg:gap-x-4 lg:gap-y-3">
+                    <div className="form-control min-w-0 max-w-full lg:col-start-1 lg:row-start-1">
+                      <span className="label pb-1 pt-0">
+                        <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
+                          Evidence file
                         </span>
-                        <label className="flex w-full min-w-0 max-w-full cursor-pointer items-center gap-2 overflow-hidden rounded-xl border border-base-300 bg-base-100 p-2 text-sm text-base-content/70">
-                          <input
-                            name="file"
-                            type="file"
-                            className="peer sr-only"
-                            onChange={event => setSelectedEvidenceFilename(event.target.files?.[0]?.name ?? null)}
-                          />
-                          <span className="shrink-0 rounded-lg bg-base-200 px-3 py-2 font-semibold text-base-content peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-primary">
-                            Choose file
-                          </span>
-                          <span className="min-w-0 flex-1 truncate">
-                            {selectedEvidenceFilename ?? "Attach evidence file"}
-                          </span>
-                        </label>
-                      </div>
-                      <label className="form-control min-w-0 max-w-full">
-                        <span className="label pb-1 pt-0">
-                          <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
-                            Package name
-                          </span>
-                        </span>
+                      </span>
+                      <label className="flex w-full min-w-0 max-w-full cursor-pointer items-center gap-2 overflow-hidden rounded-xl border border-base-300 bg-base-100 p-2 text-sm text-base-content/70">
                         <input
-                          name="label"
-                          className="input input-bordered h-11 w-full !min-w-0 max-w-full rounded-xl px-4 text-sm"
-                          placeholder="e.g. June insurance schedule"
-                          required
+                          name="file"
+                          type="file"
+                          className="peer sr-only"
+                          onChange={event => setSelectedEvidenceFilename(event.target.files?.[0]?.name ?? null)}
                         />
-                      </label>
-                      <label className="form-control min-w-0 max-w-full">
-                        <span className="label pb-1 pt-0">
-                          <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
-                            Evidence type
-                          </span>
+                        <span className="shrink-0 rounded-lg bg-base-200 px-3 py-2 font-semibold text-base-content peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-primary">
+                          Choose file
                         </span>
-                        <input
-                          name="scope"
-                          className="input input-bordered h-11 w-full !min-w-0 max-w-full rounded-xl px-4 text-sm"
-                          placeholder="e.g. Insurance, Title, Servicing, Lockbox"
-                          required
-                        />
+                        <span className="min-w-0 flex-1 truncate">
+                          {selectedEvidenceFilename ?? "Attach evidence file"}
+                        </span>
                       </label>
                     </div>
-                    <div className="grid min-w-0 max-w-full gap-3">
-                      <label className="form-control min-w-0 max-w-full">
-                        <span className="label pb-1 pt-0">
-                          <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
-                            Source
-                          </span>
+                    <label className="form-control min-w-0 max-w-full lg:col-start-2 lg:row-start-1">
+                      <span className="label pb-1 pt-0">
+                        <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
+                          Access policy
                         </span>
-                        <input
-                          name="source"
-                          className="input input-bordered h-11 w-full !min-w-0 max-w-full rounded-xl px-4 text-sm"
-                          placeholder="e.g. authorized broker export or servicing system"
-                          required
-                        />
-                      </label>
-                      <label className="form-control min-w-0 max-w-full">
-                        <span className="label pb-1 pt-0">
-                          <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
-                            Access policy
-                          </span>
+                      </span>
+                      <select
+                        name="sealPolicyId"
+                        className="select select-bordered h-11 w-full !min-w-0 max-w-full rounded-xl px-4 text-sm"
+                        defaultValue={evidenceSealPolicyOptions[0].value}
+                      >
+                        {evidenceSealPolicyOptions.map(option => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-1 min-w-0 max-w-full text-xs leading-snug text-base-content/60">
+                        Controls which reviewer role can access the committed evidence metadata.
+                      </p>
+                    </label>
+                    <label className="form-control min-w-0 max-w-full lg:col-start-1 lg:row-start-2">
+                      <span className="label pb-1 pt-0">
+                        <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
+                          Package name
                         </span>
-                        <select
-                          name="sealPolicyId"
-                          className="select select-bordered h-11 w-full !min-w-0 max-w-full rounded-xl px-4 text-sm"
-                          defaultValue={evidenceSealPolicyOptions[0].value}
-                        >
-                          {evidenceSealPolicyOptions.map(option => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                        <p className={`mt-1 min-w-0 max-w-full ${evidenceHelperTextClass}`}>
-                          Controls which reviewer role can access the committed evidence metadata.
-                        </p>
-                      </label>
-                      <label className="form-control min-w-0 max-w-full">
-                        <span className="label pb-1 pt-0">
-                          <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
-                            Related receivable IDs
-                          </span>
+                      </span>
+                      <input
+                        name="label"
+                        className="input input-bordered h-11 w-full !min-w-0 max-w-full rounded-xl px-4 text-sm"
+                        placeholder="e.g. June insurance schedule"
+                        required
+                      />
+                    </label>
+                    <label className="form-control min-w-0 max-w-full lg:col-start-1 lg:row-start-3">
+                      <span className="label pb-1 pt-0">
+                        <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
+                          Evidence type
                         </span>
-                        <input
-                          name="linkedReceivableIds"
-                          className="input input-bordered h-11 w-full !min-w-0 max-w-full rounded-xl px-4 text-sm"
-                          placeholder="e.g. AR-1007, AR-1011"
-                        />
-                      </label>
-                    </div>
+                      </span>
+                      <input
+                        name="scope"
+                        className="input input-bordered h-11 w-full !min-w-0 max-w-full rounded-xl px-4 text-sm"
+                        placeholder="e.g. Insurance, Title, Servicing, Lockbox"
+                        required
+                      />
+                    </label>
+                    <label className="form-control min-w-0 max-w-full lg:col-start-2 lg:row-start-2">
+                      <span className="label pb-1 pt-0">
+                        <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
+                          Source
+                        </span>
+                      </span>
+                      <input
+                        name="source"
+                        className="input input-bordered h-11 w-full !min-w-0 max-w-full rounded-xl px-4 text-sm"
+                        placeholder="e.g. authorized broker export or servicing system"
+                        required
+                      />
+                    </label>
+                    <label className="form-control min-w-0 max-w-full lg:col-start-2 lg:row-start-3">
+                      <span className="label pb-1 pt-0">
+                        <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
+                          Related receivable IDs
+                        </span>
+                      </span>
+                      <input
+                        name="linkedReceivableIds"
+                        className="input input-bordered h-11 w-full !min-w-0 max-w-full rounded-xl px-4 text-sm"
+                        placeholder="e.g. AR-1007, AR-1011"
+                      />
+                    </label>
                   </div>
                   <div className="mt-4 min-w-0 max-w-full rounded-2xl border border-dashed border-base-300 bg-base-100/70 p-4">
                     <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
@@ -1727,17 +1720,17 @@ export const SubmissionWorkspace = ({
                       />
                     </div>
                   </div>
-                  <div className="mt-4 grid w-full min-w-0 max-w-full lg:grid-cols-2">
-                    <div className="hidden lg:block" />
-                    <div className="min-w-0 max-w-full">
-                      <button
-                        className="btn btn-primary w-full !min-w-0 max-w-full rounded-full px-3 text-sm"
-                        type="submit"
-                        disabled={isBusy}
-                      >
-                        Upload evidence
-                      </button>
-                    </div>
+                  <div className="mt-4 grid w-full min-w-0 max-w-full gap-3 lg:grid-cols-2 lg:items-center">
+                    <p className={`min-w-0 max-w-full ${evidenceHelperTextClass}`}>
+                      Evidence status is derived after upload from the active policy and imported receivable data.
+                    </p>
+                    <button
+                      className="btn btn-primary w-full !min-w-0 max-w-full rounded-full px-3 text-sm"
+                      type="submit"
+                      disabled={isBusy}
+                    >
+                      Upload evidence
+                    </button>
                   </div>
                 </form>
               </section>
