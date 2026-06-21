@@ -3,6 +3,7 @@ import type { BorrowingBaseResult } from "~~/lib/robomata/borrowingBase";
 import {
   GOOGLE_GEMINI_API_KEY_ENV,
   generateGoogleGeminiContent,
+  isGoogleGeminiRateLimitError,
   jsonTextFromProviderOutput,
 } from "~~/lib/robomata/googleGemini";
 
@@ -17,6 +18,7 @@ export type AgentReviewProviderStatus =
   | "deterministic_mock"
   | "live_completed"
   | "live_error_fallback"
+  | "rate_limited_fallback"
   | "stubbed_pending_controls";
 
 export type AgentReviewInput = {
@@ -691,17 +693,20 @@ async function reviewWithGoogle(result: AgentReviewInput, fallback: AgentReview)
       throw error;
     }
   } catch (error) {
-    void error;
+    const providerStatus: AgentReviewProviderStatus = isGoogleGeminiRateLimitError(error)
+      ? "rate_limited_fallback"
+      : "live_error_fallback";
+    const providerFailureReason = providerStatus === "rate_limited_fallback" ? "was rate-limited" : "failed";
     const errorFallback = await buildMockReview(
       result,
-      reviewBoundaryInput("google", "live_error_fallback", "deterministic_fallback", model),
+      reviewBoundaryInput("google", providerStatus, "deterministic_fallback", model),
     );
     return buildReview(
       result,
-      reviewBoundaryInput("google", "live_error_fallback", "deterministic_fallback", model),
+      reviewBoundaryInput("google", providerStatus, "deterministic_fallback", model),
       {
         ...reviewContent(errorFallback),
-        memo: `${fallback.memo} Live google review failed, so the review used deterministic fallback output.`,
+        memo: `${fallback.memo} Live google review ${providerFailureReason}, so the review used deterministic fallback output.`,
       },
       reviewOptions,
     );

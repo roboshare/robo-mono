@@ -11,7 +11,9 @@ type GoogleGeminiResponseBody = {
     content?: GoogleGeminiContent;
   }[];
   error?: {
+    code?: number;
     message?: string;
+    status?: string;
   };
 };
 
@@ -25,6 +27,22 @@ type GenerateGoogleGeminiContentInput = {
 
 export const GOOGLE_GEMINI_API_KEY_ENV = "GOOGLE_GENERATIVE_AI_API_KEY";
 export const GOOGLE_GEMINI_GENERATE_CONTENT_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
+
+export class GoogleGeminiApiError extends Error {
+  readonly providerStatus?: string;
+  readonly statusCode: number;
+
+  constructor(message: string, statusCode: number, providerStatus?: string) {
+    super(message);
+    this.name = "GoogleGeminiApiError";
+    this.providerStatus = providerStatus;
+    this.statusCode = statusCode;
+  }
+}
+
+export function isGoogleGeminiRateLimitError(error: unknown): error is GoogleGeminiApiError {
+  return error instanceof GoogleGeminiApiError && error.statusCode === 429;
+}
 
 function normalizedGeminiModel(model: string): string {
   const trimmed = model.trim();
@@ -79,7 +97,13 @@ export async function generateGoogleGeminiContent(input: GenerateGoogleGeminiCon
       signal: controller.signal,
     });
     const body = (await response.json().catch(() => ({}))) as GoogleGeminiResponseBody;
-    if (!response.ok) throw new Error(body.error?.message ?? `Google Gemini request failed with ${response.status}.`);
+    if (!response.ok) {
+      throw new GoogleGeminiApiError(
+        body.error?.message ?? `Google Gemini request failed with ${response.status}.`,
+        response.status,
+        body.error?.status,
+      );
+    }
 
     const outputText = outputTextFromGoogleGeminiResponse(body);
     if (!outputText) throw new Error("Google Gemini response did not include output text.");

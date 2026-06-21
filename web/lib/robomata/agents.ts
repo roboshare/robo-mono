@@ -42,6 +42,7 @@ export type RobomataAgentPlannerStatus =
   | "configured_without_model"
   | "live_completed"
   | "live_error_fallback"
+  | "rate_limited_fallback"
   | "rules_engine"
   | "stubbed_pending_controls";
 
