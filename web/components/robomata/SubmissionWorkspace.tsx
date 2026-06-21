@@ -32,6 +32,7 @@ import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
 import { isRobomataTokenizationClientEnabled } from "~~/lib/featureFlags";
 import { formatPercentFromBps, formatUsd } from "~~/lib/robomata/borrowingBase";
 import { resolveRobomataFacilityPolicyArtifact } from "~~/lib/robomata/policyRules";
+import { evictSubmissionFromSubmissionIndexCache, submissionIndexCacheKey } from "~~/lib/robomata/submissionIndexCache";
 import {
   type FacilitySubmission,
   type SubmissionComputation,
@@ -108,6 +109,19 @@ const facilityRegistryWriteAbi = [
       { name: "assetValue", type: "uint256", indexed: false },
       { name: "supply", type: "uint256", indexed: false },
     ],
+  },
+] as const;
+
+const evidenceSealPolicyOptions = [
+  {
+    description: "Standard lender and auditor access for most packet evidence.",
+    label: "Lender and auditor access",
+    value: "seal://policy/lender-auditor-read",
+  },
+  {
+    description: "Use for source exports that should expose only redacted fields to lenders.",
+    label: "Operations redacted access",
+    value: "seal://policy/ops-lender-redacted",
   },
 ] as const;
 
@@ -235,6 +249,10 @@ export const SubmissionWorkspace = ({
     submission && submission.receivables.length > 0 && submission.evidence.length > 0,
   );
   const canDeleteDraft = Boolean(submission && canMutate && canDeleteDraftFacilitySubmission(submission));
+  const submissionCacheKey = useMemo(
+    () => submissionIndexCacheKey(partnerAuthAddress, selectedNetwork.id),
+    [partnerAuthAddress, selectedNetwork.id],
+  );
   const canRetryPendingOperatorCommit = Boolean(
     submission &&
       pendingOperatorCommit?.submissionId === submission.id &&
@@ -373,7 +391,9 @@ export const SubmissionWorkspace = ({
 
     const form = event.currentTarget;
     const formData = new FormData(form);
-    formData.set("sealPolicyId", "seal://policy/lender-auditor-read");
+    if (!String(formData.get("sealPolicyId") ?? "").trim()) {
+      formData.set("sealPolicyId", evidenceSealPolicyOptions[0].value);
+    }
     const uploadedFile = formData.get("file");
     if (!(uploadedFile instanceof File) || uploadedFile.size === 0) {
       if (!evidenceText.trim()) {
@@ -430,6 +450,7 @@ export const SubmissionWorkspace = ({
       }
 
       notification.success("Draft facility package deleted.");
+      evictSubmissionFromSubmissionIndexCache(submissionCacheKey, submission.id);
       router.push("/robomata/submissions");
       router.refresh();
     } catch (error) {
@@ -991,6 +1012,29 @@ export const SubmissionWorkspace = ({
                     <option value="verified">Verified - usable for borrowing base</option>
                     <option value="exception">Exception - incomplete or stale</option>
                   </select>
+                  <label className="form-control">
+                    <span className="label pb-1 pt-0">
+                      <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
+                        Access policy
+                      </span>
+                    </span>
+                    <select
+                      name="sealPolicyId"
+                      className="select select-bordered h-11 w-full rounded-xl px-4 text-sm"
+                      defaultValue={evidenceSealPolicyOptions[0].value}
+                    >
+                      {evidenceSealPolicyOptions.map(option => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="label pt-1">
+                      <span className="label-text-alt text-base-content/60">
+                        Controls which reviewer role can access the committed evidence metadata.
+                      </span>
+                    </span>
+                  </label>
                   <input
                     name="linkedReceivableIds"
                     className="input input-bordered h-11 w-full rounded-xl px-4 text-sm"
