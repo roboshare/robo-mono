@@ -140,11 +140,39 @@ type PendingOperatorCommit = {
   walletName: string;
 };
 
+type WorkspaceProgressStatus = "ready" | "next" | "waiting";
+
+type WorkspaceChecklistStep = {
+  actionLabel: string;
+  description: string;
+  href: string;
+  label: string;
+  status: WorkspaceProgressStatus;
+};
+
 function statusClass(status: FacilitySubmission["status"]) {
   if (status === "committed") return "badge-success";
   if (status === "ready_for_lender") return "badge-info";
   if (status === "needs_review") return "badge-warning";
   return "badge-ghost";
+}
+
+function workspaceProgressCardClass(status: WorkspaceProgressStatus) {
+  if (status === "ready") return "border-success/30 bg-success/10";
+  if (status === "next") return "border-primary/40 bg-primary/5";
+  return "border-base-300 bg-base-200/40";
+}
+
+function workspaceProgressBadgeClass(status: WorkspaceProgressStatus) {
+  if (status === "ready") return "badge-success";
+  if (status === "next") return "badge-primary";
+  return "badge-ghost";
+}
+
+function workspaceProgressBadgeLabel(status: WorkspaceProgressStatus) {
+  if (status === "ready") return "Ready";
+  if (status === "next") return "Next";
+  return "Waiting";
 }
 
 function sectionTitle(readOnly: boolean) {
@@ -218,15 +246,22 @@ function submissionMutabilityLockReason(submission: FacilitySubmission | null) {
   return null;
 }
 
-function buildWorkspaceChecklist(submission: FacilitySubmission) {
+function buildWorkspaceChecklist(submission: FacilitySubmission): WorkspaceChecklistStep[] {
   const openExceptions = submission.exceptions.filter(exception => exception.actionStatus === "open");
   const exceptionsResolved = Boolean(submission.computation && openExceptions.length === 0);
   const evidenceCommitted = submission.evidenceCommit.status === "committed";
   const tokenizationStarted = submission.tokenization.status !== "not_started";
   const hasReceivables = submission.receivables.length > 0;
   const hasEvidence = submission.evidence.length > 0;
+  const canCompute = hasReceivables && hasEvidence;
   const computedAt = submission.computation?.computedAt;
   const hasComputation = Boolean(computedAt);
+  const prerequisiteAction = !hasReceivables
+    ? "Import receivables first"
+    : !hasEvidence
+      ? "Upload evidence first"
+      : "Finish prerequisites";
+  const prerequisiteHref = "#workspace-import";
 
   return [
     {
@@ -234,60 +269,108 @@ function buildWorkspaceChecklist(submission: FacilitySubmission) {
       description: hasReceivables
         ? `${submission.receivables.length} receivables imported.`
         : "Import a receivables CSV before computing availability.",
-      done: hasReceivables,
       href: hasReceivables ? "#workspace-receivables" : "#workspace-import",
       label: "Import receivables",
+      status: hasReceivables ? "ready" : "next",
     },
     {
-      actionLabel: hasEvidence ? "Review evidence" : "Upload evidence",
+      actionLabel: hasEvidence ? "Review evidence" : hasReceivables ? "Upload evidence" : "Import receivables first",
       description: hasEvidence
         ? `${submission.evidence.length} evidence packages attached.`
-        : "Attach insurance, servicing, title, lockbox, or other policy evidence.",
-      done: hasEvidence,
+        : hasReceivables
+          ? "Attach insurance, servicing, title, lockbox, or other policy evidence."
+          : "Evidence upload is available after receivables are imported.",
       href: hasEvidence ? "#workspace-evidence-library" : "#workspace-import",
       label: "Attach evidence",
+      status: hasEvidence ? "ready" : hasReceivables ? "next" : "waiting",
     },
     {
-      actionLabel: hasComputation ? "Review lender packet" : "Compute borrowing base",
+      actionLabel: hasComputation ? "Review lender packet" : canCompute ? "Compute borrowing base" : prerequisiteAction,
       description: computedAt
         ? `Computed ${new Date(computedAt).toLocaleString()}.`
-        : "Compute the borrowing base after receivables and evidence are present.",
-      done: hasComputation,
-      href: hasComputation ? "#workspace-lender-packet" : "#workspace-overview",
+        : canCompute
+          ? "Receivables and evidence are present. Compute availability next."
+          : "Compute availability after receivables and evidence are present.",
+      href: hasComputation ? "#workspace-lender-packet" : canCompute ? "#workspace-overview" : prerequisiteHref,
       label: "Compute availability",
+      status: hasComputation ? "ready" : canCompute ? "next" : "waiting",
     },
     {
-      actionLabel: hasComputation ? (exceptionsResolved ? "Review exceptions" : "Resolve exceptions") : "Compute first",
+      actionLabel: hasComputation
+        ? exceptionsResolved
+          ? "Review exceptions"
+          : "Resolve exceptions"
+        : canCompute
+          ? "Compute first"
+          : prerequisiteAction,
       description: hasComputation
         ? exceptionsResolved
           ? "No open exceptions remain."
           : `${openExceptions.length} open exceptions need operator action.`
         : "Exception status appears after computation.",
-      done: exceptionsResolved,
-      href: hasComputation ? "#workspace-exceptions" : "#workspace-overview",
+      href: hasComputation ? "#workspace-exceptions" : canCompute ? "#workspace-overview" : prerequisiteHref,
       label: "Resolve exceptions",
+      status: exceptionsResolved ? "ready" : hasComputation ? "next" : "waiting",
     },
     {
-      actionLabel: evidenceCommitted ? "Review verification" : "Anchor evidence",
+      actionLabel: evidenceCommitted
+        ? "Review verification"
+        : hasComputation
+          ? exceptionsResolved
+            ? "Anchor evidence"
+            : "Resolve exceptions first"
+          : canCompute
+            ? "Compute first"
+            : prerequisiteAction,
       description: evidenceCommitted
         ? "Evidence root is anchored for lender review."
-        : "Anchor evidence after the packet is clean enough to share.",
-      done: evidenceCommitted,
-      href: hasComputation ? "#workspace-lender-packet" : "#workspace-overview",
+        : hasComputation
+          ? exceptionsResolved
+            ? "Anchor evidence after the packet is clean enough to share."
+            : "Resolve open exceptions before anchoring evidence."
+          : "Anchor evidence after computation and exception review.",
+      href: evidenceCommitted
+        ? "#workspace-lender-packet"
+        : hasComputation
+          ? exceptionsResolved
+            ? "#workspace-lender-packet"
+            : "#workspace-exceptions"
+          : canCompute
+            ? "#workspace-overview"
+            : prerequisiteHref,
       label: "Anchor evidence",
+      status: evidenceCommitted ? "ready" : hasComputation && exceptionsResolved ? "next" : "waiting",
     },
     {
-      actionLabel: tokenizationStarted ? "Review handoff" : evidenceCommitted ? "Share packet" : "Prepare packet",
+      actionLabel: tokenizationStarted
+        ? "Review handoff"
+        : evidenceCommitted
+          ? "Share packet"
+          : hasComputation
+            ? exceptionsResolved
+              ? "Anchor evidence first"
+              : "Resolve exceptions first"
+            : canCompute
+              ? "Compute first"
+              : prerequisiteAction,
       description: tokenizationStarted
         ? `Tokenization status: ${submission.tokenization.status.replace(/_/g, " ")}.`
-        : "Optional downstream handoff after lender approval.",
-      done: tokenizationStarted || evidenceCommitted,
+        : evidenceCommitted
+          ? "Packet is anchored and can move to downstream lender handoff."
+          : "Optional downstream handoff after lender approval.",
       href: tokenizationStarted
         ? "#workspace-robolend-handoff"
-        : evidenceCommitted || hasComputation
+        : evidenceCommitted
           ? "#workspace-lender-packet"
-          : "#workspace-overview",
+          : hasComputation
+            ? exceptionsResolved
+              ? "#workspace-lender-packet"
+              : "#workspace-exceptions"
+            : canCompute
+              ? "#workspace-overview"
+              : prerequisiteHref,
       label: "Robolend handoff",
+      status: tokenizationStarted ? "ready" : evidenceCommitted ? "next" : "waiting",
     },
   ];
 }
@@ -1106,20 +1189,18 @@ export const SubmissionWorkspace = ({
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {workspaceChecklist.map(step => (
-            <div
-              key={step.label}
-              className={`rounded-2xl border p-4 ${
-                step.done ? "border-success/30 bg-success/10" : "border-base-300 bg-base-200/40"
-              }`}
-            >
+            <div key={step.label} className={`rounded-2xl border p-4 ${workspaceProgressCardClass(step.status)}`}>
               <div className="flex items-center justify-between gap-3">
                 <div className="text-sm font-semibold text-base-content">{step.label}</div>
-                <span className={`badge ${step.done ? "badge-success" : "badge-ghost"}`}>
-                  {step.done ? "Ready" : "Next"}
+                <span className={`badge ${workspaceProgressBadgeClass(step.status)}`}>
+                  {workspaceProgressBadgeLabel(step.status)}
                 </span>
               </div>
               <p className="mt-2 text-sm leading-relaxed text-base-content/70">{step.description}</p>
-              <a className="btn btn-outline btn-sm mt-4 rounded-full" href={step.href}>
+              <a
+                className={`btn btn-outline btn-sm mt-4 rounded-full ${step.status === "waiting" ? "border-base-300 text-base-content/60" : ""}`}
+                href={step.href}
+              >
                 {step.actionLabel}
               </a>
             </div>
