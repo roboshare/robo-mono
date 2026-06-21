@@ -435,6 +435,7 @@ export const SubmissionWorkspace = ({
   const [selectedReceivablesCsvFilename, setSelectedReceivablesCsvFilename] = useState<string | null>(null);
   const [selectedEvidenceFilename, setSelectedEvidenceFilename] = useState<string | null>(null);
   const [evidenceText, setEvidenceText] = useState("");
+  const evidenceHelperTextClass = "text-sm leading-relaxed text-base-content/70";
   const [pendingOperatorCommit, setPendingOperatorCommit] = useState<PendingOperatorCommit | null>(null);
   const [tokenizationForm, setTokenizationForm] = useState({
     offeringLimit: "",
@@ -1597,7 +1598,7 @@ export const SubmissionWorkspace = ({
                     <CloudArrowUpIcon className="h-4 w-4" />
                     Evidence upload
                   </div>
-                  <p className="mt-3 text-sm leading-relaxed text-base-content/70">
+                  <p className={`mt-3 ${evidenceHelperTextClass}`}>
                     Attach policy support for the receivables file, such as insurance schedules, title and lien files,
                     servicing reports, utilization exports, or lockbox mapping.
                   </p>
@@ -1663,7 +1664,7 @@ export const SubmissionWorkspace = ({
                           required
                         />
                       </label>
-                      <p className="min-w-0 max-w-full text-xs leading-relaxed text-base-content/60">
+                      <p className={`min-w-0 max-w-full ${evidenceHelperTextClass}`}>
                         Evidence status is derived after upload from the active policy and imported receivable data.
                       </p>
                     </div>
@@ -1685,23 +1686,43 @@ export const SubmissionWorkspace = ({
                             </option>
                           ))}
                         </select>
-                        <span className="label pt-1">
-                          <span className="label-text-alt text-base-content/60">
-                            Controls which reviewer role can access the committed evidence metadata.
-                          </span>
-                        </span>
+                        <p className={`mt-1 min-w-0 max-w-full ${evidenceHelperTextClass}`}>
+                          Controls which reviewer role can access the committed evidence metadata.
+                        </p>
                       </label>
                       <input
                         name="linkedReceivableIds"
                         className="input input-bordered h-11 w-full !min-w-0 max-w-full rounded-xl px-4 text-sm"
                         placeholder="Related receivable IDs, e.g. AR-1007, AR-1011"
                       />
+                    </div>
+                  </div>
+                  <div className="mt-4 min-w-0 max-w-full rounded-2xl border border-dashed border-base-300 bg-base-100/70 p-4">
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
+                          Alternative evidence source
+                        </p>
+                        <p className={`mt-1 ${evidenceHelperTextClass}`}>
+                          Paste authorized notes, report extracts, or source metadata when no local file is available.
+                        </p>
+                      </div>
+                      <span className="badge badge-outline border-base-300 text-xs font-semibold uppercase text-base-content/60">
+                        No file path
+                      </span>
+                    </div>
+                    <div className="mt-3 min-w-0 max-w-full">
                       <textarea
                         className="textarea textarea-bordered min-h-28 w-full !min-w-0 max-w-full rounded-xl px-4 py-3 text-sm leading-relaxed"
-                        placeholder="Or paste authorized evidence notes, report extracts, or source metadata when no local file is handy."
+                        placeholder="Paste evidence notes or source metadata."
                         value={evidenceText}
                         onChange={event => setEvidenceText(event.target.value)}
                       />
+                    </div>
+                  </div>
+                  <div className="mt-4 grid w-full min-w-0 max-w-full lg:grid-cols-2">
+                    <div className="hidden lg:block" />
+                    <div className="min-w-0 max-w-full">
                       <button
                         className="btn btn-primary w-full !min-w-0 max-w-full rounded-full px-3 text-sm"
                         type="submit"
