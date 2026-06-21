@@ -449,6 +449,13 @@ export function invalidateSubmissionArtifacts(submission: FacilitySubmission): F
     facilityAssignmentOperatorAddress: previousCommit.facilityAssignmentOperatorAddress,
     facilityAssignmentErrorMessage: previousCommit.facilityAssignmentErrorMessage,
   };
+  if (submission.facilityMonitoring) {
+    submission.facilityMonitoring = {
+      ...submission.facilityMonitoring,
+      latestPacketId: undefined,
+      latestRunId: undefined,
+    };
+  }
   submission.tokenization = createDefaultSubmissionTokenization();
   return touchSubmission(submission);
 }

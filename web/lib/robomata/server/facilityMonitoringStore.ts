@@ -711,7 +711,7 @@ function createPostgresStore(): FacilityMonitoringStore {
         DELETE FROM robomata_facility_observations
         WHERE facility_id = ${facilityIdForSubmission(submission)}
           AND id LIKE 'obs_evidence_%'
-          AND NOT (id = ANY(${observationIds}));
+          AND NOT (id = ANY(${sql.array(observationIds, 25)}));
       `;
       for (const observation of observations) {
         await sql`
