@@ -1328,13 +1328,13 @@ export const SubmissionWorkspace = ({
             ) : null}
           </div>
 
-          <div className="min-w-0 max-w-full xl:w-[360px]">
+          <div className="min-w-0 max-w-full xl:w-[420px]">
             {summaryCards.length > 0 ? (
               <div className="grid min-w-0 gap-3 sm:grid-cols-2">
                 {summaryCards.map(card => (
                   <div key={card.label} className="min-w-0 rounded-2xl border border-base-300 bg-base-200/60 p-4">
                     <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">{card.label}</div>
-                    <div className="mt-2 min-w-0 break-words text-[clamp(1.1rem,2vw,1.5rem)] font-bold leading-tight text-base-content [overflow-wrap:anywhere]">
+                    <div className="mt-2 min-w-0 break-words text-[clamp(1.05rem,1.7vw,1.5rem)] font-bold leading-tight text-base-content tabular-nums [overflow-wrap:anywhere] sm:whitespace-nowrap sm:break-normal sm:[overflow-wrap:normal]">
                       {card.value}
                     </div>
                   </div>
