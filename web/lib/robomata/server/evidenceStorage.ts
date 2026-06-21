@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 import { isRobomataRealEvidenceStorageRequired, isRobomataWalrusUploadsEnabled } from "~~/lib/featureFlags";
 import { encryptEvidenceWithSeal, isSealEncryptionConfigured } from "~~/lib/robomata/server/sealEncryption";
-import type { SubmissionEvidence, SubmissionStorageBackend } from "~~/lib/robomata/submissions";
+import type {
+  SubmissionEvidence,
+  SubmissionEvidenceDerivedFacts,
+  SubmissionStorageBackend,
+} from "~~/lib/robomata/submissions";
 
 const DEFAULT_WALRUS_EPOCHS = 3;
 const DEFAULT_WALRUS_UPLOAD_TIMEOUT_MS = 20_000;
@@ -125,6 +129,7 @@ export async function createEvidenceRecord(input: {
   status: SubmissionEvidence["status"];
   sealPolicyId: string;
   sealIdentity?: string;
+  derivedFacts?: SubmissionEvidenceDerivedFacts;
   linkedReceivableIds?: string[];
 }): Promise<SubmissionEvidence> {
   const plaintext = Buffer.from(await input.file.arrayBuffer());
@@ -188,6 +193,7 @@ export async function createEvidenceRecord(input: {
     aggregatorUrl: uploadResult.aggregatorUrl,
     plaintextDigest,
     ciphertextDigest: sealResult?.ciphertextDigest,
+    derivedFacts: input.derivedFacts,
     sealPackageId: sealResult?.sealPackageId,
     sealIdentity: sealResult?.sealIdentity,
     sealThreshold: sealResult?.sealThreshold,

@@ -1,6 +1,7 @@
 import { buildAgentReviewInput, reviewBorrowingBase } from "~~/lib/robomata/agentProviders";
 import { type BorrowingBaseResult, type FleetPortfolio, type ReceivableResult } from "~~/lib/robomata/borrowingBase";
 import { buildEvidenceAnchor, buildEvidenceRail } from "~~/lib/robomata/evidence";
+import { evidenceSupportsReceivable } from "~~/lib/robomata/evidenceStatus";
 import { buildLenderPacket } from "~~/lib/robomata/lenderPacket";
 import {
   type RobomataBorrowingBasePolicyParameters,
@@ -91,6 +92,22 @@ function calculateSubmissionBorrowingBase(
   };
 }
 
+function hasDerivedEvidenceSupport(input: {
+  evidence: SubmissionEvidence[];
+  kind: "insurance" | "title_lien" | "lockbox" | "servicing_utilization";
+  policy: RobomataBorrowingBasePolicyParameters;
+  receivableId: string;
+}) {
+  return input.evidence.some(evidence =>
+    evidenceSupportsReceivable({
+      evidence,
+      kind: input.kind,
+      policy: input.policy,
+      receivableId: input.receivableId,
+    }),
+  );
+}
+
 export function buildPortfolioFromSubmission(
   submission: FacilitySubmission,
   borrowingBasePolicy: RobomataBorrowingBasePolicyParameters = resolveRobomataBorrowingBasePolicyParameters({
@@ -104,18 +121,50 @@ export function buildPortfolioFromSubmission(
     asOfDate: submission.asOfDate,
     advanceRateBps: borrowingBasePolicy.advanceRateBps,
     concentrationLimitPct: borrowingBasePolicy.concentrationLimitPct,
-    receivables: submission.receivables.map(receivable => ({
-      id: receivable.id,
-      obligor: receivable.obligor,
-      vehicleCount: receivable.vehicleCount,
-      outstandingCents: receivable.outstandingCents,
-      daysPastDue: receivable.daysPastDue,
-      utilizationPct: receivable.utilizationPct,
-      insured: receivable.insured,
-      titleClear: receivable.titleClear,
-      lockboxMatched: receivable.lockboxMatched,
-      manuallyExcluded: receivable.excluded,
-    })),
+    receivables: submission.receivables.map(receivable => {
+      const utilizationEvidenceSupported = hasDerivedEvidenceSupport({
+        evidence: submission.evidence,
+        kind: "servicing_utilization",
+        policy: borrowingBasePolicy,
+        receivableId: receivable.id,
+      });
+
+      return {
+        id: receivable.id,
+        obligor: receivable.obligor,
+        vehicleCount: receivable.vehicleCount,
+        outstandingCents: receivable.outstandingCents,
+        daysPastDue: receivable.daysPastDue,
+        utilizationPct: utilizationEvidenceSupported
+          ? Math.max(receivable.utilizationPct, borrowingBasePolicy.minUtilizationPct)
+          : receivable.utilizationPct,
+        insured:
+          receivable.insured ||
+          hasDerivedEvidenceSupport({
+            evidence: submission.evidence,
+            kind: "insurance",
+            policy: borrowingBasePolicy,
+            receivableId: receivable.id,
+          }),
+        titleClear:
+          receivable.titleClear ||
+          hasDerivedEvidenceSupport({
+            evidence: submission.evidence,
+            kind: "title_lien",
+            policy: borrowingBasePolicy,
+            receivableId: receivable.id,
+          }),
+        lockboxMatched:
+          receivable.lockboxMatched ||
+          hasDerivedEvidenceSupport({
+            evidence: submission.evidence,
+            kind: "lockbox",
+            policy: borrowingBasePolicy,
+            receivableId: receivable.id,
+          }),
+        manuallyExcluded: receivable.excluded,
+      };
+    }),
     evidence: submission.evidence.map(evidence => ({
       id: evidence.id,
       label: evidence.label,
