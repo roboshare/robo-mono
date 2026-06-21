@@ -1566,8 +1566,8 @@ export const SubmissionWorkspace = ({
                   <div className="mt-4 grid min-w-0 gap-4 lg:grid-cols-2 lg:items-start">
                     <div className="grid min-w-0 gap-3">
                       <label className="flex min-w-0 cursor-pointer items-center gap-2 overflow-hidden rounded-xl border border-base-300 bg-base-100 p-2 text-sm text-base-content/70">
-                        <input name="file" type="file" className="hidden" />
-                        <span className="shrink-0 rounded-lg bg-base-200 px-3 py-2 font-semibold text-base-content">
+                        <input name="file" type="file" className="peer sr-only" />
+                        <span className="shrink-0 rounded-lg bg-base-200 px-3 py-2 font-semibold text-base-content peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-primary">
                           Choose file
                         </span>
                         <span className="min-w-0 flex-1 truncate">Attach evidence file</span>
