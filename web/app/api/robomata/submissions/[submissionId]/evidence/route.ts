@@ -5,7 +5,7 @@ import {
   isRobomataWorkflowMutationEnabled,
   isRobomataWorkflowServerEnabled,
 } from "~~/lib/featureFlags";
-import { deriveEvidenceStatus } from "~~/lib/robomata/evidenceStatus";
+import { deriveEvidenceFacts, deriveEvidenceStatus } from "~~/lib/robomata/evidenceStatus";
 import { createEvidenceRecord } from "~~/lib/robomata/server/evidenceStorage";
 import { getFacilityMonitoringStore } from "~~/lib/robomata/server/facilityMonitoringStore";
 import {
@@ -28,6 +28,7 @@ export const runtime = "nodejs";
 
 const DEFAULT_EVIDENCE_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
 const MULTIPART_UPLOAD_OVERHEAD_BYTES = 1024 * 1024;
+const EVIDENCE_TEXT_DERIVATION_MAX_BYTES = 128 * 1024;
 
 function requireRobomataWorkflow() {
   if (isRobomataWorkflowServerEnabled()) return null;
@@ -57,6 +58,19 @@ function buildUploadTooLargeResponse(maxBytes: number) {
     { error: `Evidence upload exceeds the configured ${maxBytes} byte limit.` },
     { status: 413 },
   );
+}
+
+async function readEvidenceTextForDerivation(file: File): Promise<string | undefined> {
+  const filename = file.name.toLowerCase();
+  const contentType = file.type.toLowerCase();
+  const isTextLike =
+    contentType.startsWith("text/") ||
+    contentType === "application/json" ||
+    contentType === "application/csv" ||
+    /\.(csv|json|md|txt)$/i.test(filename);
+  if (!isTextLike || file.size > EVIDENCE_TEXT_DERIVATION_MAX_BYTES) return undefined;
+
+  return file.text();
 }
 
 type EvidenceUploadReservation = {
@@ -296,6 +310,16 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       },
       receivables: submission.receivables,
     });
+    const evidenceText = await readEvidenceTextForDerivation(file);
+    const derivedFacts = deriveEvidenceFacts({
+      evidence: {
+        label,
+        linkedReceivableIds,
+        scope,
+        source,
+      },
+      evidenceText,
+    });
     const reservation = await reserveEvidenceUpload({ label, partnerAddress, submissionId, store });
 
     let evidence: SubmissionEvidence;
@@ -308,6 +332,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
         status: statusDerivation.status,
         sealPolicyId,
         sealIdentity: resolveSubmissionFacilityObjectId(submission),
+        derivedFacts,
         linkedReceivableIds,
       });
     } catch (error) {

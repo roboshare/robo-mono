@@ -55,6 +55,17 @@ export type SubmissionEvidence = EvidenceCommitment & {
   sealThreshold?: number;
   sealKeyServerObjectIds?: string[];
   sealKeyServerAggregatorUrl?: string;
+  derivedFacts?: SubmissionEvidenceDerivedFacts;
+};
+
+export type SubmissionEvidenceDerivedFacts = {
+  receivableIds: string[];
+  insured?: boolean;
+  titleClear?: boolean;
+  lockboxMatched?: boolean;
+  utilizationPct?: number;
+  derivedAt: string;
+  reason: string;
 };
 
 export type SubmissionException = {
