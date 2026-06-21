@@ -337,7 +337,10 @@ const HeaderNetworkActions = () => {
 
   return (
     <>
-      <RainbowKitCustomConnectButton showSummary={!isRobomataWorkspace} />
+      <RainbowKitCustomConnectButton
+        accountMenuVariant={isRobomataWorkspace ? "robomata" : "default"}
+        showSummary={!isRobomataWorkspace}
+      />
       {showFaucet && <FaucetButton />}
     </>
   );

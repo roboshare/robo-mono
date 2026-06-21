@@ -58,6 +58,7 @@ const ConnectedWalletSummary = ({ address, chainName }: { address: Address; chai
 
 type ConnectedWalletContentProps = {
   address: Address;
+  accountMenuVariant?: "default" | "robomata";
   chainName?: string;
   displayName: string;
   ensAvatar?: string;
@@ -67,6 +68,7 @@ type ConnectedWalletContentProps = {
 
 const ConnectedWalletContent = ({
   address,
+  accountMenuVariant = "default",
   chainName,
   displayName,
   ensAvatar,
@@ -87,7 +89,10 @@ const ConnectedWalletContent = ({
             ensAvatar={ensAvatar}
             blockExplorerAddressLink={blockExplorerAddressLink}
             chainName={chainName}
+            disconnectLabel={accountMenuVariant === "robomata" ? "Sign out" : "Disconnect"}
             onDisconnect={onDisconnect}
+            showBalanceSummary={showSummary}
+            showNetworkSwitch={accountMenuVariant !== "robomata"}
           />
         </div>
       </div>
@@ -97,10 +102,14 @@ const ConnectedWalletContent = ({
 };
 
 type RainbowKitCustomConnectButtonProps = {
+  accountMenuVariant?: "default" | "robomata";
   showSummary?: boolean;
 };
 
-const LegacyRainbowKitConnectButton = ({ showSummary = true }: RainbowKitCustomConnectButtonProps) => {
+const LegacyRainbowKitConnectButton = ({
+  accountMenuVariant = "default",
+  showSummary = true,
+}: RainbowKitCustomConnectButtonProps) => {
   const { targetNetwork } = useTargetNetwork();
 
   return (
@@ -120,12 +129,18 @@ const LegacyRainbowKitConnectButton = ({ showSummary = true }: RainbowKitCustomC
               }
 
               if (chain.unsupported || chain.id !== targetNetwork.id) {
-                return <WrongNetworkDropdown />;
+                return (
+                  <WrongNetworkDropdown
+                    disconnectLabel={accountMenuVariant === "robomata" ? "Sign out" : "Disconnect"}
+                    showNetworkOptions={accountMenuVariant !== "robomata"}
+                  />
+                );
               }
 
               return (
                 <ConnectedWalletContent
                   address={account.address as Address}
+                  accountMenuVariant={accountMenuVariant}
                   chainName={chain.name}
                   displayName={account.displayName}
                   ensAvatar={account.ensAvatar}
@@ -140,7 +155,10 @@ const LegacyRainbowKitConnectButton = ({ showSummary = true }: RainbowKitCustomC
   );
 };
 
-const PrivyConnectButton = ({ showSummary = true }: RainbowKitCustomConnectButtonProps) => {
+const PrivyConnectButton = ({
+  accountMenuVariant = "default",
+  showSummary = true,
+}: RainbowKitCustomConnectButtonProps) => {
   const { targetNetwork } = useTargetNetwork();
   const { chain, connector } = useAccount();
   const { address: transactingAddress, chainId: transactingChainId } = useTransactingAccount();
@@ -227,12 +245,19 @@ const PrivyConnectButton = ({ showSummary = true }: RainbowKitCustomConnectButto
   }
 
   if (chain.id !== targetNetwork.id) {
-    return <WrongNetworkDropdown onDisconnect={handleDisconnect} />;
+    return (
+      <WrongNetworkDropdown
+        disconnectLabel={accountMenuVariant === "robomata" ? "Sign out" : "Disconnect"}
+        onDisconnect={handleDisconnect}
+        showNetworkOptions={accountMenuVariant !== "robomata"}
+      />
+    );
   }
 
   return (
     <ConnectedWalletContent
       address={transactingAddress}
+      accountMenuVariant={accountMenuVariant}
       chainName={transactingChainName}
       displayName={
         getPrivyIdentityLabel({ address: transactingAddress, connectorName: connector?.name, user }) ||
@@ -247,10 +272,13 @@ const PrivyConnectButton = ({ showSummary = true }: RainbowKitCustomConnectButto
 /**
  * Custom Wagmi Connect Button (watch balance + custom design)
  */
-export const RainbowKitCustomConnectButton = ({ showSummary = true }: RainbowKitCustomConnectButtonProps) => {
+export const RainbowKitCustomConnectButton = ({
+  accountMenuVariant = "default",
+  showSummary = true,
+}: RainbowKitCustomConnectButtonProps) => {
   return isPrivyEnabled() ? (
-    <PrivyConnectButton showSummary={showSummary} />
+    <PrivyConnectButton accountMenuVariant={accountMenuVariant} showSummary={showSummary} />
   ) : (
-    <LegacyRainbowKitConnectButton showSummary={showSummary} />
+    <LegacyRainbowKitConnectButton accountMenuVariant={accountMenuVariant} showSummary={showSummary} />
   );
 };
