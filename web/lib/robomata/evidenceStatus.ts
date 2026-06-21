@@ -47,13 +47,13 @@ function normalizedEvidenceText(input: { evidenceText?: string }) {
 
 function hasNegativeEvidenceCue(text: string, kind: Exclude<EvidenceStatusKind, "receivables">) {
   if (kind === "insurance") {
-    return /\b(uninsured|(?:policy|coverage|insurance)\b.{0,16}\b(?:cancel(?:led|ed)|expired|inactive|lapsed|missing|exception)|(?:cancel(?:led|ed)|expired|inactive|lapsed|missing|exception)\b.{0,16}\b(?:policy|coverage|insurance)|coverage\s+(?:is\s+)?not\s+(?:active|current|in force)|(?:not|without)\s+(?:currently\s+)?(?:covered|insured|coverage|insurance))\b/.test(
+    return /\b(uninsured|(?:policy|coverage|insurance)\b.{0,16}\b(?:cancel(?:led|ed)|expired|inactive|lapsed|missing|exception|not\s+(?:active|current|in force))|(?:cancel(?:led|ed)|expired|inactive|lapsed|missing|exception|not\s+(?:active|current|in force))\b.{0,16}\b(?:policy|coverage|insurance)|coverage\s+(?:is\s+)?not\s+(?:active|current|in force)|(?:not|without)\s+(?:currently\s+)?(?:covered|insured|coverage|insurance))\b/.test(
       text,
     );
   }
 
   if (kind === "title_lien") {
-    return /\b((?:title|lien|ucc|collateral)\b.{0,24}\b(?:not\s+(?:clear|cleared|verified)|unverified|missing|exception)|(?:unverified|missing|exception)\b.{0,24}\b(?:clear|cleared|verified)?\s*(?:title|lien|ucc|collateral))\b/.test(
+    return /\b((?:title|lien|ucc|collateral)\b.{0,24}\b(?:not\s+(?:clear|cleared|verified)|unverified|missing|exception|cancel(?:led|ed)|expired|lapsed)|(?:unverified|missing|exception|cancel(?:led|ed)|expired|lapsed)\b.{0,24}\b(?:clear|cleared|verified|current)?\s*(?:title|lien|ucc|collateral))\b/.test(
       text,
     );
   }
@@ -120,9 +120,12 @@ export function deriveEvidenceFacts(input: {
   }
 
   const utilizationMatch = text.match(
-    /\butili[sz]ation(?:\s+(?:pct|percent|rate))?\D{0,16}(\d{1,3})(?:\.\d+)?\s*(?:%|\b(?:pct|percent)\b)/,
+    /\butili[sz]ation(?:\s+(pct|percent|rate))?\D{0,16}(\d{1,3})(?:\.\d+)?\s*(%|pct|percent)?\b/,
   );
-  const utilizationPct = utilizationMatch ? Number.parseInt(utilizationMatch[1], 10) : undefined;
+  const hasExplicitUtilizationUnit =
+    utilizationMatch?.[1] === "pct" || utilizationMatch?.[1] === "percent" || Boolean(utilizationMatch?.[3]);
+  const utilizationPct =
+    utilizationMatch && hasExplicitUtilizationUnit ? Number.parseInt(utilizationMatch[2], 10) : undefined;
   if (
     typeof utilizationPct === "number" &&
     Number.isFinite(utilizationPct) &&
