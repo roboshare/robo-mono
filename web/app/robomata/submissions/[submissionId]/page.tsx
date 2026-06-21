@@ -1,13 +1,14 @@
-"use client";
-
 import Link from "next/link";
-import { useParams } from "next/navigation";
 import { PartnerAccessGate } from "~~/components/partner/PartnerAccessGate";
 import { SubmissionWorkspace } from "~~/components/robomata/SubmissionWorkspace";
 import { isRobomataWorkflowEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
 
-const RobomataSubmissionDetailPage = () => {
-  const params = useParams<{ submissionId: string }>();
+type RobomataSubmissionDetailPageProps = {
+  params: Promise<{ submissionId: string }>;
+};
+
+const RobomataSubmissionDetailPage = async ({ params }: RobomataSubmissionDetailPageProps) => {
+  const { submissionId } = await params;
 
   if (!isRobomataWorkflowEnabled() || !isRobomataWorkflowServerEnabled()) {
     return (
@@ -33,7 +34,7 @@ const RobomataSubmissionDetailPage = () => {
 
   return (
     <PartnerAccessGate>
-      <SubmissionWorkspace submissionId={params.submissionId} />
+      <SubmissionWorkspace submissionId={submissionId} />
     </PartnerAccessGate>
   );
 };

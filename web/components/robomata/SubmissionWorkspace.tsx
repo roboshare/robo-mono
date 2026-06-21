@@ -183,13 +183,16 @@ function buildSubmissionSummaryCards(computation: SubmissionComputation) {
   ];
 }
 
-function isFacilityAssignmentLockActive(submission: FacilitySubmission | null) {
-  const startedAt = submission?.evidenceCommit.facilityAssignmentStartedAt;
+function getFacilityAssignmentLockRemainingMs(startedAt: string | undefined) {
   const startedAtMs = startedAt ? Date.parse(startedAt) : Number.NaN;
 
-  return Boolean(
-    startedAt && Number.isFinite(startedAtMs) && Date.now() - startedAtMs <= FACILITY_ASSIGNMENT_LOCK_STALE_MS,
-  );
+  if (!startedAt || !Number.isFinite(startedAtMs)) return 0;
+
+  return Math.max(0, FACILITY_ASSIGNMENT_LOCK_STALE_MS - (Date.now() - startedAtMs));
+}
+
+function isFacilityAssignmentLockActive(submission: FacilitySubmission | null) {
+  return getFacilityAssignmentLockRemainingMs(submission?.evidenceCommit.facilityAssignmentStartedAt) > 0;
 }
 
 function submissionMutabilityLockReason(submission: FacilitySubmission | null) {
@@ -271,6 +274,7 @@ export const SubmissionWorkspace = ({
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const [, setFacilityAssignmentLockTick] = useState(0);
   const [editingReceivableId, setEditingReceivableId] = useState<string | null>(null);
   const [draftReceivable, setDraftReceivable] = useState<Partial<SubmissionReceivable>>({});
   const [receivablesCsvText, setReceivablesCsvText] = useState("");
@@ -325,6 +329,7 @@ export const SubmissionWorkspace = ({
     () => (submission?.computation ? buildSubmissionSummaryCards(submission.computation) : []),
     [submission],
   );
+  const facilityAssignmentStartedAt = submission?.evidenceCommit.facilityAssignmentStartedAt;
   const mutabilityLockReason = submissionMutabilityLockReason(submission);
   const isCommitted = submission?.status === "committed" || submission?.evidenceCommit.status === "committed";
   const canMutate = !readOnly && !mutabilityLockReason;
@@ -355,6 +360,17 @@ export const SubmissionWorkspace = ({
       tokenization.evm.txHash,
   );
   const workspaceChecklist = useMemo(() => (submission ? buildWorkspaceChecklist(submission) : []), [submission]);
+
+  useEffect(() => {
+    const remainingMs = getFacilityAssignmentLockRemainingMs(facilityAssignmentStartedAt);
+    if (remainingMs <= 0) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setFacilityAssignmentLockTick(tick => tick + 1);
+    }, remainingMs + 250);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [facilityAssignmentStartedAt]);
 
   const loadSubmission = useCallback(async () => {
     setIsLoading(true);

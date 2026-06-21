@@ -1,5 +1,3 @@
-"use client";
-
 import Link from "next/link";
 import { SubmissionIndex } from "~~/components/robomata/SubmissionIndex";
 import { isRobomataWorkflowEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
