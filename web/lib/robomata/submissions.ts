@@ -351,19 +351,43 @@ export function deriveSubmissionStatus(submission: FacilitySubmission): Facility
   return "draft";
 }
 
-export function canDeleteDraftFacilitySubmission(submission: FacilitySubmission): boolean {
-  const hasFacilityArtifacts = Boolean(
-    submission.evidenceCommit.facilityObjectId?.trim() ||
-      submission.evidenceCommit.facilityOperatorAddress?.trim() ||
-      submission.evidenceCommit.facilityAssignmentStartedAt?.trim() ||
+type DraftDeletionSubmissionView = FacilitySubmission & {
+  evidenceCount?: number;
+  hasComputation?: boolean;
+  receivableCount?: number;
+};
+
+export function canDeleteDraftFacilitySubmission(submission: DraftDeletionSubmissionView): boolean {
+  const receivableCount =
+    typeof submission.receivableCount === "number" ? submission.receivableCount : submission.receivables.length;
+  const evidenceCount =
+    typeof submission.evidenceCount === "number" ? submission.evidenceCount : submission.evidence.length;
+  const hasComputation =
+    typeof submission.hasComputation === "boolean" ? submission.hasComputation : Boolean(submission.computation);
+  const hasEvidenceCommitArtifacts = Boolean(
+    submission.evidenceCommit.evidenceRoot?.trim() ||
+      submission.evidenceCommit.rootDigest?.trim() ||
+      submission.evidenceCommit.txDigest?.trim() ||
+      submission.evidenceCommit.commitStartedAt?.trim() ||
+      submission.evidenceCommit.committedAt?.trim(),
+  );
+  const hasPendingFacilityAssignment = Boolean(
+    submission.evidenceCommit.facilityAssignmentStartedAt?.trim() ||
       submission.evidenceCommit.facilityAssignmentRootDigest?.trim() ||
-      submission.evidenceCommit.facilityAssignmentOperatorAddress?.trim() ||
-      submission.evidenceCommit.facilityAssignmentErrorMessage?.trim() ||
-      submission.facilityMonitoring,
+      submission.evidenceCommit.facilityAssignmentOperatorAddress?.trim(),
   );
   const hasActiveEvidenceCommit = ["committing", "committed"].includes(submission.evidenceCommit.status);
 
-  return !hasActiveEvidenceCommit && !hasFacilityArtifacts && submission.tokenization.status === "not_started";
+  return (
+    submission.status === "draft" &&
+    receivableCount === 0 &&
+    evidenceCount === 0 &&
+    !hasComputation &&
+    !hasActiveEvidenceCommit &&
+    !hasEvidenceCommitArtifacts &&
+    !hasPendingFacilityAssignment &&
+    submission.tokenization.status === "not_started"
+  );
 }
 
 export function createSubmissionShell(input: CreateSubmissionInput): FacilitySubmission {
