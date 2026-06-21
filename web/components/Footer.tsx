@@ -9,6 +9,7 @@ import { SwitchTheme } from "~~/components/SwitchTheme";
 import { Faucet } from "~~/components/scaffold-eth";
 import { useTargetNetwork } from "~~/hooks/scaffold-eth/useTargetNetwork";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
+import { isMarketingContentPath } from "~~/lib/marketingRoutes";
 import { useGlobalState } from "~~/services/store/store";
 
 /**
@@ -21,7 +22,8 @@ export const Footer = () => {
   const isLocalNetwork = targetNetwork.id === hardhat.id;
   const { address: paymentTokenAddress } = usePaymentToken();
   const isRobomataWorkspace = pathname === "/robomata" || pathname?.startsWith("/robomata/");
-  const showFooterWalletTools = !isRobomataWorkspace;
+  const isMarketingContent = isMarketingContentPath(pathname);
+  const showFooterWalletTools = !isMarketingContent && !isRobomataWorkspace;
   const showFaucet = showFooterWalletTools && (isLocalNetwork || !!paymentTokenAddress);
 
   return (
