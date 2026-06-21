@@ -164,6 +164,13 @@ export async function DELETE(request: NextRequest, context: { params: Promise<{ 
     }
 
     const saved = await store.save(submission);
+    if (isRobomataFacilityMonitoringEnabled()) {
+      try {
+        await getFacilityMonitoringStore().clearReceivablesImportObservations(saved);
+      } catch (error) {
+        console.error("Failed to clear facility monitoring receivables observations after removal.", error);
+      }
+    }
     return NextResponse.json({ submission: saved });
   } catch (error) {
     return NextResponse.json(

@@ -49,6 +49,7 @@ type CreateReceivablesObservationInput = {
 type FacilityMonitoringStore = {
   syncFacility: (submission: FacilitySubmission) => Promise<RobomataFacility>;
   syncEvidenceObservations: (submission: FacilitySubmission) => Promise<FacilityObservation[]>;
+  clearReceivablesImportObservations: (submission: FacilitySubmission) => Promise<number>;
   createReceivablesImportObservation: (input: CreateReceivablesObservationInput) => Promise<FacilityObservation>;
   recordRunFromSubmission: (
     submission: FacilitySubmission,
@@ -141,6 +142,14 @@ function buildFacility(submission: FacilitySubmission): RobomataFacility {
 
 function evidenceObservationId(evidence: SubmissionEvidence): string {
   return `obs_${evidence.id}`;
+}
+
+function isEvidenceObservation(observation: Pick<FacilityObservation, "id">): boolean {
+  return observation.id.startsWith("obs_evidence_");
+}
+
+function receivablesObservationPrefix(submission: FacilitySubmission): string {
+  return `obs_${submission.id}_receivables_`;
 }
 
 function buildEvidenceObservations(submission: FacilitySubmission): FacilityObservation[] {
@@ -545,12 +554,34 @@ function createFileStore(): FacilityMonitoringStore {
         const fileStore = await readFileStore(filePath);
         const facility = buildFacility(submission);
         const observations = buildEvidenceObservations(submission);
+        const currentObservationIds = new Set(observations.map(observation => observation.id));
         fileStore.facilities = upsertById(fileStore.facilities, facility);
+        fileStore.observations = fileStore.observations.filter(
+          observation =>
+            observation.facilityId !== facility.id ||
+            !isEvidenceObservation(observation) ||
+            currentObservationIds.has(observation.id),
+        );
         for (const observation of observations) {
           fileStore.observations = upsertById(fileStore.observations, observation);
         }
         await writeFileStore(filePath, fileStore);
         return observations;
+      });
+    },
+    async clearReceivablesImportObservations(submission) {
+      return withFileStoreWriteLock(filePath, async () => {
+        const fileStore = await readFileStore(filePath);
+        const facility = buildFacility(submission);
+        const prefix = receivablesObservationPrefix(submission);
+        const previousCount = fileStore.observations.length;
+        fileStore.facilities = upsertById(fileStore.facilities, facility);
+        fileStore.observations = fileStore.observations.filter(
+          observation => observation.facilityId !== facility.id || !observation.id.startsWith(prefix),
+        );
+        const removedCount = previousCount - fileStore.observations.length;
+        await writeFileStore(filePath, fileStore);
+        return removedCount;
       });
     },
     async createReceivablesImportObservation(input) {
@@ -675,6 +706,13 @@ function createPostgresStore(): FacilityMonitoringStore {
       await ensurePostgresTables();
       await this.syncFacility(submission);
       const observations = buildEvidenceObservations(submission);
+      const observationIds = observations.map(observation => observation.id);
+      await sql`
+        DELETE FROM robomata_facility_observations
+        WHERE facility_id = ${facilityIdForSubmission(submission)}
+          AND id LIKE 'obs_evidence_%'
+          AND NOT (id = ANY(${observationIds}));
+      `;
       for (const observation of observations) {
         await sql`
           INSERT INTO robomata_facility_observations (id, facility_id, kind, status, observed_at, payload)
@@ -694,6 +732,19 @@ function createPostgresStore(): FacilityMonitoringStore {
         `;
       }
       return observations;
+    },
+    async clearReceivablesImportObservations(submission) {
+      await ensurePostgresTables();
+      await this.syncFacility(submission);
+      const prefix = `${receivablesObservationPrefix(submission)}%`;
+      const result = (await sql`
+        DELETE FROM robomata_facility_observations
+        WHERE facility_id = ${facilityIdForSubmission(submission)}
+          AND kind = 'receivables_aging'
+          AND id LIKE ${prefix}
+        RETURNING id;
+      `) as Array<{ id: string }>;
+      return result.length;
     },
     async createReceivablesImportObservation(input) {
       await ensurePostgresTables();
