@@ -192,19 +192,27 @@ function WorkspaceProgressCard({
   step: WorkspaceChecklistStep;
 }) {
   const isWaiting = step.status === "waiting";
-  const actionClass = `btn btn-sm mt-4 rounded-full ${step.status === "next" ? "btn-primary" : "btn-outline"}`;
+  const actionClass = `btn btn-sm mt-4 h-auto min-h-8 max-w-full whitespace-normal rounded-full text-center ${
+    step.status === "next" ? "btn-primary" : "btn-outline"
+  }`;
 
   return (
-    <div className={`rounded-2xl border ${prominent ? "p-5" : "p-4"} ${workspaceProgressCardClass(step.status)}`}>
+    <div
+      className={`min-w-0 overflow-hidden rounded-2xl border ${prominent ? "p-5" : "p-4"} ${workspaceProgressCardClass(
+        step.status,
+      )}`}
+    >
       <div className="flex items-center justify-between gap-3">
-        <div className={`${prominent ? "text-base" : "text-sm"} font-semibold text-base-content`}>{step.label}</div>
-        <span className={`badge ${workspaceProgressBadgeClass(step.status)}`}>
+        <div className={`min-w-0 break-words ${prominent ? "text-base" : "text-sm"} font-semibold text-base-content`}>
+          {step.label}
+        </div>
+        <span className={`badge shrink-0 ${workspaceProgressBadgeClass(step.status)}`}>
           {workspaceProgressBadgeLabel(step.status)}
         </span>
       </div>
-      <p className="mt-2 text-sm leading-relaxed text-base-content/70">{step.description}</p>
+      <p className="mt-2 break-words text-sm leading-relaxed text-base-content/70">{step.description}</p>
       {isWaiting ? (
-        <div className="mt-4 text-xs font-semibold uppercase tracking-[0.16em] text-base-content/45">
+        <div className="mt-4 break-words text-xs font-semibold uppercase tracking-[0.16em] text-base-content/45">
           {step.waitingLabel ?? "Complete the previous step"}
         </div>
       ) : onAction ? (
@@ -1262,14 +1270,14 @@ export const SubmissionWorkspace = ({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 py-8 sm:px-6 sm:py-10">
+    <div className="mx-auto flex w-full max-w-7xl min-w-0 flex-col gap-6 overflow-x-hidden px-3 py-6 sm:gap-8 sm:px-6 sm:py-10">
       <section
         id="workspace-overview"
-        className="scroll-mt-24 rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30 sm:p-8"
+        className="min-w-0 max-w-full scroll-mt-24 overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 p-4 shadow-lg shadow-base-300/30 sm:p-8"
       >
-        <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+        <div className="flex min-w-0 flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
           <div className="min-w-0 max-w-3xl">
-            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
+            <p className="break-words text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
               {sectionTitle(readOnly)}
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -1280,7 +1288,7 @@ export const SubmissionWorkspace = ({
                 {submission.status.replace(/_/g, " ")}
               </span>
             </div>
-            <p className="mt-4 text-lg leading-relaxed text-base-content/70">
+            <p className="mt-4 break-words text-lg leading-relaxed text-base-content/70">
               {submission.operatorName} · as of {submission.asOfDate} · {submission.receivables.length} receivables ·{" "}
               {submission.evidence.length} evidence packages
             </p>
@@ -1320,7 +1328,7 @@ export const SubmissionWorkspace = ({
             ) : null}
           </div>
 
-          <div className="xl:w-[360px]">
+          <div className="min-w-0 max-w-full xl:w-[360px]">
             {summaryCards.length > 0 ? (
               <div className="grid min-w-0 gap-3 sm:grid-cols-2">
                 {summaryCards.map(card => (
@@ -1341,9 +1349,9 @@ export const SubmissionWorkspace = ({
 
       <section
         id="workspace-progress"
-        className="scroll-mt-24 rounded-[2rem] border border-base-300 bg-base-100 p-5 shadow-lg shadow-base-300/30 sm:p-6"
+        className="min-w-0 max-w-full scroll-mt-24 overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 p-4 shadow-lg shadow-base-300/30 sm:p-6"
       >
-        <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
+        <div className="flex min-w-0 items-center gap-2 break-words text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
           <CheckCircleIcon className="h-4 w-4" />
           Workspace progress
         </div>
@@ -1839,9 +1847,9 @@ export const SubmissionWorkspace = ({
         {submission.computation || submission.exceptions.length > 0 ? (
           <section
             id="workspace-exceptions"
-            className="scroll-mt-24 rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30"
+            className="min-w-0 max-w-full scroll-mt-24 overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 p-4 shadow-lg shadow-base-300/30 sm:p-6"
           >
-            <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
+            <div className="flex min-w-0 items-center gap-2 break-words text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
               <ExclamationTriangleIcon className="h-4 w-4" />
               Exceptions and next actions
             </div>
@@ -1861,11 +1869,14 @@ export const SubmissionWorkspace = ({
                   const isOpen = exception.actionStatus === "open";
 
                   return (
-                    <div key={exception.id} className="rounded-[1.5rem] border border-base-300 bg-base-200/50 p-4">
-                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div
+                      key={exception.id}
+                      className="min-w-0 overflow-hidden rounded-[1.5rem] border border-base-300 bg-base-200/50 p-4"
+                    >
+                      <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
-                            <div className="font-semibold text-base-content">{exception.title}</div>
+                            <div className="min-w-0 break-words font-semibold text-base-content">{exception.title}</div>
                             <span
                               className={`badge badge-sm capitalize ${
                                 exception.severity === "high"
@@ -1878,9 +1889,11 @@ export const SubmissionWorkspace = ({
                               {exception.severity}
                             </span>
                           </div>
-                          <div className="mt-2 text-sm text-base-content/70">{exception.message}</div>
-                          <div className="mt-2 text-sm font-medium text-base-content">{exception.nextAction}</div>
-                          <div className="mt-3 text-xs uppercase tracking-[0.14em] text-base-content/45">
+                          <div className="mt-2 break-words text-sm text-base-content/70">{exception.message}</div>
+                          <div className="mt-2 break-words text-sm font-medium text-base-content">
+                            {exception.nextAction}
+                          </div>
+                          <div className="mt-3 break-all text-xs uppercase tracking-[0.14em] text-base-content/45">
                             {exception.kind}
                             {exception.itemId ? ` · ${exception.itemId}` : ""}
                           </div>
@@ -1955,9 +1968,9 @@ export const SubmissionWorkspace = ({
         {submission.evidence.length > 0 ? (
           <section
             id="workspace-evidence-library"
-            className="scroll-mt-24 rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30"
+            className="min-w-0 max-w-full scroll-mt-24 overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 p-4 shadow-lg shadow-base-300/30 sm:p-6"
           >
-            <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
+            <div className="flex min-w-0 items-center gap-2 break-words text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
               <ShieldCheckIcon className="h-4 w-4" />
               Evidence library
             </div>
@@ -2080,10 +2093,10 @@ export const SubmissionWorkspace = ({
         ) : null}
 
         {canShowMonitoringHandoff ? (
-          <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <section className="min-w-0 max-w-full overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 p-4 shadow-lg shadow-base-300/30 sm:p-6">
+            <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="min-w-0">
-                <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
+                <div className="flex min-w-0 items-center gap-2 break-words text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
                   <ShieldCheckIcon className="h-4 w-4" />
                   Monitoring and diagnostics
                 </div>
@@ -2105,7 +2118,7 @@ export const SubmissionWorkspace = ({
               </div>
               <Link
                 href={`/robomata/submissions/${submission.id}/monitoring`}
-                className="btn btn-outline shrink-0 rounded-full"
+                className="btn btn-outline h-auto min-h-10 max-w-full shrink-0 whitespace-normal rounded-full text-center"
               >
                 View monitoring details
               </Link>
@@ -2116,18 +2129,18 @@ export const SubmissionWorkspace = ({
         {submission.computation ? (
           <section
             id="workspace-lender-packet"
-            className="scroll-mt-24 rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30"
+            className="min-w-0 max-w-full scroll-mt-24 overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 p-4 shadow-lg shadow-base-300/30 sm:p-6"
           >
-            <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
+            <div className="flex min-w-0 items-center gap-2 break-words text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
               <CheckCircleIcon className="h-4 w-4" />
               Lender packet and evidence verification
             </div>
             <div className="mt-4 space-y-4">
-              <div className="rounded-[1.5rem] border border-base-300 bg-base-200/50 p-4">
-                <div className="text-sm font-semibold text-base-content">
+              <div className="min-w-0 overflow-hidden rounded-[1.5rem] border border-base-300 bg-base-200/50 p-4">
+                <div className="break-words text-sm font-semibold text-base-content">
                   {submission.computation.lenderPacket.certificateId}
                 </div>
-                <div className="mt-2 text-sm text-base-content/70">
+                <div className="mt-2 break-words text-sm text-base-content/70">
                   {submission.computation.lenderPacket.certificationStatement}
                 </div>
                 <div className="mt-4">
@@ -2175,7 +2188,7 @@ export const SubmissionWorkspace = ({
                   {submission.evidenceCommit.status.replace(/_/g, " ")}
                 </div>
                 {submission.evidenceCommit.evidenceRoot ? (
-                  <div className="mt-3 text-xs text-base-content/60 break-all">
+                  <div className="mt-3 break-all text-xs text-base-content/60">
                     Evidence root: {submission.evidenceCommit.evidenceRoot}
                   </div>
                 ) : null}
@@ -2186,7 +2199,7 @@ export const SubmissionWorkspace = ({
                 ["configured", "operator_configured"].includes(submission.evidenceCommit.commitMode) &&
                 submission.evidenceCommit.status !== "committed" ? (
                   <button
-                    className="btn btn-primary mt-4 rounded-full"
+                    className="btn btn-primary mt-4 h-auto min-h-10 max-w-full whitespace-normal rounded-full text-center"
                     onClick={commitEvidence}
                     disabled={
                       isBusy ||
@@ -2206,7 +2219,7 @@ export const SubmissionWorkspace = ({
                   </button>
                 ) : null}
                 {!readOnly && submission.evidenceCommit.commitMode === "operator_configured" ? (
-                  <div className="mt-3 rounded-2xl border border-info/20 bg-info/10 p-3 text-sm text-base-content/70">
+                  <div className="mt-3 break-words rounded-2xl border border-info/20 bg-info/10 p-3 text-sm text-base-content/70 [overflow-wrap:anywhere]">
                     <div className="font-semibold text-base-content">Operator-owned evidence anchoring is enabled.</div>
                     {privySuiBindingFeatureEnabled ? (
                       <div className="mt-2">
@@ -2257,9 +2270,9 @@ export const SubmissionWorkspace = ({
         {canShowTokenization ? (
           <section
             id="workspace-robolend-handoff"
-            className="scroll-mt-24 rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30"
+            className="min-w-0 max-w-full scroll-mt-24 overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 p-4 shadow-lg shadow-base-300/30 sm:p-6"
           >
-            <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
+            <div className="flex min-w-0 items-center gap-2 break-words text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
               <ShieldCheckIcon className="h-4 w-4" />
               Robolend handoff and tokenization status
             </div>
