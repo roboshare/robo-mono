@@ -27,7 +27,11 @@ import {
   useSuiOperatorWallet,
 } from "~~/hooks/useSuiOperatorWallet";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
-import { isRobomataTokenizationClientEnabled } from "~~/lib/featureFlags";
+import {
+  isRobomataAgentsClientEnabled,
+  isRobomataFacilityMonitoringClientEnabled,
+  isRobomataTokenizationClientEnabled,
+} from "~~/lib/featureFlags";
 import { formatPercentFromBps, formatUsd } from "~~/lib/robomata/borrowingBase";
 import { resolveRobomataFacilityPolicyArtifact } from "~~/lib/robomata/policyRules";
 import { evictSubmissionFromSubmissionIndexCache, submissionIndexCacheKey } from "~~/lib/robomata/submissionIndexCache";
@@ -175,10 +179,14 @@ function workspaceProgressBadgeLabel(status: WorkspaceProgressStatus) {
 }
 
 function WorkspaceProgressCard({
+  actionDisabled = false,
+  disabledReason,
   onAction,
   prominent = false,
   step,
 }: {
+  actionDisabled?: boolean;
+  disabledReason?: string;
   onAction?: () => void;
   prominent?: boolean;
   step: WorkspaceChecklistStep;
@@ -200,9 +208,14 @@ function WorkspaceProgressCard({
           {step.waitingLabel ?? "Complete the previous step"}
         </div>
       ) : onAction ? (
-        <button className={actionClass} type="button" onClick={onAction}>
-          {step.actionLabel}
-        </button>
+        <>
+          <button className={actionClass} type="button" onClick={onAction} disabled={actionDisabled}>
+            {step.actionLabel}
+          </button>
+          {actionDisabled && disabledReason ? (
+            <div className="mt-3 text-xs font-medium leading-relaxed text-base-content/55">{disabledReason}</div>
+          ) : null}
+        </>
       ) : (
         <a className={actionClass} href={step.href}>
           {step.actionLabel}
@@ -369,12 +382,20 @@ function buildWorkspaceChecklist(submission: FacilitySubmission): WorkspaceCheck
         ? "Review verification"
         : hasComputation
           ? exceptionsResolved
-            ? "Anchor evidence"
+            ? ["configured", "operator_configured"].includes(submission.evidenceCommit.commitMode)
+              ? "Anchor evidence"
+              : "Review verification setup"
             : "Resolve exceptions first"
           : canCompute
             ? "Compute first"
             : prerequisiteAction,
-      actionType: evidenceCommitted || !hasComputation || !exceptionsResolved ? "navigate" : "commitEvidence",
+      actionType:
+        evidenceCommitted ||
+        !hasComputation ||
+        !exceptionsResolved ||
+        !["configured", "operator_configured"].includes(submission.evidenceCommit.commitMode)
+          ? "navigate"
+          : "commitEvidence",
       description: evidenceCommitted
         ? "Evidence root is anchored for lender review."
         : hasComputation
@@ -518,7 +539,27 @@ export const SubmissionWorkspace = ({
       pendingOperatorCommit?.submissionId === submission.id &&
       pendingOperatorCommit.rootDigest === submission.evidenceCommit.rootDigest,
   );
+  const isOperatorCommitBlockedByWallet = Boolean(
+    submission &&
+      submission.evidenceCommit.commitMode === "operator_configured" &&
+      submission.evidenceCommit.status !== "committing" &&
+      !hasSuiWallet &&
+      !canRetryPendingOperatorCommit,
+  );
+  const canRunEvidenceCommitAction = Boolean(
+    submission &&
+      !readOnly &&
+      !isBusy &&
+      ["configured", "operator_configured"].includes(submission.evidenceCommit.commitMode) &&
+      submission.evidenceCommit.status !== "committed" &&
+      !isOperatorCommitBlockedByWallet,
+  );
   const tokenization = submission?.tokenization;
+  const canShowMonitoringHandoff = Boolean(
+    submission?.computation &&
+      !readOnly &&
+      (isRobomataFacilityMonitoringClientEnabled() || isRobomataAgentsClientEnabled()),
+  );
   const canShowTokenization = Boolean(
     isRobomataTokenizationClientEnabled() && !readOnly && submission?.evidenceCommit.status === "committed",
   );
@@ -767,6 +808,12 @@ export const SubmissionWorkspace = ({
       return;
     }
     if (step.actionType === "commitEvidence") {
+      if (!canRunEvidenceCommitAction) {
+        if (isOperatorCommitBlockedByWallet) {
+          notification.error("Connect a compatible Sui wallet before anchoring evidence.");
+        }
+        return;
+      }
       void commitEvidence();
       return;
     }
@@ -1303,6 +1350,12 @@ export const SubmissionWorkspace = ({
         {nextWorkspaceStep ? (
           <div className="mt-4">
             <WorkspaceProgressCard
+              actionDisabled={nextWorkspaceStep.actionType === "commitEvidence" && !canRunEvidenceCommitAction}
+              disabledReason={
+                nextWorkspaceStep.actionType === "commitEvidence" && isOperatorCommitBlockedByWallet
+                  ? "Connect a compatible Sui wallet before anchoring evidence."
+                  : undefined
+              }
               step={nextWorkspaceStep}
               prominent
               onAction={
@@ -2026,7 +2079,7 @@ export const SubmissionWorkspace = ({
           </section>
         ) : null}
 
-        {!readOnly && submission.computation ? (
+        {canShowMonitoringHandoff ? (
           <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="min-w-0">
