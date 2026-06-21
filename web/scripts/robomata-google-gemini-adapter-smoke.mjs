@@ -38,6 +38,8 @@ for (const needle of [
   "x-goog-api-key",
   "responseMimeType",
   "application/json",
+  "GoogleGeminiApiError",
+  "isGoogleGeminiRateLimitError",
   "jsonTextFromProviderOutput",
 ]) {
   assertIncludes(gemini, needle, "Google Gemini helper");
@@ -47,9 +49,12 @@ for (const needle of [
   'if (name === "google") return reviewWithGoogle(result, mockReview)',
   'reviewBoundaryInput("google", "live_completed", "llm_live", model)',
   'reviewBoundaryInput("google", "schema_invalid_fallback", "deterministic_fallback", model)',
-  'reviewBoundaryInput("google", "live_error_fallback", "deterministic_fallback", model)',
+  'reviewBoundaryInput("google", providerStatus, "deterministic_fallback", model)',
+  '"live_error_fallback"',
+  '"rate_limited_fallback"',
   "googleProviderInput",
   "generateGoogleGeminiContent",
+  "isGoogleGeminiRateLimitError(error)",
   "providerInputControls: providerInput.userPrompt.inputControls",
 ]) {
   assertIncludes(agentProviders, needle, "agent providers");
@@ -59,8 +64,10 @@ for (const needle of [
   'provider === "openai" || provider === "google"',
   "planWithGoogle",
   'boundary("google", "schema_invalid_fallback", "deterministic_fallback", plannerBoundary.model)',
-  'boundary("google", "live_error_fallback", "deterministic_fallback", plannerBoundary.model)',
+  '"live_error_fallback"',
+  '"rate_limited_fallback"',
   "generateGoogleGeminiContent",
+  "isGoogleGeminiRateLimitError(error)",
   "jsonTextFromProviderOutput(outputText)",
 ]) {
   assertIncludes(agentPlanner, needle, "agent planner");

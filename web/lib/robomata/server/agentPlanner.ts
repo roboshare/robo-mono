@@ -26,6 +26,7 @@ import type { FacilityMonitoringProjection } from "~~/lib/robomata/facilityMonit
 import {
   GOOGLE_GEMINI_API_KEY_ENV,
   generateGoogleGeminiContent,
+  isGoogleGeminiRateLimitError,
   jsonTextFromProviderOutput,
 } from "~~/lib/robomata/googleGemini";
 import type { RobomataFacilityPolicyArtifact } from "~~/lib/robomata/policyRules";
@@ -905,7 +906,12 @@ async function planWithGoogle(
     }
     return {
       actions: input.candidateActions,
-      plannerBoundary: boundary("google", "live_error_fallback", "deterministic_fallback", plannerBoundary.model),
+      plannerBoundary: boundary(
+        "google",
+        isGoogleGeminiRateLimitError(error) ? "rate_limited_fallback" : "live_error_fallback",
+        "deterministic_fallback",
+        plannerBoundary.model,
+      ),
     };
   }
 }

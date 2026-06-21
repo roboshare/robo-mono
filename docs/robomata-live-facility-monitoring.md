@@ -301,6 +301,10 @@ Google planner requests use Gemini `generateContent` with JSON response MIME.
 Both use a short timeout and deterministic fallback if the provider call fails
 or returns schema-invalid output. Anthropic remains a stubbed planner boundary
 until equivalent provider-specific controls are implemented.
+When Google returns HTTP 429 / rate-limit exhaustion, the persisted planner
+boundary records `rate_limited_fallback` instead of the generic
+`live_error_fallback`; deterministic candidate actions remain the source of
+truth for the run.
 
 Sui and EVM writes remain explicit operator-signed product paths or separately
 configured legacy/test paths:
@@ -406,7 +410,10 @@ fails. This means live adapters still fall back to deterministic review output
 instead of accepting partial or unvalidated text. When deterministic rules
 report no open exceptions, model-provided exception notes are discarded so the
 lender packet remains clean. The resulting lender packet records whether review
-output was `llm_live` or deterministic fallback.
+output was `llm_live` or deterministic fallback. When Google returns HTTP 429 /
+rate-limit exhaustion, the review boundary records `rate_limited_fallback` so
+operators can distinguish quota pressure from schema or provider availability
+failures.
 
 The live provider input control boundary is explicit:
 
