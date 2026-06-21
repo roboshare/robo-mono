@@ -513,6 +513,7 @@ export const SubmissionWorkspace = ({
     });
     if (didUpdate) {
       setSelectedReceivablesCsvFilename(file.name);
+      setReceivablesCsvText("");
       setIsReceivablesCsvEditorOpen(false);
     }
   };
