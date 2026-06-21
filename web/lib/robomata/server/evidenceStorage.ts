@@ -64,26 +64,27 @@ async function uploadToWalrus(input: WalrusUploadInput): Promise<WalrusUploadRes
     DEFAULT_WALRUS_UPLOAD_TIMEOUT_MS,
   );
   const uploadUrl = `${publisherUrl.replace(/\/$/, "")}/v1/blobs?epochs=${epochs}`;
-  const response = await withTimeout(
-    signal =>
-      fetch(uploadUrl, {
+  const payload = await withTimeout(
+    async signal => {
+      const response = await fetch(uploadUrl, {
         method: "PUT",
         body: input.buffer,
         headers: {
           "content-type": input.contentType,
         },
         signal,
-      }),
+      });
+
+      if (!response.ok) {
+        const details = await response.text();
+        throw new Error(`Walrus upload failed: ${response.status} ${response.statusText} ${details}`);
+      }
+
+      return response.json();
+    },
     timeoutMs,
     `Walrus upload timed out after ${timeoutMs}ms.`,
   );
-
-  if (!response.ok) {
-    const details = await response.text();
-    throw new Error(`Walrus upload failed: ${response.status} ${response.statusText} ${details}`);
-  }
-
-  const payload = await response.json();
   const newlyCreated = payload?.newlyCreated?.blobObject;
   const alreadyCertified = payload?.alreadyCertified;
   const walrusBlobId = newlyCreated?.blobId ?? alreadyCertified?.blobId;
