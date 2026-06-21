@@ -117,3 +117,65 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     );
   }
 }
+
+export async function DELETE(request: NextRequest, context: { params: Promise<{ submissionId: string }> }) {
+  try {
+    const featureError = requireRobomataWorkflow();
+    if (featureError) return featureError;
+    const mutationError = requireRobomataMutation();
+    if (mutationError) return mutationError;
+
+    const { submissionId } = await context.params;
+    const store = getSubmissionStore();
+    const submission = await store.get(submissionId);
+
+    if (!submission) {
+      return NextResponse.json({ error: "Submission not found." }, { status: 404 });
+    }
+
+    const partnerAddress = await requirePartnerAddress(request);
+    if (partnerAddress instanceof NextResponse) return partnerAddress;
+
+    const accessError = requireSubmissionAccess(submission, partnerAddress);
+    if (accessError) return accessError;
+    const mutabilityError = requireSubmissionMutable(submission);
+    if (mutabilityError) return mutabilityError;
+
+    const removedReceivableCount = submission.receivables.length;
+    if (removedReceivableCount === 0) {
+      return NextResponse.json({ submission });
+    }
+
+    submission.receivables = [];
+    const evidenceStatusChanges = deriveSubmissionEvidenceStatuses(submission);
+    invalidateSubmissionArtifacts(submission);
+    addAuditEvent(submission, "receivables_removed", `Removed ${removedReceivableCount} imported receivables.`, {
+      receivableCount: removedReceivableCount,
+    });
+    if (evidenceStatusChanges.length > 0) {
+      addAuditEvent(
+        submission,
+        "evidence_updated",
+        `Updated ${evidenceStatusChanges.length} evidence status derivation(s) after receivables removal.`,
+        {
+          evidenceStatusChangeCount: evidenceStatusChanges.length,
+        },
+      );
+    }
+
+    const saved = await store.save(submission);
+    if (isRobomataFacilityMonitoringEnabled()) {
+      try {
+        await getFacilityMonitoringStore().clearReceivablesImportObservations(saved);
+      } catch (error) {
+        console.error("Failed to clear facility monitoring receivables observations after removal.", error);
+      }
+    }
+    return NextResponse.json({ submission: saved });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to remove imported receivables." },
+      { status: 500 },
+    );
+  }
+}

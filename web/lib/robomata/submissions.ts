@@ -74,11 +74,13 @@ export type SubmissionAuditEvent = {
     | "submission_created"
     | "submission_updated"
     | "receivables_imported"
+    | "receivables_removed"
     | "evidence_uploaded"
     | "borrowing_base_computed"
     | "receivable_excluded"
     | "receivable_updated"
     | "evidence_updated"
+    | "evidence_removed"
     | "packet_share_created"
     | "packet_share_revoked"
     | "sui_facility_assigned"
@@ -447,6 +449,13 @@ export function invalidateSubmissionArtifacts(submission: FacilitySubmission): F
     facilityAssignmentOperatorAddress: previousCommit.facilityAssignmentOperatorAddress,
     facilityAssignmentErrorMessage: previousCommit.facilityAssignmentErrorMessage,
   };
+  if (submission.facilityMonitoring) {
+    submission.facilityMonitoring = {
+      ...submission.facilityMonitoring,
+      latestPacketId: undefined,
+      latestRunId: undefined,
+    };
+  }
   submission.tokenization = createDefaultSubmissionTokenization();
   return touchSubmission(submission);
 }
