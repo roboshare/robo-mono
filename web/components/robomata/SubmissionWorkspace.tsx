@@ -523,7 +523,9 @@ export const SubmissionWorkspace = ({
     ? workspaceChecklist.filter(step => step.label !== nextWorkspaceStep.label)
     : workspaceChecklist;
   const latestReceivablesImportFilename = useMemo(() => getLatestReceivablesImportFilename(submission), [submission]);
-  const receivablesImportFilename = latestReceivablesImportFilename ?? selectedReceivablesCsvFilename;
+  const receivablesImportFilename = hasReceivables
+    ? (latestReceivablesImportFilename ?? selectedReceivablesCsvFilename)
+    : null;
   const shouldShowReceivablesCsvEditor = !hasReceivables || isReceivablesCsvEditorOpen;
 
   useEffect(() => {
@@ -1729,7 +1731,7 @@ export const SubmissionWorkspace = ({
                       type="submit"
                       disabled={isBusy}
                     >
-                      Upload evidence
+                      {isBusy ? "Processing..." : "Upload evidence"}
                     </button>
                   </div>
                 </form>
