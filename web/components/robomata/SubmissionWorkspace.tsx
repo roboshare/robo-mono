@@ -53,6 +53,7 @@ type SubmissionWorkspaceProps = {
 type CommitEvidenceResponse = {
   submission?: FacilitySubmission;
   operatorCommit?: OperatorSuiCommitRequest;
+  sponsorGasObjectId?: string;
   txDigest?: string;
   error?: string;
 };
@@ -1094,7 +1095,7 @@ export const SubmissionWorkspace = ({
     try {
       const completeOperatorCommit = async (commit: PendingOperatorCommit) => {
         const isSponsoredCommit = Boolean(
-          commit.sponsorSignature || commit.operatorSignature || commit.transactionBytes,
+          commit.sponsorGasObjectId || commit.sponsorSignature || commit.operatorSignature || commit.transactionBytes,
         );
         const completeHeaders = new Headers({ "content-type": "application/json" });
         const completeAuthHeaders = await getAuthHeaders({
@@ -1197,6 +1198,7 @@ export const SubmissionWorkspace = ({
         }
         if (privyResponse.status === 202) {
           setPendingOperatorCommit({
+            sponsorGasObjectId: privyPayload.sponsorGasObjectId,
             submissionId: submission.id,
             rootDigest: submission.evidenceCommit.rootDigest ?? "",
             txDigest: privyPayload.txDigest,

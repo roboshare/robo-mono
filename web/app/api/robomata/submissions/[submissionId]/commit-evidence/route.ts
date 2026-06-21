@@ -916,6 +916,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
         return NextResponse.json(
           {
             submission: committingSubmission,
+            sponsorGasObjectId: operatorCommit.sponsorship?.gasObjectId,
             txDigest: result.txDigest,
             error: result.txDigest
               ? `Privy Sui transaction ${result.txDigest} was submitted, but the matching EvidenceCommitted event is not indexed yet. Retry completion shortly.`
