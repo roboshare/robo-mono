@@ -124,7 +124,15 @@ function readRawSubmissionIndexCache(cacheKey: string | null): SubmissionIndexCa
 }
 
 export function readSubmissionIndexCache(cacheKey: string | null): SubmissionIndexView[] | null {
-  return readRawSubmissionIndexCache(cacheKey)?.submissions.map(hydrateSubmissionIndexEntry) ?? null;
+  const cached = readRawSubmissionIndexCache(cacheKey);
+  if (!cached) return null;
+
+  try {
+    return cached.submissions.map(hydrateSubmissionIndexEntry);
+  } catch (error) {
+    console.warn("Unable to hydrate cached Robomata submission index", error);
+    return null;
+  }
 }
 
 export function writeSubmissionIndexCache(cacheKey: string | null, submissions: SubmissionIndexView[]) {
