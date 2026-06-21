@@ -148,6 +148,7 @@ type WorkspaceChecklistStep = {
   href: string;
   label: string;
   status: WorkspaceProgressStatus;
+  waitingLabel?: string;
 };
 
 function statusClass(status: FacilitySubmission["status"]) {
@@ -173,6 +174,34 @@ function workspaceProgressBadgeLabel(status: WorkspaceProgressStatus) {
   if (status === "ready") return "Ready";
   if (status === "next") return "Next";
   return "Waiting";
+}
+
+function WorkspaceProgressCard({ prominent = false, step }: { prominent?: boolean; step: WorkspaceChecklistStep }) {
+  const isWaiting = step.status === "waiting";
+
+  return (
+    <div className={`rounded-2xl border ${prominent ? "p-5" : "p-4"} ${workspaceProgressCardClass(step.status)}`}>
+      <div className="flex items-center justify-between gap-3">
+        <div className={`${prominent ? "text-base" : "text-sm"} font-semibold text-base-content`}>{step.label}</div>
+        <span className={`badge ${workspaceProgressBadgeClass(step.status)}`}>
+          {workspaceProgressBadgeLabel(step.status)}
+        </span>
+      </div>
+      <p className="mt-2 text-sm leading-relaxed text-base-content/70">{step.description}</p>
+      {isWaiting ? (
+        <div className="mt-4 text-xs font-semibold uppercase tracking-[0.16em] text-base-content/45">
+          {step.waitingLabel ?? "Complete the previous step"}
+        </div>
+      ) : (
+        <a
+          className={`btn btn-sm mt-4 rounded-full ${step.status === "next" ? "btn-primary" : "btn-outline"}`}
+          href={step.href}
+        >
+          {step.actionLabel}
+        </a>
+      )}
+    </div>
+  );
 }
 
 function sectionTitle(readOnly: boolean) {
@@ -261,7 +290,11 @@ function buildWorkspaceChecklist(submission: FacilitySubmission): WorkspaceCheck
     : !hasEvidence
       ? "Upload evidence first"
       : "Finish prerequisites";
-  const prerequisiteHref = "#workspace-import";
+  const prerequisiteHref = !hasReceivables
+    ? "#workspace-receivables-import"
+    : !hasEvidence
+      ? "#workspace-evidence-upload"
+      : "#workspace-overview";
 
   return [
     {
@@ -269,7 +302,7 @@ function buildWorkspaceChecklist(submission: FacilitySubmission): WorkspaceCheck
       description: hasReceivables
         ? `${submission.receivables.length} receivables imported.`
         : "Import a receivables CSV before computing availability.",
-      href: hasReceivables ? "#workspace-receivables" : "#workspace-import",
+      href: hasReceivables ? "#workspace-receivables" : "#workspace-receivables-import",
       label: "Import receivables",
       status: hasReceivables ? "ready" : "next",
     },
@@ -280,9 +313,14 @@ function buildWorkspaceChecklist(submission: FacilitySubmission): WorkspaceCheck
         : hasReceivables
           ? "Attach insurance, servicing, title, lockbox, or other policy evidence."
           : "Evidence upload is available after receivables are imported.",
-      href: hasEvidence ? "#workspace-evidence-library" : "#workspace-import",
+      href: hasEvidence
+        ? "#workspace-evidence-library"
+        : hasReceivables
+          ? "#workspace-evidence-upload"
+          : prerequisiteHref,
       label: "Attach evidence",
       status: hasEvidence ? "ready" : hasReceivables ? "next" : "waiting",
+      waitingLabel: "Waiting for receivables import",
     },
     {
       actionLabel: hasComputation ? "Review lender packet" : canCompute ? "Compute borrowing base" : prerequisiteAction,
@@ -294,6 +332,7 @@ function buildWorkspaceChecklist(submission: FacilitySubmission): WorkspaceCheck
       href: hasComputation ? "#workspace-lender-packet" : canCompute ? "#workspace-overview" : prerequisiteHref,
       label: "Compute availability",
       status: hasComputation ? "ready" : canCompute ? "next" : "waiting",
+      waitingLabel: !hasReceivables ? "Waiting for receivables import" : "Waiting for evidence upload",
     },
     {
       actionLabel: hasComputation
@@ -311,6 +350,7 @@ function buildWorkspaceChecklist(submission: FacilitySubmission): WorkspaceCheck
       href: hasComputation ? "#workspace-exceptions" : canCompute ? "#workspace-overview" : prerequisiteHref,
       label: "Resolve exceptions",
       status: exceptionsResolved ? "ready" : hasComputation ? "next" : "waiting",
+      waitingLabel: "Waiting for computation",
     },
     {
       actionLabel: evidenceCommitted
@@ -340,6 +380,7 @@ function buildWorkspaceChecklist(submission: FacilitySubmission): WorkspaceCheck
             : prerequisiteHref,
       label: "Anchor evidence",
       status: evidenceCommitted ? "ready" : hasComputation && exceptionsResolved ? "next" : "waiting",
+      waitingLabel: hasComputation ? "Waiting for exception review" : "Waiting for computed packet",
     },
     {
       actionLabel: tokenizationStarted
@@ -371,6 +412,7 @@ function buildWorkspaceChecklist(submission: FacilitySubmission): WorkspaceCheck
               : prerequisiteHref,
       label: "Robolend handoff",
       status: tokenizationStarted ? "ready" : evidenceCommitted ? "next" : "waiting",
+      waitingLabel: "Waiting for anchored packet",
     },
   ];
 }
@@ -474,6 +516,10 @@ export const SubmissionWorkspace = ({
       tokenization.evm.txHash,
   );
   const workspaceChecklist = useMemo(() => (submission ? buildWorkspaceChecklist(submission) : []), [submission]);
+  const nextWorkspaceStep = workspaceChecklist.find(step => step.status === "next");
+  const supportingWorkspaceSteps = nextWorkspaceStep
+    ? workspaceChecklist.filter(step => step.label !== nextWorkspaceStep.label)
+    : workspaceChecklist;
   const latestReceivablesImportFilename = useMemo(() => getLatestReceivablesImportFilename(submission), [submission]);
   const receivablesImportFilename = latestReceivablesImportFilename ?? selectedReceivablesCsvFilename;
   const shouldShowReceivablesCsvEditor = !hasReceivables || isReceivablesCsvEditorOpen;
@@ -1187,36 +1233,27 @@ export const SubmissionWorkspace = ({
           <CheckCircleIcon className="h-4 w-4" />
           Workspace progress
         </div>
+        {nextWorkspaceStep ? (
+          <div className="mt-4">
+            <WorkspaceProgressCard step={nextWorkspaceStep} prominent />
+          </div>
+        ) : null}
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {workspaceChecklist.map(step => (
-            <div key={step.label} className={`rounded-2xl border p-4 ${workspaceProgressCardClass(step.status)}`}>
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-semibold text-base-content">{step.label}</div>
-                <span className={`badge ${workspaceProgressBadgeClass(step.status)}`}>
-                  {workspaceProgressBadgeLabel(step.status)}
-                </span>
-              </div>
-              <p className="mt-2 text-sm leading-relaxed text-base-content/70">{step.description}</p>
-              <a
-                className={`btn btn-outline btn-sm mt-4 rounded-full ${step.status === "waiting" ? "border-base-300 text-base-content/60" : ""}`}
-                href={step.href}
-              >
-                {step.actionLabel}
-              </a>
-            </div>
+          {supportingWorkspaceSteps.map(step => (
+            <WorkspaceProgressCard key={step.label} step={step} />
           ))}
         </div>
       </section>
 
       <div className="space-y-6">
         {canMutate || submission.receivables.length > 0 ? (
-          <section
-            id="workspace-import"
-            className="scroll-mt-24 overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 p-4 shadow-lg shadow-base-300/30 sm:p-6"
-          >
+          <div id="workspace-import" className="scroll-mt-24 space-y-6">
             {canMutate ? (
-              <div className="grid min-w-0 gap-6 lg:grid-cols-2 lg:items-stretch">
-                <div className="min-w-0">
+              <>
+                <section
+                  id="workspace-receivables-import"
+                  className="min-w-0 scroll-mt-24 overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 p-4 shadow-lg shadow-base-300/30 sm:p-6"
+                >
                   <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.2em] text-base-content/50">
                     <DocumentArrowUpIcon className="h-4 w-4" />
                     Receivables import
@@ -1297,91 +1334,100 @@ export const SubmissionWorkspace = ({
                       </button>
                     </div>
                   ) : null}
-                </div>
+                </section>
 
-                <form
-                  className="min-w-0 rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4 sm:p-5"
-                  onSubmit={uploadEvidence}
+                <section
+                  id="workspace-evidence-upload"
+                  className="min-w-0 scroll-mt-24 overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 p-4 shadow-lg shadow-base-300/30 sm:p-6"
                 >
-                  <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.2em] text-base-content/50">
-                    <CloudArrowUpIcon className="h-4 w-4" />
-                    Evidence upload
-                  </div>
-                  <p className="mt-3 text-sm leading-relaxed text-base-content/70">
-                    Attach policy support for the receivables file, such as insurance schedules, title and lien files,
-                    servicing reports, utilization exports, or lockbox mapping.
-                  </p>
-                  <div className="mt-4 grid gap-3">
-                    <input
-                      name="file"
-                      type="file"
-                      className="file-input file-input-bordered w-full min-w-0 rounded-xl text-sm"
-                    />
-                    <input
-                      name="label"
-                      className="input input-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
-                      placeholder="Package name, e.g. June insurance schedule"
-                      required
-                    />
-                    <input
-                      name="source"
-                      className="input input-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
-                      placeholder="Source, e.g. authorized broker export or servicing system"
-                      required
-                    />
-                    <input
-                      name="scope"
-                      className="input input-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
-                      placeholder="Evidence type, e.g. Insurance, Title, Servicing, Lockbox"
-                      required
-                    />
-                    <div className="break-words rounded-2xl border border-base-300 bg-base-100 px-4 py-3 text-sm text-base-content/70">
-                      Robomata derives evidence status from the active policy and imported receivable data after upload.
+                  <form
+                    className="min-w-0 rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4 sm:p-5"
+                    onSubmit={uploadEvidence}
+                  >
+                    <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.2em] text-base-content/50">
+                      <CloudArrowUpIcon className="h-4 w-4" />
+                      Evidence upload
                     </div>
-                    <label className="form-control">
-                      <span className="label pb-1 pt-0">
-                        <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
-                          Access policy
+                    <p className="mt-3 text-sm leading-relaxed text-base-content/70">
+                      Attach policy support for the receivables file, such as insurance schedules, title and lien files,
+                      servicing reports, utilization exports, or lockbox mapping.
+                    </p>
+                    <div className="mt-4 grid gap-3">
+                      <input
+                        name="file"
+                        type="file"
+                        className="file-input file-input-bordered w-full min-w-0 rounded-xl text-sm"
+                      />
+                      <input
+                        name="label"
+                        className="input input-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
+                        placeholder="Package name, e.g. June insurance schedule"
+                        required
+                      />
+                      <input
+                        name="source"
+                        className="input input-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
+                        placeholder="Source, e.g. authorized broker export or servicing system"
+                        required
+                      />
+                      <input
+                        name="scope"
+                        className="input input-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
+                        placeholder="Evidence type, e.g. Insurance, Title, Servicing, Lockbox"
+                        required
+                      />
+                      <div className="break-words rounded-2xl border border-base-300 bg-base-100 px-4 py-3 text-sm text-base-content/70">
+                        Robomata derives evidence status from the active policy and imported receivable data after
+                        upload.
+                      </div>
+                      <label className="form-control">
+                        <span className="label pb-1 pt-0">
+                          <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
+                            Access policy
+                          </span>
                         </span>
-                      </span>
-                      <select
-                        name="sealPolicyId"
-                        className="select select-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
-                        defaultValue={evidenceSealPolicyOptions[0].value}
-                      >
-                        {evidenceSealPolicyOptions.map(option => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                      <span className="label pt-1">
-                        <span className="label-text-alt text-base-content/60">
-                          Controls which reviewer role can access the committed evidence metadata.
+                        <select
+                          name="sealPolicyId"
+                          className="select select-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
+                          defaultValue={evidenceSealPolicyOptions[0].value}
+                        >
+                          {evidenceSealPolicyOptions.map(option => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="label pt-1">
+                          <span className="label-text-alt text-base-content/60">
+                            Controls which reviewer role can access the committed evidence metadata.
+                          </span>
                         </span>
-                      </span>
-                    </label>
-                    <input
-                      name="linkedReceivableIds"
-                      className="input input-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
-                      placeholder="Related receivable IDs, e.g. AR-1007, AR-1011"
-                    />
-                    <textarea
-                      className="textarea textarea-bordered min-h-28 w-full min-w-0 rounded-xl px-4 py-3 text-sm leading-relaxed"
-                      placeholder="Or paste authorized evidence notes, report extracts, or source metadata when no local file is handy."
-                      value={evidenceText}
-                      onChange={event => setEvidenceText(event.target.value)}
-                    />
-                    <button className="btn btn-primary rounded-full" type="submit" disabled={isBusy}>
-                      Upload evidence
-                    </button>
-                  </div>
-                </form>
-              </div>
+                      </label>
+                      <input
+                        name="linkedReceivableIds"
+                        className="input input-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
+                        placeholder="Related receivable IDs, e.g. AR-1007, AR-1011"
+                      />
+                      <textarea
+                        className="textarea textarea-bordered min-h-28 w-full min-w-0 rounded-xl px-4 py-3 text-sm leading-relaxed"
+                        placeholder="Or paste authorized evidence notes, report extracts, or source metadata when no local file is handy."
+                        value={evidenceText}
+                        onChange={event => setEvidenceText(event.target.value)}
+                      />
+                      <button className="btn btn-primary rounded-full" type="submit" disabled={isBusy}>
+                        Upload evidence
+                      </button>
+                    </div>
+                  </form>
+                </section>
+              </>
             ) : null}
 
             {submission.receivables.length > 0 ? (
-              <div id="workspace-receivables" className="mt-6 min-w-0 scroll-mt-24 border-t border-base-300 pt-6">
+              <section
+                id="workspace-receivables"
+                className="min-w-0 scroll-mt-24 overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 p-4 shadow-lg shadow-base-300/30 sm:p-6"
+              >
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                   <div>
                     <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
@@ -1576,9 +1622,9 @@ export const SubmissionWorkspace = ({
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </section>
             ) : null}
-          </section>
+          </div>
         ) : null}
 
         {submission.computation || submission.exceptions.length > 0 ? (
