@@ -373,6 +373,7 @@ export const SubmissionWorkspace = ({
 
     const form = event.currentTarget;
     const formData = new FormData(form);
+    formData.set("sealPolicyId", "seal://policy/lender-auditor-read");
     const uploadedFile = formData.get("file");
     if (!(uploadedFile instanceof File) || uploadedFile.size === 0) {
       if (!evidenceText.trim()) {
@@ -957,24 +958,28 @@ export const SubmissionWorkspace = ({
                   <CloudArrowUpIcon className="h-4 w-4" />
                   Evidence upload
                 </div>
+                <p className="mt-3 text-sm leading-relaxed text-base-content/70">
+                  Attach policy support for the receivables file, such as insurance schedules, title and lien files,
+                  servicing reports, utilization exports, or lockbox mapping.
+                </p>
                 <div className="mt-4 grid gap-3">
                   <input name="file" type="file" className="file-input file-input-bordered w-full rounded-xl" />
                   <input
                     name="label"
                     className="input input-bordered h-11 w-full rounded-xl px-4 text-sm"
-                    placeholder="Insurance schedule"
+                    placeholder="Package name, e.g. June insurance schedule"
                     required
                   />
                   <input
                     name="source"
                     className="input input-bordered h-11 w-full rounded-xl px-4 text-sm"
-                    placeholder="Operator-authorized insurance broker export"
+                    placeholder="Source, e.g. authorized broker export or servicing system"
                     required
                   />
                   <input
                     name="scope"
                     className="input input-bordered h-11 w-full rounded-xl px-4 text-sm"
-                    placeholder="Insurance"
+                    placeholder="Evidence type, e.g. Insurance, Title, Servicing, Lockbox"
                     required
                   />
                   <select
@@ -982,23 +987,18 @@ export const SubmissionWorkspace = ({
                     className="select select-bordered h-11 w-full rounded-xl px-4 text-sm"
                     defaultValue="pending"
                   >
-                    <option value="pending">Pending</option>
-                    <option value="verified">Verified</option>
-                    <option value="exception">Exception</option>
+                    <option value="pending">Pending - needs review</option>
+                    <option value="verified">Verified - usable for borrowing base</option>
+                    <option value="exception">Exception - incomplete or stale</option>
                   </select>
-                  <input
-                    name="sealPolicyId"
-                    className="input input-bordered h-11 w-full rounded-xl px-4 text-sm"
-                    defaultValue="robomata_overflow::facility::seal_approve"
-                  />
                   <input
                     name="linkedReceivableIds"
                     className="input input-bordered h-11 w-full rounded-xl px-4 text-sm"
-                    placeholder="Linked receivable ids (comma separated)"
+                    placeholder="Related receivable IDs, e.g. AR-1007, AR-1011"
                   />
                   <textarea
                     className="textarea textarea-bordered min-h-28 w-full rounded-xl px-4 py-3 text-sm leading-relaxed"
-                    placeholder="Or paste authorized evidence text when you do not have a local file handy."
+                    placeholder="Or paste authorized evidence notes, report extracts, or source metadata when no local file is handy."
                     value={evidenceText}
                     onChange={event => setEvidenceText(event.target.value)}
                   />
@@ -1325,10 +1325,6 @@ export const SubmissionWorkspace = ({
                           <div className="mt-1 break-all">{evidence.walrusEventId}</div>
                         </div>
                       ) : null}
-                      <div>
-                        <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">Seal policy</div>
-                        <div className="mt-1 break-all">{evidence.sealPolicyId}</div>
-                      </div>
                       {evidence.sealIdentity ? (
                         <div>
                           <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">Seal identity</div>
