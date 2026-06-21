@@ -144,9 +144,9 @@ const ROBOMATA_BORROWING_BASE_RULES: RobomataPolicyRule[] = [
   },
   {
     id: "evidence-status",
-    label: "Evidence status",
+    label: "Evidence package status",
     summary: "Evidence packages that are pending or in exception count as package exceptions.",
-    value: "verified required",
+    value: "Verified required",
   },
   {
     id: "manual-exclusion",

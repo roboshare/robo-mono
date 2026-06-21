@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { type Hex, decodeEventLog, encodeFunctionData } from "viem";
 import { usePublicClient, useWriteContract } from "wagmi";
 import {
@@ -11,6 +12,7 @@ import {
   DocumentArrowUpIcon,
   ExclamationTriangleIcon,
   ShieldCheckIcon,
+  TrashIcon,
 } from "@heroicons/react/24/outline";
 import { AgentSupervisionPanel } from "~~/components/robomata/AgentSupervisionPanel";
 import { FacilityMonitoringPanel } from "~~/components/robomata/FacilityMonitoringPanel";
@@ -30,7 +32,13 @@ import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
 import { isRobomataTokenizationClientEnabled } from "~~/lib/featureFlags";
 import { formatPercentFromBps, formatUsd } from "~~/lib/robomata/borrowingBase";
 import { resolveRobomataFacilityPolicyArtifact } from "~~/lib/robomata/policyRules";
-import type { FacilitySubmission, SubmissionComputation, SubmissionReceivable } from "~~/lib/robomata/submissions";
+import { evictSubmissionFromSubmissionIndexCache, submissionIndexCacheKey } from "~~/lib/robomata/submissionIndexCache";
+import {
+  type FacilitySubmission,
+  type SubmissionComputation,
+  type SubmissionReceivable,
+  canDeleteDraftFacilitySubmission,
+} from "~~/lib/robomata/submissions";
 import { notification } from "~~/utils/scaffold-eth";
 
 type SubmissionWorkspaceProps = {
@@ -104,6 +112,19 @@ const facilityRegistryWriteAbi = [
   },
 ] as const;
 
+const evidenceSealPolicyOptions = [
+  {
+    description: "Standard lender and auditor access for most packet evidence.",
+    label: "Lender and auditor access",
+    value: "seal://policy/lender-auditor-read",
+  },
+  {
+    description: "Use for source exports that should expose only redacted fields to lenders.",
+    label: "Operations redacted access",
+    value: "seal://policy/ops-lender-redacted",
+  },
+] as const;
+
 type PendingOperatorCommit = {
   operatorSignature?: string;
   sponsorGasObjectId?: string;
@@ -164,6 +185,7 @@ export const SubmissionWorkspace = ({
   readOnly = false,
   loadLatest = false,
 }: SubmissionWorkspaceProps) => {
+  const router = useRouter();
   const [submission, setSubmission] = useState<FacilitySubmission | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isBusy, setIsBusy] = useState(false);
@@ -225,6 +247,11 @@ export const SubmissionWorkspace = ({
   const canMutate = !readOnly && !isCommitted;
   const canComputeBorrowingBase = Boolean(
     submission && submission.receivables.length > 0 && submission.evidence.length > 0,
+  );
+  const canDeleteDraft = Boolean(submission && canMutate && canDeleteDraftFacilitySubmission(submission));
+  const submissionCacheKey = useMemo(
+    () => submissionIndexCacheKey(partnerAuthAddress, selectedNetwork.id),
+    [partnerAuthAddress, selectedNetwork.id],
   );
   const canRetryPendingOperatorCommit = Boolean(
     submission &&
@@ -364,6 +391,9 @@ export const SubmissionWorkspace = ({
 
     const form = event.currentTarget;
     const formData = new FormData(form);
+    if (!String(formData.get("sealPolicyId") ?? "").trim()) {
+      formData.set("sealPolicyId", evidenceSealPolicyOptions[0].value);
+    }
     const uploadedFile = formData.get("file");
     if (!(uploadedFile instanceof File) || uploadedFile.size === 0) {
       if (!evidenceText.trim()) {
@@ -395,6 +425,39 @@ export const SubmissionWorkspace = ({
       return;
     }
     await updateSubmission(`/api/robomata/submissions/${submission.id}/compute`, { method: "POST" });
+  };
+
+  const deleteDraftSubmission = async () => {
+    if (!submission || !canDeleteDraft) return;
+    if (!window.confirm(`Delete draft facility package "${submission.facilityName}"?`)) return;
+
+    if (!partnerAuthAddress) {
+      notification.error("Connect a partner wallet before deleting the submission.");
+      return;
+    }
+
+    const path = `/api/robomata/submissions/${submission.id}`;
+    setIsBusy(true);
+    try {
+      const response = await fetch(path, {
+        method: "DELETE",
+        headers: await getAuthHeaders({ chainId: selectedNetwork.id, method: "DELETE", path, signerAddress }),
+      });
+      const payload = await readJsonResponse<Record<string, never>>(response);
+      if (!response.ok) {
+        notification.error(payload.error ?? `Failed to delete draft package (${response.status}).`);
+        return;
+      }
+
+      notification.success("Draft facility package deleted.");
+      evictSubmissionFromSubmissionIndexCache(submissionCacheKey, submission.id);
+      router.push("/robomata/submissions");
+      router.refresh();
+    } catch (error) {
+      notification.error(error instanceof Error ? error.message : "Failed to delete draft package.");
+    } finally {
+      setIsBusy(false);
+    }
   };
 
   const tokenizationTermsBody = () => ({
@@ -836,6 +899,16 @@ export const SubmissionWorkspace = ({
                     <ArrowPathIcon className="h-4 w-4" />
                     Compute borrowing base
                   </button>
+                  {canDeleteDraft ? (
+                    <button
+                      className="btn btn-outline rounded-full text-error hover:border-error hover:bg-error/10"
+                      onClick={deleteDraftSubmission}
+                      disabled={isBusy}
+                    >
+                      <TrashIcon className="h-4 w-4" />
+                      Delete draft
+                    </button>
+                  ) : null}
                 </>
               )}
             </div>
@@ -906,24 +979,28 @@ export const SubmissionWorkspace = ({
                   <CloudArrowUpIcon className="h-4 w-4" />
                   Evidence upload
                 </div>
+                <p className="mt-3 text-sm leading-relaxed text-base-content/70">
+                  Attach policy support for the receivables file, such as insurance schedules, title and lien files,
+                  servicing reports, utilization exports, or lockbox mapping.
+                </p>
                 <div className="mt-4 grid gap-3">
                   <input name="file" type="file" className="file-input file-input-bordered w-full rounded-xl" />
                   <input
                     name="label"
                     className="input input-bordered h-11 w-full rounded-xl px-4 text-sm"
-                    placeholder="Insurance schedule"
+                    placeholder="Package name, e.g. June insurance schedule"
                     required
                   />
                   <input
                     name="source"
                     className="input input-bordered h-11 w-full rounded-xl px-4 text-sm"
-                    placeholder="Operator-authorized insurance broker export"
+                    placeholder="Source, e.g. authorized broker export or servicing system"
                     required
                   />
                   <input
                     name="scope"
                     className="input input-bordered h-11 w-full rounded-xl px-4 text-sm"
-                    placeholder="Insurance"
+                    placeholder="Evidence type, e.g. Insurance, Title, Servicing, Lockbox"
                     required
                   />
                   <select
@@ -931,23 +1008,41 @@ export const SubmissionWorkspace = ({
                     className="select select-bordered h-11 w-full rounded-xl px-4 text-sm"
                     defaultValue="pending"
                   >
-                    <option value="pending">Pending</option>
-                    <option value="verified">Verified</option>
-                    <option value="exception">Exception</option>
+                    <option value="pending">Pending - needs review</option>
+                    <option value="verified">Verified - usable for borrowing base</option>
+                    <option value="exception">Exception - incomplete or stale</option>
                   </select>
-                  <input
-                    name="sealPolicyId"
-                    className="input input-bordered h-11 w-full rounded-xl px-4 text-sm"
-                    defaultValue="robomata_overflow::facility::seal_approve"
-                  />
+                  <label className="form-control">
+                    <span className="label pb-1 pt-0">
+                      <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
+                        Access policy
+                      </span>
+                    </span>
+                    <select
+                      name="sealPolicyId"
+                      className="select select-bordered h-11 w-full rounded-xl px-4 text-sm"
+                      defaultValue={evidenceSealPolicyOptions[0].value}
+                    >
+                      {evidenceSealPolicyOptions.map(option => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="label pt-1">
+                      <span className="label-text-alt text-base-content/60">
+                        Controls which reviewer role can access the committed evidence metadata.
+                      </span>
+                    </span>
+                  </label>
                   <input
                     name="linkedReceivableIds"
                     className="input input-bordered h-11 w-full rounded-xl px-4 text-sm"
-                    placeholder="Linked receivable ids (comma separated)"
+                    placeholder="Related receivable IDs, e.g. AR-1007, AR-1011"
                   />
                   <textarea
                     className="textarea textarea-bordered min-h-28 w-full rounded-xl px-4 py-3 text-sm leading-relaxed"
-                    placeholder="Or paste authorized evidence text when you do not have a local file handy."
+                    placeholder="Or paste authorized evidence notes, report extracts, or source metadata when no local file is handy."
                     value={evidenceText}
                     onChange={event => setEvidenceText(event.target.value)}
                   />
@@ -1274,10 +1369,6 @@ export const SubmissionWorkspace = ({
                           <div className="mt-1 break-all">{evidence.walrusEventId}</div>
                         </div>
                       ) : null}
-                      <div>
-                        <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">Seal policy</div>
-                        <div className="mt-1 break-all">{evidence.sealPolicyId}</div>
-                      </div>
                       {evidence.sealIdentity ? (
                         <div>
                           <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">Seal identity</div>
