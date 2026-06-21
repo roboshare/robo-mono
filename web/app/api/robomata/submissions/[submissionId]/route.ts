@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isRobomataWorkflowMutationEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
+import { deriveSubmissionEvidenceStatuses } from "~~/lib/robomata/evidenceStatus";
 import { resolveRobomataFacilityPolicyArtifact } from "~~/lib/robomata/policyRules";
 import {
   requirePartnerAddress,
@@ -47,11 +48,6 @@ type SubmissionPatchAction =
       patch: ReceivablePatch;
     }
   | {
-      action: "updateEvidenceStatus";
-      evidenceId: string;
-      status: "verified" | "exception" | "pending";
-    }
-  | {
       action: "reviewPolicy";
       rationale?: unknown;
       status: "accepted" | "needs_changes";
@@ -68,7 +64,6 @@ type ReceivablePatch = Partial<{
   lockboxMatched: boolean;
 }>;
 
-const evidenceStatuses = new Set(["verified", "exception", "pending"]);
 const policyReviewStatuses = new Set(["accepted", "needs_changes"]);
 
 class PatchValidationError extends Error {}
@@ -114,14 +109,6 @@ function normalizeStringPatch(value: unknown, field: string) {
     throw new PatchValidationError(`${field} must be a non-empty string.`);
   }
   return value.trim();
-}
-
-function normalizeEvidenceStatus(value: unknown) {
-  if (typeof value !== "string" || !evidenceStatuses.has(value)) {
-    throw new PatchValidationError("status must be verified, exception, or pending.");
-  }
-
-  return value as "verified" | "exception" | "pending";
 }
 
 function normalizePolicyReviewStatus(value: unknown) {
@@ -172,6 +159,20 @@ function requireStringId(value: unknown, field: string) {
     throw new PatchValidationError(`${field} must be a non-empty string.`);
   }
   return value.trim();
+}
+
+function refreshDerivedEvidenceStatuses(submission: Parameters<typeof deriveSubmissionEvidenceStatuses>[0]) {
+  const changes = deriveSubmissionEvidenceStatuses(submission);
+  if (changes.length === 0) return;
+
+  addAuditEvent(
+    submission,
+    "evidence_updated",
+    `Updated ${changes.length} evidence status derivation(s) from current receivable data.`,
+    {
+      evidenceStatusChangeCount: changes.length,
+    },
+  );
 }
 
 export async function GET(request: NextRequest, context: { params: Promise<{ submissionId: string }> }) {
@@ -254,6 +255,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ s
         `${excluded ? "Excluded" : "Reinstated"} receivable ${receivableId}.`,
         { receivableId, excluded },
       );
+      refreshDerivedEvidenceStatuses(submission);
       invalidateSubmissionArtifacts(submission);
     } else if (body.action === "updateReceivable") {
       const receivableId = requireStringId(body.receivableId, "receivableId");
@@ -267,20 +269,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ s
       addAuditEvent(submission, "receivable_updated", `Updated receivable ${receivableId}.`, {
         receivableId,
       });
-      invalidateSubmissionArtifacts(submission);
-    } else if (body.action === "updateEvidenceStatus") {
-      const evidenceId = requireStringId(body.evidenceId, "evidenceId");
-      if (!submission.evidence.some(evidence => evidence.id === evidenceId)) {
-        return itemNotFound(`Evidence ${evidenceId} was not found.`);
-      }
-      const status = normalizeEvidenceStatus(body.status);
-      submission.evidence = submission.evidence.map(evidence =>
-        evidence.id === evidenceId ? { ...evidence, status } : evidence,
-      );
-      addAuditEvent(submission, "evidence_updated", `Updated evidence status for ${evidenceId}.`, {
-        evidenceId,
-        status,
-      });
+      refreshDerivedEvidenceStatuses(submission);
       invalidateSubmissionArtifacts(submission);
     } else if (body.action === "reviewPolicy") {
       const status = normalizePolicyReviewStatus(body.status);
