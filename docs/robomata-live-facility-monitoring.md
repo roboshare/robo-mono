@@ -297,7 +297,8 @@ Google/Gemini planner refinement requires:
 - `ROBOMATA_AGENT_PLANNER_MODEL=<model id>`
 
 OpenAI planner requests use Responses structured output with `store: false`.
-Google planner requests use Gemini `generateContent` with JSON response MIME.
+Google planner requests use Gemini `generateContent` with JSON response MIME
+and the planner JSON schema passed in `generationConfig.responseFormat`.
 Both use a short timeout and deterministic fallback if the provider call fails
 or returns schema-invalid output. Anthropic remains a stubbed planner boundary
 until equivalent provider-specific controls are implemented.
@@ -401,7 +402,8 @@ Google/Gemini review requires:
 - `ROBOMATA_AGENT_REVIEW_MODEL=<model id>`
 
 The OpenAI adapter uses Responses structured output. The Google adapter uses the
-Gemini `generateContent` API with JSON response MIME. Both adapters are advisory
+Gemini `generateContent` API with JSON response MIME and the review JSON schema
+passed in `generationConfig.responseFormat`. Both adapters are advisory
 memo paths only. They send aggregates plus capped receivable/evidence exception
 rows, not raw evidence files or every eligible receivable. OpenAI requests set
 `store: false`; both adapters use a short provider timeout and fall back to

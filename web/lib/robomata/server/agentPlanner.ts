@@ -880,6 +880,7 @@ async function planWithGoogle(
     const outputText = await generateGoogleGeminiContent({
       apiKey,
       model: plannerBoundary.model,
+      responseSchema: openAiPlannerSchema,
       systemInstruction:
         "You are a supervised private-credit operations planner. Return only schema-compliant JSON. Never invent action types or execution status.",
       timeoutMs: googleGeminiPlannerTimeoutMs,

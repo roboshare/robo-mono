@@ -665,6 +665,7 @@ async function reviewWithGoogle(result: AgentReviewInput, fallback: AgentReview)
     const outputText = await generateGoogleGeminiContent({
       apiKey,
       model,
+      responseSchema: openAiReviewSchema,
       systemInstruction: providerInput.systemInstruction,
       timeoutMs: googleGeminiReviewTimeoutMs,
       userPrompt: JSON.stringify(providerInput.userPrompt),
