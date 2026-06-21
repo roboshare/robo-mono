@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { ArrowPathIcon, CheckCircleIcon, CircleStackIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import {
   EvidenceFreshnessPolicyDisclosure,
@@ -33,6 +34,7 @@ type FacilityMonitoringPanelProps = {
   }) => Promise<Record<string, string>>;
   signerAddress?: string;
   submission: FacilitySubmission;
+  workspaceHref?: string;
 };
 
 async function readJsonResponse<T>(response: Response): Promise<T & { error?: string }> {
@@ -153,6 +155,7 @@ export const FacilityMonitoringPanel = ({
   getAuthHeaders,
   signerAddress,
   submission,
+  workspaceHref,
 }: FacilityMonitoringPanelProps) => {
   const featureEnabled = isRobomataFacilityMonitoringClientEnabled();
   const [projection, setProjection] = useState<FacilityMonitoringProjection | null>(null);
@@ -278,22 +281,24 @@ export const FacilityMonitoringPanel = ({
             </div>
           </div>
 
-          <div className="grid gap-3 lg:grid-cols-3">
-            <EvidenceFreshnessPolicyDisclosure policyArtifact={policyArtifact} />
-            <PacketFreshnessPolicyDisclosure policyArtifact={policyArtifact} />
-            <SuiRootPolicyDisclosure policyArtifact={policyArtifact} />
-          </div>
-
-          <div className="grid gap-3 lg:grid-cols-2">
-            <PolicyEvaluationSummaryPanel
-              evaluations={projection.latestRun?.policyEvaluations}
-              title="Borrowing-base rule evaluation"
-            />
-            <PolicyEvaluationSummaryPanel
-              evaluations={projection.latestPacket?.policyEvaluations}
-              title="Packet and evidence rule evaluation"
-            />
-          </div>
+          <details className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
+            <summary className="cursor-pointer text-sm font-semibold text-base-content">Policy diagnostics</summary>
+            <div className="mt-4 grid gap-3 lg:grid-cols-3">
+              <EvidenceFreshnessPolicyDisclosure policyArtifact={policyArtifact} />
+              <PacketFreshnessPolicyDisclosure policyArtifact={policyArtifact} />
+              <SuiRootPolicyDisclosure policyArtifact={policyArtifact} />
+            </div>
+            <div className="mt-3 grid gap-3 lg:grid-cols-2">
+              <PolicyEvaluationSummaryPanel
+                evaluations={projection.latestRun?.policyEvaluations}
+                title="Borrowing-base rule evaluation"
+              />
+              <PolicyEvaluationSummaryPanel
+                evaluations={projection.latestPacket?.policyEvaluations}
+                title="Packet and evidence rule evaluation"
+              />
+            </div>
+          </details>
 
           {projection.warnings.length ? (
             <div className="rounded-[1.5rem] border border-warning/20 bg-warning/10 p-4">
@@ -318,28 +323,41 @@ export const FacilityMonitoringPanel = ({
 
           {projection.latestRun?.exceptions.length ? (
             <div className="rounded-[1.5rem] border border-error/20 bg-error/10 p-4">
-              <div className="flex items-center gap-2 text-sm font-semibold text-base-content">
-                <ExclamationTriangleIcon className="h-4 w-4" />
-                Open run exceptions
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-2 text-sm font-semibold text-base-content">
+                  <ExclamationTriangleIcon className="h-4 w-4" />
+                  Open run exceptions
+                </div>
+                {workspaceHref ? (
+                  <Link href={`${workspaceHref}#workspace-exceptions`} className="btn btn-xs btn-outline rounded-full">
+                    Resolve in workspace
+                  </Link>
+                ) : null}
               </div>
-              <div className="mt-3 grid gap-2">
-                {projection.latestRun.exceptions.map(exception => (
-                  <div
-                    key={exception.id}
-                    className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-error/10 bg-base-100/70 p-3 text-sm"
-                  >
-                    <div>
-                      <div className="font-semibold text-base-content">{exception.message}</div>
-                      <div className="mt-1 text-base-content/60">
-                        {exception.kind} - action {formatStatus(exception.actionStatus)}
+              <details className="mt-3">
+                <summary className="cursor-pointer text-sm text-base-content/70">
+                  {projection.latestRun.exceptions.length} exception
+                  {projection.latestRun.exceptions.length === 1 ? "" : "s"} mirrored from the operator worklist
+                </summary>
+                <div className="mt-3 grid gap-2">
+                  {projection.latestRun.exceptions.map(exception => (
+                    <div
+                      key={exception.id}
+                      className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-error/10 bg-base-100/70 p-3 text-sm"
+                    >
+                      <div>
+                        <div className="font-semibold text-base-content">{exception.message}</div>
+                        <div className="mt-1 text-base-content/60">
+                          {exception.kind} - action {formatStatus(exception.actionStatus)}
+                        </div>
                       </div>
+                      <span className={`badge ${statusBadgeClass(exception.severity)} capitalize`}>
+                        {formatStatus(exception.severity)}
+                      </span>
                     </div>
-                    <span className={`badge ${statusBadgeClass(exception.severity)} capitalize`}>
-                      {formatStatus(exception.severity)}
-                    </span>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              </details>
             </div>
           ) : null}
 
@@ -420,43 +438,52 @@ export const FacilityMonitoringPanel = ({
             )}
           </div>
 
-          <div className="space-y-3">
-            {projection.observations.length ? (
-              projection.observations.map(observation => (
-                <div key={observation.id} className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <div className="font-semibold capitalize text-base-content">{formatStatus(observation.kind)}</div>
-                      <div className="mt-1 text-sm text-base-content/70">
-                        {observation.source} - observed {new Date(observation.observedAt).toLocaleString()}
+          <details className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
+            <summary className="cursor-pointer text-sm font-semibold text-base-content">
+              Evidence observations and digests
+            </summary>
+            <div className="mt-4 space-y-3">
+              {projection.observations.length ? (
+                projection.observations.map(observation => (
+                  <div key={observation.id} className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="font-semibold capitalize text-base-content">
+                          {formatStatus(observation.kind)}
+                        </div>
+                        <div className="mt-1 text-sm text-base-content/70">
+                          {observation.source} - observed {new Date(observation.observedAt).toLocaleString()}
+                        </div>
                       </div>
+                      <span className={`badge ${observationBadgeClass(observation.status)} capitalize`}>
+                        {formatStatus(observation.status)}
+                      </span>
                     </div>
-                    <span className={`badge ${observationBadgeClass(observation.status)} capitalize`}>
-                      {formatStatus(observation.status)}
-                    </span>
-                  </div>
-                  <div className="mt-3 grid gap-2 text-xs text-base-content/60 sm:grid-cols-2">
-                    <div>{observationLinkSummary(observation)}</div>
-                    <div>Confidence: {formatStatus(observation.confidence)}</div>
-                    <div>Effective: {formatDateTime(observation.effectiveAt)}</div>
-                    <div>Expires: {formatDateTime(observation.expiresAt)}</div>
-                    {observation.supersedesObservationId ? (
-                      <div className="break-all">Supersedes: {observation.supersedesObservationId}</div>
+                    <div className="mt-3 grid gap-2 text-xs text-base-content/60 sm:grid-cols-2">
+                      <div>{observationLinkSummary(observation)}</div>
+                      <div>Confidence: {formatStatus(observation.confidence)}</div>
+                      <div>Effective: {formatDateTime(observation.effectiveAt)}</div>
+                      <div>Expires: {formatDateTime(observation.expiresAt)}</div>
+                      {observation.supersedesObservationId ? (
+                        <div className="break-all">Supersedes: {observation.supersedesObservationId}</div>
+                      ) : null}
+                      {observation.storageRef ? (
+                        <div className="break-all">Storage: {observation.storageRef}</div>
+                      ) : null}
+                    </div>
+                    {observation.notes ? (
+                      <div className="mt-2 text-xs text-base-content/60">{observation.notes}</div>
                     ) : null}
-                    {observation.storageRef ? <div className="break-all">Storage: {observation.storageRef}</div> : null}
+                    <div className="mt-3 break-all text-xs text-base-content/60">Digest: {observation.digest}</div>
                   </div>
-                  {observation.notes ? (
-                    <div className="mt-2 text-xs text-base-content/60">{observation.notes}</div>
-                  ) : null}
-                  <div className="mt-3 break-all text-xs text-base-content/60">Digest: {observation.digest}</div>
+                ))
+              ) : (
+                <div className="rounded-[1.5rem] border border-dashed border-base-300 p-4 text-sm text-base-content/60">
+                  No monitoring observations yet.
                 </div>
-              ))
-            ) : (
-              <div className="rounded-[1.5rem] border border-dashed border-base-300 p-4 text-sm text-base-content/60">
-                No monitoring observations yet.
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          </details>
         </div>
       ) : (
         <div className="mt-4 rounded-[1.5rem] border border-dashed border-base-300 p-4 text-sm text-base-content/60">
