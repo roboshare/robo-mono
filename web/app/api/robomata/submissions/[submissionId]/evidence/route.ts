@@ -353,7 +353,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
         console.error("Failed to sync facility monitoring evidence observations.", error);
       }
     }
-    return NextResponse.json({ submission: saved, evidence });
+    const savedEvidence = saved.evidence.find(record => record.id === evidence.id) ?? evidence;
+    return NextResponse.json({ submission: saved, evidence: savedEvidence });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to upload evidence." },

@@ -41,17 +41,18 @@ export function classifyEvidenceKind(
   return null;
 }
 
-function normalizedEvidenceText(input: {
-  evidence: Pick<SubmissionEvidence, "label" | "scope" | "source">;
-  evidenceText?: string;
-}) {
-  return [input.evidence.scope, input.evidence.label, input.evidence.source, input.evidenceText ?? ""]
-    .join(" ")
-    .toLowerCase();
+function normalizedEvidenceText(input: { evidenceText?: string }) {
+  return (input.evidenceText ?? "").toLowerCase();
 }
 
 function hasNegativeEvidenceCue(text: string) {
-  return /\b(cancel(?:led|ed)?|expired|inactive|lapsed|uninsured|unmatched|unverified|missing|exception)\b/.test(text);
+  return (
+    /\b(cancel(?:led|ed)?|expired|inactive|lapsed|uninsured|unmatched|unverified|missing|exception)\b/.test(text) ||
+    /\b(?:not|no|without)\s+(?:currently\s+)?(?:active|covered|insured|verified|matched|clear|cleared|in force|reconciled)\b/.test(
+      text,
+    ) ||
+    /\bcoverage\s+(?:is\s+)?not\s+(?:active|current|in force)\b/.test(text)
+  );
 }
 
 function hasPositiveEvidenceCue(text: string) {
@@ -61,7 +62,7 @@ function hasPositiveEvidenceCue(text: string) {
 }
 
 function evidenceTargetsReceivable(facts: SubmissionEvidenceDerivedFacts, receivableId: string) {
-  return facts.receivableIds.length === 0 || facts.receivableIds.includes(receivableId);
+  return facts.receivableIds.includes(receivableId);
 }
 
 export function deriveEvidenceFacts(input: {
@@ -70,8 +71,9 @@ export function deriveEvidenceFacts(input: {
 }): SubmissionEvidenceDerivedFacts | undefined {
   const kind = classifyEvidenceKind(input.evidence);
   if (!kind || kind === "receivables") return undefined;
+  if (input.evidence.linkedReceivableIds.length === 0) return undefined;
 
-  const text = normalizedEvidenceText(input);
+  const text = normalizedEvidenceText({ evidenceText: input.evidenceText });
   if (hasNegativeEvidenceCue(text) || !hasPositiveEvidenceCue(text)) return undefined;
 
   const baseFacts = {
@@ -101,9 +103,16 @@ export function deriveEvidenceFacts(input: {
     };
   }
 
-  const utilizationMatch = text.match(/\butili[sz]ation(?:\s+(?:pct|percent|rate))?\D{0,12}(\d{1,3})(?:\.\d+)?\s*%?/);
+  const utilizationMatch = text.match(
+    /\butili[sz]ation(?:\s+(?:pct|percent|rate))?\D{0,16}(\d{1,3})(?:\.\d+)?\s*(%|pct|percent)\b/,
+  );
   const utilizationPct = utilizationMatch ? Number.parseInt(utilizationMatch[1], 10) : undefined;
-  if (Number.isFinite(utilizationPct)) {
+  if (
+    typeof utilizationPct === "number" &&
+    Number.isFinite(utilizationPct) &&
+    utilizationPct >= 0 &&
+    utilizationPct <= 100
+  ) {
     return {
       ...baseFacts,
       utilizationPct,
