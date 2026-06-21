@@ -433,6 +433,7 @@ export const SubmissionWorkspace = ({
   const [receivablesCsvText, setReceivablesCsvText] = useState("");
   const [isReceivablesCsvEditorOpen, setIsReceivablesCsvEditorOpen] = useState(false);
   const [selectedReceivablesCsvFilename, setSelectedReceivablesCsvFilename] = useState<string | null>(null);
+  const [selectedEvidenceFilename, setSelectedEvidenceFilename] = useState<string | null>(null);
   const [evidenceText, setEvidenceText] = useState("");
   const [pendingOperatorCommit, setPendingOperatorCommit] = useState<PendingOperatorCommit | null>(null);
   const [tokenizationForm, setTokenizationForm] = useState({
@@ -686,6 +687,7 @@ export const SubmissionWorkspace = ({
     });
     if (didUpdate) {
       form.reset();
+      setSelectedEvidenceFilename(null);
       setEvidenceText("");
     }
   };
@@ -1566,11 +1568,18 @@ export const SubmissionWorkspace = ({
                   <div className="mt-4 grid min-w-0 gap-4 lg:grid-cols-2 lg:items-start">
                     <div className="grid min-w-0 gap-3">
                       <label className="flex min-w-0 cursor-pointer items-center gap-2 overflow-hidden rounded-xl border border-base-300 bg-base-100 p-2 text-sm text-base-content/70">
-                        <input name="file" type="file" className="peer sr-only" />
+                        <input
+                          name="file"
+                          type="file"
+                          className="peer sr-only"
+                          onChange={event => setSelectedEvidenceFilename(event.target.files?.[0]?.name ?? null)}
+                        />
                         <span className="shrink-0 rounded-lg bg-base-200 px-3 py-2 font-semibold text-base-content peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-primary">
                           Choose file
                         </span>
-                        <span className="min-w-0 flex-1 truncate">Attach evidence file</span>
+                        <span className="min-w-0 flex-1 truncate">
+                          {selectedEvidenceFilename ?? "Attach evidence file"}
+                        </span>
                       </label>
                       <input
                         name="label"
