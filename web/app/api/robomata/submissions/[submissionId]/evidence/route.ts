@@ -336,3 +336,60 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     );
   }
 }
+
+export async function DELETE(request: NextRequest, context: { params: Promise<{ submissionId: string }> }) {
+  try {
+    const featureError = requireRobomataWorkflow();
+    if (featureError) return featureError;
+    const mutationError = requireRobomataMutation();
+    if (mutationError) return mutationError;
+
+    const { submissionId } = await context.params;
+    const store = getSubmissionStore();
+    const submission = await store.get(submissionId);
+
+    if (!submission) {
+      return NextResponse.json({ error: "Submission not found." }, { status: 404 });
+    }
+
+    const partnerAddress = await requirePartnerAddress(request);
+    if (partnerAddress instanceof NextResponse) return partnerAddress;
+
+    const accessError = requireSubmissionAccess(submission, partnerAddress);
+    if (accessError) return accessError;
+    const mutabilityError = requireSubmissionMutable(submission);
+    if (mutabilityError) return mutabilityError;
+
+    const body = (await request.json().catch(() => null)) as { evidenceId?: unknown } | null;
+    const evidenceId = typeof body?.evidenceId === "string" ? body.evidenceId.trim() : "";
+    if (!evidenceId) {
+      return NextResponse.json({ error: "evidenceId is required." }, { status: 400 });
+    }
+
+    const evidence = submission.evidence.find(record => record.id === evidenceId);
+    if (!evidence) {
+      return NextResponse.json({ error: `Evidence package ${evidenceId} was not found.` }, { status: 404 });
+    }
+
+    submission.evidence = submission.evidence.filter(record => record.id !== evidenceId);
+    invalidateSubmissionArtifacts(submission);
+    addAuditEvent(submission, "evidence_removed", `Removed evidence package ${evidence.label}.`, {
+      evidenceId,
+    });
+
+    const saved = await store.save(submission);
+    if (isRobomataFacilityMonitoringEnabled()) {
+      try {
+        await getFacilityMonitoringStore().syncEvidenceObservations(saved);
+      } catch (error) {
+        console.error("Failed to sync facility monitoring evidence observations after removal.", error);
+      }
+    }
+    return NextResponse.json({ submission: saved });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to remove evidence package." },
+      { status: isCommitInProgressError(error) ? 409 : 500 },
+    );
+  }
+}

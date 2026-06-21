@@ -658,6 +658,22 @@ export const SubmissionWorkspace = ({
     await importReceivables(new File([csvText], "pasted-receivables.csv", { type: "text/csv" }));
   };
 
+  const removeImportedReceivables = async () => {
+    if (!submission || submission.receivables.length === 0) return;
+    if (!window.confirm("Remove the imported receivables from this uncommitted package?")) return;
+
+    const didUpdate = await updateSubmission(`/api/robomata/submissions/${submission.id}/receivables/import`, {
+      method: "DELETE",
+    });
+    if (didUpdate) {
+      setSelectedReceivablesCsvFilename(null);
+      setReceivablesCsvText("");
+      setIsReceivablesCsvEditorOpen(false);
+      setEditingReceivableId(null);
+      setDraftReceivable({});
+    }
+  };
+
   const uploadEvidence = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!submission) return;
@@ -690,6 +706,17 @@ export const SubmissionWorkspace = ({
       setSelectedEvidenceFilename(null);
       setEvidenceText("");
     }
+  };
+
+  const removeEvidencePackage = async (evidenceId: string, label: string) => {
+    if (!submission) return;
+    if (!window.confirm(`Remove evidence package "${label}" from this uncommitted package?`)) return;
+
+    await updateSubmission(`/api/robomata/submissions/${submission.id}/evidence`, {
+      body: JSON.stringify({ evidenceId }),
+      headers: { "content-type": "application/json" },
+      method: "DELETE",
+    });
   };
 
   const recompute = async () => {
@@ -1301,6 +1328,15 @@ export const SubmissionWorkspace = ({
                         >
                           {shouldShowReceivablesCsvEditor ? "Hide CSV editor" : "Edit or replace CSV"}
                         </button>
+                        <button
+                          className="btn btn-ghost btn-sm rounded-full text-error"
+                          type="button"
+                          onClick={removeImportedReceivables}
+                          disabled={isBusy}
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                          Remove import
+                        </button>
                       </div>
                     </div>
                   ) : null}
@@ -1345,7 +1381,7 @@ export const SubmissionWorkspace = ({
 
               {submission.receivables.length > 0 ? (
                 <div id="workspace-receivables" className="mt-6 min-w-0 scroll-mt-24 border-t border-base-300 pt-6">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                     <div>
                       <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
                         Import result
@@ -1354,7 +1390,7 @@ export const SubmissionWorkspace = ({
                         Imported receivables
                       </h2>
                     </div>
-                    <p className="text-sm text-base-content/60">
+                    <p className="max-w-xl text-sm text-base-content/60">
                       {canMutate
                         ? "Edit row-level corrections here, or reopen the CSV editor above to replace the import."
                         : "Review the imported collateral rows for this locked submission."}
@@ -1706,9 +1742,22 @@ export const SubmissionWorkspace = ({
                         {evidence.scope}
                       </div>
                     </div>
-                    <span className={`badge ${evidence.status === "verified" ? "badge-success" : "badge-warning"}`}>
-                      {evidence.status}
-                    </span>
+                    <div className="flex shrink-0 flex-col items-end gap-2">
+                      <span className={`badge ${evidence.status === "verified" ? "badge-success" : "badge-warning"}`}>
+                        {evidence.status}
+                      </span>
+                      {canMutate ? (
+                        <button
+                          className="btn btn-ghost btn-xs rounded-full text-error"
+                          type="button"
+                          onClick={() => removeEvidencePackage(evidence.id, evidence.label)}
+                          disabled={isBusy}
+                        >
+                          <TrashIcon className="h-3.5 w-3.5" />
+                          Remove
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="mt-3 break-words text-sm text-base-content/70">
                     Uploaded {new Date(evidence.uploadedAt).toLocaleString()} · {evidence.filename}
