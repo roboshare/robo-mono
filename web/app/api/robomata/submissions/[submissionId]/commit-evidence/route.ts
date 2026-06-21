@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Transaction } from "@mysten/sui/transactions";
 import { fromBase64, toBase64 } from "@mysten/sui/utils";
+import { createHash } from "node:crypto";
 import {
   isRobomataPrivySuiRawSignEnabled,
   isRobomataWorkflowMutationEnabled,
@@ -848,16 +849,18 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     }
 
     try {
+      const transactionBytes = operatorCommit.sponsorship?.transactionBytes ?? "";
+      const transactionDigest = createHash("sha256").update(transactionBytes).digest("hex").slice(0, 32);
       const signed = await signPrivySuiTransaction({
         binding,
         expectedAddress: facilityOperatorAddress,
-        idempotencyKey: `robomata-sui-commit-${submission.id}-${rootDigest}`,
-        transactionBytes: operatorCommit.sponsorship?.transactionBytes ?? "",
+        idempotencyKey: `robomata-sui-commit-${submission.id}-${rootDigest}-${transactionDigest}`,
+        transactionBytes,
       });
       const result = await executeSponsoredOperatorSuiCommit({
         operatorSignature: signed.signature,
         sponsorSignature: operatorCommit.sponsorship?.sponsorSignature ?? "",
-        transactionBytes: operatorCommit.sponsorship?.transactionBytes ?? "",
+        transactionBytes,
       });
 
       if (result.errorMessage) {

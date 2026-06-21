@@ -1196,6 +1196,13 @@ export const SubmissionWorkspace = ({
           throw new Error(privyPayload.error ?? "Privy Sui evidence anchoring failed.");
         }
         if (privyResponse.status === 202) {
+          setPendingOperatorCommit({
+            submissionId: submission.id,
+            rootDigest: submission.evidenceCommit.rootDigest ?? "",
+            txDigest: privyPayload.txDigest,
+            walletAddress: privySuiBinding?.suiAddress,
+            walletName: "bound Privy Sui wallet",
+          });
           notification.error(
             privyPayload.error ?? "Evidence anchoring is awaiting verification indexing. Retry shortly.",
           );
@@ -2252,13 +2259,7 @@ export const SubmissionWorkspace = ({
                   <button
                     className="btn btn-primary mt-4 h-auto min-h-10 max-w-full whitespace-normal rounded-full text-center"
                     onClick={commitEvidence}
-                    disabled={
-                      isBusy ||
-                      (submission.evidenceCommit.commitMode === "operator_configured" &&
-                        submission.evidenceCommit.status !== "committing" &&
-                        !hasSuiWallet &&
-                        !canRetryPendingOperatorCommit)
-                    }
+                    disabled={isBusy || isOperatorCommitBlockedByWallet}
                   >
                     {submission.evidenceCommit.status === "committing"
                       ? "Reconcile evidence verification"

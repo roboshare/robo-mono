@@ -4,7 +4,7 @@ import type { SignatureScheme } from "@mysten/sui/cryptography";
 import { Ed25519PublicKey } from "@mysten/sui/keypairs/ed25519";
 import { Secp256k1PublicKey } from "@mysten/sui/keypairs/secp256k1";
 import { Secp256r1PublicKey } from "@mysten/sui/keypairs/secp256r1";
-import { fromBase64, fromHex, normalizeSuiAddress, toBase64 } from "@mysten/sui/utils";
+import { fromBase58, fromBase64, fromHex, normalizeSuiAddress, toBase64 } from "@mysten/sui/utils";
 import { blake2b } from "@noble/hashes/blake2.js";
 import { eq } from "drizzle-orm";
 import { jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
@@ -247,15 +247,34 @@ function assertPrivyWallet(value: unknown): PrivyWallet {
   return wallet as PrivyWallet;
 }
 
-function decodePrivyPublicKey(value: string): Uint8Array {
+function decodePrivyPublicKeyCandidates(value: string): Uint8Array[] {
   const trimmed = value.trim();
   if (!trimmed) throw new Error("Privy Sui wallet response is missing public key.");
 
+  const candidates: Uint8Array[] = [];
+  const seen = new Set<string>();
+  const addCandidate = (bytes: Uint8Array) => {
+    const key = toBase64(bytes);
+    if (!seen.has(key)) {
+      seen.add(key);
+      candidates.push(bytes);
+    }
+  };
+
   if (/^(0x)?[0-9a-f]+$/i.test(trimmed) && trimmed.replace(/^0x/i, "").length % 2 === 0) {
-    return fromHex(trimmed);
+    addCandidate(fromHex(trimmed));
   }
 
-  return fromBase64(trimmed);
+  try {
+    addCandidate(fromBase58(trimmed));
+  } catch {}
+
+  try {
+    addCandidate(fromBase64(trimmed));
+  } catch {}
+
+  if (candidates.length === 0) throw new Error("Privy Sui wallet response has an unsupported public key encoding.");
+  return candidates;
 }
 
 function hexSignatureToBytes(value: string): Uint8Array {
@@ -280,10 +299,9 @@ function publicKeyCandidates(publicKeyBytes: Uint8Array): Array<{ publicKey: Pub
 
 function resolvePrivySuiPublicKey(input: { expectedAddress: string; publicKey: string }) {
   const expectedAddress = normalizeSuiAddress(input.expectedAddress);
-  const publicKeyBytes = decodePrivyPublicKey(input.publicKey);
-  const match = publicKeyCandidates(publicKeyBytes).find(
-    candidate => normalizeSuiAddress(candidate.publicKey.toSuiAddress()) === expectedAddress,
-  );
+  const match = decodePrivyPublicKeyCandidates(input.publicKey)
+    .flatMap(publicKeyCandidates)
+    .find(candidate => normalizeSuiAddress(candidate.publicKey.toSuiAddress()) === expectedAddress);
   if (!match) {
     throw new Error("Privy Sui wallet public key does not match the configured facility operator address.");
   }
