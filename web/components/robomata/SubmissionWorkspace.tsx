@@ -30,6 +30,7 @@ import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
 import {
   isRobomataAgentsClientEnabled,
   isRobomataFacilityMonitoringClientEnabled,
+  isRobomataPrivySuiRawSignClientEnabled,
   isRobomataTokenizationClientEnabled,
 } from "~~/lib/featureFlags";
 import { formatPercentFromBps, formatUsd } from "~~/lib/robomata/borrowingBase";
@@ -547,11 +548,19 @@ export const SubmissionWorkspace = ({
       pendingOperatorCommit?.submissionId === submission.id &&
       pendingOperatorCommit.rootDigest === submission.evidenceCommit.rootDigest,
   );
+  const canUsePrivySuiRawSign = Boolean(
+    submission &&
+      isRobomataPrivySuiRawSignClientEnabled() &&
+      privySuiBinding?.suiAddress &&
+      submission.evidenceCommit.facilityOperatorAddress &&
+      privySuiBinding.suiAddress.toLowerCase() === submission.evidenceCommit.facilityOperatorAddress.toLowerCase(),
+  );
   const isOperatorCommitBlockedByWallet = Boolean(
     submission &&
       submission.evidenceCommit.commitMode === "operator_configured" &&
       submission.evidenceCommit.status !== "committing" &&
       !hasSuiWallet &&
+      !canUsePrivySuiRawSign &&
       !canRetryPendingOperatorCommit,
   );
   const canRunEvidenceCommitAction = Boolean(
@@ -1164,6 +1173,35 @@ export const SubmissionWorkspace = ({
           rootDigest: submission.evidenceCommit.rootDigest ?? "",
           walletName: "verification wallet",
         });
+        return;
+      }
+
+      if (canUsePrivySuiRawSign) {
+        const privyHeaders = new Headers({ "content-type": "application/json" });
+        const privyAuthHeaders = await getAuthHeaders({
+          chainId: selectedNetwork.id,
+          method: "POST",
+          path,
+          signerAddress,
+        });
+        Object.entries(privyAuthHeaders).forEach(([key, value]) => privyHeaders.set(key, value));
+        const privyResponse = await fetch(path, {
+          method: "POST",
+          headers: privyHeaders,
+          body: JSON.stringify({ mode: "operator_complete_sponsored_privy" }),
+        });
+        const privyPayload = (await privyResponse.json().catch(() => ({}))) as CommitEvidenceResponse;
+        if (privyPayload.submission) setSubmission(privyPayload.submission);
+        if (!privyResponse.ok || !privyPayload.submission) {
+          throw new Error(privyPayload.error ?? "Privy Sui evidence anchoring failed.");
+        }
+        if (privyResponse.status === 202) {
+          notification.error(
+            privyPayload.error ?? "Evidence anchoring is awaiting verification indexing. Retry shortly.",
+          );
+          return;
+        }
+        notification.success("Evidence committed with the bound Privy Sui wallet.");
         return;
       }
 
@@ -1866,6 +1904,25 @@ export const SubmissionWorkspace = ({
               </div>
             ) : (
               <div className="mt-4 space-y-3">
+                {canMutate ? (
+                  <div className="flex min-w-0 flex-col gap-3 rounded-[1.5rem] border border-info/20 bg-info/10 p-4 text-sm text-base-content/70 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="min-w-0">
+                      <div className="font-semibold text-base-content">Resolve exceptions, then recompute once.</div>
+                      <div className="mt-1">
+                        The worklist stays visible while you edit, exclude, or replace evidence. Recompute availability
+                        after the batch of operator actions is complete.
+                      </div>
+                    </div>
+                    <button
+                      className="btn btn-primary h-auto min-h-10 max-w-full shrink-0 whitespace-normal rounded-full text-center"
+                      type="button"
+                      onClick={recompute}
+                      disabled={isBusy || !canComputeBorrowingBase}
+                    >
+                      Recompute availability
+                    </button>
+                  </div>
+                ) : null}
                 {submission.exceptions.map(exception => {
                   const relatedReceivable = submission.receivables.find(item => item.id === exception.itemId);
                   const relatedEvidence = submission.evidence.find(item => item.id === exception.itemId);
@@ -1950,14 +2007,6 @@ export const SubmissionWorkspace = ({
                               ) : null}
                             </>
                           ) : null}
-                          <button
-                            className="btn btn-primary btn-sm rounded-full"
-                            type="button"
-                            onClick={recompute}
-                            disabled={isBusy || !canComputeBorrowingBase}
-                          >
-                            Recompute availability
-                          </button>
                         </div>
                       ) : null}
                     </div>
@@ -2184,16 +2233,6 @@ export const SubmissionWorkspace = ({
                   submission={submission}
                 />
               ) : null}
-              {!readOnly ? (
-                <PacketSharePanel
-                  chainId={selectedNetwork.id}
-                  getAuthHeaders={getAuthHeaders}
-                  isBusy={isBusy}
-                  setIsBusy={setIsBusy}
-                  signerAddress={signerAddress}
-                  submission={submission}
-                />
-              ) : null}
               <div className="rounded-[1.5rem] border border-base-300 bg-base-200/50 p-4">
                 <div className="text-sm font-semibold text-base-content">Evidence verification status</div>
                 <div className="mt-2 text-sm text-base-content/70">
@@ -2245,10 +2284,13 @@ export const SubmissionWorkspace = ({
                       </div>
                     ) : null}
                     <div className="mt-2">
-                      Evidence anchoring currently uses a compatible verification wallet extension
-                      {suiWalletNames.length
-                        ? ` (${suiWalletNames.join(", ")}).`
-                        : ". No compatible verification wallet is available in this browser."}
+                      {canUsePrivySuiRawSign
+                        ? "Evidence anchoring will use the bound Privy Sui wallet with Robomata-sponsored gas."
+                        : `Evidence anchoring currently uses a compatible verification wallet extension${
+                            suiWalletNames.length
+                              ? ` (${suiWalletNames.join(", ")}).`
+                              : ". No compatible verification wallet is available in this browser."
+                          }`}
                     </div>
                     {privySuiBinding?.suiAddress &&
                     submission.evidenceCommit.facilityOperatorAddress &&
@@ -2275,6 +2317,16 @@ export const SubmissionWorkspace = ({
                   </div>
                 ) : null}
               </div>
+              {!readOnly ? (
+                <PacketSharePanel
+                  chainId={selectedNetwork.id}
+                  getAuthHeaders={getAuthHeaders}
+                  isBusy={isBusy}
+                  setIsBusy={setIsBusy}
+                  signerAddress={signerAddress}
+                  submission={submission}
+                />
+              ) : null}
             </div>
           </section>
         ) : null}
