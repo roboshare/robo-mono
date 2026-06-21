@@ -27,24 +27,33 @@ function classifyEvidenceKind(
 ): EvidenceStatusKind | null {
   const text = [evidence.scope, evidence.label, evidence.source].join(" ").toLowerCase();
 
-  if (/\b(receivable|receivables|aging|invoice|accounting)\b/.test(text)) return "receivables";
   if (/\b(insurance|insured|coverage|carrier|broker)\b/.test(text)) return "insurance";
   if (/\b(title|lien|ucc|collateral)\b/.test(text)) return "title_lien";
   if (/\b(lockbox|cash|bank|collection|collections)\b/.test(text)) return "lockbox";
   if (/\b(servicing|utilization|telematics|fleet|usage)\b/.test(text)) return "servicing_utilization";
+  if (/\b(receivable|receivables|aging|invoice|accounting)\b/.test(text)) return "receivables";
 
   return null;
 }
 
-function getTargetReceivables(input: {
-  linkedReceivableIds: string[];
-  receivables: SubmissionReceivable[];
-}): SubmissionReceivable[] {
+function getReceivableTargets(input: { linkedReceivableIds: string[]; receivables: SubmissionReceivable[] }): {
+  activeTargets: SubmissionReceivable[];
+  linkedTargets: SubmissionReceivable[];
+} {
   const activeReceivables = input.receivables.filter(receivable => !receivable.excluded);
-  if (input.linkedReceivableIds.length === 0) return activeReceivables;
+  if (input.linkedReceivableIds.length === 0) {
+    return {
+      activeTargets: activeReceivables,
+      linkedTargets: [],
+    };
+  }
 
   const linkedIds = new Set(input.linkedReceivableIds);
-  return activeReceivables.filter(receivable => linkedIds.has(receivable.id));
+  const linkedTargets = input.receivables.filter(receivable => linkedIds.has(receivable.id));
+  return {
+    activeTargets: linkedTargets.filter(receivable => !receivable.excluded),
+    linkedTargets,
+  };
 }
 
 function exceptionStatus(reason: string, subjectIds: string[]): EvidenceStatusDerivation {
@@ -77,11 +86,15 @@ export function deriveEvidenceStatus(input: {
     };
   }
 
-  const targetReceivables = getTargetReceivables({
+  const { activeTargets, linkedTargets } = getReceivableTargets({
     linkedReceivableIds: input.evidence.linkedReceivableIds,
     receivables: input.receivables,
   });
-  if (targetReceivables.length === 0) {
+  if (activeTargets.length === 0) {
+    if (linkedTargets.length > 0 && linkedTargets.every(receivable => receivable.excluded)) {
+      return verifiedStatus("All linked receivables are excluded, so this evidence package is non-blocking.");
+    }
+
     return {
       reason: "No active receivables are linked to this evidence package yet.",
       status: "pending",
@@ -96,7 +109,7 @@ export function deriveEvidenceStatus(input: {
   }
 
   if (kind === "insurance") {
-    const failed = targetReceivables.filter(receivable => !receivable.insured);
+    const failed = activeTargets.filter(receivable => !receivable.insured);
     if (failed.length > 0) {
       return exceptionStatus(
         "One or more active receivables are marked uninsured under the imported data.",
@@ -107,7 +120,7 @@ export function deriveEvidenceStatus(input: {
   }
 
   if (kind === "title_lien") {
-    const failed = targetReceivables.filter(receivable => !receivable.titleClear);
+    const failed = activeTargets.filter(receivable => !receivable.titleClear);
     if (failed.length > 0) {
       return exceptionStatus(
         "One or more active receivables have title or lien exceptions under the imported data.",
@@ -118,7 +131,7 @@ export function deriveEvidenceStatus(input: {
   }
 
   if (kind === "lockbox") {
-    const failed = targetReceivables.filter(receivable => !receivable.lockboxMatched);
+    const failed = activeTargets.filter(receivable => !receivable.lockboxMatched);
     if (failed.length > 0) {
       return exceptionStatus(
         "One or more active receivables have lockbox cash mapping exceptions.",
@@ -128,7 +141,7 @@ export function deriveEvidenceStatus(input: {
     return verifiedStatus("All active targeted receivables have matched lockbox cash mapping.");
   }
 
-  const failed = targetReceivables.filter(receivable => receivable.utilizationPct < policy.minUtilizationPct);
+  const failed = activeTargets.filter(receivable => receivable.utilizationPct < policy.minUtilizationPct);
   if (failed.length > 0) {
     return exceptionStatus(
       `One or more active receivables are below the ${policy.minUtilizationPct}% utilization policy floor.`,
