@@ -288,8 +288,6 @@ const AuthorizedSubmissionIndex = () => {
         .slice(0, 4),
     [submissions],
   );
-  const hasDraftPackage = useMemo(() => submissions.some(submission => submission.status === "draft"), [submissions]);
-
   const createSubmission = async () => {
     if (!partnerAuthAddress || !operatorName.trim() || !form.facilityName.trim() || !form.asOfDate) {
       notification.error("Complete the facility package details first.");
@@ -488,7 +486,10 @@ const AuthorizedSubmissionIndex = () => {
         </div>
       ) : actionQueue.length === 0 ? (
         <div className="mt-6 rounded-2xl border border-dashed border-base-300 bg-base-200/40 p-6 text-sm text-base-content/70">
-          No active package actions. Create a new facility package or review completed offerings below.
+          <p>No active package actions.</p>
+          <a href="#new-facility-package" className="btn btn-primary btn-sm mt-4 rounded-full">
+            New facility package
+          </a>
         </div>
       ) : (
         <div className="mt-5 space-y-3">
@@ -539,12 +540,14 @@ const AuthorizedSubmissionIndex = () => {
             </div>
           </div>
 
-          {hasDraftPackage ? actionQueuePanel : renderNewFacilityPackagePanel("rail")}
+          {actionQueuePanel}
         </div>
       </section>
 
       <section className="grid min-w-0 gap-5 sm:gap-6">
-        <div className="min-w-0">{hasDraftPackage ? renderNewFacilityPackagePanel() : actionQueuePanel}</div>
+        <div id="new-facility-package" className="min-w-0 scroll-mt-24">
+          {renderNewFacilityPackagePanel()}
+        </div>
 
         <div className="min-w-0 rounded-[1.5rem] border border-base-300 bg-base-100 p-4 shadow-lg shadow-base-300/30 sm:rounded-[2rem] sm:p-8">
           <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
