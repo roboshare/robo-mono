@@ -41,17 +41,36 @@ export function classifyEvidenceKind(
   return null;
 }
 
-function normalizedEvidenceText(input: {
-  evidence: Pick<SubmissionEvidence, "label" | "scope" | "source">;
-  evidenceText?: string;
-}) {
-  return [input.evidence.scope, input.evidence.label, input.evidence.source, input.evidenceText ?? ""]
-    .join(" ")
-    .toLowerCase();
+function normalizedEvidenceText(input: { evidenceText?: string }) {
+  return (input.evidenceText ?? "").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-function hasNegativeEvidenceCue(text: string) {
-  return /\b(cancel(?:led|ed)?|expired|inactive|lapsed|uninsured|unmatched|unverified|missing|exception)\b/.test(text);
+function hasNegativeEvidenceCue(text: string, kind: Exclude<EvidenceStatusKind, "receivables">) {
+  if (kind === "insurance") {
+    return /\b(uninsured|verification\s+(?:failed|failure)|status\s*[:=-]?\s*(?:cancel(?:led|ed)|expired|inactive|lapsed|missing|exception|unverified|not\s+(?:active|current|in force|verified))|(?:policy|coverage|insurance)\b.{0,16}\b(?:cancel(?:led|ed)|expired|inactive|lapsed|missing|exception|unverified|not\s+(?:active|current|in force|verified))|(?:cancel(?:led|ed)|expired|inactive|lapsed|missing|exception|unverified|not\s+(?:active|current|in force|verified))\b.{0,16}\b(?:policy|coverage|insurance)|coverage\s+(?:is\s+)?not\s+(?:active|current|in force|verified)|(?:not|without)\s+(?:currently\s+)?(?:covered|insured|coverage(?!\s+gaps?)|insurance))\b/.test(
+      text,
+    );
+  }
+
+  if (kind === "title_lien") {
+    return /\b((?:title|lien|ucc|collateral)\b.{0,24}\b(?:not\s+(?:clear|cleared|verified)|unverified|missing|exception|inactive|cancel(?:led|ed)|expired|lapsed)|(?:unverified|missing|exception|inactive|cancel(?:led|ed)|expired|lapsed)\b.{0,24}\b(?:clear|cleared|verified|current)?\s*(?:title|lien|ucc|collateral))\b/.test(
+      text,
+    );
+  }
+
+  if (kind === "lockbox") {
+    return /\b((?:lockbox|cash|bank|collection|collections)\b.{0,24}\b(?:not\s+(?:matched|verified|reconciled)|unmatched|unverified|missing|exception|inactive)|(?:unmatched|unverified|missing|exception|inactive)\b.{0,24}\b(?:matched|verified|reconciled|current)?\s*(?:lockbox|cash|bank|collection|collections))\b/.test(
+      text,
+    );
+  }
+
+  const utilizationWindow = text.match(/\butili[sz]ation\b.{0,48}/)?.[0] ?? "";
+  return (
+    /\butili[sz]ation\b.{0,24}\b(?:missing|exception|stale|unverified|verification\s+(?:failed|failure)|not\s+(?:current|verified))\b/.test(
+      text,
+    ) ||
+    (/\bbelow\b/.test(utilizationWindow) && !/\bnot\s+below\b/.test(utilizationWindow))
+  );
 }
 
 function hasPositiveEvidenceCue(text: string) {
@@ -61,7 +80,7 @@ function hasPositiveEvidenceCue(text: string) {
 }
 
 function evidenceTargetsReceivable(facts: SubmissionEvidenceDerivedFacts, receivableId: string) {
-  return facts.receivableIds.length === 0 || facts.receivableIds.includes(receivableId);
+  return facts.receivableIds.includes(receivableId);
 }
 
 export function deriveEvidenceFacts(input: {
@@ -70,9 +89,10 @@ export function deriveEvidenceFacts(input: {
 }): SubmissionEvidenceDerivedFacts | undefined {
   const kind = classifyEvidenceKind(input.evidence);
   if (!kind || kind === "receivables") return undefined;
+  if (input.evidence.linkedReceivableIds.length === 0) return undefined;
 
-  const text = normalizedEvidenceText(input);
-  if (hasNegativeEvidenceCue(text) || !hasPositiveEvidenceCue(text)) return undefined;
+  const text = normalizedEvidenceText({ evidenceText: input.evidenceText });
+  if (hasNegativeEvidenceCue(text, kind) || !hasPositiveEvidenceCue(text)) return undefined;
 
   const baseFacts = {
     derivedAt: new Date().toISOString(),
@@ -101,9 +121,19 @@ export function deriveEvidenceFacts(input: {
     };
   }
 
-  const utilizationMatch = text.match(/\butili[sz]ation(?:\s+(?:pct|percent|rate))?\D{0,12}(\d{1,3})(?:\.\d+)?\s*%?/);
-  const utilizationPct = utilizationMatch ? Number.parseInt(utilizationMatch[1], 10) : undefined;
-  if (Number.isFinite(utilizationPct)) {
+  const utilizationMatch = text.match(
+    /\butili[sz]ation(?:\s+(pct|percent|rate))?\D{0,16}(\d{1,3})(?:\.\d+)?\s*(%|pct|percent)?(?=\s|$|[.,;:)])/,
+  );
+  const hasExplicitUtilizationUnit =
+    utilizationMatch?.[1] === "pct" || utilizationMatch?.[1] === "percent" || Boolean(utilizationMatch?.[3]);
+  const utilizationPct =
+    utilizationMatch && hasExplicitUtilizationUnit ? Number.parseInt(utilizationMatch[2], 10) : undefined;
+  if (
+    typeof utilizationPct === "number" &&
+    Number.isFinite(utilizationPct) &&
+    utilizationPct >= 0 &&
+    utilizationPct <= 100
+  ) {
     return {
       ...baseFacts,
       utilizationPct,
