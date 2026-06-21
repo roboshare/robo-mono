@@ -1262,199 +1262,205 @@ export const SubmissionWorkspace = ({
                 </div>
               </form>
             </div>
-          </section>
-        ) : null}
 
-        {submission.receivables.length > 0 ? (
-          <section
-            id="workspace-receivables"
-            className="scroll-mt-24 overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 shadow-lg shadow-base-300/30"
-          >
-            <div className="border-b border-base-300 px-6 py-5">
-              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">Receivables</p>
-              <h2 className="mt-2 text-2xl font-black tracking-tight text-base-content">Collateral under review</h2>
-            </div>
+            {submission.receivables.length > 0 ? (
+              <div id="workspace-receivables" className="mt-6 min-w-0 scroll-mt-24 border-t border-base-300 pt-6">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
+                      Imported receivables
+                    </p>
+                    <h2 className="mt-2 text-2xl font-black tracking-tight text-base-content">
+                      Collateral under review
+                    </h2>
+                  </div>
+                  <p className="text-sm text-base-content/60">
+                    Edit imported rows here, or paste a corrected CSV above and re-import.
+                  </p>
+                </div>
 
-            <div className="overflow-x-auto">
-              <table className="table">
-                <thead>
-                  <tr className="text-xs uppercase tracking-[0.18em] text-base-content/50">
-                    <th>Receivable</th>
-                    <th>Obligor</th>
-                    <th>Amount</th>
-                    <th>DPD</th>
-                    <th>Status</th>
-                    {canMutate ? <th>Actions</th> : null}
-                  </tr>
-                </thead>
-                <tbody>
-                  {submission.receivables.map(receivable => {
-                    const result = submission.computation?.borrowingBase.receivableResults.find(
-                      item => item.id === receivable.id,
-                    );
-                    const isEditing = editingReceivableId === receivable.id;
-                    return (
-                      <Fragment key={receivable.id}>
-                        <tr key={receivable.id}>
-                          <td className="font-semibold text-base-content">{receivable.id}</td>
-                          <td>
-                            <div className="font-medium text-base-content">{receivable.obligor}</div>
-                            <div className="text-xs text-base-content/60">{receivable.vehicleCount} vehicles</div>
-                          </td>
-                          <td>{formatUsd(receivable.outstandingCents)}</td>
-                          <td>{receivable.daysPastDue}</td>
-                          <td>
-                            <span
-                              className={`badge border-0 ${
-                                result?.eligible ? "badge-success text-success-content" : "badge-warning"
-                              }`}
-                            >
-                              {result?.eligible ? "Eligible" : receivable.excluded ? "Excluded" : "Needs review"}
-                            </span>
-                          </td>
-                          {canMutate ? (
-                            <td>
-                              <div className="flex flex-wrap gap-2">
-                                <button
-                                  type="button"
-                                  className="btn btn-xs btn-outline"
-                                  onClick={() => {
-                                    setEditingReceivableId(isEditing ? null : receivable.id);
-                                    setDraftReceivable(receivable);
-                                  }}
+                <div className="mt-4 overflow-x-auto rounded-[1.5rem] border border-base-300 bg-base-100">
+                  <table className="table">
+                    <thead>
+                      <tr className="text-xs uppercase tracking-[0.18em] text-base-content/50">
+                        <th>Receivable</th>
+                        <th>Obligor</th>
+                        <th>Amount</th>
+                        <th>DPD</th>
+                        <th>Status</th>
+                        {canMutate ? <th>Actions</th> : null}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {submission.receivables.map(receivable => {
+                        const result = submission.computation?.borrowingBase.receivableResults.find(
+                          item => item.id === receivable.id,
+                        );
+                        const isEditing = editingReceivableId === receivable.id;
+                        return (
+                          <Fragment key={receivable.id}>
+                            <tr key={receivable.id}>
+                              <td className="font-semibold text-base-content">{receivable.id}</td>
+                              <td>
+                                <div className="font-medium text-base-content">{receivable.obligor}</div>
+                                <div className="text-xs text-base-content/60">{receivable.vehicleCount} vehicles</div>
+                              </td>
+                              <td>{formatUsd(receivable.outstandingCents)}</td>
+                              <td>{receivable.daysPastDue}</td>
+                              <td>
+                                <span
+                                  className={`badge border-0 ${
+                                    result?.eligible ? "badge-success text-success-content" : "badge-warning"
+                                  }`}
                                 >
-                                  {isEditing ? "Close edit" : "Edit"}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="btn btn-xs btn-outline"
-                                  onClick={() =>
-                                    patchSubmission({
-                                      action: "excludeReceivable",
-                                      receivableId: receivable.id,
-                                      excluded: !receivable.excluded,
-                                    })
-                                  }
-                                >
-                                  {receivable.excluded ? "Reinstate" : "Exclude"}
-                                </button>
-                              </div>
-                            </td>
-                          ) : null}
-                        </tr>
-                        {canMutate && isEditing ? (
-                          <tr key={`${receivable.id}-edit`}>
-                            <td colSpan={canMutate ? 6 : 5}>
-                              <div className="grid gap-3 rounded-2xl bg-base-200/60 p-4 md:grid-cols-4">
-                                <input
-                                  className="input input-bordered"
-                                  value={draftReceivable.obligor ?? ""}
-                                  onChange={event =>
-                                    setDraftReceivable(current => ({ ...current, obligor: event.target.value }))
-                                  }
-                                />
-                                <label className="form-control">
-                                  <span className="label-text">Outstanding dollars</span>
-                                  <input
-                                    className="input input-bordered"
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    value={centsToDollarInput(draftReceivable.outstandingCents)}
-                                    onChange={event =>
-                                      setDraftReceivable(current => ({
-                                        ...current,
-                                        outstandingCents: dollarsToCents(event.target.value),
-                                      }))
-                                    }
-                                  />
-                                </label>
-                                <input
-                                  className="input input-bordered"
-                                  type="number"
-                                  value={draftReceivable.daysPastDue ?? 0}
-                                  onChange={event =>
-                                    setDraftReceivable(current => ({
-                                      ...current,
-                                      daysPastDue: Number(event.target.value),
-                                    }))
-                                  }
-                                />
-                                <input
-                                  className="input input-bordered"
-                                  type="number"
-                                  value={draftReceivable.utilizationPct ?? 0}
-                                  onChange={event =>
-                                    setDraftReceivable(current => ({
-                                      ...current,
-                                      utilizationPct: Number(event.target.value),
-                                    }))
-                                  }
-                                />
-                                <label className="label cursor-pointer justify-start gap-2">
-                                  <input
-                                    type="checkbox"
-                                    className="checkbox checkbox-sm"
-                                    checked={Boolean(draftReceivable.insured)}
-                                    onChange={event =>
-                                      setDraftReceivable(current => ({ ...current, insured: event.target.checked }))
-                                    }
-                                  />
-                                  <span className="label-text">Insured</span>
-                                </label>
-                                <label className="label cursor-pointer justify-start gap-2">
-                                  <input
-                                    type="checkbox"
-                                    className="checkbox checkbox-sm"
-                                    checked={Boolean(draftReceivable.titleClear)}
-                                    onChange={event =>
-                                      setDraftReceivable(current => ({
-                                        ...current,
-                                        titleClear: event.target.checked,
-                                      }))
-                                    }
-                                  />
-                                  <span className="label-text">Title clear</span>
-                                </label>
-                                <label className="label cursor-pointer justify-start gap-2">
-                                  <input
-                                    type="checkbox"
-                                    className="checkbox checkbox-sm"
-                                    checked={Boolean(draftReceivable.lockboxMatched)}
-                                    onChange={event =>
-                                      setDraftReceivable(current => ({
-                                        ...current,
-                                        lockboxMatched: event.target.checked,
-                                      }))
-                                    }
-                                  />
-                                  <span className="label-text">Lockbox matched</span>
-                                </label>
-                                <div className="flex gap-2">
-                                  <button
-                                    type="button"
-                                    className="btn btn-primary btn-sm rounded-full"
-                                    onClick={() =>
-                                      patchSubmission({
-                                        action: "updateReceivable",
-                                        receivableId: receivable.id,
-                                        patch: draftReceivable,
-                                      }).then(() => setEditingReceivableId(null))
-                                    }
-                                  >
-                                    Save changes
-                                  </button>
-                                </div>
-                              </div>
-                            </td>
-                          </tr>
-                        ) : null}
-                      </Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                                  {result?.eligible ? "Eligible" : receivable.excluded ? "Excluded" : "Needs review"}
+                                </span>
+                              </td>
+                              {canMutate ? (
+                                <td>
+                                  <div className="flex flex-wrap gap-2">
+                                    <button
+                                      type="button"
+                                      className="btn btn-xs btn-outline"
+                                      onClick={() => {
+                                        setEditingReceivableId(isEditing ? null : receivable.id);
+                                        setDraftReceivable(receivable);
+                                      }}
+                                    >
+                                      {isEditing ? "Close edit" : "Edit"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn btn-xs btn-outline"
+                                      onClick={() =>
+                                        patchSubmission({
+                                          action: "excludeReceivable",
+                                          receivableId: receivable.id,
+                                          excluded: !receivable.excluded,
+                                        })
+                                      }
+                                    >
+                                      {receivable.excluded ? "Reinstate" : "Exclude"}
+                                    </button>
+                                  </div>
+                                </td>
+                              ) : null}
+                            </tr>
+                            {canMutate && isEditing ? (
+                              <tr key={`${receivable.id}-edit`}>
+                                <td colSpan={canMutate ? 6 : 5}>
+                                  <div className="grid gap-3 rounded-2xl bg-base-200/60 p-4 md:grid-cols-4">
+                                    <input
+                                      className="input input-bordered min-w-0"
+                                      value={draftReceivable.obligor ?? ""}
+                                      onChange={event =>
+                                        setDraftReceivable(current => ({ ...current, obligor: event.target.value }))
+                                      }
+                                    />
+                                    <label className="form-control">
+                                      <span className="label-text">Outstanding dollars</span>
+                                      <input
+                                        className="input input-bordered min-w-0"
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={centsToDollarInput(draftReceivable.outstandingCents)}
+                                        onChange={event =>
+                                          setDraftReceivable(current => ({
+                                            ...current,
+                                            outstandingCents: dollarsToCents(event.target.value),
+                                          }))
+                                        }
+                                      />
+                                    </label>
+                                    <input
+                                      className="input input-bordered min-w-0"
+                                      type="number"
+                                      value={draftReceivable.daysPastDue ?? 0}
+                                      onChange={event =>
+                                        setDraftReceivable(current => ({
+                                          ...current,
+                                          daysPastDue: Number(event.target.value),
+                                        }))
+                                      }
+                                    />
+                                    <input
+                                      className="input input-bordered min-w-0"
+                                      type="number"
+                                      value={draftReceivable.utilizationPct ?? 0}
+                                      onChange={event =>
+                                        setDraftReceivable(current => ({
+                                          ...current,
+                                          utilizationPct: Number(event.target.value),
+                                        }))
+                                      }
+                                    />
+                                    <label className="label cursor-pointer justify-start gap-2">
+                                      <input
+                                        type="checkbox"
+                                        className="checkbox checkbox-sm"
+                                        checked={Boolean(draftReceivable.insured)}
+                                        onChange={event =>
+                                          setDraftReceivable(current => ({ ...current, insured: event.target.checked }))
+                                        }
+                                      />
+                                      <span className="label-text">Insured</span>
+                                    </label>
+                                    <label className="label cursor-pointer justify-start gap-2">
+                                      <input
+                                        type="checkbox"
+                                        className="checkbox checkbox-sm"
+                                        checked={Boolean(draftReceivable.titleClear)}
+                                        onChange={event =>
+                                          setDraftReceivable(current => ({
+                                            ...current,
+                                            titleClear: event.target.checked,
+                                          }))
+                                        }
+                                      />
+                                      <span className="label-text">Title clear</span>
+                                    </label>
+                                    <label className="label cursor-pointer justify-start gap-2">
+                                      <input
+                                        type="checkbox"
+                                        className="checkbox checkbox-sm"
+                                        checked={Boolean(draftReceivable.lockboxMatched)}
+                                        onChange={event =>
+                                          setDraftReceivable(current => ({
+                                            ...current,
+                                            lockboxMatched: event.target.checked,
+                                          }))
+                                        }
+                                      />
+                                      <span className="label-text">Lockbox matched</span>
+                                    </label>
+                                    <div className="flex gap-2">
+                                      <button
+                                        type="button"
+                                        className="btn btn-primary btn-sm rounded-full"
+                                        onClick={() =>
+                                          patchSubmission({
+                                            action: "updateReceivable",
+                                            receivableId: receivable.id,
+                                            patch: draftReceivable,
+                                          }).then(() => setEditingReceivableId(null))
+                                        }
+                                      >
+                                        Save changes
+                                      </button>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            ) : null}
+                          </Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
           </section>
         ) : null}
 
