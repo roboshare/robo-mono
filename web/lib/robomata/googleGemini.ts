@@ -20,6 +20,7 @@ type GoogleGeminiResponseBody = {
 type GenerateGoogleGeminiContentInput = {
   apiKey: string;
   model: string;
+  responseSchema?: unknown;
   systemInstruction: string;
   timeoutMs: number;
   userPrompt: string;
@@ -59,6 +60,25 @@ export function jsonTextFromProviderOutput(text: string): string {
   return fenced ? fenced[1].trim() : trimmed;
 }
 
+function googleGeminiGenerationConfig(input: GenerateGoogleGeminiContentInput) {
+  if (input.responseSchema) {
+    return {
+      responseFormat: {
+        text: {
+          mimeType: "application/json",
+          schema: input.responseSchema,
+        },
+      },
+      temperature: 0.1,
+    };
+  }
+
+  return {
+    responseMimeType: "application/json",
+    temperature: 0.1,
+  };
+}
+
 function outputTextFromGoogleGeminiResponse(body: GoogleGeminiResponseBody): string | undefined {
   const text = body.candidates?.[0]?.content?.parts
     ?.map(part => part.text)
@@ -81,10 +101,7 @@ export async function generateGoogleGeminiContent(input: GenerateGoogleGeminiCon
             role: "user",
           },
         ],
-        generationConfig: {
-          responseMimeType: "application/json",
-          temperature: 0.1,
-        },
+        generationConfig: googleGeminiGenerationConfig(input),
         systemInstruction: {
           parts: [{ text: input.systemInstruction }],
         },

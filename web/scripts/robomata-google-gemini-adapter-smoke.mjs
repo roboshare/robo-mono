@@ -37,6 +37,10 @@ for (const needle of [
   ":generateContent",
   "x-goog-api-key",
   "responseMimeType",
+  "responseFormat",
+  "responseSchema",
+  "mimeType",
+  "schema",
   "application/json",
   "GoogleGeminiApiError",
   "isGoogleGeminiRateLimitError",
@@ -54,6 +58,7 @@ for (const needle of [
   '"rate_limited_fallback"',
   "googleProviderInput",
   "generateGoogleGeminiContent",
+  "responseSchema: openAiReviewSchema",
   "isGoogleGeminiRateLimitError(error)",
   "providerInputControls: providerInput.userPrompt.inputControls",
 ]) {
@@ -68,6 +73,7 @@ for (const needle of [
   '"rate_limited_fallback"',
   "planner was rate-limited",
   "generateGoogleGeminiContent",
+  "responseSchema: openAiPlannerSchema",
   "isGoogleGeminiRateLimitError(error)",
   "jsonTextFromProviderOutput(outputText)",
 ]) {
