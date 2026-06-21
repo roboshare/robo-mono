@@ -306,6 +306,7 @@ export const SubmissionWorkspace = ({
   const [editingReceivableId, setEditingReceivableId] = useState<string | null>(null);
   const [draftReceivable, setDraftReceivable] = useState<Partial<SubmissionReceivable>>({});
   const [receivablesCsvText, setReceivablesCsvText] = useState("");
+  const [isReceivablesCsvEditorOpen, setIsReceivablesCsvEditorOpen] = useState(false);
   const [selectedReceivablesCsvFilename, setSelectedReceivablesCsvFilename] = useState<string | null>(null);
   const [evidenceText, setEvidenceText] = useState("");
   const [pendingOperatorCommit, setPendingOperatorCommit] = useState<PendingOperatorCommit | null>(null);
@@ -362,6 +363,7 @@ export const SubmissionWorkspace = ({
   const mutabilityLockReason = submissionMutabilityLockReason(submission);
   const isCommitted = submission?.status === "committed" || submission?.evidenceCommit.status === "committed";
   const canMutate = !readOnly && !mutabilityLockReason;
+  const hasReceivables = Boolean(submission && submission.receivables.length > 0);
   const canComputeBorrowingBase = Boolean(
     submission && submission.receivables.length > 0 && submission.evidence.length > 0,
   );
@@ -391,6 +393,8 @@ export const SubmissionWorkspace = ({
   const workspaceChecklist = useMemo(() => (submission ? buildWorkspaceChecklist(submission) : []), [submission]);
   const latestReceivablesImportFilename = useMemo(() => getLatestReceivablesImportFilename(submission), [submission]);
   const receivablesImportFilename = latestReceivablesImportFilename ?? selectedReceivablesCsvFilename;
+  const shouldShowReceivablesCsvEditor =
+    !hasReceivables || isReceivablesCsvEditorOpen || Boolean(receivablesCsvText.trim());
 
   useEffect(() => {
     const remainingMs = getFacilityAssignmentLockRemainingMs(facilityAssignmentStartedAt);
@@ -505,10 +509,13 @@ export const SubmissionWorkspace = ({
     setSelectedReceivablesCsvFilename(file.name);
     const formData = new FormData();
     formData.set("file", file);
-    await updateSubmission(`/api/robomata/submissions/${submission.id}/receivables/import`, {
+    const didUpdate = await updateSubmission(`/api/robomata/submissions/${submission.id}/receivables/import`, {
       method: "POST",
       body: formData,
     });
+    if (didUpdate) {
+      setIsReceivablesCsvEditorOpen(false);
+    }
   };
 
   const importReceivablesFromText = async () => {
@@ -1153,34 +1160,61 @@ export const SubmissionWorkspace = ({
                     </span>
                   ) : null}
                 </label>
-                <div className="mt-4 min-w-0">
-                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-base-content/60">
-                    <span className="font-semibold uppercase tracking-[0.16em]">Paste or edit CSV</span>
-                    {receivablesCsvText.trim() ? (
+                {hasReceivables ? (
+                  <div className="mt-4 rounded-2xl border border-base-300 bg-base-200/50 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-base-content">
+                          {submission.receivables.length} imported rows
+                        </div>
+                        <p className="mt-1 break-words text-xs text-base-content/60">
+                          {receivablesImportFilename
+                            ? `Source: ${receivablesImportFilename}`
+                            : "Source: uploaded or pasted CSV"}
+                        </p>
+                      </div>
                       <button
-                        className="btn btn-ghost btn-xs rounded-full"
+                        className="btn btn-outline btn-sm rounded-full"
                         type="button"
-                        onClick={() => setReceivablesCsvText("")}
+                        onClick={() => setIsReceivablesCsvEditorOpen(isOpen => !isOpen)}
                       >
-                        Clear pasted CSV
+                        {shouldShowReceivablesCsvEditor ? "Hide CSV editor" : "Edit or replace CSV"}
                       </button>
-                    ) : null}
+                    </div>
                   </div>
-                  <textarea
-                    className="textarea textarea-bordered min-h-36 w-full min-w-0 resize-y rounded-xl px-4 py-3 font-mono text-xs leading-relaxed lg:min-h-[22rem]"
-                    placeholder={`Or paste CSV:\nreceivable,obligor,vehicles,outstanding,dpd,utilization,insured,title,lockbox\nAR-1007,Northstar Delivery Co.,28,386400,12,91,yes,yes,yes`}
-                    value={receivablesCsvText}
-                    onChange={event => setReceivablesCsvText(event.target.value)}
-                  />
-                  <button
-                    className="btn btn-outline mt-3 rounded-full"
-                    type="button"
-                    onClick={importReceivablesFromText}
-                    disabled={isBusy}
-                  >
-                    Import pasted CSV
-                  </button>
-                </div>
+                ) : null}
+                {shouldShowReceivablesCsvEditor ? (
+                  <div className="mt-4 min-w-0">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-base-content/60">
+                      <span className="font-semibold uppercase tracking-[0.16em]">
+                        {hasReceivables ? "Replace imported CSV" : "Paste or edit CSV"}
+                      </span>
+                      {receivablesCsvText.trim() ? (
+                        <button
+                          className="btn btn-ghost btn-xs rounded-full"
+                          type="button"
+                          onClick={() => setReceivablesCsvText("")}
+                        >
+                          Clear pasted CSV
+                        </button>
+                      ) : null}
+                    </div>
+                    <textarea
+                      className="textarea textarea-bordered min-h-36 w-full min-w-0 resize-y rounded-xl px-4 py-3 font-mono text-xs leading-relaxed lg:min-h-[22rem]"
+                      placeholder={`Or paste CSV:\nreceivable,obligor,vehicles,outstanding,dpd,utilization,insured,title,lockbox\nAR-1007,Northstar Delivery Co.,28,386400,12,91,yes,yes,yes`}
+                      value={receivablesCsvText}
+                      onChange={event => setReceivablesCsvText(event.target.value)}
+                    />
+                    <button
+                      className="btn btn-outline mt-3 rounded-full"
+                      type="button"
+                      onClick={importReceivablesFromText}
+                      disabled={isBusy}
+                    >
+                      {hasReceivables ? "Replace with pasted CSV" : "Import pasted CSV"}
+                    </button>
+                  </div>
+                ) : null}
               </div>
 
               <form
@@ -1268,14 +1302,12 @@ export const SubmissionWorkspace = ({
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                   <div>
                     <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
-                      Imported receivables
+                      Import result
                     </p>
-                    <h2 className="mt-2 text-2xl font-black tracking-tight text-base-content">
-                      Collateral under review
-                    </h2>
+                    <h2 className="mt-2 text-2xl font-black tracking-tight text-base-content">Imported receivables</h2>
                   </div>
                   <p className="text-sm text-base-content/60">
-                    Edit imported rows here, or paste a corrected CSV above and re-import.
+                    Edit row-level corrections here, or reopen the CSV editor above to replace the import.
                   </p>
                 </div>
 
