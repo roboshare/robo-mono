@@ -79,11 +79,9 @@ export function deriveEvidenceStatus(input: {
 }): EvidenceStatusDerivation {
   const kind = classifyEvidenceKind(input.evidence);
   if (!kind) {
-    return {
-      reason: "Robomata could not classify this evidence type for deterministic policy checks.",
-      status: "pending",
-      subjectIds: [],
-    };
+    return verifiedStatus(
+      "This supporting artifact is retained as non-blocking because it does not match a deterministic policy evidence type.",
+    );
   }
 
   const { activeTargets, linkedTargets } = getReceivableTargets({

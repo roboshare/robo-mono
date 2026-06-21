@@ -1128,174 +1128,176 @@ export const SubmissionWorkspace = ({
       </section>
 
       <div className="space-y-6">
-        {canMutate ? (
+        {canMutate || submission.receivables.length > 0 ? (
           <section
             id="workspace-import"
             className="scroll-mt-24 overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 p-4 shadow-lg shadow-base-300/30 sm:p-6"
           >
-            <div className="grid min-w-0 gap-6 lg:grid-cols-2 lg:items-stretch">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.2em] text-base-content/50">
-                  <DocumentArrowUpIcon className="h-4 w-4" />
-                  Receivables import
-                </div>
-                <p className="mt-3 text-sm leading-relaxed text-base-content/70">
-                  Upload a lender-borrowing-base style CSV with receivable id, obligor, vehicles, amount, DPD,
-                  utilization, insurance, title, and lockbox fields.
-                </p>
-                <label className="mt-4 flex min-w-0 cursor-pointer flex-col items-center justify-center rounded-[1.5rem] border border-dashed border-base-300 bg-base-200/40 p-6 text-center text-sm text-base-content/70">
-                  <input
-                    type="file"
-                    accept=".csv,text/csv"
-                    className="hidden"
-                    onChange={event => {
-                      const file = event.target.files?.[0];
-                      if (file) void importReceivables(file);
-                    }}
-                  />
-                  <span>Click to upload receivables CSV</span>
-                  {receivablesImportFilename ? (
-                    <span className="mt-2 max-w-full break-all text-xs font-semibold text-base-content">
-                      Current import: {receivablesImportFilename}
-                    </span>
-                  ) : null}
-                </label>
-                {hasReceivables ? (
-                  <div className="mt-4 rounded-2xl border border-base-300 bg-base-200/50 p-4">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="min-w-0">
-                        <div className="text-sm font-semibold text-base-content">
-                          {submission.receivables.length} imported rows
+            {canMutate ? (
+              <div className="grid min-w-0 gap-6 lg:grid-cols-2 lg:items-stretch">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.2em] text-base-content/50">
+                    <DocumentArrowUpIcon className="h-4 w-4" />
+                    Receivables import
+                  </div>
+                  <p className="mt-3 text-sm leading-relaxed text-base-content/70">
+                    Upload a lender-borrowing-base style CSV with receivable id, obligor, vehicles, amount, DPD,
+                    utilization, insurance, title, and lockbox fields.
+                  </p>
+                  <label className="mt-4 flex min-w-0 cursor-pointer flex-col items-center justify-center rounded-[1.5rem] border border-dashed border-base-300 bg-base-200/40 p-6 text-center text-sm text-base-content/70">
+                    <input
+                      type="file"
+                      accept=".csv,text/csv"
+                      className="hidden"
+                      onChange={event => {
+                        const file = event.target.files?.[0];
+                        if (file) void importReceivables(file);
+                      }}
+                    />
+                    <span>Click to upload receivables CSV</span>
+                    {receivablesImportFilename ? (
+                      <span className="mt-2 max-w-full break-all text-xs font-semibold text-base-content">
+                        Current import: {receivablesImportFilename}
+                      </span>
+                    ) : null}
+                  </label>
+                  {hasReceivables ? (
+                    <div className="mt-4 rounded-2xl border border-base-300 bg-base-200/50 p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-base-content">
+                            {submission.receivables.length} imported rows
+                          </div>
+                          <p className="mt-1 break-words text-xs text-base-content/60">
+                            {receivablesImportFilename
+                              ? `Source: ${receivablesImportFilename}`
+                              : "Source: uploaded or pasted CSV"}
+                          </p>
                         </div>
-                        <p className="mt-1 break-words text-xs text-base-content/60">
-                          {receivablesImportFilename
-                            ? `Source: ${receivablesImportFilename}`
-                            : "Source: uploaded or pasted CSV"}
-                        </p>
+                        <button
+                          className="btn btn-outline btn-sm rounded-full"
+                          type="button"
+                          onClick={() => setIsReceivablesCsvEditorOpen(isOpen => !isOpen)}
+                        >
+                          {shouldShowReceivablesCsvEditor ? "Hide CSV editor" : "Edit or replace CSV"}
+                        </button>
                       </div>
+                    </div>
+                  ) : null}
+                  {shouldShowReceivablesCsvEditor ? (
+                    <div className="mt-4 min-w-0">
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-base-content/60">
+                        <span className="font-semibold uppercase tracking-[0.16em]">
+                          {hasReceivables ? "Replace imported CSV" : "Paste or edit CSV"}
+                        </span>
+                        {receivablesCsvText.trim() ? (
+                          <button
+                            className="btn btn-ghost btn-xs rounded-full"
+                            type="button"
+                            onClick={() => setReceivablesCsvText("")}
+                          >
+                            Clear pasted CSV
+                          </button>
+                        ) : null}
+                      </div>
+                      <textarea
+                        className="textarea textarea-bordered min-h-36 w-full min-w-0 resize-y rounded-xl px-4 py-3 font-mono text-xs leading-relaxed lg:min-h-[22rem]"
+                        placeholder={`Or paste CSV:\nreceivable,obligor,vehicles,outstanding,dpd,utilization,insured,title,lockbox\nAR-1007,Northstar Delivery Co.,28,386400,12,91,yes,yes,yes`}
+                        value={receivablesCsvText}
+                        onChange={event => setReceivablesCsvText(event.target.value)}
+                      />
                       <button
-                        className="btn btn-outline btn-sm rounded-full"
+                        className="btn btn-outline mt-3 rounded-full"
                         type="button"
-                        onClick={() => setIsReceivablesCsvEditorOpen(isOpen => !isOpen)}
+                        onClick={importReceivablesFromText}
+                        disabled={isBusy}
                       >
-                        {shouldShowReceivablesCsvEditor ? "Hide CSV editor" : "Edit or replace CSV"}
+                        {hasReceivables ? "Replace with pasted CSV" : "Import pasted CSV"}
                       </button>
                     </div>
+                  ) : null}
+                </div>
+
+                <form
+                  className="min-w-0 rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4 sm:p-5"
+                  onSubmit={uploadEvidence}
+                >
+                  <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.2em] text-base-content/50">
+                    <CloudArrowUpIcon className="h-4 w-4" />
+                    Evidence upload
                   </div>
-                ) : null}
-                {shouldShowReceivablesCsvEditor ? (
-                  <div className="mt-4 min-w-0">
-                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-base-content/60">
-                      <span className="font-semibold uppercase tracking-[0.16em]">
-                        {hasReceivables ? "Replace imported CSV" : "Paste or edit CSV"}
-                      </span>
-                      {receivablesCsvText.trim() ? (
-                        <button
-                          className="btn btn-ghost btn-xs rounded-full"
-                          type="button"
-                          onClick={() => setReceivablesCsvText("")}
-                        >
-                          Clear pasted CSV
-                        </button>
-                      ) : null}
-                    </div>
-                    <textarea
-                      className="textarea textarea-bordered min-h-36 w-full min-w-0 resize-y rounded-xl px-4 py-3 font-mono text-xs leading-relaxed lg:min-h-[22rem]"
-                      placeholder={`Or paste CSV:\nreceivable,obligor,vehicles,outstanding,dpd,utilization,insured,title,lockbox\nAR-1007,Northstar Delivery Co.,28,386400,12,91,yes,yes,yes`}
-                      value={receivablesCsvText}
-                      onChange={event => setReceivablesCsvText(event.target.value)}
+                  <p className="mt-3 text-sm leading-relaxed text-base-content/70">
+                    Attach policy support for the receivables file, such as insurance schedules, title and lien files,
+                    servicing reports, utilization exports, or lockbox mapping.
+                  </p>
+                  <div className="mt-4 grid gap-3">
+                    <input
+                      name="file"
+                      type="file"
+                      className="file-input file-input-bordered w-full min-w-0 rounded-xl text-sm"
                     />
-                    <button
-                      className="btn btn-outline mt-3 rounded-full"
-                      type="button"
-                      onClick={importReceivablesFromText}
-                      disabled={isBusy}
-                    >
-                      {hasReceivables ? "Replace with pasted CSV" : "Import pasted CSV"}
+                    <input
+                      name="label"
+                      className="input input-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
+                      placeholder="Package name, e.g. June insurance schedule"
+                      required
+                    />
+                    <input
+                      name="source"
+                      className="input input-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
+                      placeholder="Source, e.g. authorized broker export or servicing system"
+                      required
+                    />
+                    <input
+                      name="scope"
+                      className="input input-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
+                      placeholder="Evidence type, e.g. Insurance, Title, Servicing, Lockbox"
+                      required
+                    />
+                    <div className="break-words rounded-2xl border border-base-300 bg-base-100 px-4 py-3 text-sm text-base-content/70">
+                      Robomata derives evidence status from the active policy and imported receivable data after upload.
+                    </div>
+                    <label className="form-control">
+                      <span className="label pb-1 pt-0">
+                        <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
+                          Access policy
+                        </span>
+                      </span>
+                      <select
+                        name="sealPolicyId"
+                        className="select select-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
+                        defaultValue={evidenceSealPolicyOptions[0].value}
+                      >
+                        {evidenceSealPolicyOptions.map(option => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="label pt-1">
+                        <span className="label-text-alt text-base-content/60">
+                          Controls which reviewer role can access the committed evidence metadata.
+                        </span>
+                      </span>
+                    </label>
+                    <input
+                      name="linkedReceivableIds"
+                      className="input input-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
+                      placeholder="Related receivable IDs, e.g. AR-1007, AR-1011"
+                    />
+                    <textarea
+                      className="textarea textarea-bordered min-h-28 w-full min-w-0 rounded-xl px-4 py-3 text-sm leading-relaxed"
+                      placeholder="Or paste authorized evidence notes, report extracts, or source metadata when no local file is handy."
+                      value={evidenceText}
+                      onChange={event => setEvidenceText(event.target.value)}
+                    />
+                    <button className="btn btn-primary rounded-full" type="submit" disabled={isBusy}>
+                      Upload evidence
                     </button>
                   </div>
-                ) : null}
+                </form>
               </div>
-
-              <form
-                className="min-w-0 rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4 sm:p-5"
-                onSubmit={uploadEvidence}
-              >
-                <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.2em] text-base-content/50">
-                  <CloudArrowUpIcon className="h-4 w-4" />
-                  Evidence upload
-                </div>
-                <p className="mt-3 text-sm leading-relaxed text-base-content/70">
-                  Attach policy support for the receivables file, such as insurance schedules, title and lien files,
-                  servicing reports, utilization exports, or lockbox mapping.
-                </p>
-                <div className="mt-4 grid gap-3">
-                  <input
-                    name="file"
-                    type="file"
-                    className="file-input file-input-bordered w-full min-w-0 rounded-xl text-sm"
-                  />
-                  <input
-                    name="label"
-                    className="input input-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
-                    placeholder="Package name, e.g. June insurance schedule"
-                    required
-                  />
-                  <input
-                    name="source"
-                    className="input input-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
-                    placeholder="Source, e.g. authorized broker export or servicing system"
-                    required
-                  />
-                  <input
-                    name="scope"
-                    className="input input-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
-                    placeholder="Evidence type, e.g. Insurance, Title, Servicing, Lockbox"
-                    required
-                  />
-                  <div className="break-words rounded-2xl border border-base-300 bg-base-100 px-4 py-3 text-sm text-base-content/70">
-                    Robomata derives evidence status from the active policy and imported receivable data after upload.
-                  </div>
-                  <label className="form-control">
-                    <span className="label pb-1 pt-0">
-                      <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
-                        Access policy
-                      </span>
-                    </span>
-                    <select
-                      name="sealPolicyId"
-                      className="select select-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
-                      defaultValue={evidenceSealPolicyOptions[0].value}
-                    >
-                      {evidenceSealPolicyOptions.map(option => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                    <span className="label pt-1">
-                      <span className="label-text-alt text-base-content/60">
-                        Controls which reviewer role can access the committed evidence metadata.
-                      </span>
-                    </span>
-                  </label>
-                  <input
-                    name="linkedReceivableIds"
-                    className="input input-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
-                    placeholder="Related receivable IDs, e.g. AR-1007, AR-1011"
-                  />
-                  <textarea
-                    className="textarea textarea-bordered min-h-28 w-full min-w-0 rounded-xl px-4 py-3 text-sm leading-relaxed"
-                    placeholder="Or paste authorized evidence notes, report extracts, or source metadata when no local file is handy."
-                    value={evidenceText}
-                    onChange={event => setEvidenceText(event.target.value)}
-                  />
-                  <button className="btn btn-primary rounded-full" type="submit" disabled={isBusy}>
-                    Upload evidence
-                  </button>
-                </div>
-              </form>
-            </div>
+            ) : null}
 
             {submission.receivables.length > 0 ? (
               <div id="workspace-receivables" className="mt-6 min-w-0 scroll-mt-24 border-t border-base-300 pt-6">
@@ -1307,7 +1309,9 @@ export const SubmissionWorkspace = ({
                     <h2 className="mt-2 text-2xl font-black tracking-tight text-base-content">Imported receivables</h2>
                   </div>
                   <p className="text-sm text-base-content/60">
-                    Edit row-level corrections here, or reopen the CSV editor above to replace the import.
+                    {canMutate
+                      ? "Edit row-level corrections here, or reopen the CSV editor above to replace the import."
+                      : "Review the imported collateral rows for this locked submission."}
                   </p>
                 </div>
 
