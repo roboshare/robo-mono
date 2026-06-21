@@ -47,26 +47,28 @@ function normalizedEvidenceText(input: { evidenceText?: string }) {
 
 function hasNegativeEvidenceCue(text: string, kind: Exclude<EvidenceStatusKind, "receivables">) {
   if (kind === "insurance") {
-    return /\b(uninsured|status\s*[:=-]?\s*(?:cancel(?:led|ed)|expired|inactive|lapsed|missing|exception|not\s+(?:active|current|in force))|(?:policy|coverage|insurance)\b.{0,16}\b(?:cancel(?:led|ed)|expired|inactive|lapsed|missing|exception|not\s+(?:active|current|in force))|(?:cancel(?:led|ed)|expired|inactive|lapsed|missing|exception|not\s+(?:active|current|in force))\b.{0,16}\b(?:policy|coverage|insurance)|coverage\s+(?:is\s+)?not\s+(?:active|current|in force)|(?:not|without)\s+(?:currently\s+)?(?:covered|insured|coverage(?!\s+gaps?)|insurance))\b/.test(
+    return /\b(uninsured|verification\s+(?:failed|failure)|status\s*[:=-]?\s*(?:cancel(?:led|ed)|expired|inactive|lapsed|missing|exception|unverified|not\s+(?:active|current|in force|verified))|(?:policy|coverage|insurance)\b.{0,16}\b(?:cancel(?:led|ed)|expired|inactive|lapsed|missing|exception|unverified|not\s+(?:active|current|in force|verified))|(?:cancel(?:led|ed)|expired|inactive|lapsed|missing|exception|unverified|not\s+(?:active|current|in force|verified))\b.{0,16}\b(?:policy|coverage|insurance)|coverage\s+(?:is\s+)?not\s+(?:active|current|in force|verified)|(?:not|without)\s+(?:currently\s+)?(?:covered|insured|coverage(?!\s+gaps?)|insurance))\b/.test(
       text,
     );
   }
 
   if (kind === "title_lien") {
-    return /\b((?:title|lien|ucc|collateral)\b.{0,24}\b(?:not\s+(?:clear|cleared|verified)|unverified|missing|exception|cancel(?:led|ed)|expired|lapsed)|(?:unverified|missing|exception|cancel(?:led|ed)|expired|lapsed)\b.{0,24}\b(?:clear|cleared|verified|current)?\s*(?:title|lien|ucc|collateral))\b/.test(
+    return /\b((?:title|lien|ucc|collateral)\b.{0,24}\b(?:not\s+(?:clear|cleared|verified)|unverified|missing|exception|inactive|cancel(?:led|ed)|expired|lapsed)|(?:unverified|missing|exception|inactive|cancel(?:led|ed)|expired|lapsed)\b.{0,24}\b(?:clear|cleared|verified|current)?\s*(?:title|lien|ucc|collateral))\b/.test(
       text,
     );
   }
 
   if (kind === "lockbox") {
-    return /\b((?:lockbox|cash|bank|collection|collections)\b.{0,24}\b(?:not\s+(?:matched|verified|reconciled)|unmatched|unverified|missing|exception)|(?:unmatched|unverified|missing|exception)\b.{0,24}\b(?:matched|verified|reconciled)?\s*(?:lockbox|cash|bank|collection|collections))\b/.test(
+    return /\b((?:lockbox|cash|bank|collection|collections)\b.{0,24}\b(?:not\s+(?:matched|verified|reconciled)|unmatched|unverified|missing|exception|inactive)|(?:unmatched|unverified|missing|exception|inactive)\b.{0,24}\b(?:matched|verified|reconciled|current)?\s*(?:lockbox|cash|bank|collection|collections))\b/.test(
       text,
     );
   }
 
   const utilizationWindow = text.match(/\butili[sz]ation\b.{0,48}/)?.[0] ?? "";
   return (
-    /\butili[sz]ation\b.{0,24}\b(?:missing|exception|stale|not\s+(?:current|verified))\b/.test(text) ||
+    /\butili[sz]ation\b.{0,24}\b(?:missing|exception|stale|unverified|verification\s+(?:failed|failure)|not\s+(?:current|verified))\b/.test(
+      text,
+    ) ||
     (/\bbelow\b/.test(utilizationWindow) && !/\bnot\s+below\b/.test(utilizationWindow))
   );
 }
