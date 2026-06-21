@@ -1,0 +1,6 @@
+period,receivable,obligor,vehicles,active_vehicle_days,available_vehicle_days,utilization_pct,status,notes
+2026-06,AR-2001,Northstar Delivery Co.,28,764,840,91,verified,Demo telematics export - above policy floor
+2026-06,AR-2002,Cobalt Courier Group,22,554,660,84,verified,Demo telematics export - above policy floor
+2026-06,AR-2003,Lakefront Field Services,17,388,510,76,verified,Demo telematics export - above policy floor
+2026-06,AR-2004,Prairie Parts Express,15,396,450,88,verified,Demo telematics export - above policy floor
+2026-06,AR-2005,Redline Mobile Repair,10,201,300,67,exception,Demo telematics export - below policy floor
