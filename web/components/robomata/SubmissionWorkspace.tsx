@@ -393,8 +393,7 @@ export const SubmissionWorkspace = ({
   const workspaceChecklist = useMemo(() => (submission ? buildWorkspaceChecklist(submission) : []), [submission]);
   const latestReceivablesImportFilename = useMemo(() => getLatestReceivablesImportFilename(submission), [submission]);
   const receivablesImportFilename = latestReceivablesImportFilename ?? selectedReceivablesCsvFilename;
-  const shouldShowReceivablesCsvEditor =
-    !hasReceivables || isReceivablesCsvEditorOpen || Boolean(receivablesCsvText.trim());
+  const shouldShowReceivablesCsvEditor = !hasReceivables || isReceivablesCsvEditorOpen;
 
   useEffect(() => {
     const remainingMs = getFacilityAssignmentLockRemainingMs(facilityAssignmentStartedAt);
@@ -506,7 +505,6 @@ export const SubmissionWorkspace = ({
 
   const importReceivables = async (file: File) => {
     if (!submission) return;
-    setSelectedReceivablesCsvFilename(file.name);
     const formData = new FormData();
     formData.set("file", file);
     const didUpdate = await updateSubmission(`/api/robomata/submissions/${submission.id}/receivables/import`, {
@@ -514,6 +512,7 @@ export const SubmissionWorkspace = ({
       body: formData,
     });
     if (didUpdate) {
+      setSelectedReceivablesCsvFilename(file.name);
       setIsReceivablesCsvEditorOpen(false);
     }
   };
