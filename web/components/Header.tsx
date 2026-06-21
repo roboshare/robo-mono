@@ -26,6 +26,7 @@ import {
   isRobomataRentalMarketplaceClientEnabled,
   isRobomataWorkflowEnabled,
 } from "~~/lib/featureFlags";
+import { isMarketingContentPath } from "~~/lib/marketingRoutes";
 
 type HeaderMenuLink = {
   label: string;
@@ -43,12 +44,6 @@ const marketingHosts = configuredMarketingHosts?.length ? configuredMarketingHos
 const isMarketingHost = (host: string | null) => !!host && marketingHosts.includes(host);
 const isLocalHost = (host: string | null) => host === "localhost" || host === "127.0.0.1" || host === "::1";
 const shouldUseAppHostNavigation = (host: string | null) => !!host && !isLocalHost(host) && isMarketingHost(host);
-const isMarketingContentPath = (pathname: string | null) =>
-  pathname === "/" ||
-  pathname === "/robomata" ||
-  pathname?.startsWith("/products/") ||
-  pathname === "/partners" ||
-  pathname?.startsWith("/partners/");
 
 const HeaderAppAnchor = ({
   children,
@@ -380,8 +375,7 @@ export const Header = () => {
   });
 
   useEffect(() => {
-    const host = window.location.hostname.toLowerCase();
-    setShowNetworkActions(isLocalHost(host) || host === getConfiguredAppHost() || !isMarketingContentPath(pathname));
+    setShowNetworkActions(!isMarketingContentPath(pathname));
   }, [pathname]);
 
   return (
