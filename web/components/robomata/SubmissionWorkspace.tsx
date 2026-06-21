@@ -1587,10 +1587,10 @@ export const SubmissionWorkspace = ({
             {canMutate ? (
               <section
                 id="workspace-evidence-upload"
-                className="min-w-0 scroll-mt-24 overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 p-3 shadow-lg shadow-base-300/30 sm:p-6"
+                className="min-w-0 max-w-full scroll-mt-24 overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 p-3 shadow-lg shadow-base-300/30 sm:p-6"
               >
                 <form
-                  className="min-w-0 overflow-hidden rounded-[1.5rem] border border-base-300 bg-base-200/40 p-3 sm:p-5"
+                  className="w-full min-w-0 max-w-full overflow-hidden rounded-[1.5rem] border border-base-300 bg-base-200/40 p-3 sm:p-5"
                   onSubmit={uploadEvidence}
                 >
                   <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.2em] text-base-content/50">
@@ -1601,47 +1601,74 @@ export const SubmissionWorkspace = ({
                     Attach policy support for the receivables file, such as insurance schedules, title and lien files,
                     servicing reports, utilization exports, or lockbox mapping.
                   </p>
-                  <div className="mt-4 grid min-w-0 gap-4 lg:grid-cols-2 lg:items-start">
-                    <div className="grid min-w-0 gap-3">
-                      <label className="flex min-w-0 cursor-pointer items-center gap-2 overflow-hidden rounded-xl border border-base-300 bg-base-100 p-2 text-sm text-base-content/70">
-                        <input
-                          name="file"
-                          type="file"
-                          className="peer sr-only"
-                          onChange={event => setSelectedEvidenceFilename(event.target.files?.[0]?.name ?? null)}
-                        />
-                        <span className="shrink-0 rounded-lg bg-base-200 px-3 py-2 font-semibold text-base-content peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-primary">
-                          Choose file
+                  <div className="mt-4 grid w-full min-w-0 max-w-full gap-4 lg:grid-cols-2 lg:items-start">
+                    <div className="grid min-w-0 max-w-full gap-3">
+                      <div className="form-control min-w-0 max-w-full">
+                        <span className="label pb-1 pt-0">
+                          <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
+                            Evidence file
+                          </span>
                         </span>
-                        <span className="min-w-0 flex-1 truncate">
-                          {selectedEvidenceFilename ?? "Attach evidence file"}
-                        </span>
-                      </label>
-                      <input
-                        name="label"
-                        className="input input-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
-                        placeholder="Package name, e.g. June insurance schedule"
-                        required
-                      />
-                      <input
-                        name="source"
-                        className="input input-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
-                        placeholder="Source, e.g. authorized broker export or servicing system"
-                        required
-                      />
-                      <input
-                        name="scope"
-                        className="input input-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
-                        placeholder="Evidence type, e.g. Insurance, Title, Servicing, Lockbox"
-                        required
-                      />
-                      <div className="break-words rounded-2xl border border-base-300 bg-base-100 px-4 py-3 text-sm text-base-content/70">
-                        Robomata derives evidence status from the active policy and imported receivable data after
-                        upload.
+                        <label className="flex w-full min-w-0 max-w-full cursor-pointer items-center gap-2 overflow-hidden rounded-xl border border-base-300 bg-base-100 p-2 text-sm text-base-content/70">
+                          <input
+                            name="file"
+                            type="file"
+                            className="peer sr-only"
+                            onChange={event => setSelectedEvidenceFilename(event.target.files?.[0]?.name ?? null)}
+                          />
+                          <span className="shrink-0 rounded-lg bg-base-200 px-3 py-2 font-semibold text-base-content peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-primary">
+                            Choose file
+                          </span>
+                          <span className="min-w-0 flex-1 truncate">
+                            {selectedEvidenceFilename ?? "Attach evidence file"}
+                          </span>
+                        </label>
                       </div>
+                      <label className="form-control min-w-0 max-w-full">
+                        <span className="label pb-1 pt-0">
+                          <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
+                            Package name
+                          </span>
+                        </span>
+                        <input
+                          name="label"
+                          className="input input-bordered h-11 w-full !min-w-0 max-w-full rounded-xl px-4 text-sm"
+                          placeholder="e.g. June insurance schedule"
+                          required
+                        />
+                      </label>
+                      <label className="form-control min-w-0 max-w-full">
+                        <span className="label pb-1 pt-0">
+                          <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
+                            Source
+                          </span>
+                        </span>
+                        <input
+                          name="source"
+                          className="input input-bordered h-11 w-full !min-w-0 max-w-full rounded-xl px-4 text-sm"
+                          placeholder="e.g. authorized broker export or servicing system"
+                          required
+                        />
+                      </label>
+                      <label className="form-control min-w-0 max-w-full">
+                        <span className="label pb-1 pt-0">
+                          <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
+                            Evidence type
+                          </span>
+                        </span>
+                        <input
+                          name="scope"
+                          className="input input-bordered h-11 w-full !min-w-0 max-w-full rounded-xl px-4 text-sm"
+                          placeholder="e.g. Insurance, Title, Servicing, Lockbox"
+                          required
+                        />
+                      </label>
+                      <p className="min-w-0 max-w-full text-xs leading-relaxed text-base-content/60">
+                        Evidence status is derived after upload from the active policy and imported receivable data.
+                      </p>
                     </div>
-                    <div className="grid min-w-0 gap-3">
-                      <label className="form-control">
+                    <div className="grid min-w-0 max-w-full gap-3">
+                      <label className="form-control min-w-0 max-w-full">
                         <span className="label pb-1 pt-0">
                           <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
                             Access policy
@@ -1649,7 +1676,7 @@ export const SubmissionWorkspace = ({
                         </span>
                         <select
                           name="sealPolicyId"
-                          className="select select-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
+                          className="select select-bordered h-11 w-full !min-w-0 max-w-full rounded-xl px-4 text-sm"
                           defaultValue={evidenceSealPolicyOptions[0].value}
                         >
                           {evidenceSealPolicyOptions.map(option => (
@@ -1666,16 +1693,20 @@ export const SubmissionWorkspace = ({
                       </label>
                       <input
                         name="linkedReceivableIds"
-                        className="input input-bordered h-11 w-full min-w-0 rounded-xl px-4 text-sm"
+                        className="input input-bordered h-11 w-full !min-w-0 max-w-full rounded-xl px-4 text-sm"
                         placeholder="Related receivable IDs, e.g. AR-1007, AR-1011"
                       />
                       <textarea
-                        className="textarea textarea-bordered min-h-28 w-full min-w-0 rounded-xl px-4 py-3 text-sm leading-relaxed"
+                        className="textarea textarea-bordered min-h-28 w-full !min-w-0 max-w-full rounded-xl px-4 py-3 text-sm leading-relaxed"
                         placeholder="Or paste authorized evidence notes, report extracts, or source metadata when no local file is handy."
                         value={evidenceText}
                         onChange={event => setEvidenceText(event.target.value)}
                       />
-                      <button className="btn btn-primary rounded-full" type="submit" disabled={isBusy}>
+                      <button
+                        className="btn btn-primary w-full !min-w-0 max-w-full rounded-full px-3 text-sm"
+                        type="submit"
+                        disabled={isBusy}
+                      >
                         Upload evidence
                       </button>
                     </div>
