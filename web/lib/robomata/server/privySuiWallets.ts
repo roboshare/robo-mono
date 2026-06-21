@@ -6,6 +6,8 @@ import { Secp256k1PublicKey } from "@mysten/sui/keypairs/secp256k1";
 import { Secp256r1PublicKey } from "@mysten/sui/keypairs/secp256r1";
 import { fromBase58, fromBase64, fromHex, normalizeSuiAddress, toBase64 } from "@mysten/sui/utils";
 import { blake2b } from "@noble/hashes/blake2.js";
+import type { WalletApiRequestSignatureInput } from "@privy-io/server-auth";
+import { generateAuthorizationSignature } from "@privy-io/server-auth/wallet-api";
 import { eq } from "drizzle-orm";
 import { jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -214,6 +216,14 @@ function getPrivyApiBaseUrl() {
   return process.env.PRIVY_API_BASE_URL ?? "https://api.privy.io";
 }
 
+function getPrivyWalletAuthorizationPrivateKey() {
+  const privateKey = process.env.PRIVY_WALLET_AUTHORIZATION_PRIVATE_KEY?.trim();
+  if (!privateKey) {
+    throw new Error("PRIVY_WALLET_AUTHORIZATION_PRIVATE_KEY is required for Privy Sui raw signing.");
+  }
+  return privateKey;
+}
+
 function getPrivyAuthHeaders() {
   const appId = getPrivyAppId();
   const appSecret = process.env.PRIVY_APP_SECRET;
@@ -225,6 +235,33 @@ function getPrivyAuthHeaders() {
     authorization: `Basic ${Buffer.from(`${appId}:${appSecret}`).toString("base64")}`,
     "content-type": "application/json",
     "privy-app-id": appId,
+  };
+}
+
+function getPrivyRawSignHeaders(input: { body: unknown; idempotencyKey: string; pathName: string }) {
+  const appId = getPrivyAppId();
+  if (!appId) throw new Error("Privy app id is required for Sui raw signing.");
+
+  const headers = {
+    "privy-app-id": appId,
+    "privy-idempotency-key": input.idempotencyKey,
+  } satisfies WalletApiRequestSignatureInput["headers"];
+  const requestToSign = {
+    body: input.body,
+    headers,
+    method: "POST",
+    url: `${getPrivyApiBaseUrl()}${input.pathName}`,
+    version: 1,
+  } satisfies WalletApiRequestSignatureInput;
+  const authorizationSignature = generateAuthorizationSignature({
+    authorizationPrivateKey: getPrivyWalletAuthorizationPrivateKey(),
+    input: requestToSign,
+  });
+  if (!authorizationSignature) throw new Error("Failed to generate Privy wallet authorization signature.");
+
+  return {
+    "privy-authorization-signature": authorizationSignature,
+    "privy-idempotency-key": input.idempotencyKey,
   };
 }
 
@@ -443,20 +480,23 @@ export async function signPrivySuiTransaction(input: {
   });
   const transactionBytes = fromBase64(input.transactionBytes);
   const intentMessage = messageWithIntent("TransactionData", transactionBytes);
-  const response = await privyRequest<PrivyRawSignResponse>(
-    `/v1/wallets/${encodeURIComponent(input.binding.walletId)}/raw_sign`,
-    {
-      method: "POST",
-      headers: { "privy-idempotency-key": input.idempotencyKey },
-      body: JSON.stringify({
-        params: {
-          bytes: toBase64(intentMessage),
-          encoding: "base64",
-          hash_function: "blake2b256",
-        },
-      }),
+  const rawSignPath = `/v1/wallets/${encodeURIComponent(input.binding.walletId)}/raw_sign`;
+  const rawSignBody = {
+    params: {
+      bytes: toBase64(intentMessage),
+      encoding: "base64",
+      hash_function: "blake2b256",
     },
-  );
+  };
+  const response = await privyRequest<PrivyRawSignResponse>(rawSignPath, {
+    method: "POST",
+    headers: getPrivyRawSignHeaders({
+      body: rawSignBody,
+      idempotencyKey: input.idempotencyKey,
+      pathName: rawSignPath,
+    }),
+    body: JSON.stringify(rawSignBody),
+  });
   const rawSignature = hexSignatureToBytes(response.data?.signature ?? "");
   const expectedDigest = blake2b(intentMessage, { dkLen: 32 });
   const valid = await suiPublicKey.verify(expectedDigest, rawSignature).catch(() => false);

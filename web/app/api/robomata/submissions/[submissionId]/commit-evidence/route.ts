@@ -654,10 +654,17 @@ async function executeSponsoredOperatorSuiCommit(input: {
   }
 }
 
-async function keepCommitInReconciliationState(input: { submission: FacilitySubmission; error: string }) {
+async function keepCommitInReconciliationState(input: {
+  submission: FacilitySubmission;
+  error: string;
+  sponsorGasObjectId?: string;
+  txDigest?: string;
+}) {
   return NextResponse.json(
     {
       submission: input.submission,
+      sponsorGasObjectId: input.sponsorGasObjectId,
+      txDigest: input.txDigest,
       error: input.error,
     },
     { status: 202 },
@@ -867,6 +874,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
         if (result.uncertain) {
           return keepCommitInReconciliationState({
             submission: committingSubmission,
+            sponsorGasObjectId: operatorCommit.sponsorship?.gasObjectId,
+            txDigest: result.txDigest,
             error: `${result.errorMessage} Reconcile Sui events before retrying.`,
           });
         }
@@ -901,15 +910,15 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
           );
         }
 
-        return NextResponse.json(
-          {
-            error:
-              error instanceof Error
-                ? "Privy Sui commit requires event reconciliation, but event lookup failed: " + error.message
-                : "Privy Sui commit requires event reconciliation, but event lookup failed.",
-          },
-          { status: 409 },
-        );
+        return keepCommitInReconciliationState({
+          submission: committingSubmission,
+          sponsorGasObjectId: operatorCommit.sponsorship?.gasObjectId,
+          txDigest: result.txDigest,
+          error:
+            error instanceof Error
+              ? "Privy Sui commit requires event reconciliation, but event lookup failed: " + error.message
+              : "Privy Sui commit requires event reconciliation, but event lookup failed.",
+        });
       }
 
       if (!txDigest) {

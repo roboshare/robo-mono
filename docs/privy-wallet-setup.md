@@ -51,6 +51,7 @@ Optional:
 
 ```bash
 ROBOMATA_PRIVY_SUI_WALLET_POLICY_ID=your-privy-sui-policy-id
+PRIVY_WALLET_AUTHORIZATION_PRIVATE_KEY=your-privy-wallet-api-authorization-private-key
 ROBOMATA_PRIVY_SUI_RAW_SIGN_ENABLED=true
 NEXT_PUBLIC_ROBOMATA_PRIVY_SUI_RAW_SIGN_ENABLED=true
 ROBOMATA_OPERATOR_SUI_WALLETS_FILE=/tmp/robomata-operator-sui-wallets.json
@@ -64,9 +65,11 @@ When `ROBOMATA_PRIVY_SUI_RAW_SIGN_ENABLED=true` and the client companion flag is
 enabled, evidence anchoring uses the bound Privy Sui wallet when its address
 matches the submission facility operator. Robomata still sponsors native Sui gas,
 but the operator signature is produced by Privy raw-sign over the Sui transaction
-intent bytes. Keep a wallet-standard Sui extension available as the fallback
-path unless the Privy Sui policy and raw-sign runtime have been verified in the
-target environment.
+intent bytes. User-owned Privy wallets require `PRIVY_WALLET_AUTHORIZATION_PRIVATE_KEY`
+so the server can sign Wallet API `raw_sign` requests with the app's registered
+Privy authorization key. Keep a wallet-standard Sui extension available as the
+fallback path unless the Privy Sui policy and raw-sign runtime have been verified
+in the target environment.
 
 Native Sui gas sponsorship is handled by Robomata, not by Privy/Pimlico. When
 `ROBOMATA_SUI_SPONSORSHIP_ENABLED=true`, the Robomata server prepares the
