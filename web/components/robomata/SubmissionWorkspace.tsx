@@ -215,50 +215,70 @@ function buildWorkspaceChecklist(submission: FacilitySubmission) {
   const exceptionsResolved = Boolean(submission.computation && openExceptions.length === 0);
   const evidenceCommitted = submission.evidenceCommit.status === "committed";
   const tokenizationStarted = submission.tokenization.status !== "not_started";
+  const hasReceivables = submission.receivables.length > 0;
+  const hasEvidence = submission.evidence.length > 0;
+  const computedAt = submission.computation?.computedAt;
+  const hasComputation = Boolean(computedAt);
 
   return [
     {
-      description: submission.receivables.length
+      actionLabel: hasReceivables ? "Review receivables" : "Import CSV",
+      description: hasReceivables
         ? `${submission.receivables.length} receivables imported.`
         : "Import a receivables CSV before computing availability.",
-      done: submission.receivables.length > 0,
+      done: hasReceivables,
+      href: hasReceivables ? "#workspace-receivables" : "#workspace-import",
       label: "Import receivables",
     },
     {
-      description: submission.evidence.length
+      actionLabel: hasEvidence ? "Review evidence" : "Upload evidence",
+      description: hasEvidence
         ? `${submission.evidence.length} evidence packages attached.`
         : "Attach insurance, servicing, title, lockbox, or other policy evidence.",
-      done: submission.evidence.length > 0,
+      done: hasEvidence,
+      href: hasEvidence ? "#workspace-evidence-library" : "#workspace-import",
       label: "Attach evidence",
     },
     {
-      description: submission.computation
-        ? `Computed ${new Date(submission.computation.computedAt).toLocaleString()}.`
+      actionLabel: hasComputation ? "Review lender packet" : "Compute borrowing base",
+      description: computedAt
+        ? `Computed ${new Date(computedAt).toLocaleString()}.`
         : "Compute the borrowing base after receivables and evidence are present.",
-      done: Boolean(submission.computation),
+      done: hasComputation,
+      href: hasComputation ? "#workspace-lender-packet" : "#workspace-overview",
       label: "Compute availability",
     },
     {
-      description: submission.computation
+      actionLabel: hasComputation ? (exceptionsResolved ? "Review exceptions" : "Resolve exceptions") : "Compute first",
+      description: hasComputation
         ? exceptionsResolved
           ? "No open exceptions remain."
           : `${openExceptions.length} open exceptions need operator action.`
         : "Exception status appears after computation.",
       done: exceptionsResolved,
+      href: hasComputation ? "#workspace-exceptions" : "#workspace-overview",
       label: "Resolve exceptions",
     },
     {
+      actionLabel: evidenceCommitted ? "Review verification" : "Anchor evidence",
       description: evidenceCommitted
         ? "Evidence root is anchored for lender review."
         : "Anchor evidence after the packet is clean enough to share.",
       done: evidenceCommitted,
+      href: hasComputation ? "#workspace-lender-packet" : "#workspace-overview",
       label: "Anchor evidence",
     },
     {
+      actionLabel: tokenizationStarted ? "Review handoff" : evidenceCommitted ? "Share packet" : "Prepare packet",
       description: tokenizationStarted
         ? `Tokenization status: ${submission.tokenization.status.replace(/_/g, " ")}.`
         : "Optional downstream handoff after lender approval.",
       done: tokenizationStarted || evidenceCommitted,
+      href: tokenizationStarted
+        ? "#workspace-robolend-handoff"
+        : evidenceCommitted || hasComputation
+          ? "#workspace-lender-packet"
+          : "#workspace-overview",
       label: "Robolend handoff",
     },
   ];
@@ -974,7 +994,10 @@ export const SubmissionWorkspace = ({
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 py-8 sm:px-6 sm:py-10">
-      <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30 sm:p-8">
+      <section
+        id="workspace-overview"
+        className="scroll-mt-24 rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30 sm:p-8"
+      >
         <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
           <div className="min-w-0 max-w-3xl">
             <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
@@ -1078,6 +1101,9 @@ export const SubmissionWorkspace = ({
                 </span>
               </div>
               <p className="mt-2 text-sm leading-relaxed text-base-content/70">{step.description}</p>
+              <a className="btn btn-outline btn-sm mt-4 rounded-full" href={step.href}>
+                {step.actionLabel}
+              </a>
             </div>
           ))}
         </div>
@@ -1085,7 +1111,10 @@ export const SubmissionWorkspace = ({
 
       <div className="space-y-6">
         {canMutate ? (
-          <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
+          <section
+            id="workspace-import"
+            className="scroll-mt-24 rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30"
+          >
             <div className="grid gap-6 lg:grid-cols-2">
               <div>
                 <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.2em] text-base-content/50">
@@ -1208,7 +1237,10 @@ export const SubmissionWorkspace = ({
         ) : null}
 
         {submission.receivables.length > 0 ? (
-          <section className="overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 shadow-lg shadow-base-300/30">
+          <section
+            id="workspace-receivables"
+            className="scroll-mt-24 overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 shadow-lg shadow-base-300/30"
+          >
             <div className="border-b border-base-300 px-6 py-5">
               <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">Receivables</p>
               <h2 className="mt-2 text-2xl font-black tracking-tight text-base-content">Collateral under review</h2>
@@ -1398,7 +1430,10 @@ export const SubmissionWorkspace = ({
         ) : null}
 
         {submission.computation || submission.exceptions.length > 0 ? (
-          <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
+          <section
+            id="workspace-exceptions"
+            className="scroll-mt-24 rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30"
+          >
             <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
               <ExclamationTriangleIcon className="h-4 w-4" />
               Exceptions and next actions
@@ -1431,7 +1466,10 @@ export const SubmissionWorkspace = ({
         ) : null}
 
         {submission.evidence.length > 0 ? (
-          <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
+          <section
+            id="workspace-evidence-library"
+            className="scroll-mt-24 rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30"
+          >
             <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
               <ShieldCheckIcon className="h-4 w-4" />
               Evidence library
@@ -1575,7 +1613,10 @@ export const SubmissionWorkspace = ({
         ) : null}
 
         {submission.computation ? (
-          <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
+          <section
+            id="workspace-lender-packet"
+            className="scroll-mt-24 rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30"
+          >
             <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
               <CheckCircleIcon className="h-4 w-4" />
               Lender packet and evidence verification
@@ -1713,7 +1754,10 @@ export const SubmissionWorkspace = ({
         ) : null}
 
         {canShowTokenization ? (
-          <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
+          <section
+            id="workspace-robolend-handoff"
+            className="scroll-mt-24 rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30"
+          >
             <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
               <ShieldCheckIcon className="h-4 w-4" />
               Robolend handoff and tokenization status
