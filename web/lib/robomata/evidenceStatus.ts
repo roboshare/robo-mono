@@ -45,14 +45,26 @@ function normalizedEvidenceText(input: { evidenceText?: string }) {
   return (input.evidenceText ?? "").toLowerCase();
 }
 
-function hasNegativeEvidenceCue(text: string) {
-  return (
-    /\b(cancel(?:led|ed)?|expired|inactive|lapsed|uninsured|unmatched|unverified|missing|exception)\b/.test(text) ||
-    /\b(?:not|no|without)\s+(?:currently\s+)?(?:active|covered|insured|verified|matched|clear|cleared|in force|reconciled)\b/.test(
+function hasNegativeEvidenceCue(text: string, kind: Exclude<EvidenceStatusKind, "receivables">) {
+  if (kind === "insurance") {
+    return /\b(uninsured|(?:policy|coverage|insurance)\s+(?:cancel(?:led|ed)|expired|inactive|lapsed|missing|exception)|coverage\s+(?:is\s+)?not\s+(?:active|current|in force)|(?:not|without)\s+(?:currently\s+)?(?:covered|insured|coverage|insurance))\b/.test(
       text,
-    ) ||
-    /\bcoverage\s+(?:is\s+)?not\s+(?:active|current|in force)\b/.test(text)
-  );
+    );
+  }
+
+  if (kind === "title_lien") {
+    return /\b(?:title|lien|ucc|collateral)\b.{0,24}\b(?:not\s+(?:clear|cleared|verified)|unverified|missing|exception)\b/.test(
+      text,
+    );
+  }
+
+  if (kind === "lockbox") {
+    return /\b(?:lockbox|cash|bank|collection|collections)\b.{0,24}\b(?:not\s+(?:matched|verified|reconciled)|unmatched|unverified|missing|exception)\b/.test(
+      text,
+    );
+  }
+
+  return /\butili[sz]ation\b.{0,24}\b(?:below|missing|exception|stale|not\s+(?:current|verified))\b/.test(text);
 }
 
 function hasPositiveEvidenceCue(text: string) {
@@ -74,7 +86,7 @@ export function deriveEvidenceFacts(input: {
   if (input.evidence.linkedReceivableIds.length === 0) return undefined;
 
   const text = normalizedEvidenceText({ evidenceText: input.evidenceText });
-  if (hasNegativeEvidenceCue(text) || !hasPositiveEvidenceCue(text)) return undefined;
+  if (hasNegativeEvidenceCue(text, kind) || !hasPositiveEvidenceCue(text)) return undefined;
 
   const baseFacts = {
     derivedAt: new Date().toISOString(),
@@ -104,7 +116,7 @@ export function deriveEvidenceFacts(input: {
   }
 
   const utilizationMatch = text.match(
-    /\butili[sz]ation(?:\s+(?:pct|percent|rate))?\D{0,16}(\d{1,3})(?:\.\d+)?\s*(%|pct|percent)\b/,
+    /\butili[sz]ation(?:\s+(?:pct|percent|rate))?\D{0,16}(\d{1,3})(?:\.\d+)?\s*(?:%|\b(?:pct|percent)\b)/,
   );
   const utilizationPct = utilizationMatch ? Number.parseInt(utilizationMatch[1], 10) : undefined;
   if (
