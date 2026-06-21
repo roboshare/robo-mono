@@ -59,20 +59,22 @@ function PolicyReviewShell({
   title: string;
 }) {
   return (
-    <div className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
+    <div className="min-w-0 max-w-full overflow-hidden rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-center gap-2 break-words text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
             <CheckCircleIcon className="h-4 w-4" />
             Policy review
           </div>
-          <div className="mt-1 text-sm font-semibold text-base-content">{title}</div>
-          <div className="mt-1 text-sm text-base-content/70">{description}</div>
+          <div className="mt-1 break-words text-sm font-semibold text-base-content">{title}</div>
+          <div className="mt-1 break-words text-sm text-base-content/70">{description}</div>
           <div className="mt-2 break-all text-xs text-base-content/50">
             {policyArtifact.name} · {policyArtifact.id} · {policyArtifact.version}
           </div>
         </div>
-        <ReviewStatusBadge review={review} />
+        <div className="shrink-0">
+          <ReviewStatusBadge review={review} />
+        </div>
       </div>
       {review ? (
         <div className="mt-3 rounded-2xl border border-base-300 bg-base-100/70 p-3 text-xs text-base-content/60">
@@ -81,7 +83,7 @@ function PolicyReviewShell({
         </div>
       ) : null}
       {children}
-      <div className="mt-3 flex gap-2 text-xs text-base-content/60">
+      <div className="mt-3 flex min-w-0 gap-2 break-words text-xs text-base-content/60">
         <ExclamationTriangleIcon className="h-4 w-4 shrink-0" />
         This records acknowledgement of the current default artifact. It does not create a lender-authored override or
         change deterministic credit rules.
@@ -149,9 +151,9 @@ export function OperatorPolicyReviewPanel({
       review={review}
       title="Operator policy review"
     >
-      <div className="mt-3 grid gap-2 md:grid-cols-[12rem_1fr_auto]">
+      <div className="mt-3 grid min-w-0 max-w-full gap-2 md:grid-cols-[12rem_1fr_auto]">
         <select
-          className="select select-bordered select-sm rounded-full"
+          className="select select-bordered select-sm w-full min-w-0 max-w-full rounded-full"
           disabled={isSaving}
           onChange={event => setStatus(event.target.value as ReviewStatus)}
           value={status}
@@ -160,14 +162,18 @@ export function OperatorPolicyReviewPanel({
           <option value="needs_changes">Needs changes</option>
         </select>
         <input
-          className="input input-bordered input-sm rounded-full"
+          className="input input-bordered input-sm w-full min-w-0 max-w-full rounded-full"
           disabled={isSaving}
           maxLength={500}
           onChange={event => setRationale(event.target.value)}
           placeholder="Optional rationale"
           value={rationale}
         />
-        <button className="btn btn-primary btn-sm rounded-full" disabled={isSaving} onClick={saveReview}>
+        <button
+          className="btn btn-primary btn-sm h-auto min-h-8 w-full min-w-0 max-w-full whitespace-normal rounded-full text-center md:w-auto"
+          disabled={isSaving}
+          onClick={saveReview}
+        >
           Record review
         </button>
       </div>
@@ -216,9 +222,9 @@ export function LenderPolicyReviewPanel({
       review={review}
       title="Lender policy review"
     >
-      <div className="mt-3 grid gap-2 md:grid-cols-[12rem_1fr_auto]">
+      <div className="mt-3 grid min-w-0 max-w-full gap-2 md:grid-cols-[12rem_1fr_auto]">
         <select
-          className="select select-bordered select-sm rounded-full"
+          className="select select-bordered select-sm w-full min-w-0 max-w-full rounded-full"
           disabled={isSaving}
           onChange={event => setStatus(event.target.value as ReviewStatus)}
           value={status}
@@ -227,14 +233,18 @@ export function LenderPolicyReviewPanel({
           <option value="needs_changes">Needs changes</option>
         </select>
         <input
-          className="input input-bordered input-sm rounded-full"
+          className="input input-bordered input-sm w-full min-w-0 max-w-full rounded-full"
           disabled={isSaving}
           maxLength={500}
           onChange={event => setRationale(event.target.value)}
           placeholder="Optional lender note"
           value={rationale}
         />
-        <button className="btn btn-primary btn-sm rounded-full" disabled={isSaving} onClick={saveReview}>
+        <button
+          className="btn btn-primary btn-sm h-auto min-h-8 w-full min-w-0 max-w-full whitespace-normal rounded-full text-center md:w-auto"
+          disabled={isSaving}
+          onClick={saveReview}
+        >
           Record review
         </button>
       </div>
