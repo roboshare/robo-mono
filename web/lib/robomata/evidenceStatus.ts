@@ -47,7 +47,7 @@ function normalizedEvidenceText(input: { evidenceText?: string }) {
 
 function hasNegativeEvidenceCue(text: string, kind: Exclude<EvidenceStatusKind, "receivables">) {
   if (kind === "insurance") {
-    return /\b(uninsured|(?:policy|coverage|insurance)\b.{0,16}\b(?:cancel(?:led|ed)|expired|inactive|lapsed|missing|exception|not\s+(?:active|current|in force))|(?:cancel(?:led|ed)|expired|inactive|lapsed|missing|exception|not\s+(?:active|current|in force))\b.{0,16}\b(?:policy|coverage|insurance)|coverage\s+(?:is\s+)?not\s+(?:active|current|in force)|(?:not|without)\s+(?:currently\s+)?(?:covered|insured|coverage(?!\s+gaps?)|insurance))\b/.test(
+    return /\b(uninsured|status\s*[:=-]?\s*(?:cancel(?:led|ed)|expired|inactive|lapsed|missing|exception|not\s+(?:active|current|in force))|(?:policy|coverage|insurance)\b.{0,16}\b(?:cancel(?:led|ed)|expired|inactive|lapsed|missing|exception|not\s+(?:active|current|in force))|(?:cancel(?:led|ed)|expired|inactive|lapsed|missing|exception|not\s+(?:active|current|in force))\b.{0,16}\b(?:policy|coverage|insurance)|coverage\s+(?:is\s+)?not\s+(?:active|current|in force)|(?:not|without)\s+(?:currently\s+)?(?:covered|insured|coverage(?!\s+gaps?)|insurance))\b/.test(
       text,
     );
   }
@@ -120,7 +120,7 @@ export function deriveEvidenceFacts(input: {
   }
 
   const utilizationMatch = text.match(
-    /\butili[sz]ation(?:\s+(pct|percent|rate))?\D{0,16}(\d{1,3})(?:\.\d+)?\s*(%|pct|percent)?\b/,
+    /\butili[sz]ation(?:\s+(pct|percent|rate))?\D{0,16}(\d{1,3})(?:\.\d+)?\s*(%|pct|percent)?(?=\s|$|[.,;:)])/,
   );
   const hasExplicitUtilizationUnit =
     utilizationMatch?.[1] === "pct" || utilizationMatch?.[1] === "percent" || Boolean(utilizationMatch?.[3]);
