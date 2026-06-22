@@ -57,6 +57,7 @@
     "robomata:agent-execution-smoke": "yarn workspace web robomata:agent-execution-smoke",
     "robomata:agent-planner-intents-smoke": "yarn workspace web robomata:agent-planner-intents-smoke",
     "robomata:agent-planner-provenance-smoke": "yarn workspace web robomata:agent-planner-provenance-smoke",
+    "robomata:agent-memory-smoke": "yarn workspace web robomata:agent-memory-smoke",
     "robomata:google-gemini-adapter-smoke": "yarn workspace web robomata:google-gemini-adapter-smoke",
     "robomata:llm-review-controls-smoke": "yarn workspace web robomata:llm-review-controls-smoke",
     "robomata:llm-review-provenance-smoke": "yarn workspace web robomata:llm-review-provenance-smoke",

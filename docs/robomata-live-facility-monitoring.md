@@ -164,6 +164,13 @@ Live facility monitoring is additive and default-off:
   advisory execution adapter. It can execute only approved `evidence_review`
   and `sui_root_review` actions by recording execution audit metadata. It does
   not mutate submissions, packets, evidence records, Sui, or EVM state.
+- `ROBOMATA_AGENT_MEMORY_ENABLED=true` enables the optional Walrus
+  Memory/MemWal adapter for supervised agent recall and memory writes. The
+  adapter also requires a MemWal account id and delegate key through
+  `MEMWAL_ACCOUNT_ID` and `MEMWAL_DELEGATE_KEY` or their
+  `ROBOMATA_MEMWAL_*` aliases, plus the `@mysten-incubation/memwal` package in
+  the deployment. If the SDK or credentials are missing, agent runs continue
+  and record `configured_without_*` or `sdk_unavailable` provenance.
 - `ROBOMATA_AGENTS_FILE=/local/path/agents.json` is an optional local-only JSON
   fallback when `POSTGRES_URL` is not configured.
 
@@ -227,6 +234,31 @@ structured recommendation intent, but it cannot add action types, drop
 rule-triggered candidates, understate deterministic risk, approve actions, or
 execute writes. Anthropic remains a stubbed non-rules planner provider until its
 live planning controls are implemented.
+
+## Walrus Memory / MemWal Adapter
+
+The MemWal adapter is a minimal long-term memory layer for supervised facility
+agents. Before a run, Robomata recalls bounded memories from a facility-scoped
+namespace such as `robomata-agent:<facilityId>`. After the run is recorded, it
+submits a compact memory containing run id, completion time, facility status,
+packet freshness, Sui root status, tokenization status, proposed action
+type/status/severity tuples, planner provider/status, and source-data digest.
+
+The adapter intentionally mirrors only public-safe supervision metadata. It
+does not store raw evidence bodies, Walrus ciphertext, Seal plaintext, share
+tokens, wallet signatures, private keys, API keys, or unbounded prompts/model
+responses. The existing Robomata agent store remains the authoritative audit
+trail; MemWal is a portable recall layer for future agent runs, not the source
+of record for policy, action approval, or execution state.
+
+Required live configuration:
+
+- `ROBOMATA_AGENT_MEMORY_ENABLED=true`
+- `MEMWAL_ACCOUNT_ID=<MemWalAccount Sui object id>`
+- `MEMWAL_DELEGATE_KEY=<scoped delegate private key>`
+- optional `MEMWAL_SERVER_URL=<relayer url>`
+- optional `ROBOMATA_MEMWAL_NAMESPACE_PREFIX=robomata-agent`
+- optional `ROBOMATA_MEMWAL_NAMESPACE=<fixed namespace override>`
 
 ## Agent Supervision Planner Boundary
 

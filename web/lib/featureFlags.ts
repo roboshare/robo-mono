@@ -104,6 +104,10 @@ export function isRobomataAgentAdvisoryExecutionEnabled(): boolean {
   return isEnabled(process.env.ROBOMATA_AGENT_ADVISORY_EXECUTION_ENABLED);
 }
 
+export function isRobomataAgentMemoryEnabled(): boolean {
+  return isEnabled(process.env.ROBOMATA_AGENT_MEMORY_ENABLED);
+}
+
 export function isRobomataLenderAgentAppointmentEnabled(): boolean {
   return isEnabled(process.env.ROBOMATA_LENDER_AGENT_APPOINTMENT_ENABLED);
 }

@@ -83,6 +83,12 @@ export type RobomataAgentPlannerBoundary = {
   candidateActionCount?: number;
   generatedAt?: string;
   inputControls?: RobomataAgentPlannerInputControls;
+  memoryProvider?: "memwal";
+  memoryRecallCount?: number;
+  memoryRecallStatus?: string;
+  memoryWriteJobId?: string;
+  memoryWriteStatus?: string;
+  memwalNamespace?: string;
   outputSchemaVersion?: "agent-supervision-plan-output-v1" | "agent-supervision-plan-output-v2";
   plannerInputDigest?: string;
   plannerOutputDigest?: string;
