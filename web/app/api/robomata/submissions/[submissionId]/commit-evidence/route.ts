@@ -1077,6 +1077,16 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
         { status: 409 },
       );
     }
+    if (commitMode === "operator_complete_sponsored") {
+      await releaseCurrentSponsorGasReservation(requestBody.sponsorGasObjectId);
+      return NextResponse.json(
+        {
+          submission: released,
+          error: "Previous sponsored operator evidence commit attempt timed out before a matching Sui event was found.",
+        },
+        { status: 409 },
+      );
+    }
     submission = released;
   }
 
