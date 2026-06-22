@@ -5,9 +5,11 @@ import { Ed25519PublicKey } from "@mysten/sui/keypairs/ed25519";
 import { Secp256k1PublicKey } from "@mysten/sui/keypairs/secp256k1";
 import { Secp256r1PublicKey } from "@mysten/sui/keypairs/secp256r1";
 import { fromBase58, fromBase64, fromHex, normalizeSuiAddress, toBase64 } from "@mysten/sui/utils";
+import { p256 } from "@noble/curves/p256";
 import { blake2b } from "@noble/hashes/blake2.js";
+import { sha256 } from "@noble/hashes/sha256.js";
 import type { WalletApiRequestSignatureInput } from "@privy-io/server-auth";
-import { generateAuthorizationSignature } from "@privy-io/server-auth/wallet-api";
+import canonicalize from "canonicalize";
 import { eq } from "drizzle-orm";
 import { jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -35,6 +37,7 @@ type PrivyWallet = {
   id: string;
   address: string;
   chain_type: string;
+  additional_signers?: Array<{ signer_id?: string | null }> | null;
   external_id?: string | null;
   owner_id?: string | null;
   public_key?: string;
@@ -224,6 +227,34 @@ function getPrivyWalletAuthorizationPrivateKey() {
   return privateKey;
 }
 
+function normalizePrivyWalletAuthorizationPrivateKey(privateKey: string): bigint {
+  const encodedKey = privateKey.replace("wallet-auth:", "").replace("wallet-api:", "");
+  const decodedKey = Buffer.from(encodedKey, "base64");
+  const scalarMarker = Buffer.from([4, 32]);
+  const scalarOffset = decodedKey.indexOf(scalarMarker);
+  if (scalarOffset === -1) throw new Error("Invalid Privy wallet authorization private key.");
+
+  const scalarBytes = decodedKey.subarray(scalarOffset + scalarMarker.length, scalarOffset + scalarMarker.length + 32);
+  return p256.utils.normPrivateKeyToScalar(scalarBytes);
+}
+
+function signPrivyRawSignRequest(input: WalletApiRequestSignatureInput): string {
+  const serialized = canonicalize(input);
+  if (!serialized) throw new Error("Failed to canonicalize Privy wallet authorization request.");
+
+  const privateKey = normalizePrivyWalletAuthorizationPrivateKey(getPrivyWalletAuthorizationPrivateKey());
+  const signature = p256.sign(sha256(Buffer.from(serialized)), privateKey).toDERRawBytes();
+  return Buffer.from(signature).toString("base64");
+}
+
+function getPrivySuiWalletOwnerId(): string | undefined {
+  return process.env.ROBOMATA_PRIVY_SUI_WALLET_OWNER_ID?.trim() || undefined;
+}
+
+function getPrivySuiWalletAdditionalSignerId(): string | undefined {
+  return process.env.ROBOMATA_PRIVY_SUI_WALLET_ADDITIONAL_SIGNER_ID?.trim() || undefined;
+}
+
 function getPrivyAuthHeaders() {
   const appId = getPrivyAppId();
   const appSecret = process.env.PRIVY_APP_SECRET;
@@ -241,11 +272,13 @@ function getPrivyAuthHeaders() {
 function getPrivyRawSignHeaders(input: { body: unknown; idempotencyKey: string; pathName: string }) {
   const appId = getPrivyAppId();
   if (!appId) throw new Error("Privy app id is required for Sui raw signing.");
+  const requestExpiry = String(Date.now() + 5 * 60 * 1000);
 
-  const headers = {
+  const headers: WalletApiRequestSignatureInput["headers"] & Record<"privy-request-expiry", string> = {
     "privy-app-id": appId,
     "privy-idempotency-key": input.idempotencyKey,
-  } satisfies WalletApiRequestSignatureInput["headers"];
+    "privy-request-expiry": requestExpiry,
+  };
   const requestToSign = {
     body: input.body,
     headers,
@@ -253,15 +286,13 @@ function getPrivyRawSignHeaders(input: { body: unknown; idempotencyKey: string; 
     url: `${getPrivyApiBaseUrl()}${input.pathName}`,
     version: 1,
   } satisfies WalletApiRequestSignatureInput;
-  const authorizationSignature = generateAuthorizationSignature({
-    authorizationPrivateKey: getPrivyWalletAuthorizationPrivateKey(),
-    input: requestToSign,
-  });
+  const authorizationSignature = signPrivyRawSignRequest(requestToSign);
   if (!authorizationSignature) throw new Error("Failed to generate Privy wallet authorization signature.");
 
   return {
     "privy-authorization-signature": authorizationSignature,
     "privy-idempotency-key": input.idempotencyKey,
+    "privy-request-expiry": requestExpiry,
   };
 }
 
@@ -394,11 +425,14 @@ async function findPrivySuiWallet(privyUserId: string): Promise<PrivyWallet | nu
 
 async function createPrivySuiWallet(privyUserId: string): Promise<PrivyWallet> {
   const policyId = process.env.ROBOMATA_PRIVY_SUI_WALLET_POLICY_ID?.trim();
+  const ownerId = getPrivySuiWalletOwnerId();
+  const additionalSignerId = getPrivySuiWalletAdditionalSignerId();
   const payload = {
     chain_type: "sui",
     display_name: "Robomata Sui operator wallet",
     external_id: externalId(privyUserId),
-    owner: { user_id: privyUserId },
+    ...(ownerId ? { owner_id: ownerId } : { owner: { user_id: privyUserId } }),
+    ...(additionalSignerId ? { additional_signers: [{ signer_id: additionalSignerId }] } : {}),
     ...(policyId ? { policy_ids: [policyId] } : {}),
   };
 
@@ -470,7 +504,19 @@ export async function signPrivySuiTransaction(input: {
   idempotencyKey: string;
   transactionBytes: string;
 }): Promise<{ signature: string; walletAddress: string; walletId: string }> {
-  const wallet = input.binding.publicKey ? null : await getPrivyWallet(input.binding.walletId);
+  const wallet = await getPrivyWallet(input.binding.walletId);
+  const ownerId = getPrivySuiWalletOwnerId();
+  const additionalSignerId = getPrivySuiWalletAdditionalSignerId();
+  const walletSignerIds = wallet.additional_signers?.flatMap(signer =>
+    typeof signer.signer_id === "string" ? [signer.signer_id] : [],
+  );
+  const serverAuthorized =
+    (ownerId && wallet.owner_id === ownerId) || (additionalSignerId && walletSignerIds?.includes(additionalSignerId));
+  if (!serverAuthorized) {
+    throw new Error(
+      "Bound Privy Sui wallet is not configured for server-authorized raw signing. Configure ROBOMATA_PRIVY_SUI_WALLET_OWNER_ID or ROBOMATA_PRIVY_SUI_WALLET_ADDITIONAL_SIGNER_ID, then rebind the operator Sui wallet.",
+    );
+  }
   const publicKey = input.binding.publicKey ?? wallet?.public_key;
   if (!publicKey) throw new Error("Privy Sui wallet public key is required for Sui signature serialization.");
 

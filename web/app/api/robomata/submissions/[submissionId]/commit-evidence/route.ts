@@ -812,7 +812,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       );
     }
 
-    const privyUser = await getPrivyUserFromRequest(request);
+    const privyUser = await getPrivyUserFromRequest(request).catch(() => null);
     if (!privyUser) {
       return NextResponse.json({ error: "Privy authentication is required for Privy Sui signing." }, { status: 401 });
     }
@@ -824,16 +824,6 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       return NextResponse.json(
         { error: "Bound Privy Sui wallet does not match the configured facility operator." },
         { status: 400 },
-      );
-    }
-
-    const committingSubmission = await store.beginEvidenceCommit(submission.id, rootDigest, new Date().toISOString());
-    if (!committingSubmission) {
-      const latest = await store.get(submission.id);
-      if (latest?.evidenceCommit.status === "committed") return NextResponse.json({ submission: latest });
-      return NextResponse.json(
-        { error: "Evidence commit is already in progress or the evidence root has changed." },
-        { status: 409 },
       );
     }
 
@@ -851,19 +841,38 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
         error instanceof Error
           ? "Failed to prepare Privy Sui transaction: " + error.message
           : "Failed to prepare Privy Sui transaction.";
-      const failed = await store.failEvidenceCommit(committingSubmission.id, rootDigest, errorMessage);
-      return NextResponse.json({ submission: failed ?? committingSubmission, error: errorMessage }, { status: 500 });
+      return NextResponse.json({ error: errorMessage }, { status: 500 });
     }
 
+    const transactionBytes = operatorCommit.sponsorship?.transactionBytes ?? "";
+    const transactionDigest = createHash("sha256").update(transactionBytes).digest("hex").slice(0, 32);
+    let signed: Awaited<ReturnType<typeof signPrivySuiTransaction>>;
     try {
-      const transactionBytes = operatorCommit.sponsorship?.transactionBytes ?? "";
-      const transactionDigest = createHash("sha256").update(transactionBytes).digest("hex").slice(0, 32);
-      const signed = await signPrivySuiTransaction({
+      signed = await signPrivySuiTransaction({
         binding,
         expectedAddress: facilityOperatorAddress,
         idempotencyKey: `robomata-sui-commit-${submission.id}-${rootDigest}-${transactionDigest}`,
         transactionBytes,
       });
+    } catch (error) {
+      await releaseCurrentSponsorGasReservation(operatorCommit.sponsorship?.gasObjectId);
+      const errorMessage =
+        error instanceof Error ? "Privy Sui signing failed: " + error.message : "Privy Sui signing failed.";
+      return NextResponse.json({ error: errorMessage }, { status: 400 });
+    }
+
+    const committingSubmission = await store.beginEvidenceCommit(submission.id, rootDigest, new Date().toISOString());
+    if (!committingSubmission) {
+      await releaseCurrentSponsorGasReservation(operatorCommit.sponsorship?.gasObjectId);
+      const latest = await store.get(submission.id);
+      if (latest?.evidenceCommit.status === "committed") return NextResponse.json({ submission: latest });
+      return NextResponse.json(
+        { error: "Evidence commit is already in progress or the evidence root has changed." },
+        { status: 409 },
+      );
+    }
+
+    try {
       const result = await executeSponsoredOperatorSuiCommit({
         operatorSignature: signed.signature,
         sponsorSignature: operatorCommit.sponsorship?.sponsorSignature ?? "",

@@ -1178,40 +1178,61 @@ export const SubmissionWorkspace = ({
       }
 
       if (canUsePrivySuiRawSign) {
-        const privyHeaders = new Headers({ "content-type": "application/json" });
-        const privyAuthHeaders = await getAuthHeaders({
-          chainId: selectedNetwork.id,
-          method: "POST",
-          path,
-          signerAddress,
-        });
-        Object.entries(privyAuthHeaders).forEach(([key, value]) => privyHeaders.set(key, value));
-        const privyResponse = await fetch(path, {
-          method: "POST",
-          headers: privyHeaders,
-          body: JSON.stringify({ mode: "operator_complete_sponsored_privy" }),
-        });
-        const privyPayload = (await privyResponse.json().catch(() => ({}))) as CommitEvidenceResponse;
-        if (privyPayload.submission) setSubmission(privyPayload.submission);
-        if (!privyResponse.ok || !privyPayload.submission) {
-          throw new Error(privyPayload.error ?? "Privy Sui evidence anchoring failed.");
-        }
-        if (privyResponse.status === 202) {
-          setPendingOperatorCommit({
-            sponsorGasObjectId: privyPayload.sponsorGasObjectId,
-            submissionId: submission.id,
-            rootDigest: submission.evidenceCommit.rootDigest ?? "",
-            txDigest: privyPayload.txDigest,
-            walletAddress: privySuiBinding?.suiAddress,
-            walletName: "bound Privy Sui wallet",
+        let fallbackMessage: string | undefined;
+        let privyPayload: CommitEvidenceResponse | undefined;
+        let privyResponse: Response | undefined;
+        try {
+          const privyHeaders = new Headers({ "content-type": "application/json" });
+          const privyAuthHeaders = await getAuthHeaders({
+            chainId: selectedNetwork.id,
+            method: "POST",
+            path,
+            signerAddress,
           });
-          notification.error(
-            privyPayload.error ?? "Evidence anchoring is awaiting verification indexing. Retry shortly.",
-          );
-          return;
+          Object.entries(privyAuthHeaders).forEach(([key, value]) => privyHeaders.set(key, value));
+          privyResponse = await fetch(path, {
+            method: "POST",
+            headers: privyHeaders,
+            body: JSON.stringify({ mode: "operator_complete_sponsored_privy" }),
+          });
+          privyPayload = (await privyResponse.json().catch(() => ({}))) as CommitEvidenceResponse;
+        } catch (error) {
+          fallbackMessage = error instanceof Error ? error.message : "Privy Sui evidence anchoring failed.";
         }
-        notification.success("Evidence committed with the bound Privy Sui wallet.");
-        return;
+
+        if (privyResponse && privyPayload) {
+          if (privyPayload.submission) setSubmission(privyPayload.submission);
+          if (!privyResponse.ok || !privyPayload.submission) {
+            const errorMessage = privyPayload.error ?? "Privy Sui evidence anchoring failed.";
+            if (privyPayload.submission || privyPayload.txDigest || privyPayload.sponsorGasObjectId) {
+              throw new Error(errorMessage);
+            }
+            fallbackMessage = errorMessage;
+          } else if (privyResponse.status === 202) {
+            setPendingOperatorCommit({
+              sponsorGasObjectId: privyPayload.sponsorGasObjectId,
+              submissionId: submission.id,
+              rootDigest: submission.evidenceCommit.rootDigest ?? "",
+              txDigest: privyPayload.txDigest,
+              walletAddress: privySuiBinding?.suiAddress,
+              walletName: "bound Privy Sui wallet",
+            });
+            notification.error(
+              privyPayload.error ?? "Evidence anchoring is awaiting verification indexing. Retry shortly.",
+            );
+            return;
+          } else {
+            notification.success("Evidence committed with the bound Privy Sui wallet.");
+            return;
+          }
+        }
+
+        if (!hasSuiWallet) {
+          throw new Error(fallbackMessage ?? "Privy Sui evidence anchoring failed.");
+        }
+        notification.error(
+          `${fallbackMessage ?? "Privy Sui evidence anchoring failed."} Falling back to the connected Sui wallet.`,
+        );
       }
 
       const prepareHeaders = new Headers({ "content-type": "application/json" });
