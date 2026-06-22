@@ -30,6 +30,7 @@ import {
   jsonTextFromProviderOutput,
 } from "~~/lib/robomata/googleGemini";
 import type { RobomataFacilityPolicyArtifact } from "~~/lib/robomata/policyRules";
+import type { RobomataAgentMemoryContext } from "~~/lib/robomata/server/agentMemory";
 import type { FacilitySubmission } from "~~/lib/robomata/submissions";
 
 export const ROBOMATA_AGENT_PLANNER_PROMPT_VERSION = "agent-supervision-planner-v1";
@@ -212,6 +213,7 @@ type PlanAgentActionsInput = {
     suiRootStatus: string;
     summary: string;
   }>;
+  memoryContext?: RobomataAgentMemoryContext;
   submission: FacilitySubmission;
   suppressAutoApprove?: boolean;
 };
@@ -233,6 +235,7 @@ function plannerInputControls(generatedAt: string): RobomataAgentPlannerInputCon
       "deterministic candidate action type, severity, title, message, reason, and policy metadata",
       "recent agent run summaries and statuses",
       "recent retained action statuses and planner provenance",
+      "bounded MemWal memory summaries and memory digests",
       "allowed supervised action/tool surface",
     ],
     excludedMaterial: [
@@ -245,6 +248,7 @@ function plannerInputControls(generatedAt: string): RobomataAgentPlannerInputCon
       "share-link tokens",
       "wallet signatures",
       "unbounded prompts or model responses",
+      "MemWal delegate keys",
     ],
     generatedAt,
     maxCandidateActions: ROBOMATA_AGENT_PLANNER_MAX_CANDIDATE_ACTIONS,
@@ -508,6 +512,21 @@ function buildPlannerProviderInput(input: PlanAgentActionsInput, generatedAt: st
       suiRootStatus: run.suiRootStatus,
       summary: compactText(run.summary),
     })),
+    recalledMemory: input.memoryContext
+      ? {
+          digests: input.memoryContext.digests,
+          namespace: input.memoryContext.namespace ?? null,
+          provider: input.memoryContext.provider,
+          recalledCount: input.memoryContext.recalledCount,
+          status: input.memoryContext.status,
+          summaries: input.memoryContext.memories.map(memory => ({
+            blobId: memory.blobId ?? null,
+            digest: memory.digest,
+            distance: memory.distance ?? null,
+            text: compactText(memory.text),
+          })),
+        }
+      : null,
     submission: {
       evidenceCount: input.submission.evidence.length,
       receivableCount: input.submission.receivables.length,
@@ -570,6 +589,14 @@ function sourceDataDigestSource(input: PlanAgentActionsInput) {
       status: run.status,
       suiRootStatus: run.suiRootStatus,
     })),
+    recalledMemory: input.memoryContext
+      ? {
+          digests: input.memoryContext.digests,
+          provider: input.memoryContext.provider,
+          recalledCount: input.memoryContext.recalledCount,
+          status: input.memoryContext.status,
+        }
+      : null,
     submissionId: input.submission.id,
   };
 }
@@ -616,6 +643,10 @@ function withPlannerProvenance(input: {
     candidateActionCount: input.providerInput.candidateActions.length,
     generatedAt: input.generatedAt,
     inputControls: input.controls,
+    memoryProvider: input.providerInput.recalledMemory?.provider,
+    memoryRecallCount: input.providerInput.recalledMemory?.recalledCount,
+    memoryRecallStatus: input.providerInput.recalledMemory?.status,
+    memwalNamespace: input.providerInput.recalledMemory?.namespace ?? undefined,
     outputSchemaVersion: ROBOMATA_AGENT_PLANNER_OUTPUT_SCHEMA_VERSION,
     plannerInputDigest,
     plannerOutputDigest,

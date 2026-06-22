@@ -1,4 +1,5 @@
 import "server-only";
+import { isRobomataAgentMemoryEnabled } from "~~/lib/featureFlags";
 import {
   type RobomataAgentActionDraft,
   type RobomataAgentActionSeverity,
@@ -10,6 +11,7 @@ import {
   type RobomataFacilityPolicyArtifact,
   resolveRobomataFacilityPolicyArtifact,
 } from "~~/lib/robomata/policyRules";
+import { recallRobomataAgentMemory, rememberRobomataAgentRunMemory } from "~~/lib/robomata/server/agentMemory";
 import {
   ROBOMATA_AGENT_PLANNER_MAX_RECENT_ACTIONS,
   ROBOMATA_AGENT_PLANNER_MAX_RECENT_RUNS,
@@ -178,8 +180,16 @@ export async function runRobomataAgentForSubmission(input: RunAgentForSubmission
     store.listRuns(input.submission.id, input.submission.partnerAddress, ROBOMATA_AGENT_PLANNER_MAX_RECENT_RUNS),
     store.listActions(input.submission.id, input.submission.partnerAddress, ROBOMATA_AGENT_PLANNER_MAX_RECENT_ACTIONS),
   ]);
+  const memoryContext = isRobomataAgentMemoryEnabled()
+    ? await recallRobomataAgentMemory({
+        policy,
+        projection,
+        submission: input.submission,
+      })
+    : undefined;
   const { actions: actionDrafts, plannerBoundary } = await planRobomataAgentActions({
     candidateActions,
+    memoryContext,
     policyArtifact,
     policy,
     projection,
@@ -194,7 +204,7 @@ export async function runRobomataAgentForSubmission(input: RunAgentForSubmission
     : "No supervised agent actions proposed.";
   const summary = `${proposalSummary} ${plannerBoundarySummary(plannerBoundary)}`;
 
-  return store.recordRun({
+  const recorded = await store.recordRun({
     policy,
     projection,
     status: "completed",
@@ -205,4 +215,27 @@ export async function runRobomataAgentForSubmission(input: RunAgentForSubmission
     plannerBoundary,
     suppressAutoApprove: input.suppressAutoApprove,
   });
+  if (isRobomataAgentMemoryEnabled()) {
+    const memoryWrite = await rememberRobomataAgentRunMemory({
+      actions: recorded.actions,
+      projection,
+      run: recorded.run,
+      submission: input.submission,
+    });
+    try {
+      const persistedRun = await store.recordRunMemoryWrite({
+        memoryWrite,
+        partnerAddress: input.submission.partnerAddress,
+        runId: recorded.run.id,
+        submissionId: input.submission.id,
+      });
+      if (persistedRun) {
+        recorded.run = persistedRun;
+      }
+    } catch {
+      // The run/actions are already durable. Do not make retry paths duplicate them
+      // just because optional memory-write provenance failed to persist.
+    }
+  }
+  return recorded;
 }

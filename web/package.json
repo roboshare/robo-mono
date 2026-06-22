@@ -22,6 +22,7 @@
     "robomata:agent-execution-smoke": "node scripts/robomata-agent-execution-smoke.mjs",
     "robomata:agent-planner-intents-smoke": "node scripts/robomata-agent-planner-intents-smoke.mjs",
     "robomata:agent-planner-provenance-smoke": "node scripts/robomata-agent-planner-provenance-smoke.mjs",
+    "robomata:agent-memory-smoke": "node scripts/robomata-agent-memory-smoke.mjs",
     "robomata:google-gemini-adapter-smoke": "node scripts/robomata-google-gemini-adapter-smoke.mjs",
     "robomata:llm-review-controls-smoke": "node scripts/robomata-llm-review-controls-smoke.mjs",
     "robomata:llm-review-provenance-smoke": "node scripts/robomata-llm-review-provenance-smoke.mjs",
@@ -36,6 +37,7 @@
   },
   "dependencies": {
     "@heroicons/react": "~2.1.5",
+    "@mysten-incubation/memwal": "0.0.7",
     "@mysten/seal": "1.1.3",
     "@mysten/sui": "2.17.0",
     "@privy-io/react-auth": "^3.18.0",
