@@ -935,16 +935,27 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
         );
       }
 
-      const saved = await store.completeEvidenceCommit(submission.id, rootDigest, {
-        txDigest,
-        committedAt: new Date().toISOString(),
-        facilityObjectId,
-        facilityOperatorAddress,
-        commitAuthority: "operator",
-        operatorWalletAddress: signed.walletAddress,
-        sponsorshipMode: "native_sui",
-        sponsorAddress: operatorCommit.sponsorship?.sponsorAddress,
-      });
+      let saved: FacilitySubmission | null = null;
+      try {
+        saved = await store.completeEvidenceCommit(submission.id, rootDigest, {
+          txDigest,
+          committedAt: new Date().toISOString(),
+          facilityObjectId,
+          facilityOperatorAddress,
+          commitAuthority: "operator",
+          operatorWalletAddress: signed.walletAddress,
+          sponsorshipMode: "native_sui",
+          sponsorAddress: operatorCommit.sponsorship?.sponsorAddress,
+        });
+      } catch {
+        return keepCommitInReconciliationState({
+          submission: committingSubmission,
+          sponsorGasObjectId: operatorCommit.sponsorship?.gasObjectId,
+          txDigest,
+          error:
+            "Privy Sui commit was confirmed on-chain, but local persistence did not confirm it. Retry after reconciliation.",
+        });
+      }
       await releaseCurrentSponsorGasReservation(operatorCommit.sponsorship?.gasObjectId);
       if (saved) return NextResponse.json({ submission: saved });
 
@@ -1124,14 +1135,14 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
         { status: 400 },
       );
     }
-    if (
-      !requestBody.txDigest &&
-      (!requestBody.operatorSignature || !requestBody.sponsorSignature || !requestBody.transactionBytes)
-    ) {
+    const hasSponsoredPayload = Boolean(
+      requestBody.operatorSignature && requestBody.sponsorSignature && requestBody.transactionBytes,
+    );
+    if (!requestBody.txDigest && !hasSponsoredPayload && submission.evidenceCommit.status !== "committing") {
       return NextResponse.json(
         {
           error:
-            "Sponsored operator completion requires a transaction digest or transaction bytes plus operator and sponsor signatures.",
+            "Sponsored operator completion requires a transaction digest, an in-progress commit, or transaction bytes plus operator and sponsor signatures.",
         },
         { status: 400 },
       );
@@ -1139,16 +1150,20 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
 
     const result = requestBody.txDigest
       ? ({ txDigest: requestBody.txDigest, uncertain: false } satisfies SuiCommitResult)
-      : await executeSponsoredOperatorSuiCommit({
-          operatorSignature: requestBody.operatorSignature ?? "",
-          sponsorSignature: requestBody.sponsorSignature ?? "",
-          transactionBytes: requestBody.transactionBytes ?? "",
-        });
+      : hasSponsoredPayload
+        ? await executeSponsoredOperatorSuiCommit({
+            operatorSignature: requestBody.operatorSignature ?? "",
+            sponsorSignature: requestBody.sponsorSignature ?? "",
+            transactionBytes: requestBody.transactionBytes ?? "",
+          })
+        : ({ uncertain: false } satisfies SuiCommitResult);
 
     if (result.errorMessage) {
       if (result.uncertain) {
         return keepCommitInReconciliationState({
           submission,
+          sponsorGasObjectId: requestBody.sponsorGasObjectId,
+          txDigest: result.txDigest,
           error: `${result.errorMessage} Reconcile Sui events before retrying.`,
         });
       }
@@ -1195,6 +1210,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       return NextResponse.json(
         {
           submission,
+          sponsorGasObjectId: requestBody.sponsorGasObjectId,
           txDigest: result.txDigest,
           error: result.txDigest
             ? `Sponsored Sui transaction ${result.txDigest} was submitted, but the matching EvidenceCommitted event is not indexed yet. Retry completion shortly.`
