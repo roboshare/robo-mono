@@ -51,6 +51,9 @@ Optional:
 
 ```bash
 ROBOMATA_PRIVY_SUI_WALLET_POLICY_ID=your-privy-sui-policy-id
+PRIVY_WALLET_AUTHORIZATION_PRIVATE_KEY=your-privy-wallet-api-authorization-private-key
+ROBOMATA_PRIVY_SUI_RAW_SIGN_ENABLED=true
+NEXT_PUBLIC_ROBOMATA_PRIVY_SUI_RAW_SIGN_ENABLED=true
 ROBOMATA_OPERATOR_SUI_WALLETS_FILE=/tmp/robomata-operator-sui-wallets.json
 ```
 
@@ -58,17 +61,22 @@ ROBOMATA_OPERATOR_SUI_WALLETS_FILE=/tmp/robomata-operator-sui-wallets.json
 created wallets. `ROBOMATA_OPERATOR_SUI_WALLETS_FILE` is local-development only;
 deployed environments should use the existing `POSTGRES_URL` persistence path.
 
-The current Sui evidence commit UI supports wallet-standard Sui extensions for
-operator execution. Bound Privy Sui wallets become the default operator identity
-and facility-operator mapping target; raw-sign execution from those wallets
-should require a user authorization signature and an allowlisted Sui policy
-before it is enabled for production.
+When `ROBOMATA_PRIVY_SUI_RAW_SIGN_ENABLED=true` and the client companion flag is
+enabled, evidence anchoring uses the bound Privy Sui wallet when its address
+matches the submission facility operator. Robomata still sponsors native Sui gas,
+but the operator signature is produced by Privy raw-sign over the Sui transaction
+intent bytes. User-owned Privy wallets require `PRIVY_WALLET_AUTHORIZATION_PRIVATE_KEY`
+so the server can sign Wallet API `raw_sign` requests with the app's registered
+Privy authorization key. Keep a wallet-standard Sui extension available as the
+fallback path unless the Privy Sui policy and raw-sign runtime have been verified
+in the target environment.
 
 Native Sui gas sponsorship is handled by Robomata, not by Privy/Pimlico. When
 `ROBOMATA_SUI_SPONSORSHIP_ENABLED=true`, the Robomata server prepares the
 allowlisted `commit_evidence` transaction, attaches sponsor-owned SUI gas,
-sponsor-signs the transaction bytes, asks the operator wallet to
-`sui:signTransaction`, then submits the dual-signed transaction server-side.
+sponsor-signs the transaction bytes, asks the bound Privy Sui wallet or a
+compatible operator wallet to sign, then submits the dual-signed transaction
+server-side.
 This requires `ROBOMATA_SUI_PRIVATE_KEY` and funded sponsor SUI coins in the
 target Sui network. In this mode the key signs only as gas sponsor. The same
 variable is reused as a legacy/test-only server signer only when operator-owned

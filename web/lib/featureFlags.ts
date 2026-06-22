@@ -44,6 +44,14 @@ export function isRobomataPrivySuiWalletBindingClientEnabled(): boolean {
   return isEnabled(process.env.NEXT_PUBLIC_ROBOMATA_PRIVY_SUI_WALLET_BINDING_ENABLED);
 }
 
+export function isRobomataPrivySuiRawSignEnabled(): boolean {
+  return isEnabled(process.env.ROBOMATA_PRIVY_SUI_RAW_SIGN_ENABLED);
+}
+
+export function isRobomataPrivySuiRawSignClientEnabled(): boolean {
+  return isEnabled(process.env.NEXT_PUBLIC_ROBOMATA_PRIVY_SUI_RAW_SIGN_ENABLED);
+}
+
 export function isRobomataShareLinksEnabled(): boolean {
   return isEnabled(process.env.ROBOMATA_SHARE_LINKS_ENABLED);
 }

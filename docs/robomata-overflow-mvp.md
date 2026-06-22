@@ -311,10 +311,13 @@ Use the flags as a matrix:
   `NEXT_PUBLIC_ROBOMATA_PRIVY_SUI_WALLET_BINDING_ENABLED=true` let Robomata
   automatically provision and bind a Privy-managed Sui wallet for an authorized
   signed-in partner. The wallet is created with `chain_type=sui` and owned by
-  the verified Privy user. The current execution path still keeps
-  wallet-standard Sui extensions available as the transaction-signing fallback
-  until Privy raw-sign execution is enabled with user authorization signatures
-  and a suitable Sui policy.
+  the verified Privy user.
+- `ROBOMATA_PRIVY_SUI_RAW_SIGN_ENABLED=true` and
+  `NEXT_PUBLIC_ROBOMATA_PRIVY_SUI_RAW_SIGN_ENABLED=true` let the evidence anchor
+  use the bound Privy Sui wallet directly when that wallet matches the persisted
+  facility operator. This path still uses Robomata native Sui sponsorship for
+  gas, requires a suitable Privy Sui policy, and keeps wallet-standard Sui
+  extensions available as a fallback.
 - `ROBOMATA_SUI_COMMIT_STALE_MS` optionally overrides the default ten-minute
   stale threshold for in-progress Sui commits. Stale attempts are reconciled
   against Sui `EvidenceCommitted` events before the app permits another commit
