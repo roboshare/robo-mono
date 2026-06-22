@@ -258,7 +258,7 @@ Required live configuration:
 - `MEMWAL_DELEGATE_KEY=<scoped delegate private key>`
 - optional `MEMWAL_SERVER_URL=<relayer url>`
 - optional `ROBOMATA_MEMWAL_NAMESPACE_PREFIX=robomata-agent`
-- optional `ROBOMATA_MEMWAL_NAMESPACE=<fixed namespace override>`
+- optional `ROBOMATA_MEMWAL_NAMESPACE=<facility-scoped namespace base>`
 
 ## Agent Supervision Planner Boundary
 

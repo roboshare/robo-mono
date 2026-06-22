@@ -222,14 +222,19 @@ export async function runRobomataAgentForSubmission(input: RunAgentForSubmission
       run: recorded.run,
       submission: input.submission,
     });
-    const persistedRun = await store.recordRunMemoryWrite({
-      memoryWrite,
-      partnerAddress: input.submission.partnerAddress,
-      runId: recorded.run.id,
-      submissionId: input.submission.id,
-    });
-    if (persistedRun) {
-      recorded.run = persistedRun;
+    try {
+      const persistedRun = await store.recordRunMemoryWrite({
+        memoryWrite,
+        partnerAddress: input.submission.partnerAddress,
+        runId: recorded.run.id,
+        submissionId: input.submission.id,
+      });
+      if (persistedRun) {
+        recorded.run = persistedRun;
+      }
+    } catch {
+      // The run/actions are already durable. Do not make retry paths duplicate them
+      // just because optional memory-write provenance failed to persist.
     }
   }
   return recorded;

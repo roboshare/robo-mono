@@ -67,7 +67,7 @@ function boundedText(value: string, limit = memoryTextLimit): string {
 
 function memoryNamespace(facilityId: string): string {
   const configured = process.env.ROBOMATA_MEMWAL_NAMESPACE?.trim();
-  if (configured) return configured;
+  if (configured) return `${configured}:${facilityId}`;
 
   const prefix = process.env.ROBOMATA_MEMWAL_NAMESPACE_PREFIX?.trim() || "robomata-agent";
   return `${prefix}:${facilityId}`;
@@ -87,10 +87,7 @@ function configuredServerUrl(): string | undefined {
 
 async function importMemWal(): Promise<MemWalModule | null> {
   try {
-    const dynamicImport = new Function("specifier", "return import(specifier)") as (
-      specifier: string,
-    ) => Promise<MemWalModule>;
-    return await dynamicImport("@mysten-incubation/memwal");
+    return (await import("@mysten-incubation/memwal")) as MemWalModule;
   } catch {
     return null;
   }
@@ -109,16 +106,20 @@ async function createMemWalClient(namespace: string): Promise<{
   const key = configuredDelegateKey();
   if (!key) return { status: "configured_without_delegate_key" };
 
-  const memWalModule = await importMemWal();
-  const client = memWalModule?.MemWal?.create?.({
-    accountId,
-    key,
-    namespace,
-    serverUrl: configuredServerUrl(),
-  });
-  if (!client) return { status: "sdk_unavailable" };
+  try {
+    const memWalModule = await importMemWal();
+    const client = memWalModule?.MemWal?.create?.({
+      accountId,
+      key,
+      namespace,
+      serverUrl: configuredServerUrl(),
+    });
+    if (!client) return { status: "sdk_unavailable" };
 
-  return { client };
+    return { client };
+  } catch {
+    return { status: "sdk_unavailable" };
+  }
 }
 
 function recallQuery(input: {

@@ -39,10 +39,12 @@ for (const needle of [
   "MEMWAL_DELEGATE_KEY",
   "MEMWAL_SERVER_URL",
   "@mysten-incubation/memwal",
+  "import(\"@mysten-incubation/memwal\")",
   "recallRobomataAgentMemory",
   "rememberRobomataAgentRunMemory",
   "memoryNamespace(input.projection.facility.id)",
   "memoryNamespace(input.run.facilityId)",
+  "return `${configured}:${facilityId}`",
   "configured_without_account",
   "configured_without_delegate_key",
   "sdk_unavailable",
@@ -73,6 +75,7 @@ for (const needle of [
   "memoryContext = isRobomataAgentMemoryEnabled()",
   "memoryWrite,",
   "recordRunMemoryWrite",
+  "The run/actions are already durable",
 ]) {
   assertIncludes(runner, needle, "agent runner memory lifecycle");
 }
