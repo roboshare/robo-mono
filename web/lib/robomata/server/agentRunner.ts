@@ -1,4 +1,5 @@
 import "server-only";
+import { isRobomataAgentMemoryEnabled } from "~~/lib/featureFlags";
 import {
   type RobomataAgentActionDraft,
   type RobomataAgentActionSeverity,
@@ -179,11 +180,13 @@ export async function runRobomataAgentForSubmission(input: RunAgentForSubmission
     store.listRuns(input.submission.id, input.submission.partnerAddress, ROBOMATA_AGENT_PLANNER_MAX_RECENT_RUNS),
     store.listActions(input.submission.id, input.submission.partnerAddress, ROBOMATA_AGENT_PLANNER_MAX_RECENT_ACTIONS),
   ]);
-  const memoryContext = await recallRobomataAgentMemory({
-    policy,
-    projection,
-    submission: input.submission,
-  });
+  const memoryContext = isRobomataAgentMemoryEnabled()
+    ? await recallRobomataAgentMemory({
+        policy,
+        projection,
+        submission: input.submission,
+      })
+    : undefined;
   const { actions: actionDrafts, plannerBoundary } = await planRobomataAgentActions({
     candidateActions,
     memoryContext,
@@ -212,18 +215,22 @@ export async function runRobomataAgentForSubmission(input: RunAgentForSubmission
     plannerBoundary,
     suppressAutoApprove: input.suppressAutoApprove,
   });
-  const memoryWrite = await rememberRobomataAgentRunMemory({
-    actions: recorded.actions,
-    projection,
-    run: recorded.run,
-    submission: input.submission,
-  });
-  if (memoryWrite.status === "remember_submitted" && recorded.run.plannerBoundary) {
-    recorded.run.plannerBoundary = {
-      ...recorded.run.plannerBoundary,
-      memoryWriteJobId: memoryWrite.jobId,
-      memoryWriteStatus: memoryWrite.status,
-    };
+  if (isRobomataAgentMemoryEnabled()) {
+    const memoryWrite = await rememberRobomataAgentRunMemory({
+      actions: recorded.actions,
+      projection,
+      run: recorded.run,
+      submission: input.submission,
+    });
+    const persistedRun = await store.recordRunMemoryWrite({
+      memoryWrite,
+      partnerAddress: input.submission.partnerAddress,
+      runId: recorded.run.id,
+      submissionId: input.submission.id,
+    });
+    if (persistedRun) {
+      recorded.run = persistedRun;
+    }
   }
   return recorded;
 }

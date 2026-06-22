@@ -25,6 +25,7 @@ import {
 import type { FacilityMonitoringProjection } from "~~/lib/robomata/facilityMonitoring";
 import { buildAgentActionPolicyEvaluation, resolveRobomataFacilityPolicyArtifact } from "~~/lib/robomata/policyRules";
 import { type RobomataAgentExecutionAudit, executionAuditMetadata } from "~~/lib/robomata/server/agentExecution";
+import type { RobomataAgentMemoryWriteResult } from "~~/lib/robomata/server/agentMemory";
 import {
   RobomataAgentPermissionDeniedError,
   assertRobomataAgentActionPermission,
@@ -76,6 +77,13 @@ export type RecordAgentActionExecutionAuditInput = {
   submissionId: string;
 };
 
+export type RecordAgentRunMemoryWriteInput = {
+  memoryWrite: RobomataAgentMemoryWriteResult;
+  partnerAddress: string;
+  runId: string;
+  submissionId: string;
+};
+
 export type RobomataAgentStore = {
   getAction: (submissionId: string, partnerAddress: string, actionId: string) => Promise<RobomataAgentAction | null>;
   getPolicy: (submissionId: string, partnerAddress: string) => Promise<RobomataAgentPolicy | null>;
@@ -86,6 +94,7 @@ export type RobomataAgentStore = {
   listRunnablePolicies: () => Promise<RobomataAgentPolicy[]>;
   recordActionExecutionAudit: (input: RecordAgentActionExecutionAuditInput) => Promise<RobomataAgentAction | null>;
   recordRun: (input: RecordAgentRunInput) => Promise<{ actions: RobomataAgentAction[]; run: RobomataAgentRun }>;
+  recordRunMemoryWrite: (input: RecordAgentRunMemoryWriteInput) => Promise<RobomataAgentRun | null>;
   updateAction: (input: UpdateAgentActionInput) => Promise<RobomataAgentAction | null>;
 };
 
@@ -455,6 +464,19 @@ function executionEventType(audit: RobomataAgentExecutionAudit): RobomataAgentEv
   return audit.status === "succeeded" ? "action_execution_succeeded" : "action_execution_failed";
 }
 
+function runWithMemoryWrite(run: RobomataAgentRun, memoryWrite: RobomataAgentMemoryWriteResult): RobomataAgentRun {
+  if (!run.plannerBoundary) return run;
+
+  return {
+    ...run,
+    plannerBoundary: {
+      ...run.plannerBoundary,
+      memoryWriteJobId: memoryWrite.jobId,
+      memoryWriteStatus: memoryWrite.status,
+    },
+  };
+}
+
 async function ensurePostgresTables() {
   if (ensuredPostgresTables) return;
 
@@ -720,6 +742,24 @@ function createFileStore(): RobomataAgentStore {
         );
         await writeFileStore(filePath, fileStore);
         return { actions, run };
+      });
+    },
+    async recordRunMemoryWrite(input) {
+      return withFileStoreWriteLock(filePath, async () => {
+        const fileStore = await readFileStore(filePath);
+        const normalizedPartnerAddress = normalizePartnerAddress(input.partnerAddress);
+        const runIndex = fileStore.runs.findIndex(
+          run =>
+            run.id === input.runId &&
+            run.submissionId === input.submissionId &&
+            normalizePartnerAddress(run.partnerAddress) === normalizedPartnerAddress,
+        );
+        if (runIndex < 0) return null;
+
+        const updatedRun = runWithMemoryWrite(fileStore.runs[runIndex], input.memoryWrite);
+        fileStore.runs[runIndex] = updatedRun;
+        await writeFileStore(filePath, fileStore);
+        return updatedRun;
       });
     },
     async updateAction(input) {
@@ -1110,6 +1150,31 @@ function createPostgresStore(): RobomataAgentStore {
           `;
         }
         return { actions, run };
+      });
+    },
+    async recordRunMemoryWrite(input) {
+      await ensurePostgresTables();
+      return sql.begin(async tx => {
+        const rows = (await tx`
+          SELECT payload
+          FROM robomata_agent_runs
+          WHERE
+            id = ${input.runId}
+            AND submission_id = ${input.submissionId}
+            AND lower(partner_address) = ${normalizePartnerAddress(input.partnerAddress)}
+          LIMIT 1
+          FOR UPDATE;
+        `) as Array<{ payload: RobomataAgentRun }>;
+        const run = rows[0]?.payload;
+        if (!run) return null;
+
+        const updatedRun = runWithMemoryWrite(run, input.memoryWrite);
+        await tx`
+          UPDATE robomata_agent_runs
+          SET payload = ${JSON.stringify(updatedRun)}::jsonb
+          WHERE id = ${input.runId};
+        `;
+        return updatedRun;
       });
     },
     async updateAction(input) {

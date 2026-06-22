@@ -65,12 +65,11 @@ function boundedText(value: string, limit = memoryTextLimit): string {
   return value.replace(/\s+/g, " ").trim().slice(0, limit);
 }
 
-function memoryNamespace(submission: Pick<FacilitySubmission, "facilityMonitoring" | "id">): string {
+function memoryNamespace(facilityId: string): string {
   const configured = process.env.ROBOMATA_MEMWAL_NAMESPACE?.trim();
   if (configured) return configured;
 
   const prefix = process.env.ROBOMATA_MEMWAL_NAMESPACE_PREFIX?.trim() || "robomata-agent";
-  const facilityId = submission.facilityMonitoring?.facilityId ?? submission.id;
   return `${prefix}:${facilityId}`;
 }
 
@@ -147,7 +146,7 @@ export async function recallRobomataAgentMemory(input: {
   projection: FacilityMonitoringProjection;
   submission: FacilitySubmission;
 }): Promise<RobomataAgentMemoryContext> {
-  const namespace = memoryNamespace(input.submission);
+  const namespace = memoryNamespace(input.projection.facility.id);
   const { client, status } = await createMemWalClient(namespace);
   if (!client?.recall) {
     return {
@@ -240,7 +239,7 @@ export async function rememberRobomataAgentRunMemory(input: {
   run: RobomataAgentRun;
   submission: FacilitySubmission;
 }): Promise<RobomataAgentMemoryWriteResult> {
-  const namespace = memoryNamespace(input.submission);
+  const namespace = memoryNamespace(input.run.facilityId);
   const { client, status } = await createMemWalClient(namespace);
   if (!client?.remember) return { namespace, provider: "memwal", status: status ?? "sdk_unavailable" };
 

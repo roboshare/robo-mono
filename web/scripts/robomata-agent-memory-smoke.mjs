@@ -41,6 +41,8 @@ for (const needle of [
   "@mysten-incubation/memwal",
   "recallRobomataAgentMemory",
   "rememberRobomataAgentRunMemory",
+  "memoryNamespace(input.projection.facility.id)",
+  "memoryNamespace(input.run.facilityId)",
   "configured_without_account",
   "configured_without_delegate_key",
   "sdk_unavailable",
@@ -67,13 +69,22 @@ for (const needle of [
 for (const needle of [
   "recallRobomataAgentMemory",
   "rememberRobomataAgentRunMemory",
-  "memoryWriteStatus",
-  "memoryWriteJobId",
+  "isRobomataAgentMemoryEnabled()",
+  "memoryContext = isRobomataAgentMemoryEnabled()",
+  "memoryWrite,",
+  "recordRunMemoryWrite",
 ]) {
   assertIncludes(runner, needle, "agent runner memory lifecycle");
 }
 
-for (const needle of ["memoryProvider", "memoryRecallCount", "memoryRecallStatus", "memwalNamespace"]) {
+for (const needle of [
+  "memoryProvider",
+  "memoryRecallCount",
+  "memoryRecallStatus",
+  "memwalNamespace",
+  "recordRunMemoryWrite",
+  "runWithMemoryWrite",
+]) {
   assertIncludes(store, needle, "agent store memory provenance");
 }
 
