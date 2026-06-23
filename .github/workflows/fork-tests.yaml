@@ -16,6 +16,9 @@ on:
           - listing-locks
           - treasury-accounting
 
+permissions:
+  contents: read
+
 jobs:
   resolve-fork-block:
     runs-on: ubuntu-latest
