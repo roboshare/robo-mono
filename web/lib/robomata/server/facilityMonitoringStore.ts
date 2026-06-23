@@ -336,6 +336,9 @@ function derivePacketFreshness(
   if (observations.some(observation => observation.status === "pending" || observation.status === "warning")) {
     return "refresh_available";
   }
+  if (packet.freshnessStatus === "stale" || packet.freshnessStatus === "superseded") {
+    return packet.freshnessStatus;
+  }
   return "fresh";
 }
 
