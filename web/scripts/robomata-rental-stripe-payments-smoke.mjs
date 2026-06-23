@@ -694,6 +694,8 @@ async function main() {
   if (
     missedWebhookReusePayload.payment?.providerReference?.paymentIntentId !== missedWebhookPaymentIntentId ||
     missedWebhookReusePayload.payment.status !== "captured" ||
+    missedWebhookReusePayload.payment.authorizedAmountCents !==
+      missedWebhookIntentPayload.payment?.authorizedAmountCents ||
     missedWebhookReusePayload.payment.postingBlocked
   ) {
     throw new Error(
