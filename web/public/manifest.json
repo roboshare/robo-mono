@@ -1,5 +1,1 @@
-{
-  "name": "Roboshare",
-  "description": "Agent-supervised programmable credit rails for asset-backed finance, lender review, and downstream distribution.",
-  "iconPath": "favicon.png"
-}
+{ "name": "Roboshare", "description": "Roboshare protocol app", "iconPath": "favicon.png" }

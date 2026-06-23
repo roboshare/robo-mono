@@ -5,23 +5,11 @@ import {
   ExclamationTriangleIcon,
   LockClosedIcon,
 } from "@heroicons/react/24/outline";
-import { LenderAgentAppointmentPanel } from "~~/components/robomata/LenderAgentAppointmentPanel";
-import { LenderPolicyReviewPanel } from "~~/components/robomata/PolicyReviewPanels";
-import {
-  BorrowingBasePolicyDisclosure,
-  EvidenceFreshnessPolicyDisclosure,
-  PacketFreshnessPolicyDisclosure,
-  PolicyEvaluationSummaryPanel,
-  SuiRootPolicyDisclosure,
-} from "~~/components/robomata/PolicyRulesPanel";
-import { ReviewBoundaryPanel } from "~~/components/robomata/ReviewBoundaryPanel";
 import { formatPercentFromBps, formatUsd } from "~~/lib/robomata/borrowingBase";
-import { resolveRobomataFacilityPolicyArtifact } from "~~/lib/robomata/policyRules";
 import type { SharedLenderPacketView } from "~~/lib/robomata/shareLinks";
 
 type LenderPacketViewProps = {
   packet: SharedLenderPacketView;
-  shareToken: string;
 };
 
 function evidenceBadgeClass(status: string) {
@@ -49,13 +37,8 @@ function formatStatus(value: string) {
   return value.replace(/_/g, " ");
 }
 
-export const LenderPacketView = ({ packet, shareToken }: LenderPacketViewProps) => {
+export const LenderPacketView = ({ packet }: LenderPacketViewProps) => {
   const { borrowingBase } = packet;
-  const diligenceQuestions = packet.lenderPacket.diligenceQuestions ?? [];
-  const policyArtifact = resolveRobomataFacilityPolicyArtifact({
-    facilityId: packet.monitoring?.facilityId,
-    submissionId: packet.submission.id,
-  }).artifact;
 
   return (
     <div className="space-y-6">
@@ -114,26 +97,6 @@ export const LenderPacketView = ({ packet, shareToken }: LenderPacketViewProps) 
             </div>
           ) : null}
         </div>
-        <div className="mt-5">
-          <ReviewBoundaryPanel boundary={packet.lenderPacket.reviewBoundary} />
-        </div>
-        <div className="mt-5">
-          <LenderAgentAppointmentPanel
-            appointment={packet.agentAppointment}
-            shareLinkId={packet.shareLink.id}
-            shareToken={shareToken}
-          />
-        </div>
-        <div className="mt-5">
-          <BorrowingBasePolicyDisclosure policyArtifact={policyArtifact} />
-        </div>
-        <div className="mt-5">
-          <LenderPolicyReviewPanel
-            initialReview={packet.policyReviews?.lender}
-            policyArtifact={policyArtifact}
-            shareToken={shareToken}
-          />
-        </div>
         {packet.monitoring ? (
           <div className="mt-5 rounded-2xl border border-base-300 bg-base-200/50 p-4 text-sm leading-relaxed text-base-content/70">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -151,45 +114,12 @@ export const LenderPacketView = ({ packet, shareToken }: LenderPacketViewProps) 
             <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
               <div>Packet manifest: {packet.monitoring.packetManifestId}</div>
               <div>Generated: {packet.monitoring.packetGeneratedAt}</div>
-              {packet.monitoring.runPolicyVersion ? (
-                <div>Policy version: {packet.monitoring.runPolicyVersion}</div>
-              ) : null}
-              <div>
-                Policy artifact: {packet.monitoring.policyArtifactName ?? policyArtifact.name} (
-                {packet.monitoring.policyArtifactId ?? policyArtifact.id} ·{" "}
-                {packet.monitoring.policyArtifactVersion ??
-                  packet.monitoring.runPolicyVersion ??
-                  policyArtifact.version}
-                )
-              </div>
-              {packet.monitoring.policyEvaluationSummary ? (
-                <div>
-                  Policy evaluation: {packet.monitoring.policyEvaluationSummary}
-                  {typeof packet.monitoring.policyEvaluationFailedCount === "number" ||
-                  typeof packet.monitoring.policyEvaluationWarningCount === "number"
-                    ? ` (${packet.monitoring.policyEvaluationFailedCount ?? 0} failed / ${
-                        packet.monitoring.policyEvaluationWarningCount ?? 0
-                      } warning)`
-                    : ""}
-                </div>
-              ) : null}
               {packet.monitoring.currentPacketFreshnessStatus ? (
                 <div>Current status: {formatStatus(packet.monitoring.currentPacketFreshnessStatus)}</div>
               ) : null}
               {packet.monitoring.runRootDigest ? (
                 <div className="break-all">Run root: {packet.monitoring.runRootDigest}</div>
               ) : null}
-            </div>
-            <div className="mt-4 grid gap-3 lg:grid-cols-3">
-              <EvidenceFreshnessPolicyDisclosure policyArtifact={policyArtifact} />
-              <PacketFreshnessPolicyDisclosure policyArtifact={policyArtifact} />
-              <SuiRootPolicyDisclosure policyArtifact={policyArtifact} />
-            </div>
-            <div className="mt-4">
-              <PolicyEvaluationSummaryPanel
-                evaluations={packet.monitoring.policyEvaluations}
-                title="Policy evaluation detail"
-              />
             </div>
           </div>
         ) : null}
@@ -200,16 +130,6 @@ export const LenderPacketView = ({ packet, shareToken }: LenderPacketViewProps) 
           <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">Exception memo</p>
           <h2 className="mt-2 text-2xl font-black text-base-content">Borrower follow-up packet</h2>
           <p className="mt-3 text-sm leading-relaxed text-base-content/70">{packet.lenderPacket.memoSummary}</p>
-          {diligenceQuestions.length ? (
-            <div className="mt-5 rounded-2xl border border-base-300 bg-base-200/50 p-4">
-              <div className="font-semibold text-base-content">Diligence questions</div>
-              <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-base-content/70">
-                {diligenceQuestions.map(item => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
           <div className="mt-5 space-y-3">
             {packet.lenderPacket.exceptionSections.length ? (
               packet.lenderPacket.exceptionSections.map(section => (

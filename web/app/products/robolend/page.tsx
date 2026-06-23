@@ -11,16 +11,16 @@ import {
 
 const reviewSteps = [
   {
-    title: "Review lender-ready packets",
-    copy: "Inspect borrowing-base output, exceptions, evidence status, agent review boundaries, and freshness from one controlled view.",
+    title: "Receive lender-ready packets",
+    copy: "Review borrowing-base output, exceptions, evidence status, and packet freshness from one controlled link.",
   },
   {
     title: "Monitor facilities over time",
-    copy: "Track when receivables, evidence, policy observations, or committed roots make an existing packet stale or ready for renewal.",
+    copy: "Track when receivables, evidence, or committed roots make an existing packet stale or ready for renewal.",
   },
   {
-    title: "Approve policy changes and scenarios",
-    copy: "Evaluate proposed credit changes or what-if scenarios only after the operator packet is structured.",
+    title: "Allocate into standardized exposure",
+    copy: "Move from underwriting to distribution only after the facility object is structured and tokenization-ready.",
   },
 ];
 
@@ -28,8 +28,8 @@ const RobolendPage = () => (
   <div className="flex flex-1 justify-center px-4 py-8 sm:px-6 sm:py-10">
     <div className="w-full max-w-7xl space-y-10">
       <section className="overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 shadow-xl shadow-base-300/40">
-        <div className="grid items-start gap-8 px-6 py-8 sm:px-8 sm:py-10 lg:grid-cols-[1.1fr_0.9fr] lg:px-10">
-          <div className="flex flex-col gap-7">
+        <div className="grid items-stretch gap-8 px-6 py-8 sm:px-8 sm:py-10 lg:grid-cols-[1.1fr_0.9fr] lg:px-10">
+          <div className="flex h-full flex-col justify-between gap-8">
             <div className="space-y-4">
               <div className="inline-flex w-fit items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.16em] text-amber-700">
                 <ClockIcon className="h-4 w-4" />
@@ -37,12 +37,11 @@ const RobolendPage = () => (
               </div>
               <p className="text-sm font-semibold uppercase tracking-[0.3em] text-base-content/50">Robolend</p>
               <h1 className="max-w-4xl text-4xl font-black tracking-tight text-base-content sm:text-5xl lg:text-6xl">
-                Lender review and policy oversight for financeable facilities.
+                Credit review and monitoring for capital providers.
               </h1>
               <p className="max-w-3xl text-lg leading-relaxed text-base-content/70">
                 Robolend is the planned capital-provider workspace for reviewing Robomata packets, monitoring facility
-                freshness, recording lender policy observations, and approving credit decisions. It is not a live lender
-                dashboard yet.
+                freshness, and organizing credit exposure. It is not a live lender dashboard yet.
               </p>
             </div>
 
@@ -57,10 +56,10 @@ const RobolendPage = () => (
             </div>
           </div>
 
-          <div className="flex flex-col rounded-[1.75rem] border border-base-300 bg-base-200/70 p-5 sm:p-6">
+          <div className="flex h-full flex-col rounded-[1.75rem] border border-base-300 bg-base-200/70 p-5 sm:p-6">
             <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">Capital Provider</p>
-            <div className="mt-5 flex flex-col gap-4">
-              <div className="rounded-2xl border border-base-300 bg-base-100/80 p-4">
+            <div className="mt-5 flex flex-1 flex-col gap-4">
+              <div className="flex-1 rounded-2xl border border-base-300 bg-base-100/80 p-4">
                 <BuildingLibraryIcon className="h-6 w-6 text-primary" />
                 <h2 className="mt-3 text-lg font-black tracking-tight text-base-content">Designed for credit teams</h2>
                 <p className="mt-2 text-sm leading-relaxed text-base-content/70">
@@ -68,7 +67,7 @@ const RobolendPage = () => (
                   they need a generic asset marketplace.
                 </p>
               </div>
-              <div className="rounded-2xl border border-base-300 bg-base-100/80 p-4">
+              <div className="flex-1 rounded-2xl border border-base-300 bg-base-100/80 p-4">
                 <BellAlertIcon className="h-6 w-6 text-primary" />
                 <h2 className="mt-3 text-lg font-black tracking-tight text-base-content">Monitoring before trading</h2>
                 <p className="mt-2 text-sm leading-relaxed text-base-content/70">

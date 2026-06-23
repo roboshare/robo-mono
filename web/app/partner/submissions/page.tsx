@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 const LegacyPartnerSubmissionsPage = () => {
-  redirect("/robomata/submissions");
+  redirect("/operator/submissions");
 };
 
 export default LegacyPartnerSubmissionsPage;

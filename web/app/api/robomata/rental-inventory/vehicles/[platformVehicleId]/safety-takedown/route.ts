@@ -39,29 +39,21 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const body = (await request.json()) as SafetyTakedownBody;
     const access = await requireRentalVehicleAccess({ partnerAddress, platformVehicleId });
     if (access instanceof NextResponse) return access;
-    const occurredAt = new Date().toISOString();
-    const takedown = {
-      platformVehicleId,
-      reason: body.reason,
-      supportCaseId: body.supportCaseId,
-      status: "suspended" as const,
-      occurredAt,
-    };
 
     const vehicle = await getRentalInventoryStore().updateVehicleControls(platformVehicleId, {
       operationalStatus: "suspended",
-      safetyTakedown: {
-        occurredAt,
-        reason: body.reason,
-        status: "suspended",
-        supportCaseId: body.supportCaseId,
-      },
     });
     if (!vehicle) return NextResponse.json({ error: "Rental vehicle not found." }, { status: 404 });
 
     return NextResponse.json({
       vehicle,
-      takedown,
+      takedown: {
+        platformVehicleId,
+        reason: body.reason,
+        supportCaseId: body.supportCaseId,
+        status: "suspended",
+        occurredAt: new Date().toISOString(),
+      },
     });
   } catch (error) {
     return NextResponse.json(

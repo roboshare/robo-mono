@@ -21,29 +21,13 @@ const parseHost = (value: string | undefined, fallback: string) => {
 
 const marketingHosts = parseHosts(process.env.ROBOSHARE_MARKETING_HOSTS, DEFAULT_MARKETING_HOSTS);
 const primaryMarketingHost = parseHost(process.env.ROBOSHARE_PRIMARY_MARKETING_HOST, DEFAULT_PRIMARY_MARKETING_HOST);
-const publicAppHost = process.env.NEXT_PUBLIC_ROBOSHARE_APP_HOST?.trim().toLowerCase();
-const serverAppHost = process.env.ROBOSHARE_APP_HOST?.trim().toLowerCase();
-
-// The header runs in the browser, so custom app hosts must be client-visible too.
-// Prefer the public value to avoid middleware/header split-brain behavior.
-const appHost =
-  serverAppHost && serverAppHost !== DEFAULT_APP_HOST
-    ? parseHost(publicAppHost, DEFAULT_APP_HOST)
-    : parseHost(publicAppHost || serverAppHost, DEFAULT_APP_HOST);
+const appHost = parseHost(process.env.ROBOSHARE_APP_HOST, DEFAULT_APP_HOST);
 
 const isAppOnlyPath = (pathname: string) =>
-  pathname === "/dashboard" ||
-  pathname.startsWith("/dashboard/") ||
   pathname === "/operator" ||
   pathname.startsWith("/operator/") ||
   pathname === "/partner" ||
   pathname.startsWith("/partner/") ||
-  pathname === "/markets" ||
-  pathname.startsWith("/markets/") ||
-  pathname === "/robomata/submissions" ||
-  pathname.startsWith("/robomata/submissions/") ||
-  pathname === "/robolend" ||
-  pathname.startsWith("/robolend/") ||
   pathname === "/subgraph" ||
   pathname.startsWith("/subgraph/") ||
   pathname === "/debug" ||

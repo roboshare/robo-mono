@@ -37,22 +37,18 @@ export const getWagmiConfig = () => {
     ssr: true,
     client({ chain }) {
       const rpcFallbacks = [];
-      const configuredRpcUrls = new Set<string>();
-      const addConfiguredRpc = (rpcUrl: string | undefined) => {
-        if (!rpcUrl || configuredRpcUrls.has(rpcUrl)) {
-          return;
-        }
-
-        configuredRpcUrls.add(rpcUrl);
-        rpcFallbacks.push(http(rpcUrl));
-      };
       const infuraHttpUrl = getInfuraHttpUrl(chain.id);
       const alchemyHttpUrl = getAlchemyHttpUrl(chain.id);
       const rpcOverrideUrl = (scaffoldConfig.rpcOverrides as ScaffoldConfig["rpcOverrides"])?.[chain.id];
-
-      addConfiguredRpc(rpcOverrideUrl);
-      addConfiguredRpc(alchemyHttpUrl);
-      addConfiguredRpc(infuraHttpUrl);
+      if (infuraHttpUrl) {
+        rpcFallbacks.push(http(infuraHttpUrl));
+      }
+      if (alchemyHttpUrl) {
+        rpcFallbacks.push(http(alchemyHttpUrl));
+      }
+      if (rpcOverrideUrl) {
+        rpcFallbacks.push(http(rpcOverrideUrl));
+      }
       if (shouldUsePublicRpcFallback || rpcFallbacks.length === 0) {
         rpcFallbacks.push(http());
       }

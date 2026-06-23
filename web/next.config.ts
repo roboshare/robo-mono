@@ -1,8 +1,6 @@
 import type { NextConfig } from "next";
 import path from "node:path";
 
-const isIpfs = process.env.NEXT_PUBLIC_IPFS_BUILD === "true";
-
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   devIndicators: false,
@@ -21,35 +19,9 @@ const nextConfig: NextConfig = {
     config.externals.push("pino-pretty", "lokijs", "encoding");
     return config;
   },
-  ...(isIpfs
-    ? {}
-    : {
-        async redirects() {
-          return [
-            {
-              source: "/operator/submissions",
-              destination: "/robomata/submissions",
-              permanent: false,
-            },
-            {
-              source: "/operator/submissions/:submissionId",
-              destination: "/robomata/submissions/:submissionId",
-              permanent: false,
-            },
-            {
-              source: "/partner/submissions",
-              destination: "/robomata/submissions",
-              permanent: false,
-            },
-            {
-              source: "/partner/submissions/:submissionId",
-              destination: "/robomata/submissions/:submissionId",
-              permanent: false,
-            },
-          ];
-        },
-      }),
 };
+
+const isIpfs = process.env.NEXT_PUBLIC_IPFS_BUILD === "true";
 
 if (isIpfs) {
   nextConfig.output = "export";

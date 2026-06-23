@@ -19,12 +19,6 @@ import {
 } from "~~/lib/robomata/facilityMonitoring";
 import { buildFacilityMonitoringProjection } from "~~/lib/robomata/facilityMonitoringProjection";
 import {
-  buildEvidenceFreshnessPolicyEvaluation,
-  buildPacketFreshnessPolicyEvaluation,
-  buildSuiRootPolicyEvaluation,
-  resolveRobomataFacilityPolicyArtifact,
-} from "~~/lib/robomata/policyRules";
-import {
   buildBorrowingBaseRunRootPayload,
   buildPacketManifestRootPayload,
 } from "~~/lib/robomata/server/facilityMonitoringRoots";
@@ -49,7 +43,6 @@ type CreateReceivablesObservationInput = {
 type FacilityMonitoringStore = {
   syncFacility: (submission: FacilitySubmission) => Promise<RobomataFacility>;
   syncEvidenceObservations: (submission: FacilitySubmission) => Promise<FacilityObservation[]>;
-  clearReceivablesImportObservations: (submission: FacilitySubmission) => Promise<number>;
   createReceivablesImportObservation: (input: CreateReceivablesObservationInput) => Promise<FacilityObservation>;
   recordRunFromSubmission: (
     submission: FacilitySubmission,
@@ -142,14 +135,6 @@ function buildFacility(submission: FacilitySubmission): RobomataFacility {
 
 function evidenceObservationId(evidence: SubmissionEvidence): string {
   return `obs_${evidence.id}`;
-}
-
-function isEvidenceObservation(observation: Pick<FacilityObservation, "id">): boolean {
-  return observation.id.startsWith("obs_evidence_");
-}
-
-function receivablesObservationPrefix(submission: FacilitySubmission): string {
-  return `obs_${submission.id}_receivables_`;
 }
 
 function buildEvidenceObservations(submission: FacilitySubmission): FacilityObservation[] {
@@ -318,10 +303,8 @@ function deriveObservationStatus(observation: FacilityObservation, packetGenerat
 function derivePacketFreshness(
   observations: FacilityObservation[],
   packet: PacketManifest | undefined,
-  run: BorrowingBaseRun | undefined,
 ): PacketFreshnessStatus {
-  if (!packet || !run) return "invalid";
-  if (run.exceptions.some(exception => exception.actionStatus === "open")) return "invalid";
+  if (!packet) return "invalid";
   const newerObservations = observations.filter(observation => observation.observedAt > packet.generatedAt);
   if (newerObservations.some(observation => observation.status === "expired" || observation.status === "exception")) {
     return "invalid";
@@ -336,50 +319,7 @@ function derivePacketFreshness(
   if (observations.some(observation => observation.status === "pending" || observation.status === "warning")) {
     return "refresh_available";
   }
-  if (packet.freshnessStatus === "stale" || packet.freshnessStatus === "superseded") {
-    return packet.freshnessStatus;
-  }
-  return "fresh";
-}
-
-function packetWithCurrentPolicyEvaluations(input: {
-  freshnessStatus: PacketFreshnessStatus;
-  observations: FacilityObservation[];
-  packet: PacketManifest;
-  run: BorrowingBaseRun | undefined;
-  suiRootStatus: SuiRootVerificationStatus;
-}): PacketManifest {
-  if (!input.run) return input.packet;
-
-  const policyArtifact = resolveRobomataFacilityPolicyArtifact({
-    facilityId: input.packet.facilityId,
-  }).artifact;
-  const evaluatedAt = input.observations[0]?.observedAt ?? input.packet.generatedAt;
-  const policyEvaluations = [
-    buildEvidenceFreshnessPolicyEvaluation({
-      artifact: policyArtifact,
-      evaluatedAt,
-      observations: input.observations,
-    }),
-    buildPacketFreshnessPolicyEvaluation({
-      artifact: policyArtifact,
-      evaluatedAt,
-      freshnessStatus: input.freshnessStatus,
-      hasComputation: true,
-      observations: input.observations,
-      openExceptionCount: input.run.exceptions.filter(exception => exception.actionStatus === "open").length,
-    }),
-    buildSuiRootPolicyEvaluation({
-      artifact: policyArtifact,
-      evaluatedAt,
-      suiRootStatus: input.suiRootStatus,
-    }),
-  ];
-
-  return {
-    ...input.packet,
-    policyEvaluations,
-  };
+  return packet.freshnessStatus;
 }
 
 function buildStoredProjection(input: {
@@ -399,26 +339,12 @@ function buildStoredProjection(input: {
   const packetManifests = input.packetManifests.length ? input.packetManifests : input.fallback.packetManifests;
   const suiRootCommits = input.suiRootCommits.length ? input.suiRootCommits : input.fallback.suiRootCommits;
   const latestSuiRootCommit = suiRootCommits[0] ?? input.fallback.latestSuiRootCommit;
-  const projectedSuiRootStatus = projectionSuiRootStatus(input.fallback, suiRootCommits);
-  const freshnessStatus = derivePacketFreshness(
-    sortedObservations,
-    storedLatestPacket ?? input.fallback.latestPacket,
-    latestRun,
-  );
-  const packetCandidate = storedLatestPacket
+  const freshnessStatus = derivePacketFreshness(sortedObservations, storedLatestPacket ?? input.fallback.latestPacket);
+  const latestPacket = storedLatestPacket
     ? { ...storedLatestPacket, freshnessStatus }
     : input.fallback.latestPacket
       ? { ...input.fallback.latestPacket, freshnessStatus }
       : undefined;
-  const latestPacket = packetCandidate
-    ? packetWithCurrentPolicyEvaluations({
-        freshnessStatus,
-        observations: sortedObservations,
-        packet: packetCandidate,
-        run: latestRun,
-        suiRootStatus: projectedSuiRootStatus,
-      })
-    : undefined;
   const nextPacketManifests = latestPacket
     ? [latestPacket, ...packetManifests.filter(packet => packet.id !== latestPacket.id)]
     : packetManifests;
@@ -449,7 +375,7 @@ function buildStoredProjection(input: {
       status: deriveObservationStatus(observation, latestPacket?.generatedAt) as FacilityObservationStatus,
     })),
     freshnessStatus,
-    suiRootStatus: projectedSuiRootStatus,
+    suiRootStatus: projectionSuiRootStatus(input.fallback, suiRootCommits),
   };
 }
 
@@ -563,34 +489,12 @@ function createFileStore(): FacilityMonitoringStore {
         const fileStore = await readFileStore(filePath);
         const facility = buildFacility(submission);
         const observations = buildEvidenceObservations(submission);
-        const currentObservationIds = new Set(observations.map(observation => observation.id));
         fileStore.facilities = upsertById(fileStore.facilities, facility);
-        fileStore.observations = fileStore.observations.filter(
-          observation =>
-            observation.facilityId !== facility.id ||
-            !isEvidenceObservation(observation) ||
-            currentObservationIds.has(observation.id),
-        );
         for (const observation of observations) {
           fileStore.observations = upsertById(fileStore.observations, observation);
         }
         await writeFileStore(filePath, fileStore);
         return observations;
-      });
-    },
-    async clearReceivablesImportObservations(submission) {
-      return withFileStoreWriteLock(filePath, async () => {
-        const fileStore = await readFileStore(filePath);
-        const facility = buildFacility(submission);
-        const prefix = receivablesObservationPrefix(submission);
-        const previousCount = fileStore.observations.length;
-        fileStore.facilities = upsertById(fileStore.facilities, facility);
-        fileStore.observations = fileStore.observations.filter(
-          observation => observation.facilityId !== facility.id || !observation.id.startsWith(prefix),
-        );
-        const removedCount = previousCount - fileStore.observations.length;
-        await writeFileStore(filePath, fileStore);
-        return removedCount;
       });
     },
     async createReceivablesImportObservation(input) {
@@ -715,13 +619,6 @@ function createPostgresStore(): FacilityMonitoringStore {
       await ensurePostgresTables();
       await this.syncFacility(submission);
       const observations = buildEvidenceObservations(submission);
-      const observationIds = observations.map(observation => observation.id);
-      await sql`
-        DELETE FROM robomata_facility_observations
-        WHERE facility_id = ${facilityIdForSubmission(submission)}
-          AND id LIKE 'obs_evidence_%'
-          AND NOT (id = ANY(${sql.array(observationIds, 25)}));
-      `;
       for (const observation of observations) {
         await sql`
           INSERT INTO robomata_facility_observations (id, facility_id, kind, status, observed_at, payload)
@@ -741,19 +638,6 @@ function createPostgresStore(): FacilityMonitoringStore {
         `;
       }
       return observations;
-    },
-    async clearReceivablesImportObservations(submission) {
-      await ensurePostgresTables();
-      await this.syncFacility(submission);
-      const prefix = `${receivablesObservationPrefix(submission)}%`;
-      const result = (await sql`
-        DELETE FROM robomata_facility_observations
-        WHERE facility_id = ${facilityIdForSubmission(submission)}
-          AND kind = 'receivables_aging'
-          AND id LIKE ${prefix}
-        RETURNING id;
-      `) as Array<{ id: string }>;
-      return result.length;
     },
     async createReceivablesImportObservation(input) {
       await ensurePostgresTables();

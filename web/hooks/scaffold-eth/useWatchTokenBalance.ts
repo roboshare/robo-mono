@@ -10,7 +10,7 @@ type UseWatchTokenBalanceProps = {
   watch?: boolean;
 };
 
-export const useWatchTokenBalance = ({ tokenAddress, ownerAddress, watch = false }: UseWatchTokenBalanceProps) => {
+export const useWatchTokenBalance = ({ tokenAddress, ownerAddress, watch = true }: UseWatchTokenBalanceProps) => {
   const { targetNetwork } = useTargetNetwork();
   const queryClient = useQueryClient();
 

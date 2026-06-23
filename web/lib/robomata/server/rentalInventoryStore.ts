@@ -474,7 +474,6 @@ function vehicleWithControls(
       ...current.bookingReview,
       ...(input.bookingReview ?? {}),
     },
-    safetyTakedown: input.safetyTakedown ?? current.safetyTakedown,
     updatedAt: now,
   };
 

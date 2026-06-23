@@ -1,14 +1,7 @@
 import { buildAgentReviewInput, reviewBorrowingBase } from "~~/lib/robomata/agentProviders";
 import { type BorrowingBaseResult, type FleetPortfolio, type ReceivableResult } from "~~/lib/robomata/borrowingBase";
 import { buildEvidenceAnchor, buildEvidenceRail } from "~~/lib/robomata/evidence";
-import { evidenceSupportsReceivable } from "~~/lib/robomata/evidenceStatus";
 import { buildLenderPacket } from "~~/lib/robomata/lenderPacket";
-import {
-  type RobomataBorrowingBasePolicyParameters,
-  type RobomataFacilityPolicyArtifact,
-  resolveRobomataBorrowingBasePolicyParameters,
-  resolveRobomataFacilityPolicyArtifact,
-} from "~~/lib/robomata/policyRules";
 import {
   isRobomataSuiCommitRuntimeConfigured,
   isRobomataSuiSponsorshipRuntimeConfigured,
@@ -22,11 +15,7 @@ import {
   resolveSubmissionFacilityOperatorAddress,
 } from "~~/lib/robomata/submissions";
 
-function calculateSubmissionBorrowingBase(
-  portfolio: FleetPortfolio,
-  policyArtifact: RobomataFacilityPolicyArtifact,
-): BorrowingBaseResult {
-  const borrowingBasePolicy = resolveRobomataBorrowingBasePolicyParameters({ artifact: policyArtifact });
+function calculateSubmissionBorrowingBase(portfolio: FleetPortfolio): BorrowingBaseResult {
   const grossReceivablesCents = portfolio.receivables.reduce((sum, receivable) => sum + receivable.outstandingCents, 0);
 
   const receivableResults = portfolio.receivables.map(receivable => {
@@ -36,15 +25,11 @@ function calculateSubmissionBorrowingBase(
     if (manuallyExcluded) {
       ineligibleReasons.push("Manually excluded");
     } else {
-      if (receivable.daysPastDue > borrowingBasePolicy.maxDaysPastDue) {
-        ineligibleReasons.push(`Over ${borrowingBasePolicy.maxDaysPastDue} days past due`);
-      }
+      if (receivable.daysPastDue > 45) ineligibleReasons.push("Over 45 days past due");
       if (!receivable.insured) ineligibleReasons.push("Insurance evidence exception");
       if (!receivable.titleClear) ineligibleReasons.push("Title or lien evidence exception");
       if (!receivable.lockboxMatched) ineligibleReasons.push("Lockbox cash mapping exception");
-      if (receivable.utilizationPct < borrowingBasePolicy.minUtilizationPct) {
-        ineligibleReasons.push("Utilization below policy floor");
-      }
+      if (receivable.utilizationPct < 70) ineligibleReasons.push("Utilization below policy floor");
     }
 
     return {
@@ -92,79 +77,25 @@ function calculateSubmissionBorrowingBase(
   };
 }
 
-function hasDerivedEvidenceSupport(input: {
-  evidence: SubmissionEvidence[];
-  kind: "insurance" | "title_lien" | "lockbox" | "servicing_utilization";
-  policy: RobomataBorrowingBasePolicyParameters;
-  receivableId: string;
-}) {
-  return input.evidence.some(evidence =>
-    evidenceSupportsReceivable({
-      evidence,
-      kind: input.kind,
-      policy: input.policy,
-      receivableId: input.receivableId,
-    }),
-  );
-}
-
-export function buildPortfolioFromSubmission(
-  submission: FacilitySubmission,
-  borrowingBasePolicy: RobomataBorrowingBasePolicyParameters = resolveRobomataBorrowingBasePolicyParameters({
-    facilityId: submission.facilityMonitoring?.facilityId,
-    submissionId: submission.id,
-  }),
-): FleetPortfolio {
+export function buildPortfolioFromSubmission(submission: FacilitySubmission): FleetPortfolio {
   return {
     operator: submission.operatorName,
     facilityName: submission.facilityName,
     asOfDate: submission.asOfDate,
-    advanceRateBps: borrowingBasePolicy.advanceRateBps,
-    concentrationLimitPct: borrowingBasePolicy.concentrationLimitPct,
-    receivables: submission.receivables.map(receivable => {
-      const utilizationEvidenceSupported = hasDerivedEvidenceSupport({
-        evidence: submission.evidence,
-        kind: "servicing_utilization",
-        policy: borrowingBasePolicy,
-        receivableId: receivable.id,
-      });
-
-      return {
-        id: receivable.id,
-        obligor: receivable.obligor,
-        vehicleCount: receivable.vehicleCount,
-        outstandingCents: receivable.outstandingCents,
-        daysPastDue: receivable.daysPastDue,
-        utilizationPct: utilizationEvidenceSupported
-          ? Math.max(receivable.utilizationPct, borrowingBasePolicy.minUtilizationPct)
-          : receivable.utilizationPct,
-        insured:
-          receivable.insured ||
-          hasDerivedEvidenceSupport({
-            evidence: submission.evidence,
-            kind: "insurance",
-            policy: borrowingBasePolicy,
-            receivableId: receivable.id,
-          }),
-        titleClear:
-          receivable.titleClear ||
-          hasDerivedEvidenceSupport({
-            evidence: submission.evidence,
-            kind: "title_lien",
-            policy: borrowingBasePolicy,
-            receivableId: receivable.id,
-          }),
-        lockboxMatched:
-          receivable.lockboxMatched ||
-          hasDerivedEvidenceSupport({
-            evidence: submission.evidence,
-            kind: "lockbox",
-            policy: borrowingBasePolicy,
-            receivableId: receivable.id,
-          }),
-        manuallyExcluded: receivable.excluded,
-      };
-    }),
+    advanceRateBps: 8200,
+    concentrationLimitPct: 35,
+    receivables: submission.receivables.map(receivable => ({
+      id: receivable.id,
+      obligor: receivable.obligor,
+      vehicleCount: receivable.vehicleCount,
+      outstandingCents: receivable.outstandingCents,
+      daysPastDue: receivable.daysPastDue,
+      utilizationPct: receivable.utilizationPct,
+      insured: receivable.insured,
+      titleClear: receivable.titleClear,
+      lockboxMatched: receivable.lockboxMatched,
+      manuallyExcluded: receivable.excluded,
+    })),
     evidence: submission.evidence.map(evidence => ({
       id: evidence.id,
       label: evidence.label,
@@ -203,7 +134,7 @@ function buildSubmissionExceptions(
       id: `exception_${receivable.id}`,
       kind: "receivable" as const,
       itemId: receivable.id,
-      severity: receivable.ineligibleReasons.some(reason => reason.includes("days past due"))
+      severity: receivable.ineligibleReasons.some(reason => reason.includes("Over 45"))
         ? ("high" as const)
         : ("medium" as const),
       title: `${receivable.id} requires action`,
@@ -257,24 +188,12 @@ async function buildEvidenceCommitPreview(submission: FacilitySubmission, eviden
 }
 
 export async function computeSubmissionArtifacts(submission: FacilitySubmission): Promise<SubmissionComputation> {
-  const policyArtifact = resolveRobomataFacilityPolicyArtifact({
-    facilityId: submission.facilityMonitoring?.facilityId,
-    submissionId: submission.id,
-  }).artifact;
-  const portfolio = buildPortfolioFromSubmission(
-    submission,
-    resolveRobomataBorrowingBasePolicyParameters({ artifact: policyArtifact }),
-  );
-  const borrowingBase = calculateSubmissionBorrowingBase(portfolio, policyArtifact);
+  const portfolio = buildPortfolioFromSubmission(submission);
+  const borrowingBase = calculateSubmissionBorrowingBase(portfolio);
   const evidenceAnchor = buildEvidenceAnchor(portfolio.facilityName, portfolio.evidence);
   const evidenceRail = buildEvidenceRail(evidenceAnchor);
   const lenderBorrowingBase = buildLenderFacingBorrowingBase(borrowingBase);
-  const agentReview = await reviewBorrowingBase(
-    buildAgentReviewInput(lenderBorrowingBase, {
-      policyArtifactId: policyArtifact.id,
-      policyArtifactVersion: policyArtifact.version,
-    }),
-  );
+  const agentReview = await reviewBorrowingBase(buildAgentReviewInput(lenderBorrowingBase));
   const lenderPacket = buildLenderPacket(lenderBorrowingBase, agentReview, evidenceAnchor);
 
   submission.exceptions = buildSubmissionExceptions(borrowingBase, submission.evidence);

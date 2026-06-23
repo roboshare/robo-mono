@@ -44,7 +44,6 @@ export type RentalBookingRecord = {
   dateFrom: string;
   dateTo: string;
   state: RentalBookingLifecycleState;
-  checkoutAccessTokenHash?: string;
   paymentPlan: RentalCheckoutPaymentPlan;
   paymentProviderReference?: RentalPaymentProviderReference;
   cancellationPolicy: RentalCancellationPolicy;

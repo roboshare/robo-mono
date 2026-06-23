@@ -5,14 +5,7 @@ import { ThemeProvider } from "~~/components/ThemeProvider";
 import "~~/styles/globals.css";
 import { getMetadata } from "~~/utils/scaffold-eth/getMetadata";
 
-export const metadata = getMetadata({
-  title: "Roboshare",
-  description:
-    "Agent-supervised programmable credit rails for asset-backed finance, lender review, and downstream distribution.",
-});
-
-const shouldEnableAnalytics =
-  process.env.NEXT_PUBLIC_ENABLE_VERCEL_ANALYTICS === "true" || process.env.VERCEL_ENV === "production";
+export const metadata = getMetadata({ title: "Roboshare", description: "Roboshare protocol app" });
 
 const ScaffoldEthApp = ({ children }: { children: React.ReactNode }) => {
   return (
@@ -21,7 +14,7 @@ const ScaffoldEthApp = ({ children }: { children: React.ReactNode }) => {
         <ThemeProvider enableSystem>
           <ScaffoldEthAppWithProviders>{children}</ScaffoldEthAppWithProviders>
         </ThemeProvider>
-        {shouldEnableAnalytics && <Analytics />}
+        <Analytics />
       </body>
     </html>
   );

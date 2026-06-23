@@ -1,6 +1,0 @@
-posting_date,receivable,obligor,expected_amount,matched_amount,lockbox_account,status,notes
-2026-06-03,AR-2001,Northstar Delivery Co.,386400,386400,LBX-8842,matched,Demo lockbox extract - full cash-control match
-2026-06-06,AR-2002,Cobalt Courier Group,308900,308900,LBX-8842,matched,Demo lockbox extract - full cash-control match
-2026-06-09,AR-2003,Lakefront Field Services,214700,214700,LBX-8842,matched,Demo lockbox extract - receivable remains ineligible due to DPD/title
-2026-06-12,AR-2004,Prairie Parts Express,188300,188300,LBX-8842,matched,Demo lockbox extract - insurance exception remains open
-2026-06-15,AR-2005,Redline Mobile Repair,141800,0,LBX-8842,exception,Demo lockbox extract - cash mapping not matched

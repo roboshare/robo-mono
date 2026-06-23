@@ -2,21 +2,19 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { type Hex, decodeEventLog, encodeFunctionData } from "viem";
 import { usePublicClient, useWriteContract } from "wagmi";
 import {
+  ArrowPathIcon,
   CheckCircleIcon,
   CloudArrowUpIcon,
   DocumentArrowUpIcon,
   ExclamationTriangleIcon,
   ShieldCheckIcon,
-  TrashIcon,
 } from "@heroicons/react/24/outline";
+import { AgentSupervisionPanel } from "~~/components/robomata/AgentSupervisionPanel";
+import { FacilityMonitoringPanel } from "~~/components/robomata/FacilityMonitoringPanel";
 import { PacketSharePanel } from "~~/components/robomata/PacketSharePanel";
-import { OperatorPolicyReviewPanel } from "~~/components/robomata/PolicyReviewPanels";
-import { BorrowingBasePolicySummaryCard } from "~~/components/robomata/PolicyRulesPanel";
-import { ReviewBoundaryPanel } from "~~/components/robomata/ReviewBoundaryPanel";
 import { useSelectedNetwork, useTransactor } from "~~/hooks/scaffold-eth";
 import { usePrivySuiWalletBinding } from "~~/hooks/usePrivySuiWalletBinding";
 import { useRobomataApiAuth } from "~~/hooks/useRobomataApiAuth";
@@ -27,21 +25,9 @@ import {
   useSuiOperatorWallet,
 } from "~~/hooks/useSuiOperatorWallet";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
-import {
-  isRobomataAgentsClientEnabled,
-  isRobomataFacilityMonitoringClientEnabled,
-  isRobomataPrivySuiRawSignClientEnabled,
-  isRobomataTokenizationClientEnabled,
-} from "~~/lib/featureFlags";
+import { isRobomataTokenizationClientEnabled } from "~~/lib/featureFlags";
 import { formatPercentFromBps, formatUsd } from "~~/lib/robomata/borrowingBase";
-import { resolveRobomataFacilityPolicyArtifact } from "~~/lib/robomata/policyRules";
-import { evictSubmissionFromSubmissionIndexCache, submissionIndexCacheKey } from "~~/lib/robomata/submissionIndexCache";
-import {
-  type FacilitySubmission,
-  type SubmissionComputation,
-  type SubmissionReceivable,
-  canDeleteDraftFacilitySubmission,
-} from "~~/lib/robomata/submissions";
+import type { FacilitySubmission, SubmissionComputation, SubmissionReceivable } from "~~/lib/robomata/submissions";
 import { notification } from "~~/utils/scaffold-eth";
 
 type SubmissionWorkspaceProps = {
@@ -53,7 +39,6 @@ type SubmissionWorkspaceProps = {
 type CommitEvidenceResponse = {
   submission?: FacilitySubmission;
   operatorCommit?: OperatorSuiCommitRequest;
-  sponsorGasObjectId?: string;
   txDigest?: string;
   error?: string;
 };
@@ -116,21 +101,6 @@ const facilityRegistryWriteAbi = [
   },
 ] as const;
 
-const evidenceSealPolicyOptions = [
-  {
-    description: "Standard lender and auditor access for most packet evidence.",
-    label: "Lender and auditor access",
-    value: "seal://policy/lender-auditor-read",
-  },
-  {
-    description: "Use for source exports that should expose only redacted fields to lenders.",
-    label: "Operations redacted access",
-    value: "seal://policy/ops-lender-redacted",
-  },
-] as const;
-
-const FACILITY_ASSIGNMENT_LOCK_STALE_MS = 5 * 60 * 1000;
-
 type PendingOperatorCommit = {
   operatorSignature?: string;
   sponsorGasObjectId?: string;
@@ -143,18 +113,6 @@ type PendingOperatorCommit = {
   walletName: string;
 };
 
-type WorkspaceProgressStatus = "ready" | "next" | "waiting";
-
-type WorkspaceChecklistStep = {
-  actionLabel: string;
-  actionType: "commitEvidence" | "compute" | "navigate";
-  description: string;
-  href: string;
-  label: string;
-  status: WorkspaceProgressStatus;
-  waitingLabel?: string;
-};
-
 function statusClass(status: FacilitySubmission["status"]) {
   if (status === "committed") return "badge-success";
   if (status === "ready_for_lender") return "badge-info";
@@ -162,89 +120,8 @@ function statusClass(status: FacilitySubmission["status"]) {
   return "badge-ghost";
 }
 
-function workspaceProgressCardClass(status: WorkspaceProgressStatus) {
-  if (status === "ready") return "border-success/30 bg-success/10";
-  if (status === "next") return "border-primary/40 bg-primary/5";
-  return "border-base-300 bg-base-200/40";
-}
-
-function workspaceProgressBadgeClass(status: WorkspaceProgressStatus) {
-  if (status === "ready") return "badge-success";
-  if (status === "next") return "border-primary/30 bg-primary/10 text-primary shadow-none";
-  return "badge-ghost";
-}
-
-function workspaceProgressBadgeLabel(status: WorkspaceProgressStatus) {
-  if (status === "ready") return "Ready";
-  if (status === "next") return "Next";
-  return "Waiting";
-}
-
-function WorkspaceProgressCard({
-  actionDisabled = false,
-  disabledReason,
-  onAction,
-  prominent = false,
-  step,
-}: {
-  actionDisabled?: boolean;
-  disabledReason?: string;
-  onAction?: () => void;
-  prominent?: boolean;
-  step: WorkspaceChecklistStep;
-}) {
-  const isWaiting = step.status === "waiting";
-  const actionClass = `btn btn-sm mt-4 h-auto min-h-8 max-w-full whitespace-normal rounded-full text-center ${
-    step.status === "next" ? "btn-primary" : "btn-outline"
-  }`;
-
-  return (
-    <div
-      className={`min-w-0 overflow-hidden rounded-2xl border ${prominent ? "p-5" : "p-4"} ${workspaceProgressCardClass(
-        step.status,
-      )}`}
-    >
-      <div className="flex items-center justify-between gap-3">
-        <div className={`min-w-0 break-words ${prominent ? "text-base" : "text-sm"} font-semibold text-base-content`}>
-          {step.label}
-        </div>
-        <span className={`badge shrink-0 ${workspaceProgressBadgeClass(step.status)}`}>
-          {workspaceProgressBadgeLabel(step.status)}
-        </span>
-      </div>
-      <p className="mt-2 break-words text-sm leading-relaxed text-base-content/70">{step.description}</p>
-      {isWaiting ? (
-        <div className="mt-4 break-words text-xs font-semibold uppercase tracking-[0.16em] text-base-content/45">
-          {step.waitingLabel ?? "Complete the previous step"}
-        </div>
-      ) : onAction ? (
-        <>
-          <button className={actionClass} type="button" onClick={onAction} disabled={actionDisabled}>
-            {step.actionLabel}
-          </button>
-          {actionDisabled && disabledReason ? (
-            <div className="mt-3 text-xs font-medium leading-relaxed text-base-content/55">{disabledReason}</div>
-          ) : null}
-        </>
-      ) : (
-        <a className={actionClass} href={step.href}>
-          {step.actionLabel}
-        </a>
-      )}
-    </div>
-  );
-}
-
 function sectionTitle(readOnly: boolean) {
   return readOnly ? "Lender-ready review surface" : "Operator submission workspace";
-}
-
-function getLatestReceivablesImportFilename(submission: FacilitySubmission | null): string | null {
-  const event = submission?.auditEvents.find(
-    auditEvent => auditEvent.type === "receivables_imported" && typeof auditEvent.metadata?.filename === "string",
-  );
-
-  return typeof event?.metadata?.filename === "string" ? event.metadata.filename : null;
 }
 
 async function readJsonResponse<T>(response: Response): Promise<T & { error?: string }> {
@@ -279,208 +156,18 @@ function buildSubmissionSummaryCards(computation: SubmissionComputation) {
   ];
 }
 
-function getFacilityAssignmentLockRemainingMs(startedAt: string | undefined) {
-  const startedAtMs = startedAt ? Date.parse(startedAt) : Number.NaN;
-
-  if (!startedAt || !Number.isFinite(startedAtMs)) return 0;
-
-  return Math.max(0, FACILITY_ASSIGNMENT_LOCK_STALE_MS - (Date.now() - startedAtMs));
-}
-
-function isFacilityAssignmentLockActive(submission: FacilitySubmission | null) {
-  return getFacilityAssignmentLockRemainingMs(submission?.evidenceCommit.facilityAssignmentStartedAt) > 0;
-}
-
-function submissionMutabilityLockReason(submission: FacilitySubmission | null) {
-  if (!submission) return null;
-  if (submission.evidenceCommit.status === "committed") {
-    return "Evidence is already committed for this submission. Create a new submission for further changes.";
-  }
-  if (submission.evidenceCommit.status === "committing") {
-    return "Evidence commit is in progress for this submission. Try again after it completes.";
-  }
-  if (isFacilityAssignmentLockActive(submission)) {
-    return "Sui facility assignment is in progress for this submission. Try again after it completes.";
-  }
-
-  return null;
-}
-
-function buildWorkspaceChecklist(submission: FacilitySubmission): WorkspaceChecklistStep[] {
-  const openExceptions = submission.exceptions.filter(exception => exception.actionStatus === "open");
-  const exceptionsResolved = Boolean(submission.computation && openExceptions.length === 0);
-  const evidenceCommitted = submission.evidenceCommit.status === "committed";
-  const tokenizationStarted = submission.tokenization.status !== "not_started";
-  const hasReceivables = submission.receivables.length > 0;
-  const hasEvidence = submission.evidence.length > 0;
-  const canCompute = hasReceivables && hasEvidence;
-  const computedAt = submission.computation?.computedAt;
-  const hasComputation = Boolean(computedAt);
-  const prerequisiteAction = !hasReceivables
-    ? "Import receivables first"
-    : !hasEvidence
-      ? "Upload evidence first"
-      : "Finish prerequisites";
-  const prerequisiteHref = !hasReceivables
-    ? "#workspace-receivables-import"
-    : !hasEvidence
-      ? "#workspace-evidence-upload"
-      : "#workspace-overview";
-
-  return [
-    {
-      actionLabel: hasReceivables ? "Review receivables" : "Import CSV",
-      actionType: "navigate",
-      description: hasReceivables
-        ? `${submission.receivables.length} receivables imported.`
-        : "Import a receivables CSV before computing availability.",
-      href: hasReceivables ? "#workspace-receivables" : "#workspace-receivables-import",
-      label: "Import receivables",
-      status: hasReceivables ? "ready" : "next",
-    },
-    {
-      actionLabel: hasEvidence ? "Review evidence" : hasReceivables ? "Upload evidence" : "Import receivables first",
-      actionType: "navigate",
-      description: hasEvidence
-        ? `${submission.evidence.length} evidence packages attached.`
-        : hasReceivables
-          ? "Attach insurance, servicing, title, lockbox, or other policy evidence."
-          : "Evidence upload is available after receivables are imported.",
-      href: hasEvidence
-        ? "#workspace-evidence-library"
-        : hasReceivables
-          ? "#workspace-evidence-upload"
-          : prerequisiteHref,
-      label: "Attach evidence",
-      status: hasEvidence ? "ready" : hasReceivables ? "next" : "waiting",
-      waitingLabel: "Waiting for receivables import",
-    },
-    {
-      actionLabel: hasComputation ? "Review lender packet" : canCompute ? "Compute borrowing base" : prerequisiteAction,
-      actionType: hasComputation || !canCompute ? "navigate" : "compute",
-      description: computedAt
-        ? `Computed ${new Date(computedAt).toLocaleString()}.`
-        : canCompute
-          ? "Receivables and evidence are present. Compute availability next."
-          : "Compute availability after receivables and evidence are present.",
-      href: hasComputation ? "#workspace-lender-packet" : canCompute ? "#workspace-progress" : prerequisiteHref,
-      label: "Compute availability",
-      status: hasComputation ? "ready" : canCompute ? "next" : "waiting",
-      waitingLabel: !hasReceivables ? "Waiting for receivables import" : "Waiting for evidence upload",
-    },
-    {
-      actionLabel: hasComputation
-        ? exceptionsResolved
-          ? "Review exceptions"
-          : "Resolve exceptions"
-        : canCompute
-          ? "Compute first"
-          : prerequisiteAction,
-      actionType: "navigate",
-      description: hasComputation
-        ? exceptionsResolved
-          ? "No open exceptions remain."
-          : `${openExceptions.length} open exceptions need operator action.`
-        : "Exception status appears after computation.",
-      href: hasComputation ? "#workspace-exceptions" : canCompute ? "#workspace-progress" : prerequisiteHref,
-      label: "Resolve exceptions",
-      status: exceptionsResolved ? "ready" : hasComputation ? "next" : "waiting",
-      waitingLabel: "Waiting for computation",
-    },
-    {
-      actionLabel: evidenceCommitted
-        ? "Review verification"
-        : hasComputation
-          ? exceptionsResolved
-            ? ["configured", "operator_configured"].includes(submission.evidenceCommit.commitMode)
-              ? "Anchor evidence"
-              : "Review verification setup"
-            : "Resolve exceptions first"
-          : canCompute
-            ? "Compute first"
-            : prerequisiteAction,
-      actionType:
-        evidenceCommitted ||
-        !hasComputation ||
-        !exceptionsResolved ||
-        !["configured", "operator_configured"].includes(submission.evidenceCommit.commitMode)
-          ? "navigate"
-          : "commitEvidence",
-      description: evidenceCommitted
-        ? "Evidence root is anchored for lender review."
-        : hasComputation
-          ? exceptionsResolved
-            ? "Anchor evidence after the packet is clean enough to share."
-            : "Resolve open exceptions before anchoring evidence."
-          : "Anchor evidence after computation and exception review.",
-      href: evidenceCommitted
-        ? "#workspace-lender-packet"
-        : hasComputation
-          ? exceptionsResolved
-            ? "#workspace-lender-packet"
-            : "#workspace-exceptions"
-          : canCompute
-            ? "#workspace-progress"
-            : prerequisiteHref,
-      label: "Anchor evidence",
-      status: evidenceCommitted ? "ready" : hasComputation && exceptionsResolved ? "next" : "waiting",
-      waitingLabel: hasComputation ? "Waiting for exception review" : "Waiting for computed packet",
-    },
-    {
-      actionLabel: tokenizationStarted
-        ? "Review handoff"
-        : evidenceCommitted
-          ? "Share packet"
-          : hasComputation
-            ? exceptionsResolved
-              ? "Anchor evidence first"
-              : "Resolve exceptions first"
-            : canCompute
-              ? "Compute first"
-              : prerequisiteAction,
-      actionType: "navigate",
-      description: tokenizationStarted
-        ? `Tokenization status: ${submission.tokenization.status.replace(/_/g, " ")}.`
-        : evidenceCommitted
-          ? "Packet is anchored and can move to downstream lender handoff."
-          : "Optional downstream handoff after lender approval.",
-      href: tokenizationStarted
-        ? "#workspace-robolend-handoff"
-        : evidenceCommitted
-          ? "#workspace-lender-packet"
-          : hasComputation
-            ? exceptionsResolved
-              ? "#workspace-lender-packet"
-              : "#workspace-exceptions"
-            : canCompute
-              ? "#workspace-progress"
-              : prerequisiteHref,
-      label: "Robolend handoff",
-      status: tokenizationStarted ? "ready" : evidenceCommitted ? "next" : "waiting",
-      waitingLabel: "Waiting for anchored packet",
-    },
-  ];
-}
-
 export const SubmissionWorkspace = ({
   submissionId,
   readOnly = false,
   loadLatest = false,
 }: SubmissionWorkspaceProps) => {
-  const router = useRouter();
   const [submission, setSubmission] = useState<FacilitySubmission | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
-  const [, setFacilityAssignmentLockTick] = useState(0);
   const [editingReceivableId, setEditingReceivableId] = useState<string | null>(null);
   const [draftReceivable, setDraftReceivable] = useState<Partial<SubmissionReceivable>>({});
   const [receivablesCsvText, setReceivablesCsvText] = useState("");
-  const [isReceivablesCsvEditorOpen, setIsReceivablesCsvEditorOpen] = useState(false);
-  const [selectedReceivablesCsvFilename, setSelectedReceivablesCsvFilename] = useState<string | null>(null);
-  const [selectedEvidenceFilename, setSelectedEvidenceFilename] = useState<string | null>(null);
   const [evidenceText, setEvidenceText] = useState("");
-  const evidenceHelperTextClass = "text-sm leading-relaxed text-base-content/70";
   const [pendingOperatorCommit, setPendingOperatorCommit] = useState<PendingOperatorCommit | null>(null);
   const [tokenizationForm, setTokenizationForm] = useState({
     offeringLimit: "",
@@ -518,66 +205,19 @@ export const SubmissionWorkspace = ({
     partnerAddress: partnerAuthAddress,
     signerAddress,
   });
-  const policyArtifact = useMemo(
-    () =>
-      resolveRobomataFacilityPolicyArtifact({
-        facilityId: submission?.facilityMonitoring?.facilityId,
-        submissionId: submission?.id ?? submissionId,
-      }).artifact,
-    [submission?.facilityMonitoring?.facilityId, submission?.id, submissionId],
-  );
 
   const summaryCards = useMemo(
     () => (submission?.computation ? buildSubmissionSummaryCards(submission.computation) : []),
     [submission],
   );
-  const facilityAssignmentStartedAt = submission?.evidenceCommit.facilityAssignmentStartedAt;
-  const mutabilityLockReason = submissionMutabilityLockReason(submission);
   const isCommitted = submission?.status === "committed" || submission?.evidenceCommit.status === "committed";
-  const canMutate = !readOnly && !mutabilityLockReason;
-  const hasReceivables = Boolean(submission && submission.receivables.length > 0);
-  const canComputeBorrowingBase = Boolean(
-    submission && submission.receivables.length > 0 && submission.evidence.length > 0,
-  );
-  const canDeleteDraft = Boolean(submission && canMutate && canDeleteDraftFacilitySubmission(submission));
-  const submissionCacheKey = useMemo(
-    () => submissionIndexCacheKey(partnerAuthAddress, selectedNetwork.id),
-    [partnerAuthAddress, selectedNetwork.id],
-  );
+  const canMutate = !readOnly && !isCommitted;
   const canRetryPendingOperatorCommit = Boolean(
     submission &&
       pendingOperatorCommit?.submissionId === submission.id &&
       pendingOperatorCommit.rootDigest === submission.evidenceCommit.rootDigest,
   );
-  const canUsePrivySuiRawSign = Boolean(
-    submission &&
-      isRobomataPrivySuiRawSignClientEnabled() &&
-      privySuiBinding?.suiAddress &&
-      submission.evidenceCommit.facilityOperatorAddress &&
-      privySuiBinding.suiAddress.toLowerCase() === submission.evidenceCommit.facilityOperatorAddress.toLowerCase(),
-  );
-  const isOperatorCommitBlockedByWallet = Boolean(
-    submission &&
-      submission.evidenceCommit.commitMode === "operator_configured" &&
-      submission.evidenceCommit.status !== "committing" &&
-      !hasSuiWallet &&
-      !canUsePrivySuiRawSign &&
-      !canRetryPendingOperatorCommit,
-  );
-  const canRunEvidenceCommitAction = Boolean(
-    submission &&
-      !readOnly &&
-      !isBusy &&
-      ["configured", "operator_configured"].includes(submission.evidenceCommit.commitMode) &&
-      submission.evidenceCommit.status !== "committed" &&
-      !isOperatorCommitBlockedByWallet,
-  );
   const tokenization = submission?.tokenization;
-  const canShowMonitoringHandoff = Boolean(
-    submission?.computation &&
-      !readOnly &&
-      (isRobomataFacilityMonitoringClientEnabled() || isRobomataAgentsClientEnabled()),
-  );
   const canShowTokenization = Boolean(
     isRobomataTokenizationClientEnabled() && !readOnly && submission?.evidenceCommit.status === "committed",
   );
@@ -590,27 +230,6 @@ export const SubmissionWorkspace = ({
       tokenization.evm.revenueTokenId &&
       tokenization.evm.txHash,
   );
-  const workspaceChecklist = useMemo(() => (submission ? buildWorkspaceChecklist(submission) : []), [submission]);
-  const nextWorkspaceStep = workspaceChecklist.find(step => step.status === "next");
-  const supportingWorkspaceSteps = nextWorkspaceStep
-    ? workspaceChecklist.filter(step => step.label !== nextWorkspaceStep.label)
-    : workspaceChecklist;
-  const latestReceivablesImportFilename = useMemo(() => getLatestReceivablesImportFilename(submission), [submission]);
-  const receivablesImportFilename = hasReceivables
-    ? (latestReceivablesImportFilename ?? selectedReceivablesCsvFilename)
-    : null;
-  const shouldShowReceivablesCsvEditor = !hasReceivables || isReceivablesCsvEditorOpen;
-
-  useEffect(() => {
-    const remainingMs = getFacilityAssignmentLockRemainingMs(facilityAssignmentStartedAt);
-    if (remainingMs <= 0) return;
-
-    const timeoutId = window.setTimeout(() => {
-      setFacilityAssignmentLockTick(tick => tick + 1);
-    }, remainingMs + 250);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [facilityAssignmentStartedAt]);
 
   const loadSubmission = useCallback(async () => {
     setIsLoading(true);
@@ -629,7 +248,6 @@ export const SubmissionWorkspace = ({
         const payload = await readJsonResponse<{ submission?: FacilitySubmission }>(response);
         if (!response.ok || !payload.submission) throw new Error(payload.error ?? "Failed to load submission.");
         setSubmission(payload.submission);
-        setLoadError(null);
         setIsLoading(false);
         return;
       }
@@ -642,13 +260,9 @@ export const SubmissionWorkspace = ({
         const payload = await readJsonResponse<{ submissions?: FacilitySubmission[] }>(response);
         if (!response.ok) throw new Error(payload.error ?? "Failed to load submissions.");
         setSubmission(payload.submissions?.[0] ?? null);
-        setLoadError(null);
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to load submission.";
-      setSubmission(null);
-      setLoadError(message);
-      notification.error(message);
+      notification.error(error instanceof Error ? error.message : "Failed to load submission.");
     } finally {
       setIsLoading(false);
     }
@@ -717,11 +331,7 @@ export const SubmissionWorkspace = ({
       method: "POST",
       body: formData,
     });
-    if (didUpdate) {
-      setSelectedReceivablesCsvFilename(file.name);
-      setReceivablesCsvText("");
-      setIsReceivablesCsvEditorOpen(false);
-    }
+    if (didUpdate) setReceivablesCsvText("");
   };
 
   const importReceivablesFromText = async () => {
@@ -731,23 +341,7 @@ export const SubmissionWorkspace = ({
       return;
     }
 
-    await importReceivables(new File([csvText], "pasted-receivables.csv", { type: "text/csv" }));
-  };
-
-  const removeImportedReceivables = async () => {
-    if (!submission || submission.receivables.length === 0) return;
-    if (!window.confirm("Remove the imported receivables from this uncommitted package?")) return;
-
-    const didUpdate = await updateSubmission(`/api/robomata/submissions/${submission.id}/receivables/import`, {
-      method: "DELETE",
-    });
-    if (didUpdate) {
-      setSelectedReceivablesCsvFilename(null);
-      setReceivablesCsvText("");
-      setIsReceivablesCsvEditorOpen(false);
-      setEditingReceivableId(null);
-      setDraftReceivable({});
-    }
+    await importReceivables(new File([csvText], "receivables.csv", { type: "text/csv" }));
   };
 
   const uploadEvidence = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -756,9 +350,6 @@ export const SubmissionWorkspace = ({
 
     const form = event.currentTarget;
     const formData = new FormData(form);
-    if (!String(formData.get("sealPolicyId") ?? "").trim()) {
-      formData.set("sealPolicyId", evidenceSealPolicyOptions[0].value);
-    }
     const uploadedFile = formData.get("file");
     if (!(uploadedFile instanceof File) || uploadedFile.size === 0) {
       if (!evidenceText.trim()) {
@@ -779,97 +370,13 @@ export const SubmissionWorkspace = ({
     });
     if (didUpdate) {
       form.reset();
-      setSelectedEvidenceFilename(null);
       setEvidenceText("");
     }
   };
 
-  const removeEvidencePackage = async (evidenceId: string, label: string) => {
-    if (!submission) return;
-    if (!window.confirm(`Remove evidence package "${label}" from this uncommitted package?`)) return;
-
-    await updateSubmission(`/api/robomata/submissions/${submission.id}/evidence`, {
-      body: JSON.stringify({ evidenceId }),
-      headers: { "content-type": "application/json" },
-      method: "DELETE",
-    });
-  };
-
   const recompute = async () => {
     if (!submission) return;
-    if (!canComputeBorrowingBase) {
-      notification.error("Import receivables and upload evidence before computing the borrowing base.");
-      return;
-    }
     await updateSubmission(`/api/robomata/submissions/${submission.id}/compute`, { method: "POST" });
-  };
-
-  const scrollToWorkspaceTarget = (targetId: string) => {
-    document.getElementById(targetId)?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-
-  const openReceivableEditor = (receivableId: string) => {
-    const receivable = submission?.receivables.find(item => item.id === receivableId);
-    if (!receivable) {
-      notification.error("Receivable row is no longer available.");
-      return;
-    }
-
-    setEditingReceivableId(receivable.id);
-    setDraftReceivable(receivable);
-    window.setTimeout(() => scrollToWorkspaceTarget("workspace-receivables"), 0);
-  };
-
-  const runWorkspaceStepAction = (step: WorkspaceChecklistStep) => {
-    if (step.actionType === "compute") {
-      void recompute();
-      return;
-    }
-    if (step.actionType === "commitEvidence") {
-      if (!canRunEvidenceCommitAction) {
-        if (isOperatorCommitBlockedByWallet) {
-          notification.error("Connect a compatible Sui wallet before anchoring evidence.");
-        }
-        return;
-      }
-      void commitEvidence();
-      return;
-    }
-
-    window.location.hash = step.href;
-  };
-
-  const deleteDraftSubmission = async () => {
-    if (!submission || !canDeleteDraft) return;
-    if (!window.confirm(`Delete draft facility package "${submission.facilityName}"?`)) return;
-
-    if (!partnerAuthAddress) {
-      notification.error("Connect a partner wallet before deleting the submission.");
-      return;
-    }
-
-    const path = `/api/robomata/submissions/${submission.id}`;
-    setIsBusy(true);
-    try {
-      const response = await fetch(path, {
-        method: "DELETE",
-        headers: await getAuthHeaders({ chainId: selectedNetwork.id, method: "DELETE", path, signerAddress }),
-      });
-      const payload = await readJsonResponse<Record<string, never>>(response);
-      if (!response.ok) {
-        notification.error(payload.error ?? `Failed to delete draft package (${response.status}).`);
-        return;
-      }
-
-      notification.success("Draft facility package deleted.");
-      evictSubmissionFromSubmissionIndexCache(submissionCacheKey, submission.id);
-      router.push("/robomata/submissions");
-      router.refresh();
-    } catch (error) {
-      notification.error(error instanceof Error ? error.message : "Failed to delete draft package.");
-    } finally {
-      setIsBusy(false);
-    }
   };
 
   const tokenizationTermsBody = () => ({
@@ -1095,7 +602,7 @@ export const SubmissionWorkspace = ({
     try {
       const completeOperatorCommit = async (commit: PendingOperatorCommit) => {
         const isSponsoredCommit = Boolean(
-          commit.sponsorGasObjectId || commit.sponsorSignature || commit.operatorSignature || commit.transactionBytes,
+          commit.sponsorSignature || commit.operatorSignature || commit.transactionBytes,
         );
         const completeHeaders = new Headers({ "content-type": "application/json" });
         const completeAuthHeaders = await getAuthHeaders({
@@ -1121,7 +628,7 @@ export const SubmissionWorkspace = ({
         const completePayload = (await completeResponse.json().catch(() => ({}))) as CommitEvidenceResponse;
         if (completePayload.submission) setSubmission(completePayload.submission);
         if (!completeResponse.ok || !completePayload.submission) {
-          const errorMessage = completePayload.error ?? "Failed to reconcile the evidence verification.";
+          const errorMessage = completePayload.error ?? "Failed to reconcile the operator Sui commit.";
           if (
             completePayload.submission?.evidenceCommit.status === "failed" ||
             (errorMessage.includes("Sui transaction") && errorMessage.includes("failed"))
@@ -1134,7 +641,7 @@ export const SubmissionWorkspace = ({
         if (completeResponse.status === 202) {
           setPendingOperatorCommit({ ...commit, txDigest: completePayload.txDigest ?? commit.txDigest });
           notification.error(
-            completePayload.error ?? "Evidence anchoring is awaiting verification indexing. Retry completion shortly.",
+            completePayload.error ?? "Sui commit is awaiting event indexing. Retry completion shortly.",
           );
         } else {
           setPendingOperatorCommit(null);
@@ -1159,7 +666,7 @@ export const SubmissionWorkspace = ({
         const releasePayload = (await releaseResponse.json().catch(() => ({}))) as CommitEvidenceResponse;
         if (releasePayload.submission) setSubmission(releasePayload.submission);
         if (!releaseResponse.ok) {
-          throw new Error(releasePayload.error ?? "Failed to release the prepared evidence anchor.");
+          throw new Error(releasePayload.error ?? "Failed to release the prepared Sui commit.");
         }
       };
 
@@ -1172,67 +679,9 @@ export const SubmissionWorkspace = ({
         await completeOperatorCommit({
           submissionId: submission.id,
           rootDigest: submission.evidenceCommit.rootDigest ?? "",
-          walletName: "verification wallet",
+          walletName: "Sui wallet",
         });
         return;
-      }
-
-      if (canUsePrivySuiRawSign) {
-        let fallbackMessage: string | undefined;
-        let privyPayload: CommitEvidenceResponse | undefined;
-        let privyResponse: Response | undefined;
-        try {
-          const privyHeaders = new Headers({ "content-type": "application/json" });
-          const privyAuthHeaders = await getAuthHeaders({
-            chainId: selectedNetwork.id,
-            method: "POST",
-            path,
-            signerAddress,
-          });
-          Object.entries(privyAuthHeaders).forEach(([key, value]) => privyHeaders.set(key, value));
-          privyResponse = await fetch(path, {
-            method: "POST",
-            headers: privyHeaders,
-            body: JSON.stringify({ mode: "operator_complete_sponsored_privy" }),
-          });
-          privyPayload = (await privyResponse.json().catch(() => ({}))) as CommitEvidenceResponse;
-        } catch (error) {
-          fallbackMessage = error instanceof Error ? error.message : "Privy Sui evidence anchoring failed.";
-        }
-
-        if (privyResponse && privyPayload) {
-          if (privyPayload.submission) setSubmission(privyPayload.submission);
-          if (!privyResponse.ok || !privyPayload.submission) {
-            const errorMessage = privyPayload.error ?? "Privy Sui evidence anchoring failed.";
-            if (privyPayload.submission || privyPayload.txDigest || privyPayload.sponsorGasObjectId) {
-              throw new Error(errorMessage);
-            }
-            fallbackMessage = errorMessage;
-          } else if (privyResponse.status === 202) {
-            setPendingOperatorCommit({
-              sponsorGasObjectId: privyPayload.sponsorGasObjectId,
-              submissionId: submission.id,
-              rootDigest: submission.evidenceCommit.rootDigest ?? "",
-              txDigest: privyPayload.txDigest,
-              walletAddress: privySuiBinding?.suiAddress,
-              walletName: "bound Privy Sui wallet",
-            });
-            notification.error(
-              privyPayload.error ?? "Evidence anchoring is awaiting verification indexing. Retry shortly.",
-            );
-            return;
-          } else {
-            notification.success("Evidence committed with the bound Privy Sui wallet.");
-            return;
-          }
-        }
-
-        if (!hasSuiWallet) {
-          throw new Error(fallbackMessage ?? "Privy Sui evidence anchoring failed.");
-        }
-        notification.error(
-          `${fallbackMessage ?? "Privy Sui evidence anchoring failed."} Falling back to the connected Sui wallet.`,
-        );
       }
 
       const prepareHeaders = new Headers({ "content-type": "application/json" });
@@ -1250,7 +699,7 @@ export const SubmissionWorkspace = ({
       });
       const preparePayload = (await prepareResponse.json().catch(() => ({}))) as CommitEvidenceResponse;
       if (!prepareResponse.ok || !preparePayload.submission || !preparePayload.operatorCommit) {
-        throw new Error(preparePayload.error ?? "Failed to prepare the evidence anchor for operator signing.");
+        throw new Error(preparePayload.error ?? "Failed to prepare Sui transaction for operator signing.");
       }
 
       setSubmission(preparePayload.submission);
@@ -1277,7 +726,7 @@ export const SubmissionWorkspace = ({
       setPendingOperatorCommit(pendingCommit);
       await completeOperatorCommit(pendingCommit);
     } catch (error) {
-      notification.error(error instanceof Error ? error.message : "Evidence anchoring failed.");
+      notification.error(error instanceof Error ? error.message : "Operator Sui evidence commit failed.");
     } finally {
       setIsBusy(false);
     }
@@ -1304,27 +753,15 @@ export const SubmissionWorkspace = ({
     return (
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-10 sm:px-6">
         <div className="rounded-[2rem] border border-base-300 bg-base-100 p-8 text-center shadow-lg shadow-base-300/30">
-          <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
-            {loadError ? "Workspace unavailable" : "Empty workspace"}
-          </p>
-          <h1 className="mt-3 text-3xl font-black tracking-tight text-base-content">
-            {loadError ? "Unable to load this submission" : "No submission available"}
-          </h1>
+          <h1 className="text-3xl font-black tracking-tight text-base-content">No submission available</h1>
           <p className="mt-4 text-base-content/70">
-            {loadError
-              ? loadError
-              : readOnly
-                ? "Create a borrowing-base submission from the operator workflow first."
-                : "Create a submission from the submissions index first."}
+            {readOnly
+              ? "Create a borrowing-base submission from the operator workflow first."
+              : "Create a submission from the submissions index first."}
           </p>
           <div className="mt-6 flex justify-center gap-3">
-            {loadError ? (
-              <button className="btn btn-primary rounded-full" onClick={() => void loadSubmission()}>
-                Retry
-              </button>
-            ) : null}
-            <Link href="/robomata/submissions" className="btn btn-primary rounded-full">
-              Open Robomata workspace
+            <Link href="/operator/submissions" className="btn btn-primary rounded-full">
+              Open operator submissions
             </Link>
             {!readOnly ? null : (
               <Link href="/operator" className="btn btn-outline rounded-full">
@@ -1338,31 +775,28 @@ export const SubmissionWorkspace = ({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl min-w-0 flex-col gap-6 overflow-x-hidden px-3 py-6 sm:gap-8 sm:px-6 sm:py-10">
-      <section
-        id="workspace-overview"
-        className="min-w-0 max-w-full scroll-mt-24 overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 p-4 shadow-lg shadow-base-300/30 sm:p-8"
-      >
-        <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(500px,540px)] xl:items-start">
-          <div className="min-w-0">
-            <p className="break-words text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 py-8 sm:px-6 sm:py-10">
+      <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30 sm:p-8">
+        <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+          <div className="max-w-3xl">
+            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
               {sectionTitle(readOnly)}
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-3">
-              <h1 className="min-w-0 break-words text-4xl font-black tracking-tight text-base-content sm:text-5xl">
+              <h1 className="text-4xl font-black tracking-tight text-base-content sm:text-5xl">
                 {submission.facilityName}
               </h1>
               <span className={`badge ${statusClass(submission.status)} capitalize`}>
                 {submission.status.replace(/_/g, " ")}
               </span>
             </div>
-            <p className="mt-4 break-words text-lg leading-relaxed text-base-content/70">
+            <p className="mt-4 text-lg leading-relaxed text-base-content/70">
               {submission.operatorName} · as of {submission.asOfDate} · {submission.receivables.length} receivables ·{" "}
               {submission.evidence.length} evidence packages
             </p>
             <div className="mt-5 flex flex-wrap gap-3">
               {readOnly ? (
-                <Link href={`/robomata/submissions/${submission.id}`} className="btn btn-primary rounded-full">
+                <Link href={`/operator/submissions/${submission.id}`} className="btn btn-primary rounded-full">
                   Manage in operator workflow
                 </Link>
               ) : isCommitted ? (
@@ -1371,105 +805,48 @@ export const SubmissionWorkspace = ({
                 </div>
               ) : (
                 <>
-                  {canDeleteDraft ? (
-                    <button
-                      className="btn btn-outline rounded-full text-error hover:border-error hover:bg-error/10"
-                      onClick={deleteDraftSubmission}
-                      disabled={isBusy}
-                    >
-                      <TrashIcon className="h-4 w-4" />
-                      Delete draft
-                    </button>
-                  ) : null}
+                  <button className="btn btn-primary rounded-full" onClick={recompute} disabled={isBusy}>
+                    <ArrowPathIcon className="h-4 w-4" />
+                    Compute borrowing base
+                  </button>
                 </>
               )}
             </div>
-            {!readOnly && mutabilityLockReason ? (
-              <div className="mt-5 rounded-2xl border border-warning/30 bg-warning/10 p-4 text-sm leading-relaxed text-base-content/70">
-                <div className="font-semibold text-base-content">Editing is temporarily locked</div>
-                <div className="mt-1">{mutabilityLockReason}</div>
-              </div>
-            ) : !readOnly && !canComputeBorrowingBase ? (
-              <div className="mt-5 rounded-2xl border border-base-300 bg-base-200/50 p-4 text-sm leading-relaxed text-base-content/70">
-                Import receivables and upload at least one evidence package before computing the borrowing base.
-              </div>
-            ) : null}
           </div>
 
-          <div className="min-w-0 max-w-full">
+          <div className="grid gap-3 sm:grid-cols-2 xl:w-[360px]">
             {summaryCards.length > 0 ? (
-              <div className="grid min-w-0 gap-3 sm:grid-cols-[repeat(2,minmax(0,1fr))]">
-                {summaryCards.map(card => (
-                  <div
-                    key={card.label}
-                    className="min-w-0 rounded-2xl border border-base-300 bg-base-200/60 p-4 sm:min-w-60"
-                  >
-                    <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">{card.label}</div>
-                    <div className="mt-2 min-w-0 break-words text-[clamp(1.05rem,1.7vw,1.5rem)] font-bold leading-tight text-base-content tabular-nums [overflow-wrap:anywhere] sm:whitespace-nowrap sm:break-normal sm:[overflow-wrap:normal]">
-                      {card.value}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              summaryCards.map(card => (
+                <div key={card.label} className="rounded-2xl border border-base-300 bg-base-200/60 p-4">
+                  <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">{card.label}</div>
+                  <div className="mt-2 text-2xl font-bold text-base-content">{card.value}</div>
+                </div>
+              ))
             ) : (
-              <BorrowingBasePolicySummaryCard policyArtifact={policyArtifact} />
+              <div className="rounded-2xl border border-dashed border-base-300 bg-base-200/50 p-4 text-sm text-base-content/70 sm:col-span-2">
+                Import receivables and evidence, then compute the borrowing base to generate lender output and evidence
+                commit state.
+              </div>
             )}
           </div>
         </div>
       </section>
 
-      <section
-        id="workspace-progress"
-        className="min-w-0 max-w-full scroll-mt-24 overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 p-4 shadow-lg shadow-base-300/30 sm:p-6"
-      >
-        <div className="flex min-w-0 items-center gap-2 break-words text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
-          <CheckCircleIcon className="h-4 w-4" />
-          Workspace progress
-        </div>
-        {nextWorkspaceStep ? (
-          <div className="mt-4">
-            <WorkspaceProgressCard
-              actionDisabled={nextWorkspaceStep.actionType === "commitEvidence" && !canRunEvidenceCommitAction}
-              disabledReason={
-                nextWorkspaceStep.actionType === "commitEvidence" && isOperatorCommitBlockedByWallet
-                  ? "Connect a compatible Sui wallet before anchoring evidence."
-                  : undefined
-              }
-              step={nextWorkspaceStep}
-              prominent
-              onAction={
-                nextWorkspaceStep.actionType === "compute" || nextWorkspaceStep.actionType === "commitEvidence"
-                  ? () => runWorkspaceStepAction(nextWorkspaceStep)
-                  : undefined
-              }
-            />
-          </div>
-        ) : null}
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {supportingWorkspaceSteps.map(step => (
-            <WorkspaceProgressCard key={step.label} step={step} />
-          ))}
-        </div>
-      </section>
-
-      <div className="space-y-6">
-        {canMutate || submission.receivables.length > 0 ? (
-          <div id="workspace-import" className="scroll-mt-24 space-y-6">
-            <section
-              id="workspace-receivables-import"
-              className="min-w-0 scroll-mt-24 overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 p-4 shadow-lg shadow-base-300/30 sm:p-6"
-            >
-              <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.2em] text-base-content/50">
-                <DocumentArrowUpIcon className="h-4 w-4" />
-                Receivables import
-              </div>
-              {canMutate ? (
-                <>
+      <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+        <div className="space-y-6">
+          {canMutate ? (
+            <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
+              <div className="grid gap-6 lg:grid-cols-2">
+                <div>
+                  <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.2em] text-base-content/50">
+                    <DocumentArrowUpIcon className="h-4 w-4" />
+                    Receivables import
+                  </div>
                   <p className="mt-3 text-sm leading-relaxed text-base-content/70">
                     Upload a lender-borrowing-base style CSV with receivable id, obligor, vehicles, amount, DPD,
                     utilization, insurance, title, and lockbox fields.
                   </p>
-                  <label className="mt-4 flex min-w-0 cursor-pointer flex-col items-center justify-center rounded-[1.5rem] border border-dashed border-base-300 bg-base-200/40 p-6 text-center text-sm text-base-content/70">
+                  <label className="mt-4 flex cursor-pointer flex-col items-center justify-center rounded-[1.5rem] border border-dashed border-base-300 bg-base-200/40 p-6 text-center text-sm text-base-content/70">
                     <input
                       type="file"
                       accept=".csv,text/csv"
@@ -1479,448 +856,272 @@ export const SubmissionWorkspace = ({
                         if (file) void importReceivables(file);
                       }}
                     />
-                    <span>Click to upload receivables CSV</span>
-                    {receivablesImportFilename ? (
-                      <span className="mt-2 max-w-full break-all text-xs font-semibold text-base-content">
-                        Current import: {receivablesImportFilename}
-                      </span>
-                    ) : null}
+                    Click to upload receivables CSV
                   </label>
-                  {hasReceivables ? (
-                    <div className="mt-4 rounded-2xl border border-base-300 bg-base-200/50 p-4">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="min-w-0">
-                          <div className="text-sm font-semibold text-base-content">
-                            {submission.receivables.length} imported rows
-                          </div>
-                          <p className="mt-1 break-words text-xs text-base-content/60">
-                            {receivablesImportFilename
-                              ? `Source: ${receivablesImportFilename}`
-                              : "Source: uploaded or pasted CSV"}
-                          </p>
-                        </div>
-                        <button
-                          className="btn btn-outline btn-sm rounded-full"
-                          type="button"
-                          onClick={() => setIsReceivablesCsvEditorOpen(isOpen => !isOpen)}
-                        >
-                          {shouldShowReceivablesCsvEditor ? "Hide CSV editor" : "Edit or replace CSV"}
-                        </button>
-                        <button
-                          className="btn btn-ghost btn-sm rounded-full text-error"
-                          type="button"
-                          onClick={removeImportedReceivables}
-                          disabled={isBusy}
-                        >
-                          <TrashIcon className="h-4 w-4" />
-                          Remove import
-                        </button>
-                      </div>
-                    </div>
-                  ) : null}
-                  {shouldShowReceivablesCsvEditor ? (
-                    <div className="mt-4 min-w-0">
-                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-base-content/60">
-                        <span className="font-semibold uppercase tracking-[0.16em]">
-                          {hasReceivables ? "Replace imported CSV" : "Paste or edit CSV"}
-                        </span>
-                        {receivablesCsvText.trim() ? (
-                          <button
-                            className="btn btn-ghost btn-xs rounded-full"
-                            type="button"
-                            onClick={() => setReceivablesCsvText("")}
-                          >
-                            Clear pasted CSV
-                          </button>
-                        ) : null}
-                      </div>
-                      <textarea
-                        className="textarea textarea-bordered min-h-36 w-full min-w-0 resize-y rounded-xl px-4 py-3 font-mono text-xs leading-relaxed lg:min-h-[22rem]"
-                        placeholder={`Or paste CSV:\nreceivable,obligor,vehicles,outstanding,dpd,utilization,insured,title,lockbox\nAR-1007,Northstar Delivery Co.,28,386400,12,91,yes,yes,yes`}
-                        value={receivablesCsvText}
-                        onChange={event => setReceivablesCsvText(event.target.value)}
-                      />
-                      <button
-                        className="btn btn-outline mt-3 rounded-full"
-                        type="button"
-                        onClick={importReceivablesFromText}
-                        disabled={isBusy}
-                      >
-                        {hasReceivables ? "Replace with pasted CSV" : "Import pasted CSV"}
-                      </button>
-                    </div>
-                  ) : null}
-                </>
-              ) : (
-                <p className="mt-3 text-sm leading-relaxed text-base-content/70">
-                  Review the imported collateral rows for this locked submission.
-                </p>
-              )}
-
-              {submission.receivables.length > 0 ? (
-                <div id="workspace-receivables" className="mt-6 min-w-0 scroll-mt-24 border-t border-base-300 pt-6">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                    <div>
-                      <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
-                        Import result
-                      </p>
-                      <h2 className="mt-2 text-2xl font-black tracking-tight text-base-content">
-                        Imported receivables
-                      </h2>
-                    </div>
-                    <p className="max-w-xl text-sm text-base-content/60">
-                      {canMutate
-                        ? "Edit row-level corrections here, or reopen the CSV editor above to replace the import."
-                        : "Review the imported collateral rows for this locked submission."}
-                    </p>
-                  </div>
-
-                  <div className="mt-4 overflow-x-auto rounded-[1.5rem] border border-base-300 bg-base-100">
-                    <table className="table">
-                      <thead>
-                        <tr className="text-xs uppercase tracking-[0.18em] text-base-content/50">
-                          <th>Receivable</th>
-                          <th>Obligor</th>
-                          <th>Amount</th>
-                          <th>DPD</th>
-                          <th>Status</th>
-                          {canMutate ? <th>Actions</th> : null}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {submission.receivables.map(receivable => {
-                          const result = submission.computation?.borrowingBase.receivableResults.find(
-                            item => item.id === receivable.id,
-                          );
-                          const isEditing = editingReceivableId === receivable.id;
-                          return (
-                            <Fragment key={receivable.id}>
-                              <tr key={receivable.id}>
-                                <td className="font-semibold text-base-content">{receivable.id}</td>
-                                <td>
-                                  <div className="font-medium text-base-content">{receivable.obligor}</div>
-                                  <div className="text-xs text-base-content/60">{receivable.vehicleCount} vehicles</div>
-                                </td>
-                                <td>{formatUsd(receivable.outstandingCents)}</td>
-                                <td>{receivable.daysPastDue}</td>
-                                <td className="whitespace-normal">
-                                  <span
-                                    className={`badge h-auto min-h-7 max-w-20 whitespace-normal border-0 px-2 py-1 text-center text-[0.68rem] leading-tight ${
-                                      result?.eligible ? "badge-success text-success-content" : "badge-warning"
-                                    }`}
-                                  >
-                                    {result?.eligible ? "Eligible" : receivable.excluded ? "Excluded" : "Needs review"}
-                                  </span>
-                                </td>
-                                {canMutate ? (
-                                  <td>
-                                    <div className="flex flex-wrap gap-2">
-                                      <button
-                                        type="button"
-                                        className="btn btn-xs btn-outline"
-                                        onClick={() => {
-                                          setEditingReceivableId(isEditing ? null : receivable.id);
-                                          setDraftReceivable(receivable);
-                                        }}
-                                      >
-                                        {isEditing ? "Close edit" : "Edit"}
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className="btn btn-xs btn-outline"
-                                        onClick={() =>
-                                          patchSubmission({
-                                            action: "excludeReceivable",
-                                            receivableId: receivable.id,
-                                            excluded: !receivable.excluded,
-                                          })
-                                        }
-                                      >
-                                        {receivable.excluded ? "Reinstate" : "Exclude"}
-                                      </button>
-                                    </div>
-                                  </td>
-                                ) : null}
-                              </tr>
-                              {canMutate && isEditing ? (
-                                <tr key={`${receivable.id}-edit`}>
-                                  <td colSpan={canMutate ? 6 : 5}>
-                                    <div className="grid gap-3 rounded-2xl bg-base-200/60 p-4 md:grid-cols-4">
-                                      <input
-                                        className="input input-bordered min-w-0"
-                                        value={draftReceivable.obligor ?? ""}
-                                        onChange={event =>
-                                          setDraftReceivable(current => ({ ...current, obligor: event.target.value }))
-                                        }
-                                      />
-                                      <label className="form-control">
-                                        <span className="label-text">Outstanding dollars</span>
-                                        <input
-                                          className="input input-bordered min-w-0"
-                                          type="number"
-                                          min="0"
-                                          step="0.01"
-                                          value={centsToDollarInput(draftReceivable.outstandingCents)}
-                                          onChange={event =>
-                                            setDraftReceivable(current => ({
-                                              ...current,
-                                              outstandingCents: dollarsToCents(event.target.value),
-                                            }))
-                                          }
-                                        />
-                                      </label>
-                                      <input
-                                        className="input input-bordered min-w-0"
-                                        type="number"
-                                        value={draftReceivable.daysPastDue ?? 0}
-                                        onChange={event =>
-                                          setDraftReceivable(current => ({
-                                            ...current,
-                                            daysPastDue: Number(event.target.value),
-                                          }))
-                                        }
-                                      />
-                                      <input
-                                        className="input input-bordered min-w-0"
-                                        type="number"
-                                        value={draftReceivable.utilizationPct ?? 0}
-                                        onChange={event =>
-                                          setDraftReceivable(current => ({
-                                            ...current,
-                                            utilizationPct: Number(event.target.value),
-                                          }))
-                                        }
-                                      />
-                                      <label className="label cursor-pointer justify-start gap-2">
-                                        <input
-                                          type="checkbox"
-                                          className="checkbox checkbox-sm"
-                                          checked={Boolean(draftReceivable.insured)}
-                                          onChange={event =>
-                                            setDraftReceivable(current => ({
-                                              ...current,
-                                              insured: event.target.checked,
-                                            }))
-                                          }
-                                        />
-                                        <span className="label-text">Insured</span>
-                                      </label>
-                                      <label className="label cursor-pointer justify-start gap-2">
-                                        <input
-                                          type="checkbox"
-                                          className="checkbox checkbox-sm"
-                                          checked={Boolean(draftReceivable.titleClear)}
-                                          onChange={event =>
-                                            setDraftReceivable(current => ({
-                                              ...current,
-                                              titleClear: event.target.checked,
-                                            }))
-                                          }
-                                        />
-                                        <span className="label-text">Title clear</span>
-                                      </label>
-                                      <label className="label cursor-pointer justify-start gap-2">
-                                        <input
-                                          type="checkbox"
-                                          className="checkbox checkbox-sm"
-                                          checked={Boolean(draftReceivable.lockboxMatched)}
-                                          onChange={event =>
-                                            setDraftReceivable(current => ({
-                                              ...current,
-                                              lockboxMatched: event.target.checked,
-                                            }))
-                                          }
-                                        />
-                                        <span className="label-text">Lockbox matched</span>
-                                      </label>
-                                      <div className="flex gap-2">
-                                        <button
-                                          type="button"
-                                          className="btn btn-primary btn-sm rounded-full"
-                                          onClick={() =>
-                                            patchSubmission({
-                                              action: "updateReceivable",
-                                              receivableId: receivable.id,
-                                              patch: draftReceivable,
-                                            }).then(() => setEditingReceivableId(null))
-                                          }
-                                        >
-                                          Save changes
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </td>
-                                </tr>
-                              ) : null}
-                            </Fragment>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                  <div className="mt-4">
+                    <textarea
+                      className="textarea textarea-bordered min-h-36 w-full text-sm"
+                      placeholder={`Or paste CSV:\nreceivable,obligor,vehicles,outstanding,dpd,utilization,insured,title,lockbox\nAR-1007,Northstar Delivery Co.,28,386400,12,91,yes,yes,yes`}
+                      value={receivablesCsvText}
+                      onChange={event => setReceivablesCsvText(event.target.value)}
+                    />
+                    <button
+                      className="btn btn-outline mt-3 rounded-full"
+                      type="button"
+                      onClick={importReceivablesFromText}
+                      disabled={isBusy}
+                    >
+                      Import pasted CSV
+                    </button>
                   </div>
                 </div>
-              ) : null}
-            </section>
 
-            {canMutate ? (
-              <section
-                id="workspace-evidence-upload"
-                className="min-w-0 max-w-full scroll-mt-24 overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 p-3 shadow-lg shadow-base-300/30 sm:p-6"
-              >
-                <form
-                  className="w-full min-w-0 max-w-full overflow-hidden rounded-[1.5rem] border border-base-300 bg-base-200/40 p-3 sm:p-5"
-                  onSubmit={uploadEvidence}
-                >
+                <form className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-5" onSubmit={uploadEvidence}>
                   <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.2em] text-base-content/50">
                     <CloudArrowUpIcon className="h-4 w-4" />
                     Evidence upload
                   </div>
-                  <p className={`mt-3 ${evidenceHelperTextClass}`}>
-                    Attach policy support for the receivables file, such as insurance schedules, title and lien files,
-                    servicing reports, utilization exports, or lockbox mapping.
-                  </p>
-                  <div className="mt-4 grid w-full min-w-0 max-w-full gap-3 lg:grid-cols-2 lg:gap-x-4 lg:gap-y-3">
-                    <div className="form-control min-w-0 max-w-full lg:col-start-1 lg:row-start-1">
-                      <span className="label pb-1 pt-0">
-                        <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
-                          Evidence file
-                        </span>
-                      </span>
-                      <label className="flex w-full min-w-0 max-w-full cursor-pointer items-center gap-2 overflow-hidden rounded-xl border border-base-300 bg-base-100 p-2 text-sm text-base-content/70">
-                        <input
-                          name="file"
-                          type="file"
-                          className="peer sr-only"
-                          onChange={event => setSelectedEvidenceFilename(event.target.files?.[0]?.name ?? null)}
-                        />
-                        <span className="shrink-0 rounded-lg bg-base-200 px-3 py-2 font-semibold text-base-content peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-primary">
-                          Choose file
-                        </span>
-                        <span className="min-w-0 flex-1 truncate">
-                          {selectedEvidenceFilename ?? "Attach evidence file"}
-                        </span>
-                      </label>
-                    </div>
-                    <label className="form-control min-w-0 max-w-full lg:col-start-2 lg:row-start-1">
-                      <span className="label pb-1 pt-0">
-                        <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
-                          Access policy
-                        </span>
-                      </span>
-                      <select
-                        name="sealPolicyId"
-                        className="select select-bordered h-11 w-full !min-w-0 max-w-full rounded-xl px-4 text-sm"
-                        defaultValue={evidenceSealPolicyOptions[0].value}
-                      >
-                        {evidenceSealPolicyOptions.map(option => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                      <p className="mt-1 min-w-0 max-w-full text-xs leading-snug text-base-content/60">
-                        Controls which reviewer role can access the committed evidence metadata.
-                      </p>
-                    </label>
-                    <label className="form-control min-w-0 max-w-full lg:col-start-1 lg:row-start-2">
-                      <span className="label pb-1 pt-0">
-                        <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
-                          Package name
-                        </span>
-                      </span>
-                      <input
-                        name="label"
-                        className="input input-bordered h-11 w-full !min-w-0 max-w-full rounded-xl px-4 text-sm"
-                        placeholder="e.g. June insurance schedule"
-                        required
-                      />
-                    </label>
-                    <label className="form-control min-w-0 max-w-full lg:col-start-1 lg:row-start-3">
-                      <span className="label pb-1 pt-0">
-                        <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
-                          Evidence type
-                        </span>
-                      </span>
-                      <input
-                        name="scope"
-                        className="input input-bordered h-11 w-full !min-w-0 max-w-full rounded-xl px-4 text-sm"
-                        placeholder="e.g. Insurance, Title, Servicing, Lockbox"
-                        required
-                      />
-                    </label>
-                    <label className="form-control min-w-0 max-w-full lg:col-start-2 lg:row-start-2">
-                      <span className="label pb-1 pt-0">
-                        <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
-                          Source
-                        </span>
-                      </span>
-                      <input
-                        name="source"
-                        className="input input-bordered h-11 w-full !min-w-0 max-w-full rounded-xl px-4 text-sm"
-                        placeholder="e.g. authorized broker export or servicing system"
-                        required
-                      />
-                    </label>
-                    <label className="form-control min-w-0 max-w-full lg:col-start-2 lg:row-start-3">
-                      <span className="label pb-1 pt-0">
-                        <span className="label-text text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
-                          Related receivable IDs
-                        </span>
-                      </span>
-                      <input
-                        name="linkedReceivableIds"
-                        className="input input-bordered h-11 w-full !min-w-0 max-w-full rounded-xl px-4 text-sm"
-                        placeholder="e.g. AR-1007, AR-1011"
-                      />
-                    </label>
-                  </div>
-                  <div className="mt-4 min-w-0 max-w-full rounded-2xl border border-dashed border-base-300 bg-base-100/70 p-4">
-                    <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
-                          Alternative evidence source
-                        </p>
-                        <p className={`mt-1 ${evidenceHelperTextClass}`}>
-                          Paste authorized notes, report extracts, or source metadata when no local file is available.
-                        </p>
-                      </div>
-                      <span className="badge badge-outline border-base-300 text-xs font-semibold uppercase text-base-content/60">
-                        No file path
-                      </span>
-                    </div>
-                    <div className="mt-3 min-w-0 max-w-full">
-                      <textarea
-                        className="textarea textarea-bordered min-h-28 w-full !min-w-0 max-w-full rounded-xl px-4 py-3 text-sm leading-relaxed"
-                        placeholder="Paste evidence notes or source metadata."
-                        value={evidenceText}
-                        onChange={event => setEvidenceText(event.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="mt-4 grid w-full min-w-0 max-w-full gap-3 lg:grid-cols-2 lg:items-center">
-                    <p className={`min-w-0 max-w-full ${evidenceHelperTextClass}`}>
-                      Evidence status is derived after upload from the active policy and imported receivable data.
-                    </p>
-                    <button
-                      className="btn btn-primary w-full !min-w-0 max-w-full rounded-full px-3 text-sm"
-                      type="submit"
-                      disabled={isBusy}
-                    >
-                      {isBusy ? "Processing..." : "Upload evidence"}
+                  <div className="mt-4 grid gap-3">
+                    <input name="file" type="file" className="file-input file-input-bordered w-full" />
+                    <input
+                      name="label"
+                      className="input input-bordered w-full"
+                      placeholder="Insurance schedule"
+                      required
+                    />
+                    <input
+                      name="source"
+                      className="input input-bordered w-full"
+                      placeholder="Operator-authorized insurance broker export"
+                      required
+                    />
+                    <input name="scope" className="input input-bordered w-full" placeholder="Insurance" required />
+                    <select name="status" className="select select-bordered w-full" defaultValue="pending">
+                      <option value="pending">Pending</option>
+                      <option value="verified">Verified</option>
+                      <option value="exception">Exception</option>
+                    </select>
+                    <input
+                      name="sealPolicyId"
+                      className="input input-bordered w-full"
+                      defaultValue="robomata_overflow::facility::seal_approve"
+                    />
+                    <input
+                      name="linkedReceivableIds"
+                      className="input input-bordered w-full"
+                      placeholder="Linked receivable ids (comma separated)"
+                    />
+                    <textarea
+                      className="textarea textarea-bordered min-h-28 w-full text-sm"
+                      placeholder="Or paste authorized evidence text when you do not have a local file handy."
+                      value={evidenceText}
+                      onChange={event => setEvidenceText(event.target.value)}
+                    />
+                    <button className="btn btn-primary rounded-full" type="submit" disabled={isBusy}>
+                      Upload evidence
                     </button>
                   </div>
                 </form>
-              </section>
-            ) : null}
-          </div>
-        ) : null}
+              </div>
+            </section>
+          ) : null}
 
-        {submission.computation || submission.exceptions.length > 0 ? (
-          <section
-            id="workspace-exceptions"
-            className="min-w-0 max-w-full scroll-mt-24 overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 p-4 shadow-lg shadow-base-300/30 sm:p-6"
-          >
-            <div className="flex min-w-0 items-center gap-2 break-words text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
+          <section className="overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 shadow-lg shadow-base-300/30">
+            <div className="border-b border-base-300 px-6 py-5">
+              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">Receivables</p>
+              <h2 className="mt-2 text-2xl font-black tracking-tight text-base-content">Collateral under review</h2>
+            </div>
+
+            {submission.receivables.length === 0 ? (
+              <div className="p-6 text-base-content/70">No receivables imported yet.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="table">
+                  <thead>
+                    <tr className="text-xs uppercase tracking-[0.18em] text-base-content/50">
+                      <th>Receivable</th>
+                      <th>Obligor</th>
+                      <th>Amount</th>
+                      <th>DPD</th>
+                      <th>Status</th>
+                      {canMutate ? <th>Actions</th> : null}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {submission.receivables.map(receivable => {
+                      const result = submission.computation?.borrowingBase.receivableResults.find(
+                        item => item.id === receivable.id,
+                      );
+                      const isEditing = editingReceivableId === receivable.id;
+                      return (
+                        <Fragment key={receivable.id}>
+                          <tr key={receivable.id}>
+                            <td className="font-semibold text-base-content">{receivable.id}</td>
+                            <td>
+                              <div className="font-medium text-base-content">{receivable.obligor}</div>
+                              <div className="text-xs text-base-content/60">{receivable.vehicleCount} vehicles</div>
+                            </td>
+                            <td>{formatUsd(receivable.outstandingCents)}</td>
+                            <td>{receivable.daysPastDue}</td>
+                            <td>
+                              <span
+                                className={`badge border-0 ${
+                                  result?.eligible ? "badge-success text-success-content" : "badge-warning"
+                                }`}
+                              >
+                                {result?.eligible ? "Eligible" : receivable.excluded ? "Excluded" : "Needs review"}
+                              </span>
+                            </td>
+                            {canMutate ? (
+                              <td>
+                                <div className="flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    className="btn btn-xs btn-outline"
+                                    onClick={() => {
+                                      setEditingReceivableId(isEditing ? null : receivable.id);
+                                      setDraftReceivable(receivable);
+                                    }}
+                                  >
+                                    {isEditing ? "Close edit" : "Edit"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn btn-xs btn-outline"
+                                    onClick={() =>
+                                      patchSubmission({
+                                        action: "excludeReceivable",
+                                        receivableId: receivable.id,
+                                        excluded: !receivable.excluded,
+                                      })
+                                    }
+                                  >
+                                    {receivable.excluded ? "Reinstate" : "Exclude"}
+                                  </button>
+                                </div>
+                              </td>
+                            ) : null}
+                          </tr>
+                          {canMutate && isEditing ? (
+                            <tr key={`${receivable.id}-edit`}>
+                              <td colSpan={canMutate ? 6 : 5}>
+                                <div className="grid gap-3 rounded-2xl bg-base-200/60 p-4 md:grid-cols-4">
+                                  <input
+                                    className="input input-bordered"
+                                    value={draftReceivable.obligor ?? ""}
+                                    onChange={event =>
+                                      setDraftReceivable(current => ({ ...current, obligor: event.target.value }))
+                                    }
+                                  />
+                                  <label className="form-control">
+                                    <span className="label-text">Outstanding dollars</span>
+                                    <input
+                                      className="input input-bordered"
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={centsToDollarInput(draftReceivable.outstandingCents)}
+                                      onChange={event =>
+                                        setDraftReceivable(current => ({
+                                          ...current,
+                                          outstandingCents: dollarsToCents(event.target.value),
+                                        }))
+                                      }
+                                    />
+                                  </label>
+                                  <input
+                                    className="input input-bordered"
+                                    type="number"
+                                    value={draftReceivable.daysPastDue ?? 0}
+                                    onChange={event =>
+                                      setDraftReceivable(current => ({
+                                        ...current,
+                                        daysPastDue: Number(event.target.value),
+                                      }))
+                                    }
+                                  />
+                                  <input
+                                    className="input input-bordered"
+                                    type="number"
+                                    value={draftReceivable.utilizationPct ?? 0}
+                                    onChange={event =>
+                                      setDraftReceivable(current => ({
+                                        ...current,
+                                        utilizationPct: Number(event.target.value),
+                                      }))
+                                    }
+                                  />
+                                  <label className="label cursor-pointer justify-start gap-2">
+                                    <input
+                                      type="checkbox"
+                                      className="checkbox checkbox-sm"
+                                      checked={Boolean(draftReceivable.insured)}
+                                      onChange={event =>
+                                        setDraftReceivable(current => ({ ...current, insured: event.target.checked }))
+                                      }
+                                    />
+                                    <span className="label-text">Insured</span>
+                                  </label>
+                                  <label className="label cursor-pointer justify-start gap-2">
+                                    <input
+                                      type="checkbox"
+                                      className="checkbox checkbox-sm"
+                                      checked={Boolean(draftReceivable.titleClear)}
+                                      onChange={event =>
+                                        setDraftReceivable(current => ({
+                                          ...current,
+                                          titleClear: event.target.checked,
+                                        }))
+                                      }
+                                    />
+                                    <span className="label-text">Title clear</span>
+                                  </label>
+                                  <label className="label cursor-pointer justify-start gap-2">
+                                    <input
+                                      type="checkbox"
+                                      className="checkbox checkbox-sm"
+                                      checked={Boolean(draftReceivable.lockboxMatched)}
+                                      onChange={event =>
+                                        setDraftReceivable(current => ({
+                                          ...current,
+                                          lockboxMatched: event.target.checked,
+                                        }))
+                                      }
+                                    />
+                                    <span className="label-text">Lockbox matched</span>
+                                  </label>
+                                  <div className="flex gap-2">
+                                    <button
+                                      type="button"
+                                      className="btn btn-primary btn-sm rounded-full"
+                                      onClick={() =>
+                                        patchSubmission({
+                                          action: "updateReceivable",
+                                          receivableId: receivable.id,
+                                          patch: draftReceivable,
+                                        }).then(() => setEditingReceivableId(null))
+                                      }
+                                    >
+                                      Save changes
+                                    </button>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          ) : null}
+                        </Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </div>
+
+        <div className="space-y-6">
+          <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
+            <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
               <ExclamationTriangleIcon className="h-4 w-4" />
               Exceptions and next actions
             </div>
@@ -1934,624 +1135,484 @@ export const SubmissionWorkspace = ({
               </div>
             ) : (
               <div className="mt-4 space-y-3">
-                {canMutate ? (
-                  <div className="flex min-w-0 flex-col gap-3 rounded-[1.5rem] border border-info/20 bg-info/10 p-4 text-sm text-base-content/70 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="min-w-0">
-                      <div className="font-semibold text-base-content">Resolve exceptions, then recompute once.</div>
-                      <div className="mt-1">
-                        The worklist stays visible while you edit, exclude, or replace evidence. Recompute availability
-                        after the batch of operator actions is complete.
+                {submission.exceptions.map(exception => (
+                  <div key={exception.id} className="rounded-[1.5rem] border border-base-300 bg-base-200/50 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-semibold text-base-content">{exception.title}</div>
+                        <div className="mt-2 text-sm text-base-content/70">{exception.message}</div>
+                        <div className="mt-2 text-sm font-medium text-base-content">{exception.nextAction}</div>
                       </div>
+                      <span className="badge badge-warning capitalize">{exception.actionStatus}</span>
                     </div>
-                    <button
-                      className="btn btn-primary h-auto min-h-10 max-w-full shrink-0 whitespace-normal rounded-full text-center"
-                      type="button"
-                      onClick={recompute}
-                      disabled={isBusy || !canComputeBorrowingBase}
-                    >
-                      Recompute availability
-                    </button>
                   </div>
-                ) : null}
-                {submission.exceptions.map(exception => {
-                  const relatedReceivable = submission.receivables.find(item => item.id === exception.itemId);
-                  const relatedEvidence = submission.evidence.find(item => item.id === exception.itemId);
-                  const isOpen = exception.actionStatus === "open";
-
-                  return (
-                    <div
-                      key={exception.id}
-                      className="min-w-0 overflow-hidden rounded-[1.5rem] border border-base-300 bg-base-200/50 p-4"
-                    >
-                      <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <div className="min-w-0 break-words font-semibold text-base-content">{exception.title}</div>
-                            <span
-                              className={`badge badge-sm capitalize ${
-                                exception.severity === "high"
-                                  ? "badge-error"
-                                  : exception.severity === "medium"
-                                    ? "badge-warning"
-                                    : "badge-ghost"
-                              }`}
-                            >
-                              {exception.severity}
-                            </span>
-                          </div>
-                          <div className="mt-2 break-words text-sm text-base-content/70">{exception.message}</div>
-                          <div className="mt-2 break-words text-sm font-medium text-base-content">
-                            {exception.nextAction}
-                          </div>
-                          <div className="mt-3 break-all text-xs uppercase tracking-[0.14em] text-base-content/45">
-                            {exception.kind}
-                            {exception.itemId ? ` · ${exception.itemId}` : ""}
-                          </div>
-                        </div>
-                        <span className="badge badge-warning shrink-0 capitalize">{exception.actionStatus}</span>
-                      </div>
-                      {canMutate && isOpen ? (
-                        <div className="mt-4 flex flex-wrap gap-2">
-                          {exception.kind === "receivable" && relatedReceivable ? (
-                            <>
-                              <button
-                                className="btn btn-outline btn-sm rounded-full"
-                                type="button"
-                                onClick={() => openReceivableEditor(relatedReceivable.id)}
-                              >
-                                Edit receivable
-                              </button>
-                              <button
-                                className="btn btn-outline btn-sm rounded-full"
-                                type="button"
-                                disabled={isBusy || relatedReceivable.excluded}
-                                onClick={() =>
-                                  patchSubmission({
-                                    action: "excludeReceivable",
-                                    receivableId: relatedReceivable.id,
-                                    excluded: true,
-                                  })
-                                }
-                              >
-                                {relatedReceivable.excluded ? "Excluded" : "Exclude receivable"}
-                              </button>
-                              <a className="btn btn-ghost btn-sm rounded-full" href="#workspace-evidence-upload">
-                                Upload supporting evidence
-                              </a>
-                            </>
-                          ) : null}
-                          {exception.kind === "evidence" ? (
-                            <>
-                              <a className="btn btn-outline btn-sm rounded-full" href="#workspace-evidence-upload">
-                                Upload corrected evidence
-                              </a>
-                              {relatedEvidence ? (
-                                <button
-                                  className="btn btn-ghost btn-sm rounded-full text-error"
-                                  type="button"
-                                  disabled={isBusy}
-                                  onClick={() => removeEvidencePackage(relatedEvidence.id, relatedEvidence.label)}
-                                >
-                                  Remove current package
-                                </button>
-                              ) : null}
-                            </>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </div>
-                  );
-                })}
+                ))}
               </div>
             )}
           </section>
-        ) : null}
 
-        {submission.evidence.length > 0 ? (
-          <section
-            id="workspace-evidence-library"
-            className="min-w-0 max-w-full scroll-mt-24 overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 p-4 shadow-lg shadow-base-300/30 sm:p-6"
-          >
-            <div className="flex min-w-0 items-center gap-2 break-words text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
+          <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
+            <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
               <ShieldCheckIcon className="h-4 w-4" />
               Evidence library
             </div>
-            <div className="mt-4 space-y-4">
-              {submission.evidence.map(evidence => (
-                <div key={evidence.id} className="min-w-0 rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="break-words font-semibold text-base-content">{evidence.label}</div>
-                      <div className="break-words text-sm text-base-content/70">{evidence.source}</div>
-                      <div className="mt-1 text-xs uppercase tracking-[0.16em] text-base-content/50">
-                        {evidence.scope}
+            {submission.evidence.length === 0 ? (
+              <div className="mt-4 text-sm text-base-content/70">No evidence uploaded yet.</div>
+            ) : (
+              <div className="mt-4 space-y-4">
+                {submission.evidence.map(evidence => (
+                  <div key={evidence.id} className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold text-base-content">{evidence.label}</div>
+                        <div className="text-sm text-base-content/70">{evidence.source}</div>
+                        <div className="mt-1 text-xs uppercase tracking-[0.16em] text-base-content/50">
+                          {evidence.scope}
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex shrink-0 flex-col items-end gap-2">
                       <span className={`badge ${evidence.status === "verified" ? "badge-success" : "badge-warning"}`}>
                         {evidence.status}
                       </span>
-                      {canMutate ? (
-                        <button
-                          className="btn btn-ghost btn-xs rounded-full text-error"
-                          type="button"
-                          onClick={() => removeEvidencePackage(evidence.id, evidence.label)}
-                          disabled={isBusy}
-                        >
-                          <TrashIcon className="h-3.5 w-3.5" />
-                          Remove
-                        </button>
-                      ) : null}
                     </div>
-                  </div>
-                  <div className="mt-3 break-words text-sm text-base-content/70">
-                    Uploaded {new Date(evidence.uploadedAt).toLocaleString()} · {evidence.filename}
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.14em]">
-                    <span className="rounded-full bg-base-100 px-3 py-1 text-base-content/60">
-                      {evidence.storageBackend === "walrus" ? "Walrus stored" : "Mock storage"}
-                    </span>
-                    <span className="rounded-full bg-base-100 px-3 py-1 text-base-content/60">
-                      {evidence.encryptionBackend === "seal" || evidence.sealEncrypted
-                        ? "Seal encrypted"
-                        : "Not encrypted"}
-                    </span>
-                  </div>
-                  <div className="mt-3 rounded-2xl border border-base-300 bg-base-100 px-4 py-3 text-sm text-base-content/70">
-                    Status is derived from the imported receivables and active policy. Update the receivable data or
-                    replace the evidence package, then recompute the submission.
-                  </div>
-                  <details className="mt-4 rounded-2xl border border-base-300 bg-base-100 p-4">
-                    <summary className="cursor-pointer text-sm font-semibold text-base-content">
-                      Advanced details
-                    </summary>
-                    <div className="mt-3 grid gap-3 text-sm text-base-content/70">
-                      <div>
-                        <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">
-                          Committed object digest
-                        </div>
-                        <div className="mt-1 break-all">{evidence.digest}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">
-                          Plaintext audit digest
-                        </div>
-                        <div className="mt-1 break-all">{evidence.plaintextDigest}</div>
-                      </div>
-                      {evidence.ciphertextDigest ? (
-                        <div>
-                          <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">
-                            Seal ciphertext digest
-                          </div>
-                          <div className="mt-1 break-all">{evidence.ciphertextDigest}</div>
-                        </div>
-                      ) : null}
-                      <div>
-                        <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">Walrus object</div>
-                        <div className="mt-1 break-all">{evidence.walrusObjectId}</div>
-                      </div>
-                      {evidence.walrusEventId ? (
-                        <div>
-                          <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">
-                            Walrus certification event
-                          </div>
-                          <div className="mt-1 break-all">{evidence.walrusEventId}</div>
-                        </div>
-                      ) : null}
-                      {evidence.sealIdentity ? (
-                        <div>
-                          <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">Seal identity</div>
-                          <div className="mt-1 break-all">{evidence.sealIdentity}</div>
-                        </div>
-                      ) : null}
-                      {evidence.sealPackageId ? (
-                        <div>
-                          <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">Seal package</div>
-                          <div className="mt-1 break-all">{evidence.sealPackageId}</div>
-                        </div>
-                      ) : null}
-                      {evidence.sealKeyServerObjectIds?.length ? (
-                        <div>
-                          <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">
-                            Seal key servers
-                          </div>
-                          <div className="mt-1 break-all">{evidence.sealKeyServerObjectIds.join(", ")}</div>
-                        </div>
-                      ) : null}
-                      {evidence.sealKeyServerAggregatorUrl ? (
-                        <div>
-                          <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">
-                            Seal aggregator
-                          </div>
-                          <div className="mt-1 break-all">{evidence.sealKeyServerAggregatorUrl}</div>
-                        </div>
-                      ) : null}
+                    <div className="mt-3 text-sm text-base-content/70">
+                      Uploaded {new Date(evidence.uploadedAt).toLocaleString()} · {evidence.filename}
                     </div>
-                  </details>
-                </div>
-              ))}
-            </div>
-          </section>
-        ) : null}
-
-        {canShowMonitoringHandoff ? (
-          <section className="min-w-0 max-w-full overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 p-4 shadow-lg shadow-base-300/30 sm:p-6">
-            <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div className="min-w-0">
-                <div className="flex min-w-0 items-center gap-2 break-words text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
-                  <ShieldCheckIcon className="h-4 w-4" />
-                  Monitoring and diagnostics
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <span className="badge badge-ghost capitalize">
-                    Monitoring: {submission.facilityMonitoring?.status?.replace(/_/g, " ") ?? "not loaded"}
-                  </span>
-                  <span className="badge badge-ghost capitalize">
-                    Packet: {submission.facilityMonitoring?.packetFreshnessStatus?.replace(/_/g, " ") ?? "pending"}
-                  </span>
-                  <span className="badge badge-ghost capitalize">
-                    Evidence anchor: {submission.evidenceCommit.status.replace(/_/g, " ")}
-                  </span>
-                </div>
-                <p className="mt-3 max-w-3xl text-sm leading-relaxed text-base-content/70">
-                  Monitoring, run history, policy diagnostics, evidence observations, and agent supervision live in a
-                  separate Robomata view so this workspace stays focused on operator execution.
-                </p>
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.14em]">
+                      <span className="rounded-full bg-base-100 px-3 py-1 text-base-content/60">
+                        {evidence.storageBackend === "walrus" ? "Walrus stored" : "Mock storage"}
+                      </span>
+                      <span className="rounded-full bg-base-100 px-3 py-1 text-base-content/60">
+                        {evidence.encryptionBackend === "seal" || evidence.sealEncrypted
+                          ? "Seal encrypted"
+                          : "Not encrypted"}
+                      </span>
+                    </div>
+                    {canMutate ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {(["verified", "pending", "exception"] as const).map(status => (
+                          <button
+                            key={status}
+                            type="button"
+                            className="btn btn-xs btn-outline rounded-full"
+                            onClick={() =>
+                              patchSubmission({
+                                action: "updateEvidenceStatus",
+                                evidenceId: evidence.id,
+                                status,
+                              })
+                            }
+                          >
+                            Mark {status}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                    <details className="mt-4 rounded-2xl border border-base-300 bg-base-100 p-4">
+                      <summary className="cursor-pointer text-sm font-semibold text-base-content">
+                        Advanced details
+                      </summary>
+                      <div className="mt-3 grid gap-3 text-sm text-base-content/70">
+                        <div>
+                          <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">
+                            Committed object digest
+                          </div>
+                          <div className="mt-1 break-all">{evidence.digest}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">
+                            Plaintext audit digest
+                          </div>
+                          <div className="mt-1 break-all">{evidence.plaintextDigest}</div>
+                        </div>
+                        {evidence.ciphertextDigest ? (
+                          <div>
+                            <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">
+                              Seal ciphertext digest
+                            </div>
+                            <div className="mt-1 break-all">{evidence.ciphertextDigest}</div>
+                          </div>
+                        ) : null}
+                        <div>
+                          <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">Walrus object</div>
+                          <div className="mt-1 break-all">{evidence.walrusObjectId}</div>
+                        </div>
+                        {evidence.walrusEventId ? (
+                          <div>
+                            <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">
+                              Walrus certification event
+                            </div>
+                            <div className="mt-1 break-all">{evidence.walrusEventId}</div>
+                          </div>
+                        ) : null}
+                        <div>
+                          <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">Seal policy</div>
+                          <div className="mt-1 break-all">{evidence.sealPolicyId}</div>
+                        </div>
+                        {evidence.sealIdentity ? (
+                          <div>
+                            <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">
+                              Seal identity
+                            </div>
+                            <div className="mt-1 break-all">{evidence.sealIdentity}</div>
+                          </div>
+                        ) : null}
+                        {evidence.sealPackageId ? (
+                          <div>
+                            <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">Seal package</div>
+                            <div className="mt-1 break-all">{evidence.sealPackageId}</div>
+                          </div>
+                        ) : null}
+                        {evidence.sealKeyServerObjectIds?.length ? (
+                          <div>
+                            <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">
+                              Seal key servers
+                            </div>
+                            <div className="mt-1 break-all">{evidence.sealKeyServerObjectIds.join(", ")}</div>
+                          </div>
+                        ) : null}
+                        {evidence.sealKeyServerAggregatorUrl ? (
+                          <div>
+                            <div className="text-xs uppercase tracking-[0.16em] text-base-content/50">
+                              Seal aggregator
+                            </div>
+                            <div className="mt-1 break-all">{evidence.sealKeyServerAggregatorUrl}</div>
+                          </div>
+                        ) : null}
+                      </div>
+                    </details>
+                  </div>
+                ))}
               </div>
-              <Link
-                href={`/robomata/submissions/${submission.id}/monitoring`}
-                className="btn btn-outline h-auto min-h-10 max-w-full shrink-0 whitespace-normal rounded-full text-center"
-              >
-                View monitoring details
-              </Link>
-            </div>
+            )}
           </section>
-        ) : null}
 
-        {submission.computation ? (
-          <section
-            id="workspace-lender-packet"
-            className="min-w-0 max-w-full scroll-mt-24 overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 p-4 shadow-lg shadow-base-300/30 sm:p-6"
-          >
-            <div className="flex min-w-0 items-center gap-2 break-words text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
+          {!readOnly ? (
+            <>
+              <FacilityMonitoringPanel
+                chainId={selectedNetwork.id}
+                getAuthHeaders={getAuthHeaders}
+                signerAddress={signerAddress}
+                submission={submission}
+              />
+              <AgentSupervisionPanel
+                chainId={selectedNetwork.id}
+                getAuthHeaders={getAuthHeaders}
+                signerAddress={signerAddress}
+                submission={submission}
+              />
+            </>
+          ) : null}
+
+          <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
+            <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
               <CheckCircleIcon className="h-4 w-4" />
-              Lender packet and evidence verification
+              Lender packet and Sui commit
             </div>
-            <div className="mt-4 space-y-4">
-              <div className="min-w-0 overflow-hidden rounded-[1.5rem] border border-base-300 bg-base-200/50 p-4">
-                <div className="break-words text-sm font-semibold text-base-content">
-                  {submission.computation.lenderPacket.certificateId}
-                </div>
-                <div className="mt-2 break-words text-sm text-base-content/70">
-                  {submission.computation.lenderPacket.certificationStatement}
-                </div>
-                <div className="mt-4">
-                  <ReviewBoundaryPanel boundary={submission.computation.lenderPacket.reviewBoundary} />
-                </div>
-                {(submission.computation.lenderPacket.diligenceQuestions ?? []).length ? (
-                  <div className="mt-4 rounded-2xl border border-base-300 bg-base-100 p-4">
-                    <div className="text-sm font-semibold text-base-content">Diligence questions</div>
-                    <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-base-content/70">
-                      {(submission.computation.lenderPacket.diligenceQuestions ?? []).map(item => (
-                        <li key={item}>{item}</li>
-                      ))}
-                    </ul>
+            {submission.computation ? (
+              <div className="mt-4 space-y-4">
+                <div className="rounded-[1.5rem] border border-base-300 bg-base-200/50 p-4">
+                  <div className="text-sm font-semibold text-base-content">
+                    {submission.computation.lenderPacket.certificateId}
                   </div>
-                ) : null}
-                {submission.computation.lenderPacket.borrowerRequests.length ? (
-                  <div className="mt-4">
-                    <div className="text-sm font-semibold text-base-content">Recommended next actions</div>
-                    <p className="mt-1 text-xs text-base-content/60">
-                      Advisory borrower follow-ups for lender delivery. Exception cards above remain the operator action
-                      source of truth.
-                    </p>
-                    <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-base-content/70">
-                      {submission.computation.lenderPacket.borrowerRequests.map(item => (
-                        <li key={item}>{item}</li>
-                      ))}
-                    </ul>
+                  <div className="mt-2 text-sm text-base-content/70">
+                    {submission.computation.lenderPacket.certificationStatement}
                   </div>
-                ) : null}
-              </div>
-              {!readOnly ? (
-                <OperatorPolicyReviewPanel
-                  chainId={selectedNetwork.id}
-                  getAuthHeaders={getAuthHeaders}
-                  onSubmissionUpdated={setSubmission}
-                  policyArtifact={policyArtifact}
-                  signerAddress={signerAddress}
-                  submission={submission}
-                />
-              ) : null}
-              <div className="rounded-[1.5rem] border border-base-300 bg-base-200/50 p-4">
-                <div className="text-sm font-semibold text-base-content">Evidence verification status</div>
-                <div className="mt-2 text-sm text-base-content/70">
-                  {submission.evidenceCommit.status.replace(/_/g, " ")}
+                  <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-base-content/70">
+                    {submission.computation.lenderPacket.borrowerRequests.map(item => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
                 </div>
-                {submission.evidenceCommit.evidenceRoot ? (
-                  <div className="mt-3 break-all text-xs text-base-content/60">
-                    Evidence root: {submission.evidenceCommit.evidenceRoot}
+                {!readOnly ? (
+                  <PacketSharePanel
+                    chainId={selectedNetwork.id}
+                    getAuthHeaders={getAuthHeaders}
+                    isBusy={isBusy}
+                    setIsBusy={setIsBusy}
+                    signerAddress={signerAddress}
+                    submission={submission}
+                  />
+                ) : null}
+                <div className="rounded-[1.5rem] border border-base-300 bg-base-200/50 p-4">
+                  <div className="text-sm font-semibold text-base-content">Evidence commit status</div>
+                  <div className="mt-2 text-sm text-base-content/70">
+                    {submission.evidenceCommit.status.replace(/_/g, " ")} · {submission.evidenceCommit.modulePath}
                   </div>
-                ) : null}
-                {submission.evidenceCommit.errorMessage ? (
-                  <div className="mt-3 text-sm text-error">{submission.evidenceCommit.errorMessage}</div>
-                ) : null}
-                {!readOnly &&
-                ["configured", "operator_configured"].includes(submission.evidenceCommit.commitMode) &&
-                submission.evidenceCommit.status !== "committed" ? (
-                  <button
-                    className="btn btn-primary mt-4 h-auto min-h-10 max-w-full whitespace-normal rounded-full text-center"
-                    onClick={commitEvidence}
-                    disabled={isBusy || isOperatorCommitBlockedByWallet}
-                  >
-                    {submission.evidenceCommit.status === "committing"
-                      ? "Reconcile evidence verification"
-                      : submission.evidenceCommit.status === "failed"
-                        ? "Retry evidence verification"
-                        : submission.evidenceCommit.commitMode === "operator_configured"
-                          ? "Sign and anchor evidence"
-                          : "Anchor evidence"}
-                  </button>
-                ) : null}
-                {!readOnly && submission.evidenceCommit.commitMode === "operator_configured" ? (
-                  <div className="mt-3 break-words rounded-2xl border border-info/20 bg-info/10 p-3 text-sm text-base-content/70 [overflow-wrap:anywhere]">
-                    <div className="font-semibold text-base-content">Operator-owned evidence anchoring is enabled.</div>
-                    {privySuiBindingFeatureEnabled ? (
+                  {submission.evidenceCommit.evidenceRoot ? (
+                    <div className="mt-3 text-xs text-base-content/60 break-all">
+                      Root: {submission.evidenceCommit.evidenceRoot}
+                    </div>
+                  ) : null}
+                  {submission.evidenceCommit.errorMessage ? (
+                    <div className="mt-3 text-sm text-error">{submission.evidenceCommit.errorMessage}</div>
+                  ) : null}
+                  {!readOnly &&
+                  ["configured", "operator_configured"].includes(submission.evidenceCommit.commitMode) &&
+                  submission.evidenceCommit.status !== "committed" ? (
+                    <button
+                      className="btn btn-primary mt-4 rounded-full"
+                      onClick={commitEvidence}
+                      disabled={
+                        isBusy ||
+                        (submission.evidenceCommit.commitMode === "operator_configured" &&
+                          submission.evidenceCommit.status !== "committing" &&
+                          !hasSuiWallet &&
+                          !canRetryPendingOperatorCommit)
+                      }
+                    >
+                      {submission.evidenceCommit.status === "committing"
+                        ? "Reconcile Sui evidence commit"
+                        : submission.evidenceCommit.status === "failed"
+                          ? "Retry Sui evidence commit"
+                          : submission.evidenceCommit.commitMode === "operator_configured"
+                            ? "Sign and commit with Sui wallet"
+                            : "Commit evidence on Sui"}
+                    </button>
+                  ) : null}
+                  {!readOnly && submission.evidenceCommit.commitMode === "operator_configured" ? (
+                    <div className="mt-3 rounded-2xl border border-info/20 bg-info/10 p-3 text-sm text-base-content/70">
+                      <div className="font-semibold text-base-content">Operator-owned commit is enabled.</div>
+                      {privySuiBindingFeatureEnabled ? (
+                        <div className="mt-2">
+                          {isEnsuringPrivySuiBinding
+                            ? "Creating or locating the operator's Robomata Sui wallet..."
+                            : privySuiBinding
+                              ? `Default operator Sui wallet: ${privySuiBinding.suiAddress}`
+                              : privySuiBindingError
+                                ? `Privy Sui wallet binding is unavailable: ${privySuiBindingError}`
+                                : "Privy Sui wallet binding is enabled but no wallet is bound yet."}
+                        </div>
+                      ) : null}
                       <div className="mt-2">
-                        {isEnsuringPrivySuiBinding
-                          ? "Creating or locating the operator's verification wallet..."
-                          : privySuiBinding
-                            ? `Default verification wallet: ${privySuiBinding.suiAddress}`
-                            : privySuiBindingError
-                              ? `Verification wallet binding is unavailable: ${privySuiBindingError}`
-                              : "Verification wallet binding is enabled but no wallet is bound yet."}
+                        Evidence signing currently uses a compatible Sui wallet-standard extension
+                        {suiWalletNames.length
+                          ? ` (${suiWalletNames.join(", ")}).`
+                          : ". No compatible Sui wallet is available in this browser."}
                       </div>
-                    ) : null}
-                    <div className="mt-2">
-                      {canUsePrivySuiRawSign
-                        ? "Evidence anchoring will use the bound Privy Sui wallet with Robomata-sponsored gas."
-                        : `Evidence anchoring currently uses a compatible verification wallet extension${
-                            suiWalletNames.length
-                              ? ` (${suiWalletNames.join(", ")}).`
-                              : ". No compatible verification wallet is available in this browser."
-                          }`}
+                      {privySuiBinding?.suiAddress &&
+                      submission.evidenceCommit.facilityOperatorAddress &&
+                      privySuiBinding.suiAddress.toLowerCase() !==
+                        submission.evidenceCommit.facilityOperatorAddress.toLowerCase() ? (
+                        <div className="mt-2 text-warning">
+                          The bound Privy Sui wallet does not match this submission&apos;s configured facility operator.
+                          Update the facility operator mapping before using the embedded wallet as the signer.
+                        </div>
+                      ) : null}
                     </div>
-                    {privySuiBinding?.suiAddress &&
-                    submission.evidenceCommit.facilityOperatorAddress &&
-                    privySuiBinding.suiAddress.toLowerCase() !==
-                      submission.evidenceCommit.facilityOperatorAddress.toLowerCase() ? (
-                      <div className="mt-2 text-warning">
-                        The bound verification wallet does not match this submission&apos;s configured facility
-                        operator. Update the facility operator mapping before using the embedded wallet as the signer.
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-                {!readOnly &&
-                submission.evidenceCommit.commitMode === "configured" &&
-                submission.evidenceCommit.status === "committing" ? (
-                  <div className="mt-4 text-sm text-base-content/70">
-                    Evidence anchoring is in progress. If this state becomes stale, retrying will reconcile verification
-                    events before another transaction can be sent.
-                  </div>
-                ) : null}
-                {!readOnly && submission.evidenceCommit.commitMode === "prepared" ? (
-                  <div className="mt-4 text-sm text-base-content/70">
-                    Evidence anchoring is prepared, but the runtime is not fully configured yet.
-                  </div>
-                ) : null}
+                  ) : null}
+                  {!readOnly &&
+                  submission.evidenceCommit.commitMode === "configured" &&
+                  submission.evidenceCommit.status === "committing" ? (
+                    <div className="mt-4 text-sm text-base-content/70">
+                      Sui commit is in progress. If this state becomes stale, retrying the API will reconcile Sui events
+                      before another transaction can be sent.
+                    </div>
+                  ) : null}
+                  {!readOnly && submission.evidenceCommit.commitMode === "prepared" ? (
+                    <div className="mt-4 text-sm text-base-content/70">
+                      Sui commit is prepared, but the runtime is not configured with a facility/package/client config
+                      yet.
+                    </div>
+                  ) : null}
+                </div>
               </div>
-              {!readOnly ? (
-                <PacketSharePanel
-                  chainId={selectedNetwork.id}
-                  getAuthHeaders={getAuthHeaders}
-                  isBusy={isBusy}
-                  setIsBusy={setIsBusy}
-                  signerAddress={signerAddress}
-                  submission={submission}
-                />
-              ) : null}
-            </div>
+            ) : (
+              <div className="mt-4 text-sm text-base-content/70">
+                Compute the submission to generate lender packet output and the evidence root preview.
+              </div>
+            )}
           </section>
-        ) : null}
 
-        {canShowTokenization ? (
-          <section
-            id="workspace-robolend-handoff"
-            className="min-w-0 max-w-full scroll-mt-24 overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 p-4 shadow-lg shadow-base-300/30 sm:p-6"
-          >
-            <div className="flex min-w-0 items-center gap-2 break-words text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
-              <ShieldCheckIcon className="h-4 w-4" />
-              Robolend handoff and tokenization status
-            </div>
-            <div className="mt-4 rounded-[1.5rem] border border-base-300 bg-base-200/50 p-4">
-              <div className="text-sm font-semibold text-base-content">
-                {isTokenized
-                  ? "Facility offering created"
-                  : isTokenizationVerificationPending
-                    ? "Facility registration is pending verification"
-                    : "Committed packet is ready for lender review"}
+          {canShowTokenization ? (
+            <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
+              <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
+                <ShieldCheckIcon className="h-4 w-4" />
+                Tokenize facility
               </div>
-              <div className="mt-2 text-sm text-base-content/70">
-                {isTokenized
-                  ? `Asset ${tokenization?.evm.assetId} ${
-                      tokenization?.evm.revenueTokenId ? `· revenue token ${tokenization.evm.revenueTokenId}` : ""
-                    }`
-                  : isTokenizationVerificationPending
-                    ? "The EVM transaction was submitted, but the server has not verified the registry events yet. Retry verification before submitting another registration."
-                    : "Share the anchored lender packet for Robolend or lender approval before downstream tokenization."}
-              </div>
-              {tokenization?.anchors.rootDigest ? (
-                <div className="mt-3 space-y-1 text-xs text-base-content/60">
-                  <div className="break-all">Root digest: {tokenization.anchors.rootDigest}</div>
-                  {tokenization.anchors.facilityCommitment ? (
-                    <div className="break-all">Facility commitment: {tokenization.anchors.facilityCommitment}</div>
-                  ) : null}
-                  {tokenization.anchors.suiTxDigest ? (
-                    <div className="break-all">Verification tx: {tokenization.anchors.suiTxDigest}</div>
-                  ) : null}
+              <div className="mt-4 rounded-[1.5rem] border border-base-300 bg-base-200/50 p-4">
+                <div className="text-sm font-semibold text-base-content">
+                  {isTokenized
+                    ? "Facility offering created"
+                    : isTokenizationVerificationPending
+                      ? "Facility registration is pending verification"
+                      : "Committed borrowing base is ready for tokenization"}
                 </div>
-              ) : null}
-              {isTokenized || isTokenizationVerificationPending ? (
-                <div className="mt-4 space-y-1 text-xs text-base-content/60">
-                  {tokenization?.evm.registryAddress ? (
-                    <div className="break-all">Registry: {tokenization.evm.registryAddress}</div>
-                  ) : null}
-                  {tokenization?.evm.txHash ? <div className="break-all">EVM tx: {tokenization.evm.txHash}</div> : null}
-                  {tokenization?.evm.assetMetadataUri ? (
-                    <div className="break-all">Asset metadata: {tokenization.evm.assetMetadataUri}</div>
-                  ) : null}
-                  {isTokenizationVerificationPending ? (
-                    <div className="pt-3">
-                      <button
-                        className="btn btn-outline btn-sm rounded-full"
-                        onClick={retryTokenizationVerification}
-                        disabled={isBusy || !canRetryTokenizationVerification}
-                      >
-                        Retry server verification
-                      </button>
-                    </div>
-                  ) : null}
+                <div className="mt-2 text-sm text-base-content/70">
+                  {isTokenized
+                    ? `Asset ${tokenization?.evm.assetId} ${
+                        tokenization?.evm.revenueTokenId ? `· revenue token ${tokenization.evm.revenueTokenId}` : ""
+                      }`
+                    : isTokenizationVerificationPending
+                      ? "The EVM transaction was submitted, but the server has not verified the registry events yet. Retry verification before submitting another registration."
+                      : "Create a facility-level asset and paired revenue-token offering from this committed submission."}
                 </div>
-              ) : tokenization?.status === "not_started" ? (
-                <div className="mt-4 rounded-2xl border border-base-300 bg-base-100 p-4">
-                  <div className="text-sm font-semibold text-base-content">Internal tokenization preview</div>
-                  <p className="mt-2 text-sm text-base-content/70">
-                    This testnet path remains available for controlled validation. The operator workflow should treat
-                    tokenization as a lender-approved downstream step.
-                  </p>
+                {tokenization?.anchors.rootDigest ? (
+                  <div className="mt-3 space-y-1 text-xs text-base-content/60">
+                    <div className="break-all">Root digest: {tokenization.anchors.rootDigest}</div>
+                    {tokenization.anchors.facilityCommitment ? (
+                      <div className="break-all">Facility commitment: {tokenization.anchors.facilityCommitment}</div>
+                    ) : null}
+                    {tokenization.anchors.suiTxDigest ? (
+                      <div className="break-all">Sui tx: {tokenization.anchors.suiTxDigest}</div>
+                    ) : null}
+                  </div>
+                ) : null}
+                {isTokenized || isTokenizationVerificationPending ? (
+                  <div className="mt-4 space-y-1 text-xs text-base-content/60">
+                    {tokenization?.evm.registryAddress ? (
+                      <div className="break-all">Registry: {tokenization.evm.registryAddress}</div>
+                    ) : null}
+                    {tokenization?.evm.txHash ? (
+                      <div className="break-all">EVM tx: {tokenization.evm.txHash}</div>
+                    ) : null}
+                    {tokenization?.evm.assetMetadataUri ? (
+                      <div className="break-all">Asset metadata: {tokenization.evm.assetMetadataUri}</div>
+                    ) : null}
+                    {isTokenizationVerificationPending ? (
+                      <div className="pt-3">
+                        <button
+                          className="btn btn-outline btn-sm rounded-full"
+                          onClick={retryTokenizationVerification}
+                          disabled={isBusy || !canRetryTokenizationVerification}
+                        >
+                          Retry server verification
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : tokenization?.status === "not_started" ? (
                   <button
-                    className="btn btn-outline mt-4 rounded-full"
+                    className="btn btn-primary mt-4 rounded-full"
                     onClick={startTokenizationDraft}
                     disabled={isBusy}
                   >
-                    Start internal tokenization draft
+                    Start tokenization draft
                   </button>
-                </div>
-              ) : (
-                <div className="mt-5 grid gap-4 md:grid-cols-2">
-                  <div className="md:col-span-2 rounded-2xl border border-base-300 bg-base-100 p-4 text-sm text-base-content/70">
-                    Internal preview controls are available because tokenization is enabled in this environment. Use
-                    these only after the packet has been approved for downstream tokenization.
-                  </div>
-                  <label className="form-control">
-                    <span className="label-text mb-1 text-sm font-medium">Offering limit</span>
-                    <input
-                      className="input input-bordered rounded-full"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={tokenizationForm.offeringLimit}
-                      onChange={event =>
-                        setTokenizationForm(current => ({ ...current, offeringLimit: event.target.value }))
-                      }
-                    />
-                  </label>
-                  <label className="form-control">
-                    <span className="label-text mb-1 text-sm font-medium">Token price</span>
-                    <input
-                      className="input input-bordered rounded-full"
-                      type="number"
-                      min="0.01"
-                      step="0.01"
-                      value={tokenizationForm.tokenPrice}
-                      onChange={event =>
-                        setTokenizationForm(current => ({ ...current, tokenPrice: event.target.value }))
-                      }
-                    />
-                  </label>
-                  <label className="form-control">
-                    <span className="label-text mb-1 text-sm font-medium">Maturity months</span>
-                    <input
-                      className="input input-bordered rounded-full"
-                      type="number"
-                      min="1"
-                      max="120"
-                      value={tokenizationForm.maturityMonths}
-                      onChange={event =>
-                        setTokenizationForm(current => ({ ...current, maturityMonths: event.target.value }))
-                      }
-                    />
-                  </label>
-                  <label className="form-control">
-                    <span className="label-text mb-1 text-sm font-medium">Revenue share cap (%)</span>
-                    <input
-                      className="input input-bordered rounded-full"
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.1"
-                      value={tokenizationForm.revenueSharePct}
-                      onChange={event =>
-                        setTokenizationForm(current => ({ ...current, revenueSharePct: event.target.value }))
-                      }
-                    />
-                  </label>
-                  <label className="form-control">
-                    <span className="label-text mb-1 text-sm font-medium">Target yield (%)</span>
-                    <input
-                      className="input input-bordered rounded-full"
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.1"
-                      value={tokenizationForm.targetYieldPct}
-                      onChange={event =>
-                        setTokenizationForm(current => ({ ...current, targetYieldPct: event.target.value }))
-                      }
-                    />
-                  </label>
-                  <div className="flex flex-col justify-end gap-2">
-                    <label className="flex items-center gap-2 text-sm">
+                ) : (
+                  <div className="mt-5 grid gap-4 md:grid-cols-2">
+                    <label className="form-control">
+                      <span className="label-text mb-1 text-sm font-medium">Offering limit</span>
                       <input
-                        className="toggle toggle-primary"
-                        type="checkbox"
-                        checked={tokenizationForm.immediateProceeds}
+                        className="input input-bordered rounded-full"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={tokenizationForm.offeringLimit}
                         onChange={event =>
-                          setTokenizationForm(current => ({
-                            ...current,
-                            immediateProceeds: event.target.checked,
-                          }))
+                          setTokenizationForm(current => ({ ...current, offeringLimit: event.target.value }))
                         }
                       />
-                      Earlier proceeds access
                     </label>
-                    <label className="flex items-center gap-2 text-sm">
+                    <label className="form-control">
+                      <span className="label-text mb-1 text-sm font-medium">Token price</span>
                       <input
-                        className="toggle toggle-primary"
-                        type="checkbox"
-                        checked={tokenizationForm.protectionEnabled}
+                        className="input input-bordered rounded-full"
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={tokenizationForm.tokenPrice}
                         onChange={event =>
-                          setTokenizationForm(current => ({
-                            ...current,
-                            protectionEnabled: event.target.checked,
-                          }))
+                          setTokenizationForm(current => ({ ...current, tokenPrice: event.target.value }))
                         }
                       />
-                      Protection buffer
                     </label>
+                    <label className="form-control">
+                      <span className="label-text mb-1 text-sm font-medium">Maturity months</span>
+                      <input
+                        className="input input-bordered rounded-full"
+                        type="number"
+                        min="1"
+                        max="120"
+                        value={tokenizationForm.maturityMonths}
+                        onChange={event =>
+                          setTokenizationForm(current => ({ ...current, maturityMonths: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text mb-1 text-sm font-medium">Revenue share cap (%)</span>
+                      <input
+                        className="input input-bordered rounded-full"
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        value={tokenizationForm.revenueSharePct}
+                        onChange={event =>
+                          setTokenizationForm(current => ({ ...current, revenueSharePct: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text mb-1 text-sm font-medium">Target yield (%)</span>
+                      <input
+                        className="input input-bordered rounded-full"
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        value={tokenizationForm.targetYieldPct}
+                        onChange={event =>
+                          setTokenizationForm(current => ({ ...current, targetYieldPct: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <div className="flex flex-col justify-end gap-2">
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          className="toggle toggle-primary"
+                          type="checkbox"
+                          checked={tokenizationForm.immediateProceeds}
+                          onChange={event =>
+                            setTokenizationForm(current => ({
+                              ...current,
+                              immediateProceeds: event.target.checked,
+                            }))
+                          }
+                        />
+                        Earlier proceeds access
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          className="toggle toggle-primary"
+                          type="checkbox"
+                          checked={tokenizationForm.protectionEnabled}
+                          onChange={event =>
+                            setTokenizationForm(current => ({
+                              ...current,
+                              protectionEnabled: event.target.checked,
+                            }))
+                          }
+                        />
+                        Protection buffer
+                      </label>
+                    </div>
+                    <div className="md:col-span-2 flex flex-wrap gap-3">
+                      <button
+                        className="btn btn-outline rounded-full"
+                        onClick={saveTokenizationTerms}
+                        disabled={isBusy}
+                      >
+                        Save terms
+                      </button>
+                      <button
+                        className="btn btn-primary rounded-full"
+                        onClick={prepareAndSignTokenization}
+                        disabled={isBusy}
+                      >
+                        Prepare and sign offering
+                      </button>
+                    </div>
+                    {tokenization?.errorMessage ? (
+                      <div className="md:col-span-2 text-sm text-error">{tokenization.errorMessage}</div>
+                    ) : null}
                   </div>
-                  <div className="md:col-span-2 flex flex-wrap gap-3">
-                    <button className="btn btn-outline rounded-full" onClick={saveTokenizationTerms} disabled={isBusy}>
-                      Save terms
-                    </button>
-                    <button
-                      className="btn btn-primary rounded-full"
-                      onClick={prepareAndSignTokenization}
-                      disabled={isBusy}
-                    >
-                      Prepare and sign offering
-                    </button>
-                  </div>
-                  {tokenization?.errorMessage ? (
-                    <div className="md:col-span-2 text-sm text-error">{tokenization.errorMessage}</div>
-                  ) : null}
-                </div>
-              )}
-            </div>
-          </section>
-        ) : null}
-      </div>
+                )}
+              </div>
+            </section>
+          ) : null}
+        </div>
+      </section>
     </div>
   );
 };

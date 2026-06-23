@@ -7,7 +7,7 @@ type LegacyPartnerSubmissionDetailPageProps = {
 const LegacyPartnerSubmissionDetailPage = async ({ params }: LegacyPartnerSubmissionDetailPageProps) => {
   const { submissionId } = await params;
 
-  redirect(`/robomata/submissions/${submissionId}`);
+  redirect(`/operator/submissions/${submissionId}`);
 };
 
 export default LegacyPartnerSubmissionDetailPage;

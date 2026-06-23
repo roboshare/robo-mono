@@ -72,14 +72,14 @@ Local development:
 The marketing site should be coherent without requiring a wallet connection or
 operator authorization.
 
-| Route                | Owner                   | Purpose                                                                                                                            |
-| -------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `/`                  | Marketing               | Roboshare homepage. It must not auto-redirect to `/markets`.                                                                       |
-| `/products/robomata` | Marketing               | Active operator product page for borrowing-base readiness.                                                                         |
-| `/products/robolend` | Marketing               | Capital-provider product page marked `Coming soon`.                                                                                |
-| `/markets`           | Marketing               | Downstream capital markets and distribution explainer.                                                                             |
-| `/partners`          | Marketing               | Integration partner page for data, servicing, and infrastructure partners.                                                         |
-| `/robomata`          | Marketing compatibility | Existing public Robomata surface. It should redirect to or render the same product story as `/products/robomata` during migration. |
+| Route | Owner | Purpose |
+| --- | --- | --- |
+| `/` | Marketing | Roboshare homepage. It must not auto-redirect to `/markets`. |
+| `/products/robomata` | Marketing | Active operator product page for borrowing-base readiness. |
+| `/products/robolend` | Marketing | Capital-provider product page marked `Coming soon`. |
+| `/markets` | Marketing | Downstream capital markets and distribution explainer. |
+| `/partners` | Marketing | Integration partner page for data, servicing, and infrastructure partners. |
+| `/robomata` | Marketing compatibility | Existing public Robomata surface. It should redirect to or render the same product story as `/products/robomata` during migration. |
 
 Public navigation should use:
 
@@ -102,26 +102,22 @@ point when host routing is enabled.
 The authenticated app should use operator language and keep private workflow
 state out of public marketing routes.
 
-| Route                                  | Owner            | Purpose                                                |
-| -------------------------------------- | ---------------- | ------------------------------------------------------ |
-| `/dashboard`                           | App              | Cross-product authenticated home.                      |
-| `/operator`                            | App              | Protocol operator portal.                              |
-| `/operator/rentals`                    | App              | Rental edge-application operator surface.              |
-| `/robomata/submissions`                | App              | Robomata facility package and lender packet workspace. |
-| `/robomata/submissions/[submissionId]` | App              | Robomata workspace for one facility package.           |
-| `/lender/packet/[token]`               | Protected packet | Opaque-token packet access. Preserve this route.       |
-| `/subgraph`                            | Admin app        | Admin-only subgraph diagnostics.                       |
-| `/debug`                               | Admin app        | Admin-only contract debugging.                         |
+| Route | Owner | Purpose |
+| --- | --- | --- |
+| `/operator` | App | Canonical operator portal. |
+| `/operator/submissions` | App | Borrowing-base submission list. |
+| `/operator/submissions/[submissionId]` | App | Borrowing-base workspace for one submission. |
+| `/lender/packet/[token]` | Protected packet | Opaque-token packet access. Preserve this route. |
+| `/subgraph` | Admin app | Admin-only subgraph diagnostics. |
+| `/debug` | Admin app | Admin-only contract debugging. |
 
-On the dedicated app host, primary navigation should stay intentionally narrow:
+App navigation should use:
 
 - `Markets`
-- `Dashboard`
-
-Operator submission, monitoring, rental ops, admin diagnostics, and protected
-packet surfaces remain available through their direct permissioned routes or
-in-workflow links, but they should not appear in the app-host top navigation
-until a broader authenticated app navigation model is designed.
+- `Operator Portal`
+- `Borrowing Base`
+- future flagged `Capital Provider` or `Monitoring`
+- admin-only `Subgraph` and `Debug Contracts`
 
 Do not create a full lender or capital-provider dashboard in this tranche.
 Protected packet links remain the controlled share surface.
@@ -131,17 +127,14 @@ Protected packet links remain the controlled share surface.
 The old operator route family remains as a temporary compatibility layer for
 one or two releases:
 
-| Legacy route                           | Redirect target                        |
-| -------------------------------------- | -------------------------------------- |
-| `/partner`                             | `/operator`                            |
-| `/partner/submissions`                 | `/robomata/submissions`                |
-| `/partner/submissions/[submissionId]`  | `/robomata/submissions/[submissionId]` |
-| `/operator/submissions`                | `/robomata/submissions`                |
-| `/operator/submissions/[submissionId]` | `/robomata/submissions/[submissionId]` |
+| Legacy route | Redirect target |
+| --- | --- |
+| `/partner` | `/operator` |
+| `/partner/submissions` | `/operator/submissions` |
+| `/partner/submissions/[submissionId]` | `/operator/submissions/[submissionId]` |
 
 These redirects must not create duplicate editable surfaces. New copy,
-navigation, and documentation should use `/dashboard`, `/operator`, and
-`/robomata/submissions` according to the product surface.
+navigation, and documentation should use `/operator`.
 
 ## Host-Aware Routing Rules
 
@@ -236,8 +229,7 @@ standardized/tokenized exposure.
 
 - Add canonical `/operator` routes.
 - Add `/partner*` compatibility redirects.
-- Update app nav and CTAs from Partner to Operator, with the app-host primary
-  nav limited to `Markets` and `Dashboard`.
+- Update app nav and CTAs from Partner to Operator.
 - Preserve protected packet links.
 
 ### Phase 4: Host Routing And QA
@@ -258,8 +250,7 @@ standardized/tokenized exposure.
 - `yarn web:check-types`
 - `yarn web:lint`
 - `yarn web:build`
-- browser QA for `/`, `/dashboard`, `/products/robomata`,
-  `/products/robolend`, `/partners`, `/markets`, `/operator`,
-  `/robomata/submissions`, `/partner*` redirects, `/operator/submissions`
-  redirects, and `/lender/packet/[token]`
+- browser QA for `/`, `/products/robomata`, `/products/robolend`, `/partners`,
+  `/markets`, `/operator`, `/operator/submissions`, `/partner*` redirects, and
+  `/lender/packet/[token]`
 - host QA for marketing host, app host, preview host, and localhost

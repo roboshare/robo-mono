@@ -24,11 +24,7 @@ import { useScaffoldWriteContract, useSelectedNetwork } from "~~/hooks/scaffold-
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
 import { useRobomataApiAuth } from "~~/hooks/useRobomataApiAuth";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
-import {
-  isRobomataRentalHostOpsClientEnabled,
-  isRobomataTokenizationClientEnabled,
-  isRobomataWorkflowEnabled,
-} from "~~/lib/featureFlags";
+import { isRobomataTokenizationClientEnabled, isRobomataWorkflowEnabled } from "~~/lib/featureFlags";
 import { formatUsd } from "~~/lib/robomata/borrowingBase";
 import type { FacilitySubmission } from "~~/lib/robomata/submissions";
 import { getDeployedContract } from "~~/utils/contracts";
@@ -144,7 +140,6 @@ type AssetAction = {
 };
 
 const SUBGRAPH_REFRESH_DELAYS_MS = [1500, 5000, 12000, 25000];
-const CHAIN_CLOCK_REFRESH_MS = 60_000;
 const TOKENIZED_FACILITY_STATUSES: ReadonlySet<FacilitySubmission["tokenization"]["status"]> = new Set([
   "registered",
   "offering_created",
@@ -182,15 +177,9 @@ const calculateResidualSettlementTopUp = ({
 
 const PartnerDashboard: NextPage = () => {
   const { address: accountAddress, chainId: accountChainId, connectedAddress } = useTransactingAccount();
+  const { data: latestBlock } = useBlock({ watch: true });
   const selectedNetwork = useSelectedNetwork(accountChainId);
   const chainId = selectedNetwork.id;
-  const { data: latestBlock } = useBlock({
-    chainId,
-    query: {
-      refetchInterval: CHAIN_CLOCK_REFRESH_MS,
-    },
-  });
-  const [currentTimeSec, setCurrentTimeSec] = useState(() => Math.floor(Date.now() / 1000));
   const chains = useChains();
   const currentChain = chains.find(c => c.id === chainId);
   const networkName = currentChain?.name || selectedNetwork.name || "Localhost";
@@ -704,17 +693,7 @@ const PartnerDashboard: NextPage = () => {
     }
   }, [assetRecords.length, refreshCounter]);
 
-  useEffect(() => {
-    const refreshClock = () => setCurrentTimeSec(Math.floor(Date.now() / 1000));
-    refreshClock();
-
-    const intervalId = window.setInterval(refreshClock, CHAIN_CLOCK_REFRESH_MS);
-    return () => window.clearInterval(intervalId);
-  }, []);
-
-  const latestBlockTimeSec = latestBlock?.timestamp ? Number(latestBlock.timestamp) : undefined;
-  const settlementChainNowSec = latestBlockTimeSec ?? currentTimeSec;
-  const displayNowSec = Math.max(settlementChainNowSec, currentTimeSec);
+  const chainNowSec = latestBlock?.timestamp ? Number(latestBlock.timestamp) : Math.floor(Date.now() / 1000);
   const assetMaturityDateById = new Map<string, bigint>(
     assetRecords.map((asset, index) => [asset.id, (tokenMaturityDates?.[index]?.result as bigint | undefined) ?? 0n]),
   );
@@ -829,7 +808,7 @@ const PartnerDashboard: NextPage = () => {
       const settlementTopUpMinimum = calculateResidualSettlementTopUp({
         immediateProceeds,
         maturityDate,
-        chainNowSec: settlementChainNowSec,
+        chainNowSec,
         unredeemedBasePrincipal,
         baseCollateral: investorLiquidity,
         lockedAt,
@@ -1260,8 +1239,8 @@ const PartnerDashboard: NextPage = () => {
               {tokenization.evm.txHash && <div className="break-all">Transaction: {tokenization.evm.txHash}</div>}
             </div>
           </div>
-          <Link href={`/robomata/submissions/${submission.id}`} className="btn btn-primary w-full sm:w-auto">
-            Open Robomata package
+          <Link href={`/operator/submissions/${submission.id}`} className="btn btn-primary w-full sm:w-auto">
+            Open Submission
           </Link>
         </div>
       </div>
@@ -1309,13 +1288,8 @@ const PartnerDashboard: NextPage = () => {
 
           <div className="flex flex-col items-stretch gap-3 sm:flex-row">
             {isRobomataWorkflowEnabled() && (
-              <Link href="/robomata/submissions" className="btn btn-outline rounded-full">
+              <Link href="/operator/submissions" className="btn btn-outline rounded-full">
                 Borrowing Base Submissions
-              </Link>
-            )}
-            {isRobomataRentalHostOpsClientEnabled() && (
-              <Link href="/operator/rentals" className="btn btn-outline rounded-full">
-                Rental Operations
               </Link>
             )}
             <div className="flex">
@@ -1559,7 +1533,7 @@ const PartnerDashboard: NextPage = () => {
               {activeFleet.map(asset =>
                 (() => {
                   const maturityDate = assetMaturityDateById.get(asset.id) ?? 0n;
-                  const isMaturedByTime = maturityDate > 0n && Number(maturityDate) <= displayNowSec;
+                  const isMaturedByTime = maturityDate > 0n && Number(maturityDate) <= chainNowSec;
                   const isMatured = isMaturedByTime;
                   const tokenId = BigInt(asset.id) + 1n;
                   const isPoolPaused = !!asset.primaryPoolPaused;

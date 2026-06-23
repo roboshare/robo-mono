@@ -145,7 +145,7 @@ Do not launch beyond controlled preview if any item is unresolved:
 
 ## Launch Review Record
 
-Before launch, complete the [Rental Platform Launch Validation Record](./rental-platform-launch-validation-record.md) with:
+Before launch, create a release checklist record that includes:
 
 - target environment and launch date
 - jurisdictions included
