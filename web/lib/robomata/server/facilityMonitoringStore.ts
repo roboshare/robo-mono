@@ -318,8 +318,10 @@ function deriveObservationStatus(observation: FacilityObservation, packetGenerat
 function derivePacketFreshness(
   observations: FacilityObservation[],
   packet: PacketManifest | undefined,
+  run: BorrowingBaseRun | undefined,
 ): PacketFreshnessStatus {
-  if (!packet) return "invalid";
+  if (!packet || !run) return "invalid";
+  if (run.exceptions.some(exception => exception.actionStatus === "open")) return "invalid";
   const newerObservations = observations.filter(observation => observation.observedAt > packet.generatedAt);
   if (newerObservations.some(observation => observation.status === "expired" || observation.status === "exception")) {
     return "invalid";
@@ -334,7 +336,7 @@ function derivePacketFreshness(
   if (observations.some(observation => observation.status === "pending" || observation.status === "warning")) {
     return "refresh_available";
   }
-  return packet.freshnessStatus;
+  return "fresh";
 }
 
 function packetWithCurrentPolicyEvaluations(input: {
@@ -395,7 +397,11 @@ function buildStoredProjection(input: {
   const suiRootCommits = input.suiRootCommits.length ? input.suiRootCommits : input.fallback.suiRootCommits;
   const latestSuiRootCommit = suiRootCommits[0] ?? input.fallback.latestSuiRootCommit;
   const projectedSuiRootStatus = projectionSuiRootStatus(input.fallback, suiRootCommits);
-  const freshnessStatus = derivePacketFreshness(sortedObservations, storedLatestPacket ?? input.fallback.latestPacket);
+  const freshnessStatus = derivePacketFreshness(
+    sortedObservations,
+    storedLatestPacket ?? input.fallback.latestPacket,
+    latestRun,
+  );
   const packetCandidate = storedLatestPacket
     ? { ...storedLatestPacket, freshnessStatus }
     : input.fallback.latestPacket
