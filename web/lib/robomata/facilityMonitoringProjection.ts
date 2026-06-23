@@ -224,8 +224,7 @@ function buildWarnings(submission: FacilitySubmission, observations: FacilityObs
 export function buildFacilityMonitoringProjection(submission: FacilitySubmission): FacilityMonitoringProjection {
   const facilityId = facilityIdForSubmission(submission);
   const observations = buildObservations(submission, facilityId);
-  const freshnessStatus =
-    submission.facilityMonitoring?.packetFreshnessStatus ?? packetFreshness(submission, observations);
+  const freshnessStatus = packetFreshness(submission, observations);
   const suiRootVerificationStatus = suiRootStatus(submission);
   const latestRun = buildLatestRun(submission, facilityId, observations);
   const latestPacket = buildLatestPacket(
