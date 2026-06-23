@@ -1,6 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import "server-only";
 import type { RentalBookingRecord } from "~~/lib/robomata/rentalBookings";
+import { getRentalPaymentStore } from "~~/lib/robomata/server/rentalPaymentStore";
 import type { StripePaymentIntentSnapshot } from "~~/lib/robomata/server/rentalPaymentStore";
 
 const STRIPE_API_BASE = "https://api.stripe.com/v1";
@@ -152,18 +153,30 @@ export async function cancelStripeRentalPaymentIntent(paymentIntentId: string): 
 export async function retrieveStripeRentalPaymentIntent(paymentIntentId: string): Promise<StripePaymentIntentSnapshot> {
   if (isStripeMockEnabled()) {
     const status = process.env.ROBOMATA_RENTAL_STRIPE_MOCK_RECONCILE_STATUS ?? "requires_capture";
-    const amount = 1_000;
+    const existingPayment = await getRentalPaymentStore().getPaymentByPaymentIntent(paymentIntentId);
+    const amount = existingPayment?.authorizedAmountCents ?? 1_000;
     const bookingId = /^pi_mock_(rb_[0-9a-f-]+)(?:_[0-9a-f]{10})?$/.exec(paymentIntentId)?.[1];
     return {
       amount,
       amount_capturable: status === "requires_capture" ? amount : 0,
-      amount_received: status === "succeeded" ? amount : 0,
+      amount_received: status === "succeeded" ? Math.max(existingPayment?.capturedAmountCents ?? 0, amount) : 0,
       capture_method: "manual",
       client_secret: `${paymentIntentId}_secret_mock`,
-      currency: "usd",
+      currency: existingPayment?.currency.toLowerCase() ?? "usd",
       id: paymentIntentId,
-      latest_charge: `ch_mock_${paymentIntentId}`,
-      metadata: bookingId ? { bookingId } : undefined,
+      latest_charge: existingPayment?.providerReference.chargeId ?? `ch_mock_${paymentIntentId}`,
+      metadata: {
+        ...(existingPayment
+          ? {
+              bookingId: existingPayment.bookingId,
+              facilityAssetId: existingPayment.facilityAssetId,
+              platformVehicleId: existingPayment.platformVehicleId,
+              ...(existingPayment.vehicleAssetId ? { vehicleAssetId: existingPayment.vehicleAssetId } : {}),
+            }
+          : bookingId
+            ? { bookingId }
+            : {}),
+      },
       status,
     };
   }
