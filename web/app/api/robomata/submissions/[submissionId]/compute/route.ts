@@ -4,7 +4,6 @@ import {
   isRobomataWorkflowMutationEnabled,
   isRobomataWorkflowServerEnabled,
 } from "~~/lib/featureFlags";
-import { deriveSubmissionEvidenceStatuses } from "~~/lib/robomata/evidenceStatus";
 import { getFacilityMonitoringStore } from "~~/lib/robomata/server/facilityMonitoringStore";
 import {
   getPrivyUserFromRequest,
@@ -81,19 +80,6 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
 
     if (submission.evidence.length === 0) {
       return NextResponse.json({ error: "Upload evidence before computing the borrowing base." }, { status: 400 });
-    }
-
-    const evidenceStatusChanges = deriveSubmissionEvidenceStatuses(submission);
-    if (evidenceStatusChanges.length > 0) {
-      submission.auditEvents.unshift(
-        createAuditEvent(
-          "evidence_updated",
-          `Updated ${evidenceStatusChanges.length} evidence status derivation(s) before computation.`,
-          {
-            evidenceStatusChangeCount: evidenceStatusChanges.length,
-          },
-        ),
-      );
     }
 
     submission.computation = await computeSubmissionArtifacts(submission);

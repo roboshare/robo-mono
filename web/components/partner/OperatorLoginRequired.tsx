@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useCreateWallet, usePrivy } from "@privy-io/react-auth";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { ArrowRightIcon, ShieldCheckIcon } from "@heroicons/react/24/outline";
@@ -97,9 +98,9 @@ export const OperatorLoginRequired = () => {
         </p>
         <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <OperatorLoginAction />
-          <a href="/products/robomata" className="btn btn-outline rounded-full px-6">
+          <Link href="/products/robomata" className="btn btn-outline rounded-full px-6">
             Learn about Robomata
-          </a>
+          </Link>
         </div>
       </div>
     </div>

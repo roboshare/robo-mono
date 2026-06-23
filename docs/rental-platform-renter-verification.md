@@ -62,16 +62,6 @@ Verification updates also require `ROBOMATA_WORKFLOW_MUTATIONS_ENABLED=true`. Ou
 
 Provider callbacks should use `PATCH /verification` with provider attribution. Operations tooling should use `POST /verification/override`; override requests are stored as `decisionSource=admin_override`, require a reason, and are audit logged separately from provider decisions.
 
-Production and preview environments must configure one accepted provider identifier per required check:
-
-- `ROBOMATA_RENTER_IDENTITY_PROVIDER`
-- `ROBOMATA_RENTER_DRIVER_LICENSE_PROVIDER`
-- `ROBOMATA_RENTER_SANCTIONS_PROVIDER`
-
-The provider callback route rejects non-local updates when the relevant provider identifier is missing. It also rejects callbacks whose `provider` does not match the configured provider for the check kind, callbacks without `providerReferenceId`, and callbacks with non-provider actor attribution. Local development can force the same validation by setting `ROBOMATA_RENTER_VERIFICATION_REQUIRE_PROVIDER_CONFIG=true`.
-
-`GET /api/robomata/rental-renters/verification-policy` returns the active policy and non-secret provider configuration metadata so operators can verify that each required check is wired before launch.
-
 Local development may use `ROBOMATA_RENTER_ACCOUNTS_FILE` when `POSTGRES_URL` is absent. Shared preview and production environments should use `POSTGRES_URL`.
 
 ## Privacy Boundary
@@ -87,13 +77,3 @@ Verification vendors should retain sensitive source documents under their own re
 Booking checkout can begin before verification is complete, but confirmation must be gated when policy requires verification. A failed, expired, or manual-review check should keep the booking in verification or cancellation paths rather than moving directly to confirmed.
 
 Manual overrides can approve a check, but the approval should remain tied to the current policy version and should expire when the underlying provider or legal policy requires re-verification.
-
-## Verification
-
-Run the provider/control-plane smoke before enabling live provider callbacks:
-
-```bash
-yarn robomata:rental-verification-providers-smoke
-```
-
-The smoke starts a local app with configured identity, driver-license, and sanctions providers, then verifies invalid-provider rejection, raw provider payload rejection, manual-review blocking, failed-license blocking, expired-check blocking, admin override attribution, and final booking confirmation after all required checks are approved and unexpired.

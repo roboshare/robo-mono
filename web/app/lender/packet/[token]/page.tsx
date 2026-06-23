@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import Link from "next/link";
 import { LenderPacketView } from "~~/components/robomata/LenderPacketView";
 import { isRobomataShareLinksEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
 import { buildResolvedSharedLenderPacketView } from "~~/lib/robomata/server/sharedLenderPacket";
@@ -93,9 +94,9 @@ function PacketStateCard({ state }: { state: Exclude<PacketLoadState, { status: 
         <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">Robomata packet</p>
         <h1 className="mt-3 text-3xl font-black tracking-tight text-base-content">Packet unavailable</h1>
         <p className="mt-3 text-base leading-relaxed text-base-content/70">{state.message}</p>
-        <a href="/robomata" className="btn btn-outline mt-6 rounded-full">
+        <Link href="/robomata" className="btn btn-outline mt-6 rounded-full">
           Learn about Robomata
-        </a>
+        </Link>
       </div>
     </div>
   );
@@ -109,7 +110,7 @@ const LenderPacketPage = async ({ params }: LenderPacketPageProps) => {
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6">
-      <LenderPacketView packet={state.packet} shareToken={token} />
+      <LenderPacketView packet={state.packet} />
     </div>
   );
 };

@@ -260,9 +260,6 @@ function createFileStore(): RentalBookingStore {
         const fileStore = await readFileStore(filePath);
         const current = fileStore.bookings.find(booking => booking.id === bookingId);
         if (!current) return null;
-        if (!["pending_payment_authorization", "host_review"].includes(current.state)) {
-          throw new RentalBookingConflictError(`Booking cannot be confirmed from state ${current.state}.`);
-        }
         assertNoOverlappingActiveBooking(current, fileStore.bookings, current.id);
         const booking = confirmedBooking(current, input);
         fileStore.bookings = [booking, ...fileStore.bookings.filter(candidate => candidate.id !== booking.id)];
@@ -335,9 +332,6 @@ function createPostgresStore(): RentalBookingStore {
         `) as Array<{ payload: RentalBookingRecord }>;
         const current = currentRows[0]?.payload;
         if (!current) return null;
-        if (!["pending_payment_authorization", "host_review"].includes(current.state)) {
-          throw new RentalBookingConflictError(`Booking cannot be confirmed from state ${current.state}.`);
-        }
 
         await tx`SELECT pg_advisory_xact_lock(hashtext(${advisoryLockKey(current.platformVehicleId)}));`;
         const rows = (await tx`

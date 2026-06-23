@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-import { spawn } from "node:child_process";
+
 import { randomBytes } from "node:crypto";
+import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -56,7 +57,7 @@ async function waitForServer() {
   const deadline = Date.now() + serverTimeoutMs;
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(`${baseUrl}/robomata/submissions`);
+      const response = await fetch(`${baseUrl}/partner/submissions`);
       if (response.ok) return;
     } catch {
       // Keep polling until the local dev server is ready.
@@ -335,20 +336,14 @@ async function runTokenizationApiAssertions({ authHeaders, otherAuthHeaders }) {
   });
   assert(prepared.submission.tokenization.status === "ready_to_sign", "Prepare did not persist ready_to_sign.");
   assert(prepared.assetMetadataUri?.startsWith("ipfs://mock-tokenization-"), "Prepare did not use mock IPFS URI.");
-  assert(
-    prepared.revenueTokenMetadataUri?.startsWith("ipfs://mock-tokenization-"),
-    "Prepare did not use mock IPFS URI.",
-  );
+  assert(prepared.revenueTokenMetadataUri?.startsWith("ipfs://mock-tokenization-"), "Prepare did not use mock IPFS URI.");
   const publicMetadata = JSON.stringify({
     assetMetadata: prepared.assetMetadata,
     revenueTokenMetadata: prepared.revenueTokenMetadata,
   });
   assert(!publicMetadata.includes("Secret Borrower LLC"), "Prepared metadata leaked raw receivable obligor data.");
   assert(!publicMetadata.includes("private-evidence.pdf"), "Prepared metadata leaked private evidence filename.");
-  assert(
-    prepared.evmCall.functionName === "registerAssetAndCreateRevenueTokenPool",
-    "Prepare returned wrong EVM call.",
-  );
+  assert(prepared.evmCall.functionName === "registerAssetAndCreateRevenueTokenPool", "Prepare returned wrong EVM call.");
 
   await expectPostJsonError({
     authHeaders,

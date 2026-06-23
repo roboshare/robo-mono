@@ -1,15 +1,3 @@
-type Partner @entity(immutable: false) {
-  id: ID! # partner address
-  address: Bytes!
-  name: String
-  isAuthorized: Boolean!
-  registeredAt: BigInt
-  revokedAt: BigInt
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
 type Vehicle @entity(immutable: false) {
   id: ID! # vehicleId
   partner: Bytes!

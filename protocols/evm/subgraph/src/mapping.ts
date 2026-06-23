@@ -14,80 +14,18 @@ import {
   PrimaryPoolClosed as PrimaryPoolClosedEvent
 } from "../generated/Marketplace/Marketplace"
 import { EarningsDistributed as EarningsDistributedEvent } from "../generated/EarningsManager/EarningsManager"
-import {
-  PartnerAuthorized as PartnerAuthorizedEvent,
-  PartnerNameUpdated as PartnerNameUpdatedEvent,
-  PartnerRevoked as PartnerRevokedEvent
-} from "../generated/PartnerManager/PartnerManager"
 
 import {
   EarningsDistribution,
   Vehicle,
   Listing,
-  PrimaryPool,
-  Partner
+  PrimaryPool
 } from "../generated/schema"
 
 function assetIdFromTokenId(tokenId: BigInt): BigInt {
   const one = BigInt.fromI32(1)
   if (tokenId.le(one)) return BigInt.fromI32(0)
   return tokenId.minus(one)
-}
-
-export function handlePartnerAuthorized(event: PartnerAuthorizedEvent): void {
-  let id = event.params.partner.toHexString()
-  let partner = Partner.load(id)
-  if (!partner) {
-    partner = new Partner(id)
-    partner.address = event.params.partner
-  }
-
-  partner.name = event.params.name
-  partner.isAuthorized = true
-  partner.registeredAt = event.block.timestamp
-  partner.revokedAt = null
-  partner.blockNumber = event.block.number
-  partner.blockTimestamp = event.block.timestamp
-  partner.transactionHash = event.transaction.hash
-  partner.save()
-}
-
-export function handlePartnerRevoked(event: PartnerRevokedEvent): void {
-  let id = event.params.partner.toHexString()
-  let partner = Partner.load(id)
-  if (!partner) {
-    partner = new Partner(id)
-    partner.address = event.params.partner
-    partner.name = null
-    partner.registeredAt = null
-  }
-
-  partner.isAuthorized = false
-  partner.name = null
-  partner.registeredAt = null
-  partner.revokedAt = event.block.timestamp
-  partner.blockNumber = event.block.number
-  partner.blockTimestamp = event.block.timestamp
-  partner.transactionHash = event.transaction.hash
-  partner.save()
-}
-
-export function handlePartnerNameUpdated(event: PartnerNameUpdatedEvent): void {
-  let id = event.params.partner.toHexString()
-  let partner = Partner.load(id)
-  if (!partner) {
-    partner = new Partner(id)
-    partner.address = event.params.partner
-    partner.isAuthorized = true
-    partner.registeredAt = event.block.timestamp
-    partner.revokedAt = null
-  }
-
-  partner.name = event.params.newName
-  partner.blockNumber = event.block.number
-  partner.blockTimestamp = event.block.timestamp
-  partner.transactionHash = event.transaction.hash
-  partner.save()
 }
 
 export function handleVehicleAssetRegistered(event: AssetRegisteredEvent): void {

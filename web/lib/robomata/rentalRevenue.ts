@@ -1,23 +1,5 @@
 import { createHash } from "node:crypto";
-import { encodeFunctionData } from "viem";
 import type { PlatformVehicleId, ProtocolAssetId } from "~~/lib/robomata/rentalInventory";
-
-const PROTOCOL_PAYMENT_TOKEN_DECIMALS = 6;
-const MIN_PROTOCOL_FEE_BASE_UNITS = 1_000_000n;
-const PROTOCOL_BPS_PRECISION = 10_000n;
-const EARNINGS_MANAGER_DISTRIBUTE_EARNINGS_ABI = [
-  {
-    inputs: [
-      { internalType: "uint256", name: "assetId", type: "uint256" },
-      { internalType: "uint256", name: "totalRevenue", type: "uint256" },
-      { internalType: "bool", name: "tryAutoRelease", type: "bool" },
-    ],
-    name: "distributeEarnings",
-    outputs: [{ internalType: "uint256", name: "collateralReleased", type: "uint256" }],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-] as const;
 
 export type RentalRevenueCurrency = "USD";
 
@@ -26,7 +8,6 @@ export type RentalFinancingTarget = {
   vehicleAssetId?: ProtocolAssetId;
   postingAssetId: ProtocolAssetId;
   postingAssetKind: "facility" | "vehicle";
-  protocolInvestorShareBps?: number;
 };
 
 export type RecognizedRevenueInputs = {
@@ -108,25 +89,9 @@ export type RentalRevenuePostingBatch = RentalFinancingTarget & {
   createdAt: string;
   attestation: RentalRevenueAttestationMetadata;
   postedAt?: string;
-  protocolTxChainId?: number;
   protocolTxHash?: string;
-  protocolTxConfirmationMode?: "operator_confirmed" | "submitted";
-  protocolTxConfirmedBy?: string;
   auditEventId?: string;
   errorMessage?: string;
-};
-
-export type RentalProtocolEarningsDistributionCall = {
-  contractName: "EarningsManager";
-  functionName: "distributeEarnings";
-  functionSignature: "distributeEarnings(uint256,uint256,bool)";
-  args: {
-    assetId: string;
-    totalRevenue: string;
-    tryAutoRelease: boolean;
-  };
-  calldata: `0x${string}`;
-  paymentTokenDecimals: typeof PROTOCOL_PAYMENT_TOKEN_DECIMALS;
 };
 
 export type RentalProtocolEarningsDistributionRequest = {
@@ -138,7 +103,6 @@ export type RentalProtocolEarningsDistributionRequest = {
   postingAssetKind: RentalFinancingTarget["postingAssetKind"];
   amountCents: number;
   currency: RentalRevenueCurrency;
-  protocolCall?: RentalProtocolEarningsDistributionCall;
   provenance: {
     periodStart: string;
     periodEnd: string;
@@ -146,60 +110,6 @@ export type RentalProtocolEarningsDistributionRequest = {
     attestation: RentalRevenueAttestationMetadata;
   };
 };
-
-function protocolAssetId(input: ProtocolAssetId): bigint | null {
-  if (!/^\d+$/.test(input)) return null;
-  const assetId = BigInt(input);
-  if (assetId <= 0n || assetId % 2n === 0n) return null;
-  return assetId;
-}
-
-function centsToPaymentTokenBaseUnits(amountCents: number): bigint {
-  if (!Number.isInteger(amountCents) || amountCents < 0) {
-    throw new Error("Protocol distribution amount must be a non-negative integer cent amount.");
-  }
-  return BigInt(amountCents) * 10n ** BigInt(PROTOCOL_PAYMENT_TOKEN_DECIMALS - 2);
-}
-
-function protocolInvestorShareBps(value: number | undefined): bigint | null {
-  if (value === undefined) return null;
-  if (!Number.isInteger(value) || value < 0 || value > Number(PROTOCOL_BPS_PRECISION)) {
-    throw new Error("Protocol investor share must be an integer basis-point value between 0 and 10000.");
-  }
-  return BigInt(value);
-}
-
-export function buildProtocolEarningsDistributionCall(input: {
-  amountCents: number;
-  postingAssetId: ProtocolAssetId;
-  protocolInvestorShareBps?: number;
-  tryAutoRelease?: boolean;
-}): RentalProtocolEarningsDistributionCall | null {
-  const assetId = protocolAssetId(input.postingAssetId);
-  if (assetId === null) return null;
-  const totalRevenue = centsToPaymentTokenBaseUnits(input.amountCents);
-  const investorShareBps = protocolInvestorShareBps(input.protocolInvestorShareBps);
-  if (investorShareBps === null) return null;
-  const estimatedInvestorAmount = (totalRevenue * investorShareBps) / PROTOCOL_BPS_PRECISION;
-  if (estimatedInvestorAmount < MIN_PROTOCOL_FEE_BASE_UNITS) return null;
-  const tryAutoRelease = input.tryAutoRelease ?? false;
-  return {
-    contractName: "EarningsManager",
-    functionName: "distributeEarnings",
-    functionSignature: "distributeEarnings(uint256,uint256,bool)",
-    args: {
-      assetId: assetId.toString(),
-      totalRevenue: totalRevenue.toString(),
-      tryAutoRelease,
-    },
-    calldata: encodeFunctionData({
-      abi: EARNINGS_MANAGER_DISTRIBUTE_EARNINGS_ABI,
-      functionName: "distributeEarnings",
-      args: [assetId, totalRevenue, tryAutoRelease],
-    }),
-    paymentTokenDecimals: PROTOCOL_PAYMENT_TOKEN_DECIMALS,
-  };
-}
 
 export function calculateRecognizedRevenueCents(input: RecognizedRevenueInputs): number {
   return (
@@ -439,12 +349,6 @@ export function buildProtocolEarningsDistributionRequest(
     postingAssetKind: batch.postingAssetKind,
     amountCents: batch.totalRecognizedRevenueCents,
     currency: batch.currency,
-    protocolCall:
-      buildProtocolEarningsDistributionCall({
-        amountCents: batch.totalRecognizedRevenueCents,
-        postingAssetId: batch.postingAssetId,
-        protocolInvestorShareBps: batch.protocolInvestorShareBps,
-      }) ?? undefined,
     provenance: {
       periodStart: batch.periodStart,
       periodEnd: batch.periodEnd,

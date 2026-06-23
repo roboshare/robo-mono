@@ -398,32 +398,7 @@ Verify:
 - deployment scheduling remains caller-owned until a durable worker or
   control-plane service is justified
 
-### 8d. Lender Agent Appointment Preview
-
-Status: preview behind `ROBOMATA_SHARE_LINKS_ENABLED`,
-`ROBOMATA_AGENTS_ENABLED`, `ROBOMATA_AGENT_MUTATIONS_ENABLED`, and
-`ROBOMATA_LENDER_AGENT_APPOINTMENT_ENABLED`.
-
-Tracking issue: `ROB-244`.
-
-Verify:
-
-- protected lender packet pages show current lender appointment flag state
-- disabled appointment flag keeps the lender appointment card read-only
-- `PATCH /api/robomata/share/:token/agent-policy` fails closed when share
-  links, agents, agent mutations, or lender appointment are disabled
-- active protected share links can record `appointedBy: lender` with
-  `appointmentAuthorizationSurface: protected_lender_share_link`
-- the operator-only agent policy endpoint cannot rename an existing
-  lender-appointed policy through operator submission access
-- the lender appointment path does not execute actions, approve actions, or
-  mutate Sui/EVM state
-- revoked policies remain retained in history but cannot run, approve actions,
-  complete actions, or be picked up by scheduled ticks
-- operator and lender packet surfaces show revocation state, reason, and
-  authorization surface
-
-### 8e. Agent-First Trust Boundary
+### 8d. Agent-First Trust Boundary
 
 Status: documented for the current supervised tranche.
 
@@ -456,7 +431,7 @@ Verify:
   privileges
 - `/robomata` does not call private submission APIs or accept
   `?submission=<id>` as an access mechanism
-- primary CTA sends operators to `/robomata/submissions`
+- primary CTA sends operators to `/operator/submissions`
 - page presents product positioning, workflow steps, and evidence rails in
   customer-facing terms
 - page does not present demo-only controls such as `Keep Markets Live`,
@@ -515,8 +490,7 @@ Expected gate:
 - a submission with uncomputed borrowing base must not expose tokenization
 - a computed submission with open exceptions must not expose tokenization
 - a clean submission must still require Sui evidence commit before tokenization
-- a committed submission exposes Robolend handoff/tokenization status, with
-  tokenization controls framed as an internal preview path when enabled
+- a committed submission exposes `Tokenize facility`
 
 Expected tokenization behavior:
 
@@ -641,7 +615,11 @@ Non-secret local smoke result:
       "policyFinalStatus": "paused",
       "pausedRunConflict": true,
       "actionCount": 3,
-      "actionTypes": ["evidence_review", "packet_refresh", "sui_root_review"],
+      "actionTypes": [
+        "evidence_review",
+        "packet_refresh",
+        "sui_root_review"
+      ],
       "persistedActionStatuses": {
         "approvedThenCompleted": "completed",
         "rejected": "rejected",
@@ -658,7 +636,10 @@ Non-secret local smoke result:
       "wrongHeaderSecretStatus": "Invalid Robomata agent tick secret.",
       "zeroActivePolicyCount": 0,
       "firstTickCount": 2,
-      "firstTickStatuses": ["completed", "failed"],
+      "firstTickStatuses": [
+        "completed",
+        "failed"
+      ],
       "repeatedTickCount": 2,
       "scheduledActionsRemainProposed": true,
       "submissionsUnchangedAfterRepeatedTicks": true,
@@ -686,8 +667,8 @@ Covered behavior:
 
 - `/robomata` renders publicly with the partner submission CTA and without old
   demo/read-only projection copy.
-- `/robomata/submissions` returns the Robomata facility package workspace with
-  the workflow flags enabled.
+- `/partner/submissions` returns the operator submission app shell with the
+  workflow flags enabled.
 - A temporary partner signer can create a submission, import receivables,
   attach evidence, compute a zero-exception borrowing base, and generate a
   lender packet.

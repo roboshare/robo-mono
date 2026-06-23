@@ -350,14 +350,9 @@ export function buildRentalInvestorRevenueVarianceReport(
   });
   const recognized = recognizedRevenueCents(ledgerEntries, input.metrics.recognizedRevenueCents);
   const posted = postedRevenueCents(postingBatches, ledgerEntries);
-  const failedBatches = postingBatches.filter(batch => batch.status === "failed");
   const staleOrIncompleteReasons = [
     ...(ledgerEntries.length === 0 ? ["No matching revenue ledger entries were supplied for this period."] : []),
     ...(postingBatches.length === 0 ? ["No matching posting batches were supplied for this period."] : []),
-    ...failedBatches.map(
-      batch =>
-        `Posting batch ${batch.id} failed${batch.errorMessage ? `: ${batch.errorMessage}` : " during protocol execution"}.`,
-    ),
     ...postingBatches
       .filter(batch => !batch.attestation)
       .map(batch => `Posting batch ${batch.id} does not include attestation metadata.`),

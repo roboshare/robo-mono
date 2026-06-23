@@ -90,20 +90,17 @@ export function ListingCard({
     contractName: "RoboshareTokens",
     functionName: "balanceOf",
     args: [address, BigInt(listing.tokenId)],
-    watch: true,
   });
   const { data: previewClaimAmount } = useScaffoldReadContract({
     contractName: "EarningsManager",
     functionName: "previewClaimEarnings",
     args: [BigInt(listing.assetId), address],
-    watch: true,
     query: { enabled: !!address },
   });
   const { data: assetStatus } = useScaffoldReadContract({
     contractName: "RegistryRouter",
     functionName: "getAssetStatus",
     args: [BigInt(listing.assetId)],
-    watch: true,
   });
   const hasAvailableTokens = BigInt(listing.amount) > 0n;
   const hasEarnings = Boolean(earnings && earnings.totalEarnings !== "0");

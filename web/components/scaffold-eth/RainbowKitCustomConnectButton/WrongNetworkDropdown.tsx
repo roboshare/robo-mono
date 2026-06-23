@@ -3,16 +3,10 @@ import { useDisconnect } from "wagmi";
 import { ArrowLeftOnRectangleIcon, ChevronDownIcon } from "@heroicons/react/24/outline";
 
 type WrongNetworkDropdownProps = {
-  disconnectLabel?: string;
   onDisconnect?: () => void | Promise<void>;
-  showNetworkOptions?: boolean;
 };
 
-export const WrongNetworkDropdown = ({
-  disconnectLabel = "Disconnect",
-  onDisconnect,
-  showNetworkOptions = true,
-}: WrongNetworkDropdownProps) => {
+export const WrongNetworkDropdown = ({ onDisconnect }: WrongNetworkDropdownProps) => {
   const { disconnect } = useDisconnect();
 
   return (
@@ -25,7 +19,7 @@ export const WrongNetworkDropdown = ({
         tabIndex={0}
         className="dropdown-content menu p-2 mt-1 shadow-center shadow-accent bg-base-200 rounded-box gap-1"
       >
-        {showNetworkOptions ? <NetworkOptions /> : null}
+        <NetworkOptions />
         <li>
           <button
             className="menu-item text-error btn-sm rounded-xl! flex gap-3 py-3"
@@ -35,7 +29,7 @@ export const WrongNetworkDropdown = ({
             }}
           >
             <ArrowLeftOnRectangleIcon className="h-6 w-4 ml-2 sm:ml-0" />
-            <span>{disconnectLabel}</span>
+            <span>Disconnect</span>
           </button>
         </li>
       </ul>

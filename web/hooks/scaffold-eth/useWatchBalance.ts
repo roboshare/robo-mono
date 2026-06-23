@@ -3,30 +3,16 @@ import { useTargetNetwork } from "./useTargetNetwork";
 import { useQueryClient } from "@tanstack/react-query";
 import { UseBalanceParameters, useBalance, useBlockNumber } from "wagmi";
 
-type UseWatchBalanceParameters = UseBalanceParameters & {
-  watch?: boolean;
-};
-
 /**
- * Wrapper around wagmi's useBalance hook. Set watch=true only for flows that need live balance refreshes.
+ * Wrapper around wagmi's useBalance hook. Updates data on every block change.
  */
-export const useWatchBalance = ({ watch = false, ...useBalanceParameters }: UseWatchBalanceParameters) => {
+export const useWatchBalance = (useBalanceParameters: UseBalanceParameters) => {
   const { targetNetwork } = useTargetNetwork();
   const queryClient = useQueryClient();
-  const { data: blockNumber } = useBlockNumber({
-    watch,
-    chainId: targetNetwork.id,
-    query: {
-      enabled: watch,
-    },
-  });
+  const { data: blockNumber } = useBlockNumber({ watch: true, chainId: targetNetwork.id });
   const { queryKey, ...restUseBalanceReturn } = useBalance(useBalanceParameters);
 
   useEffect(() => {
-    if (!watch) {
-      return;
-    }
-
     queryClient.invalidateQueries({ queryKey });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [blockNumber]);

@@ -5,7 +5,6 @@ import {
   isRobomataWorkflowMutationEnabled,
   isRobomataWorkflowServerEnabled,
 } from "~~/lib/featureFlags";
-import { deriveEvidenceFacts, deriveEvidenceStatus } from "~~/lib/robomata/evidenceStatus";
 import { createEvidenceRecord } from "~~/lib/robomata/server/evidenceStorage";
 import { getFacilityMonitoringStore } from "~~/lib/robomata/server/facilityMonitoringStore";
 import {
@@ -28,7 +27,7 @@ export const runtime = "nodejs";
 
 const DEFAULT_EVIDENCE_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
 const MULTIPART_UPLOAD_OVERHEAD_BYTES = 1024 * 1024;
-const EVIDENCE_TEXT_DERIVATION_MAX_BYTES = 128 * 1024;
+const evidenceStatuses = new Set(["verified", "exception", "pending"]);
 
 function requireRobomataWorkflow() {
   if (isRobomataWorkflowServerEnabled()) return null;
@@ -38,6 +37,15 @@ function requireRobomataWorkflow() {
 function requireRobomataMutation() {
   if (isRobomataWorkflowMutationEnabled()) return null;
   return NextResponse.json({ error: "Robomata submission writes are not enabled." }, { status: 403 });
+}
+
+function normalizeEvidenceStatus(value: FormDataEntryValue | null) {
+  const status = String(value ?? "pending").trim();
+  if (!evidenceStatuses.has(status)) {
+    throw new Error("Evidence status must be verified, exception, or pending.");
+  }
+
+  return status as "verified" | "exception" | "pending";
 }
 
 function isConcurrentSubmissionChange(error: unknown) {
@@ -58,19 +66,6 @@ function buildUploadTooLargeResponse(maxBytes: number) {
     { error: `Evidence upload exceeds the configured ${maxBytes} byte limit.` },
     { status: 413 },
   );
-}
-
-async function readEvidenceTextForDerivation(file: File): Promise<string | undefined> {
-  const filename = file.name.toLowerCase();
-  const contentType = file.type.toLowerCase();
-  const isTextLike =
-    contentType.startsWith("text/") ||
-    contentType === "application/json" ||
-    contentType === "application/csv" ||
-    /\.(csv|json|md|txt)$/i.test(filename);
-  if (!isTextLike || file.size > EVIDENCE_TEXT_DERIVATION_MAX_BYTES) return undefined;
-
-  return file.text();
 }
 
 type EvidenceUploadReservation = {
@@ -213,24 +208,10 @@ async function saveEvidenceRecord({
       throw new Error("Evidence commit is in progress for this submission. Try again after it completes.");
     }
 
-    const statusDerivation = deriveEvidenceStatus({
-      evidence,
-      receivables: latestSubmission.receivables,
-    });
-    const derivedEvidence: SubmissionEvidence = {
-      ...evidence,
-      status: statusDerivation.status,
-    };
-
-    latestSubmission.evidence = [
-      derivedEvidence,
-      ...latestSubmission.evidence.filter(record => record.id !== derivedEvidence.id),
-    ];
+    latestSubmission.evidence = [evidence, ...latestSubmission.evidence.filter(record => record.id !== evidence.id)];
     invalidateSubmissionArtifacts(latestSubmission);
-    addAuditEvent(latestSubmission, "evidence_uploaded", `Uploaded evidence package ${derivedEvidence.label}.`, {
-      evidenceId: derivedEvidence.id,
-      evidenceStatus: derivedEvidence.status,
-      evidenceStatusReason: statusDerivation.reason,
+    addAuditEvent(latestSubmission, "evidence_uploaded", `Uploaded evidence package ${evidence.label}.`, {
+      evidenceId: evidence.id,
       storageBackend: evidence.storageBackend,
     });
 
@@ -288,6 +269,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
     const label = String(formData.get("label") ?? "").trim();
     const source = String(formData.get("source") ?? "").trim();
     const scope = String(formData.get("scope") ?? "").trim();
+    const status = normalizeEvidenceStatus(formData.get("status"));
     const sealPolicyId = String(formData.get("sealPolicyId") ?? "seal://policy/lender-auditor-read").trim();
     const linkedReceivableIds = String(formData.get("linkedReceivableIds") ?? "")
       .split(",")
@@ -301,25 +283,6 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       return buildUploadTooLargeResponse(maxEvidenceUploadBytes);
     }
 
-    const statusDerivation = deriveEvidenceStatus({
-      evidence: {
-        label,
-        linkedReceivableIds,
-        scope,
-        source,
-      },
-      receivables: submission.receivables,
-    });
-    const evidenceText = await readEvidenceTextForDerivation(file);
-    const derivedFacts = deriveEvidenceFacts({
-      evidence: {
-        label,
-        linkedReceivableIds,
-        scope,
-        source,
-      },
-      evidenceText,
-    });
     const reservation = await reserveEvidenceUpload({ label, partnerAddress, submissionId, store });
 
     let evidence: SubmissionEvidence;
@@ -329,10 +292,9 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
         label,
         source,
         scope,
-        status: statusDerivation.status,
+        status,
         sealPolicyId,
         sealIdentity: resolveSubmissionFacilityObjectId(submission),
-        derivedFacts,
         linkedReceivableIds,
       });
     } catch (error) {
@@ -340,12 +302,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       throw error;
     }
 
-    const saved = await saveEvidenceRecord({
-      evidence,
-      partnerAddress,
-      submissionId,
-      store,
-    });
+    const saved = await saveEvidenceRecord({ evidence, partnerAddress, submissionId, store });
     if (isRobomataFacilityMonitoringEnabled()) {
       try {
         await getFacilityMonitoringStore().syncEvidenceObservations(saved);
@@ -353,68 +310,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
         console.error("Failed to sync facility monitoring evidence observations.", error);
       }
     }
-    const savedEvidence = saved.evidence.find(record => record.id === evidence.id) ?? evidence;
-    return NextResponse.json({ submission: saved, evidence: savedEvidence });
+    return NextResponse.json({ submission: saved, evidence });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to upload evidence." },
-      { status: isCommitInProgressError(error) ? 409 : 500 },
-    );
-  }
-}
-
-export async function DELETE(request: NextRequest, context: { params: Promise<{ submissionId: string }> }) {
-  try {
-    const featureError = requireRobomataWorkflow();
-    if (featureError) return featureError;
-    const mutationError = requireRobomataMutation();
-    if (mutationError) return mutationError;
-
-    const { submissionId } = await context.params;
-    const store = getSubmissionStore();
-    const submission = await store.get(submissionId);
-
-    if (!submission) {
-      return NextResponse.json({ error: "Submission not found." }, { status: 404 });
-    }
-
-    const partnerAddress = await requirePartnerAddress(request);
-    if (partnerAddress instanceof NextResponse) return partnerAddress;
-
-    const accessError = requireSubmissionAccess(submission, partnerAddress);
-    if (accessError) return accessError;
-    const mutabilityError = requireSubmissionMutable(submission);
-    if (mutabilityError) return mutabilityError;
-
-    const body = (await request.json().catch(() => null)) as { evidenceId?: unknown } | null;
-    const evidenceId = typeof body?.evidenceId === "string" ? body.evidenceId.trim() : "";
-    if (!evidenceId) {
-      return NextResponse.json({ error: "evidenceId is required." }, { status: 400 });
-    }
-
-    const evidence = submission.evidence.find(record => record.id === evidenceId);
-    if (!evidence) {
-      return NextResponse.json({ error: `Evidence package ${evidenceId} was not found.` }, { status: 404 });
-    }
-
-    submission.evidence = submission.evidence.filter(record => record.id !== evidenceId);
-    invalidateSubmissionArtifacts(submission);
-    addAuditEvent(submission, "evidence_removed", `Removed evidence package ${evidence.label}.`, {
-      evidenceId,
-    });
-
-    const saved = await store.save(submission);
-    if (isRobomataFacilityMonitoringEnabled()) {
-      try {
-        await getFacilityMonitoringStore().syncEvidenceObservations(saved);
-      } catch (error) {
-        console.error("Failed to sync facility monitoring evidence observations after removal.", error);
-      }
-    }
-    return NextResponse.json({ submission: saved });
-  } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to remove evidence package." },
       { status: isCommitInProgressError(error) ? 409 : 500 },
     );
   }
