@@ -173,40 +173,48 @@ export const PacketSharePanel = ({
   };
 
   return (
-    <div className="rounded-[1.5rem] border border-base-300 bg-base-200/50 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2 text-sm font-semibold text-base-content">
+    <div className="min-w-0 max-w-full overflow-hidden rounded-[1.5rem] border border-base-300 bg-base-200/50 p-4">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-center gap-2 break-words text-sm font-semibold text-base-content">
             <LinkIcon className="h-4 w-4" />
             Protected lender packet links
           </div>
-          <p className="mt-2 text-sm leading-relaxed text-base-content/70">
+          <p className="mt-2 break-words text-sm leading-relaxed text-base-content/70">
             Create an opaque, expiring packet link for one lender. The link is bearer-style access, so revoke it when
             diligence is complete.
           </p>
         </div>
-        <button className="btn btn-sm btn-outline rounded-full" onClick={loadShareLinks} disabled={isLoading || isBusy}>
+        <button
+          className="btn btn-sm btn-outline h-auto min-h-8 max-w-full whitespace-normal rounded-full text-center"
+          onClick={loadShareLinks}
+          disabled={isLoading || isBusy}
+        >
           Refresh
         </button>
       </div>
 
       {canShare ? (
-        <div className="mt-4 grid gap-3 md:grid-cols-[1fr_0.8fr_auto]">
+        <div className="mt-4 grid min-w-0 max-w-full gap-3 md:grid-cols-[1fr_0.8fr_auto]">
           <input
-            className="input input-bordered w-full"
+            className="input input-bordered w-full min-w-0 max-w-full"
             placeholder="Recipient label, e.g. Lender credit team"
             value={recipientLabel}
             onChange={event => setRecipientLabel(event.target.value)}
             disabled={isBusy}
           />
           <input
-            className="input input-bordered w-full"
+            className="input input-bordered w-full min-w-0 max-w-full"
             type="datetime-local"
             value={expiresAt}
             onChange={event => setExpiresAt(event.target.value)}
             disabled={isBusy}
           />
-          <button className="btn btn-primary rounded-full" onClick={createShareLink} disabled={isBusy}>
+          <button
+            className="btn btn-primary h-auto min-h-10 w-full min-w-0 max-w-full whitespace-normal rounded-full text-center md:w-auto"
+            onClick={createShareLink}
+            disabled={isBusy}
+          >
             Create link
           </button>
         </div>
@@ -233,11 +241,13 @@ export const PacketSharePanel = ({
       <div className="mt-4 space-y-3">
         {shareLinks.length ? (
           shareLinks.map(link => (
-            <div key={link.id} className="rounded-2xl border border-base-300 bg-base-100 p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="font-semibold text-base-content">{link.recipientLabel ?? "Lender packet link"}</div>
-                  <div className="mt-1 text-xs text-base-content/60">
+            <div key={link.id} className="min-w-0 overflow-hidden rounded-2xl border border-base-300 bg-base-100 p-4">
+              <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="break-words font-semibold text-base-content">
+                    {link.recipientLabel ?? "Lender packet link"}
+                  </div>
+                  <div className="mt-1 break-words text-xs text-base-content/60">
                     Expires {link.expiresAt} · {link.accessCount} views
                     {link.lastAccessedAt ? ` · last accessed ${link.lastAccessedAt}` : ""}
                   </div>

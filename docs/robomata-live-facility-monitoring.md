@@ -138,16 +138,46 @@ Live facility monitoring is additive and default-off:
   supervision panel.
 - `ROBOMATA_AGENT_MUTATIONS_ENABLED=true` enables policy activation, manual
   agent runs, and operator action decisions.
+- `ROBOMATA_LENDER_AGENT_APPOINTMENT_ENABLED=true` enables protected lender
+  share links to appoint or rename a lender-side supervised agent through
+  `PATCH /api/robomata/share/:token/agent-policy`. The route also requires
+  share links, agents, and agent mutations to be enabled, and it records the
+  protected share-link id as the authorization surface.
 - `ROBOMATA_AGENT_REFRESH_ENABLED=true` enables scheduled agent ticks at
   `POST /api/robomata/agents/tick`; the route also requires
   `ROBOMATA_AGENT_TICK_SECRET` and callers must send the same value in
   `x-robomata-agent-tick-secret`.
+- `ROBOMATA_AGENT_PLANNER_PROVIDER=rules|openai|anthropic|google` selects the
+  planner boundary recorded on supervised agent runs. The default is `rules`.
+- `ROBOMATA_AGENT_PLANNER_ENABLED=true` allows a non-rules planner provider to
+  move past deterministic fallback checks. OpenAI and Google/Gemini can refine
+  deterministic candidate action copy when configured; other non-rules providers
+  remain stubbed until provider-specific planning controls are implemented.
+- `ROBOMATA_AGENT_PLANNER_MODEL=<model id>` labels a configured non-rules
+  planner boundary when the provider requires a model.
+- `ROBOMATA_AGENT_EXECUTION_ENABLED=true` enables the delegated execution
+  permission gate. Execution adapters also require their own adapter flags.
+- `NEXT_PUBLIC_ROBOMATA_AGENT_EXECUTION_ENABLED=true` only exposes the operator
+  UI affordance for approved executable actions; the server flags remain
+  authoritative.
+- `ROBOMATA_AGENT_ADVISORY_EXECUTION_ENABLED=true` enables the first bounded
+  advisory execution adapter. It can execute only approved `evidence_review`
+  and `sui_root_review` actions by recording execution audit metadata. It does
+  not mutate submissions, packets, evidence records, Sui, or EVM state.
+- `ROBOMATA_AGENT_MEMORY_ENABLED=true` enables the optional Walrus
+  Memory/MemWal adapter for supervised agent recall and memory writes. The
+  adapter also requires a MemWal account id and delegate key through
+  `MEMWAL_ACCOUNT_ID` and `MEMWAL_DELEGATE_KEY` or their
+  `ROBOMATA_MEMWAL_*` aliases, plus the `@mysten-incubation/memwal` package in
+  the deployment. If the SDK or credentials are missing, agent runs continue
+  and record `configured_without_*` or `sdk_unavailable` provenance.
 - `ROBOMATA_AGENTS_FILE=/local/path/agents.json` is an optional local-only JSON
   fallback when `POSTGRES_URL` is not configured.
 
-When these flags are unset, `/robomata`, `/operator/submissions`, Robomata
-submission APIs, protected packet sharing, Walrus/Seal storage, and Sui evidence
-commits must behave as they do today.
+When these flags are unset, `/robomata`, `/robomata/submissions`, legacy
+`/operator/submissions` redirects, Robomata submission APIs, protected packet
+sharing, Walrus/Seal storage, and Sui evidence commits must behave as they do
+today.
 
 ## Supervised Agent Trust Boundary
 
@@ -161,10 +191,153 @@ used in the borrowing-base workflow. The diligence memo can summarize the
 rules-based credit package, but it is not an agent policy, not an executable
 action queue, and not the source of credit truth.
 
+Lender-appointed agents are scoped to protected lender share links. A lender
+share link can record a lender appointment when
+`ROBOMATA_LENDER_AGENT_APPOINTMENT_ENABLED=true`, but that appointment does not
+grant delegated execution, Sui/EVM writes, or automatic action approval. Those
+capabilities require later permission, revocation, and bounded-execution
+controls.
+
+Appointments can be revoked without deleting prior runs, actions, or audit
+events. A revoked policy cannot run manually or through scheduled ticks, and
+open actions cannot be approved or completed while the policy remains revoked.
+Operator and protected lender packet surfaces show the revoked state plus
+revocation reason and authorization surface.
+
+Actions carry the appointment authorization snapshot that created them.
+Approving or completing an action requires the current appointment to be active,
+to still allow the action type, and to match the action's recorded appointment
+authorization. Disallowed action types are retained as skipped audit records
+with the permission-denial reason instead of becoming executable work.
+
 Operators remain the execution boundary. They activate or pause policy, trigger
 manual checks, and approve, reject, complete, or skip proposed actions. Scheduled
 ticks can create proposed actions, but they do not approve their own work, mutate
 submissions, or execute Sui/EVM writes.
+
+The first delegated execution slice is audit-only. When both execution flags are
+enabled, approved `evidence_review` and `sui_root_review` actions can run through
+the `robomata.agent.advisory_audit.v1` adapter. The adapter immediately
+revalidates the current appointment, action authorization snapshot, allowed
+action type, and revocation state before recording executor, tool, input digest,
+output digest, status, and failure reason. Failed adapter attempts are retained
+as action/event audit metadata and leave the action status unchanged. All other
+action types remain proposal-only in this slice.
+
+Agent policies now record the appointed supervised agent name, the appointer,
+and the planner boundary used for each run. The current appointer path is the
+authenticated operator/partner address. Lender-appointed agents require a
+separate lender-authorized policy endpoint before the UI should claim lender
+appointment. Live planner output is constrained to the deterministic candidate
+action set: it may refine operator-facing title, message, reason text, and
+structured recommendation intent, but it cannot add action types, drop
+rule-triggered candidates, understate deterministic risk, approve actions, or
+execute writes. Anthropic remains a stubbed non-rules planner provider until its
+live planning controls are implemented.
+
+## Walrus Memory / MemWal Adapter
+
+The MemWal adapter is a minimal long-term memory layer for supervised facility
+agents. Before a run, Robomata recalls bounded memories from a facility-scoped
+namespace such as `robomata-agent:<facilityId>`. After the run is recorded, it
+submits a compact memory containing run id, completion time, facility status,
+packet freshness, Sui root status, tokenization status, proposed action
+type/status/severity tuples, planner provider/status, and source-data digest.
+
+The adapter intentionally mirrors only public-safe supervision metadata. It
+does not store raw evidence bodies, Walrus ciphertext, Seal plaintext, share
+tokens, wallet signatures, private keys, API keys, or unbounded prompts/model
+responses. The existing Robomata agent store remains the authoritative audit
+trail; MemWal is a portable recall layer for future agent runs, not the source
+of record for policy, action approval, or execution state.
+
+Required live configuration:
+
+- `ROBOMATA_AGENT_MEMORY_ENABLED=true`
+- `MEMWAL_ACCOUNT_ID=<MemWalAccount Sui object id>`
+- `MEMWAL_DELEGATE_KEY=<scoped delegate private key>`
+- optional `MEMWAL_SERVER_URL=<relayer url>`
+- optional `ROBOMATA_MEMWAL_NAMESPACE_PREFIX=robomata-agent`
+- optional `ROBOMATA_MEMWAL_NAMESPACE=<facility-scoped namespace base>`
+
+## Agent Supervision Planner Boundary
+
+Agent Supervision planning is a bounded advisory layer over deterministic
+candidate actions. The planner can refine operator-facing action copy, but the
+candidate action set still comes from policy-artifact rules and current facility
+state. The planner also records structured recommendation intent for each
+action: recommendation source, risk level, required approval boundary,
+suggested tool, tool-intent reason, and execution boundary. LLM output cannot
+create new action types, remove rule-triggered candidates, understate
+deterministic risk, approve actions, execute actions, mutate submissions, mutate
+packets, write evidence, or submit Sui/EVM transactions.
+
+Every supervised agent run records planner provenance on the run payload:
+
+- provider, model, mode, status, and source of truth;
+- prompt version `agent-supervision-planner-v1`;
+- output schema version `agent-supervision-plan-output-v2`;
+- bounded planner input digest;
+- source-data digest;
+- planner output digest;
+- generated timestamp;
+- candidate, recent-run, recent-action, and allowed-tool counts;
+- planner input controls showing that raw evidence and secret material were not
+  included.
+
+The live planner input is normalized before any provider call. Allowed fields
+are limited to policy artifact identity/version, policy appointment metadata,
+facility projection status, packet/Sui freshness statuses, deterministic
+candidate action summaries, recent run/action summaries, submission counts, and
+the allowed supervised action/tool surface. The provider input includes recent
+run/packet history only as compact ids, statuses, counts, and bounded summaries.
+
+Planner recommendation intent is validated before persistence. Required
+approvals are operator-only unless the active appointment explicitly
+auto-approves the action type, in which case the persisted boundary is
+`none_auto_approved`. Scheduled tick runs that suppress auto-approval force the
+planner boundary back to operator approval for that run. Suggested tools are
+limited to `none` or the advisory audit adapter
+`robomata.agent.advisory_audit.v1`, and the audit adapter is only valid for
+in-appointment evidence-review and Sui-root-review action types while both
+`ROBOMATA_AGENT_EXECUTION_ENABLED` and
+`ROBOMATA_AGENT_ADVISORY_EXECUTION_ENABLED` are enabled. Otherwise the suggested
+tool is `none` and the execution boundary is `proposal_only`. This metadata does
+not approve, complete, execute, or mutate retained actions. Deterministic
+fallback populates the same fields with safe defaults, so the Agent Supervision
+panel can show the boundary even when `ROBOMATA_AGENT_PLANNER_ENABLED` is off or
+a live provider fails validation.
+
+Excluded material includes raw evidence bodies, raw provider payloads, API keys,
+secret env names, Sui private keys, Seal plaintext or ciphertext, Walrus
+ciphertext, share-link tokens, wallet signatures, and raw prompts or provider
+responses. The Agent Supervision panel exposes the boundary, digest, version,
+and control summary rather than raw prompts or provider responses.
+
+OpenAI planner refinement requires:
+
+- `ROBOMATA_AGENT_PLANNER_PROVIDER=openai`
+- `ROBOMATA_AGENT_PLANNER_ENABLED=true`
+- `OPENAI_API_KEY=<secret>`
+- `ROBOMATA_AGENT_PLANNER_MODEL=<model id>`
+
+Google/Gemini planner refinement requires:
+
+- `ROBOMATA_AGENT_PLANNER_PROVIDER=google`
+- `ROBOMATA_AGENT_PLANNER_ENABLED=true`
+- `GOOGLE_GENERATIVE_AI_API_KEY=<secret>`
+- `ROBOMATA_AGENT_PLANNER_MODEL=<model id>`
+
+OpenAI planner requests use Responses structured output with `store: false`.
+Google planner requests use Gemini `generateContent` with JSON response MIME
+and the planner JSON schema passed in `generationConfig.responseFormat`.
+Both use a short timeout and deterministic fallback if the provider call fails
+or returns schema-invalid output. Anthropic remains a stubbed planner boundary
+until equivalent provider-specific controls are implemented.
+When Google returns HTTP 429 / rate-limit exhaustion, the persisted planner
+boundary records `rate_limited_fallback` instead of the generic
+`live_error_fallback`; deterministic candidate actions remain the source of
+truth for the run.
 
 Sui and EVM writes remain explicit operator-signed product paths or separately
 configured legacy/test paths:
@@ -178,6 +351,131 @@ configured legacy/test paths:
 
 Broader autonomous execution belongs to the follow-on Linear project
 `Robomata Agent-First Operating System`, not this live monitoring tranche.
+
+## Policy Visibility Baseline
+
+The current rules are represented by the versioned
+`robomata-default-facility-policy` artifact. This is a platform-default policy
+artifact, not a lender-authored override yet. The operator workspace, lender
+packet view, facility monitor, and agent supervision panel expose the active
+`submission-v1` artifact so users can see the deterministic thresholds and
+proposal triggers before relying on the output.
+
+Visible policy rules cover borrowing-base eligibility, concentration reserves,
+evidence freshness, packet freshness classification, Sui evidence-root status,
+and supervised agent action proposal triggers. The displayed rules are sourced
+from shared policy-artifact metadata and the numeric borrowing-base thresholds
+are reused by the computation path to avoid UI/runtime drift.
+Packet freshness rules also disclose that fresh observations recorded after a
+stored packet was generated mark that packet stale until reviewed or refreshed.
+Monitoring run and protected lender packet surfaces display the rule version
+and artifact identity attached to the pinned borrowing-base run when that run is
+available.
+
+Operator and protected lender packet policy reviews are acknowledgement records
+for the active platform-default artifact. They persist reviewer role, reviewed
+artifact identity/version, decision status, timestamp, and rationale, but they
+do not activate lender-authored overrides, change deterministic credit rules, or
+alter the borrowing-base source of truth.
+
+The policy-artifact resolver currently always returns the platform default for a
+facility/submission. It is intentionally shaped for future facility or
+lender-specific overrides, but this tranche does not change credit behavior,
+root verification semantics, or approval boundaries.
+
+Run, packet, share-link, and agent-action payloads can also carry policy
+evaluation detail. These records are explainability metadata derived from the
+already-computed deterministic outputs:
+
+- borrowing-base evaluations explain advance-rate, concentration, receivable
+  eligibility, evidence-status, and manual-exclusion outcomes;
+- packet evaluations explain evidence freshness, packet freshness, and Sui root
+  status;
+- protected share-link metadata stores a compact pinned evaluation summary and
+  the resolved lender packet can include the full pinned evaluation detail when
+  available;
+- agent actions store the proposal/permission rule id and rule status that
+  retained or skipped the action.
+
+These evaluations do not introduce a new decision engine. They document the
+rule outcomes that produced the current deterministic state.
+
+The next agent-first tranche should replace these defaults with explicit lender
+policy artifacts, versioned approvals, and policy effective dates. Until then,
+the deterministic rules remain the source of credit truth and LLM output remains
+advisory diligence text.
+
+## LLM Review Provider Boundary
+
+Borrowing-base and lender-packet review output records a review boundary with
+provider, provider status, review mode, optional model label, and source of
+truth. Operator and lender packet views display this boundary next to the memo
+so users can distinguish deterministic review text from future live LLM review.
+
+Live LLM review attempts require both a selected provider and the server-side
+`ROBOMATA_LLM_REVIEW_ENABLED=true` gate. Provider API keys alone are not enough
+to switch credit review into a live LLM path. Provider selection is server-side
+configuration, not selectable by operators or lenders in the UI. Operator and
+lender views display the selected provider, model, mode, status, and digests so
+users can audit which boundary produced the advisory text.
+
+OpenAI review requires:
+
+- `ROBOMATA_AGENT_PROVIDER=openai`
+- `ROBOMATA_LLM_REVIEW_ENABLED=true`
+- `OPENAI_API_KEY=<secret>`
+- `ROBOMATA_AGENT_REVIEW_MODEL=<model id>`
+
+Google/Gemini review requires:
+
+- `ROBOMATA_AGENT_PROVIDER=google`
+- `ROBOMATA_LLM_REVIEW_ENABLED=true`
+- `GOOGLE_GENERATIVE_AI_API_KEY=<secret>`
+- `ROBOMATA_AGENT_REVIEW_MODEL=<model id>`
+
+The OpenAI adapter uses Responses structured output. The Google adapter uses the
+Gemini `generateContent` API with JSON response MIME and the review JSON schema
+passed in `generationConfig.responseFormat`. Both adapters are advisory
+memo paths only. They send aggregates plus capped receivable/evidence exception
+rows, not raw evidence files or every eligible receivable. OpenAI requests set
+`store: false`; both adapters use a short provider timeout and fall back to
+deterministic review output if the API key, model, response, or provider call
+fails. This means live adapters still fall back to deterministic review output
+instead of accepting partial or unvalidated text. When deterministic rules
+report no open exceptions, model-provided exception notes are discarded so the
+lender packet remains clean. The resulting lender packet records whether review
+output was `llm_live` or deterministic fallback. When Google returns HTTP 429 /
+rate-limit exhaustion, the review boundary records `rate_limited_fallback` so
+operators can distinguish quota pressure from schema or provider availability
+failures.
+
+The live provider input control boundary is explicit:
+
+- Provider input rows are capped by `openAiExceptionRowLimit`.
+- Text sent to the provider is trimmed and bounded before request construction.
+- Allowed fields are limited to policy artifact identity/version, operator
+  name, borrowing-base availability and exception counts, exception summaries,
+  and capped receivable/evidence exception rows.
+- Raw evidence bodies, raw provider payloads, secret env names, API keys, Sui
+  private keys, Seal plaintext/ciphertext, Walrus ciphertext, and share-link
+  tokens are excluded from provider input.
+
+Review provenance is retained as metadata, not raw prompt or provider payload
+storage. Lender packet review boundaries include provider, model, provider
+status, review mode, prompt version, output schema version, active policy
+artifact id/version, a stable review input id, and short input/output digests.
+For live provider attempts, the review input id and input digest are derived
+from the normalized bounded provider input, while the source-data digest records
+the full deterministic borrowing-base review input. Those digests let operators
+and lenders identify which bounded review context, source data, and output were
+used without exposing API keys, raw evidence contents, or full LLM
+request/response bodies.
+
+Structured review output schema v2 contains a headline, memo, exception
+analysis, diligence questions, and recommended next actions. Malformed
+live-provider arrays or schema-invalid responses are rejected and converted to
+deterministic fallback output with `schema_invalid_fallback` status instead of
+being partially accepted as live output.
 
 ## Scheduled Agent Tick Route
 

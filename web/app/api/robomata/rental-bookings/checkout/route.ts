@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHash, randomBytes } from "node:crypto";
 import {
   isRobomataRentalBookingsEnabled,
   isRobomataRentalInventoryEnabled,
@@ -7,6 +8,7 @@ import {
   isRobomataWorkflowMutationEnabled,
 } from "~~/lib/featureFlags";
 import { defaultRentalCancellationPolicy } from "~~/lib/robomata/rentalBookings";
+import type { RentalVehicleRecord } from "~~/lib/robomata/rentalInventory";
 import { rentalMarketplaceListingFromVehicle } from "~~/lib/robomata/rentalMarketplace";
 import { buildRentalCheckoutPaymentPlan } from "~~/lib/robomata/rentalPayments";
 import { renterCheckoutEligibility } from "~~/lib/robomata/rentalRenters";
@@ -23,6 +25,14 @@ type CheckoutRequestBody = {
   renterId?: string;
 };
 
+function createCheckoutAccessToken() {
+  const token = randomBytes(32).toString("base64url");
+  return {
+    token,
+    tokenHash: createHash("sha256").update(token).digest("hex"),
+  };
+}
+
 function requireBookingCheckout() {
   if (!isRobomataRentalBookingsEnabled()) {
     return NextResponse.json({ error: "Robomata rental bookings are not enabled." }, { status: 404 });
@@ -37,6 +47,36 @@ function requireBookingCheckout() {
   if (!isRobomataWorkflowMutationEnabled()) {
     return NextResponse.json({ error: "Robomata rental booking writes are not enabled." }, { status: 403 });
   }
+  return null;
+}
+
+function requestedTripDays(dateFrom: string, dateTo: string) {
+  return Math.max(1, Math.ceil((Date.parse(dateTo) - Date.parse(dateFrom)) / (24 * 60 * 60 * 1_000)));
+}
+
+function enforceBookingReviewLimits(vehicle: RentalVehicleRecord, body: CheckoutRequestBody) {
+  const bookingReview = vehicle.hostControls?.bookingReview;
+  if (!bookingReview || !body.dateFrom || !body.dateTo) return null;
+
+  const maxTripDays = bookingReview.maxTripDays;
+  if (maxTripDays !== undefined && requestedTripDays(body.dateFrom, body.dateTo) > maxTripDays) {
+    return NextResponse.json(
+      { error: `Requested trip exceeds the host maximum of ${maxTripDays} days.` },
+      { status: 409 },
+    );
+  }
+
+  const minimumNoticeHours = bookingReview.minimumNoticeHours;
+  if (minimumNoticeHours !== undefined) {
+    const noticeHours = (Date.parse(body.dateFrom) - Date.now()) / (60 * 60 * 1_000);
+    if (noticeHours < minimumNoticeHours) {
+      return NextResponse.json(
+        { error: `Requested trip starts inside the host minimum notice window of ${minimumNoticeHours} hours.` },
+        { status: 409 },
+      );
+    }
+  }
+
   return null;
 }
 
@@ -58,6 +98,9 @@ export async function POST(request: NextRequest) {
     if (!Number.isFinite(dateFrom) || !Number.isFinite(dateTo) || dateTo <= dateFrom) {
       return NextResponse.json({ error: "dateFrom and dateTo must be valid ordered timestamps." }, { status: 400 });
     }
+    if (dateFrom < Date.now()) {
+      return NextResponse.json({ error: "dateFrom cannot be in the past." }, { status: 400 });
+    }
 
     const [renter, vehicle] = await Promise.all([
       getRentalRenterStore().getRenter(body.renterId),
@@ -77,12 +120,15 @@ export async function POST(request: NextRequest) {
     if (!listing.tripEstimate) {
       return NextResponse.json({ error: "Rental vehicle does not have pricing configured." }, { status: 409 });
     }
+    const reviewLimitError = enforceBookingReviewLimits(vehicle, body);
+    if (reviewLimitError) return reviewLimitError;
 
     const paymentPlan = buildRentalCheckoutPaymentPlan({
       listing,
       tripEstimate: listing.tripEstimate,
     });
     const eligibility = renterCheckoutEligibility(renter);
+    const checkoutAccess = createCheckoutAccessToken();
     const booking = await getRentalBookingStore().createBooking({
       renterId: renter.id,
       platformVehicleId: listing.platformVehicleId,
@@ -91,11 +137,15 @@ export async function POST(request: NextRequest) {
       dateFrom: body.dateFrom,
       dateTo: body.dateTo,
       state: eligibility.eligible ? "pending_payment_authorization" : "pending_renter_verification",
+      checkoutAccessTokenHash: checkoutAccess.tokenHash,
       paymentPlan,
       cancellationPolicy: defaultRentalCancellationPolicy(body.dateFrom),
     });
 
-    return NextResponse.json({ booking, checkoutEligibility: eligibility }, { status: 201 });
+    return NextResponse.json(
+      { booking, checkoutAccessToken: checkoutAccess.token, checkoutEligibility: eligibility },
+      { status: 201 },
+    );
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to start rental booking checkout." },

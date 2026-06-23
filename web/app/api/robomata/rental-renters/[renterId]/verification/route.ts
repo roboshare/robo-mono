@@ -6,6 +6,10 @@ import {
   renterCheckoutEligibility,
 } from "~~/lib/robomata/rentalRenters";
 import { getRentalRenterStore } from "~~/lib/robomata/server/rentalRenterStore";
+import {
+  normalizeRenterVerificationProviderUpdate,
+  renterVerificationProviderPolicy,
+} from "~~/lib/robomata/server/rentalVerificationProviders";
 
 export const runtime = "nodejs";
 
@@ -46,15 +50,16 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     const { renterId } = await context.params;
     const body = (await request.json()) as RenterVerificationUpdate;
+    const providerUpdate = normalizeRenterVerificationProviderUpdate(body);
     const renter = await getRentalRenterStore().updateVerification(renterId, {
-      ...body,
-      decisionSource: body.decisionSource ?? "provider",
-      policyVersion: body.policyVersion ?? RENTER_VERIFICATION_POLICY_V1.version,
+      ...providerUpdate,
+      policyVersion: providerUpdate.policyVersion ?? RENTER_VERIFICATION_POLICY_V1.version,
     });
     if (!renter) return NextResponse.json({ error: "Renter profile not found." }, { status: 404 });
     return NextResponse.json({
       checkoutEligibility: renterCheckoutEligibility(renter),
       renter,
+      verificationProviders: renterVerificationProviderPolicy(),
       verificationPolicy: RENTER_VERIFICATION_POLICY_V1,
     });
   } catch (error) {

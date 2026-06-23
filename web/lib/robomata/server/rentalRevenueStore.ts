@@ -33,12 +33,24 @@ type RentalRevenueStore = {
     protocolRequest: ReturnType<typeof buildProtocolEarningsDistributionRequest> | null;
   }>;
   getPostingBatch: (batchId: string) => Promise<RentalRevenuePostingBatch | null>;
-  markPostingBatchPosted: (batchId: string, protocolTxHash: string) => Promise<RentalRevenuePostingBatch | null>;
+  listActivePaymentBackedLedgerEntries: () => Promise<RentalRevenueLedgerEntry[]>;
+  markPostingBatchFailed: (batchId: string, errorMessage: string) => Promise<RentalRevenuePostingBatch | null>;
+  markPostingBatchPosted: (
+    batchId: string,
+    input: {
+      chainId: number;
+      confirmationMode: "operator_confirmed" | "submitted";
+      confirmedBy?: string;
+      protocolTxHash: string;
+    },
+  ) => Promise<RentalRevenuePostingBatch | null>;
+  withPaymentBackedPostingLock: <T>(paymentIds: string[], operation: () => Promise<T>) => Promise<T>;
 };
 
 let ensuredPostgresTables = false;
 let storeSingleton: RentalRevenueStore | null = null;
 const fileStoreLocks = new Map<string, Promise<void>>();
+const paymentPostingLocks = new Map<string, Promise<void>>();
 
 function protocolRequestForBatch(batch: RentalRevenuePostingBatch) {
   return batch.status === "ready" || batch.status === "failed" ? buildProtocolEarningsDistributionRequest(batch) : null;
@@ -46,6 +58,29 @@ function protocolRequestForBatch(batch: RentalRevenuePostingBatch) {
 
 function advisoryLockKey(batchId: string): string {
   return `robomata:rental-revenue:${batchId}`;
+}
+
+function paymentAdvisoryLockKey(paymentId: string): string {
+  return `robomata:rental-revenue-payment:${paymentId}`;
+}
+
+async function withAsyncLock<T>(
+  locks: Map<string, Promise<void>>,
+  lockKey: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const previous = locks.get(lockKey) ?? Promise.resolve();
+  let release: () => void = () => undefined;
+  const current = previous.then(() => new Promise<void>(resolve => (release = resolve)));
+  locks.set(lockKey, current);
+
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (locks.get(lockKey) === current) locks.delete(lockKey);
+  }
 }
 
 function assertMatchingBatchId(existingBatch: RentalRevenuePostingBatch | undefined, batch: RentalRevenuePostingBatch) {
@@ -98,18 +133,15 @@ async function writeFileStore(filePath: string, fileStore: RentalRevenueFileStor
 }
 
 async function withFileStoreWriteLock<T>(filePath: string, operation: () => Promise<T>): Promise<T> {
-  const previous = fileStoreLocks.get(filePath) ?? Promise.resolve();
-  let release: () => void = () => undefined;
-  const current = previous.then(() => new Promise<void>(resolve => (release = resolve)));
-  fileStoreLocks.set(filePath, current);
+  return withAsyncLock(fileStoreLocks, filePath, operation);
+}
 
-  await previous;
-  try {
-    return await operation();
-  } finally {
-    release();
-    if (fileStoreLocks.get(filePath) === current) fileStoreLocks.delete(filePath);
-  }
+async function withFilePaymentPostingLocks<T>(paymentIds: string[], operation: () => Promise<T>): Promise<T> {
+  const uniqueIds = [...new Set(paymentIds.filter(Boolean))].sort();
+  return uniqueIds.reduceRight(
+    (next, paymentId) => () => withAsyncLock(paymentPostingLocks, paymentId, next),
+    operation,
+  )();
 }
 
 function upsertEntries(
@@ -176,20 +208,64 @@ function createFileStore(): RentalRevenueStore {
       const fileStore = await readFileStore(filePath);
       return fileStore.batches.find(batch => batch.id === batchId) ?? null;
     },
-    async markPostingBatchPosted(batchId, protocolTxHash) {
+    async listActivePaymentBackedLedgerEntries() {
+      const fileStore = await readFileStore(filePath);
+      const activeEntryIds = new Set(
+        fileStore.batches
+          .filter(
+            batch =>
+              batch.status === "ready" ||
+              batch.status === "posting" ||
+              batch.status === "posted" ||
+              batch.status === "failed",
+          )
+          .flatMap(batch => batch.entryIds),
+      );
+      return fileStore.ledgerEntries.filter(
+        entry => activeEntryIds.has(entry.id) && (entry.source.bookingId || entry.source.paymentIntentId),
+      );
+    },
+    async withPaymentBackedPostingLock<T>(paymentIds: string[], operation: () => Promise<T>): Promise<T> {
+      return withFilePaymentPostingLocks(paymentIds, operation);
+    },
+    async markPostingBatchFailed(batchId, errorMessage) {
       return withFileStoreWriteLock(filePath, async () => {
         const fileStore = await readFileStore(filePath);
         const current = fileStore.batches.find(batch => batch.id === batchId);
         if (!current) return null;
         if (current.status === "posted") {
-          if (current.protocolTxHash === protocolTxHash) return current;
+          throw new Error(`Posting batch ${batchId} is already posted and cannot be marked failed.`);
+        }
+        const batch: RentalRevenuePostingBatch = {
+          ...current,
+          status: "failed",
+          errorMessage,
+        };
+        fileStore.batches = [batch, ...fileStore.batches.filter(candidate => candidate.id !== batch.id)];
+        await writeFileStore(filePath, fileStore);
+        return batch;
+      });
+    },
+    async markPostingBatchPosted(batchId, input) {
+      return withFileStoreWriteLock(filePath, async () => {
+        const fileStore = await readFileStore(filePath);
+        const current = fileStore.batches.find(batch => batch.id === batchId);
+        if (!current) return null;
+        if (current.status === "posted") {
+          if (current.protocolTxHash === input.protocolTxHash && current.protocolTxChainId === input.chainId) {
+            return current;
+          }
           throw new Error(`Posting batch ${batchId} is already posted with a different protocol transaction.`);
         }
         const batch: RentalRevenuePostingBatch = {
           ...current,
           status: "posted",
           postedAt: new Date().toISOString(),
-          protocolTxHash,
+          protocolTxChainId: input.chainId,
+          protocolTxConfirmationMode: input.confirmationMode,
+          protocolTxConfirmedBy: input.confirmedBy,
+          protocolTxHash: input.protocolTxHash,
+          errorMessage: undefined,
         };
         fileStore.batches = [batch, ...fileStore.batches.filter(candidate => candidate.id !== batch.id)];
         await writeFileStore(filePath, fileStore);
@@ -276,7 +352,35 @@ function createPostgresStore(): RentalRevenueStore {
       `) as Array<{ payload: RentalRevenuePostingBatch }>;
       return rows[0]?.payload ?? null;
     },
-    async markPostingBatchPosted(batchId, protocolTxHash) {
+    async listActivePaymentBackedLedgerEntries() {
+      await ensurePostgresTables();
+      const batchRows = (await sql`
+        SELECT payload
+        FROM robomata_rental_revenue_posting_batches
+        WHERE status = ANY(${["ready", "posting", "posted", "failed"]});
+      `) as Array<{ payload: RentalRevenuePostingBatch }>;
+      const activeEntryIds = [...new Set(batchRows.flatMap(row => row.payload.entryIds))];
+      if (activeEntryIds.length === 0) return [];
+      const entryRows = (await sql`
+        SELECT payload
+        FROM robomata_rental_revenue_ledger_entries
+        WHERE id = ANY(${activeEntryIds});
+      `) as Array<{ payload: RentalRevenueLedgerEntry }>;
+      return entryRows.map(row => row.payload).filter(entry => entry.source.bookingId || entry.source.paymentIntentId);
+    },
+    async withPaymentBackedPostingLock<T>(paymentIds: string[], operation: () => Promise<T>): Promise<T> {
+      await ensurePostgresTables();
+      const uniqueIds = [...new Set(paymentIds.filter(Boolean))].sort();
+      if (uniqueIds.length === 0) return operation();
+      const result = await sql.begin(async tx => {
+        for (const paymentId of uniqueIds) {
+          await tx`SELECT pg_advisory_xact_lock(hashtext(${paymentAdvisoryLockKey(paymentId)}));`;
+        }
+        return operation();
+      });
+      return result as T;
+    },
+    async markPostingBatchFailed(batchId, errorMessage) {
       await ensurePostgresTables();
       return sql.begin(async tx => {
         await tx`SELECT pg_advisory_xact_lock(hashtext(${advisoryLockKey(batchId)}));`;
@@ -289,7 +393,42 @@ function createPostgresStore(): RentalRevenueStore {
         const current = currentRows[0]?.payload;
         if (!current) return null;
         if (current.status === "posted") {
-          if (current.protocolTxHash === protocolTxHash) return current;
+          throw new Error(`Posting batch ${batchId} is already posted and cannot be marked failed.`);
+        }
+        const updatedAt = new Date().toISOString();
+        const batch: RentalRevenuePostingBatch = {
+          ...current,
+          status: "failed",
+          errorMessage,
+        };
+        const updatedRows = (await tx`
+          UPDATE robomata_rental_revenue_posting_batches
+          SET status = ${batch.status},
+              payload = ${JSON.stringify(batch)}::jsonb,
+              updated_at = ${updatedAt}::timestamptz
+          WHERE id = ${batchId}
+            AND status != 'posted'
+          RETURNING payload;
+        `) as Array<{ payload: RentalRevenuePostingBatch }>;
+        return updatedRows[0]?.payload ?? batch;
+      });
+    },
+    async markPostingBatchPosted(batchId, input) {
+      await ensurePostgresTables();
+      return sql.begin(async tx => {
+        await tx`SELECT pg_advisory_xact_lock(hashtext(${advisoryLockKey(batchId)}));`;
+        const currentRows = (await tx`
+          SELECT payload
+          FROM robomata_rental_revenue_posting_batches
+          WHERE id = ${batchId}
+          LIMIT 1;
+        `) as Array<{ payload: RentalRevenuePostingBatch }>;
+        const current = currentRows[0]?.payload;
+        if (!current) return null;
+        if (current.status === "posted") {
+          if (current.protocolTxHash === input.protocolTxHash && current.protocolTxChainId === input.chainId) {
+            return current;
+          }
           throw new Error(`Posting batch ${batchId} is already posted with a different protocol transaction.`);
         }
         const postedAt = new Date().toISOString();
@@ -297,7 +436,11 @@ function createPostgresStore(): RentalRevenueStore {
           ...current,
           status: "posted",
           postedAt,
-          protocolTxHash,
+          protocolTxChainId: input.chainId,
+          protocolTxConfirmationMode: input.confirmationMode,
+          protocolTxConfirmedBy: input.confirmedBy,
+          protocolTxHash: input.protocolTxHash,
+          errorMessage: undefined,
         };
         const updatedRows = (await tx`
           UPDATE robomata_rental_revenue_posting_batches

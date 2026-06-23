@@ -1,7 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { ArrowPathIcon, CheckCircleIcon, CircleStackIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
+import {
+  EvidenceFreshnessPolicyDisclosure,
+  PacketFreshnessPolicyDisclosure,
+  PolicyEvaluationSummaryPanel,
+  SuiRootPolicyDisclosure,
+} from "~~/components/robomata/PolicyRulesPanel";
 import { isRobomataFacilityMonitoringClientEnabled } from "~~/lib/featureFlags";
 import { formatUsd } from "~~/lib/robomata/borrowingBase";
 import type {
@@ -13,6 +20,7 @@ import type {
   PacketManifest,
   SuiRootVerificationStatus,
 } from "~~/lib/robomata/facilityMonitoring";
+import { resolveRobomataFacilityPolicyArtifact } from "~~/lib/robomata/policyRules";
 import type { FacilitySubmission } from "~~/lib/robomata/submissions";
 import { notification } from "~~/utils/scaffold-eth";
 
@@ -26,6 +34,7 @@ type FacilityMonitoringPanelProps = {
   }) => Promise<Record<string, string>>;
   signerAddress?: string;
   submission: FacilitySubmission;
+  workspaceHref?: string;
 };
 
 async function readJsonResponse<T>(response: Response): Promise<T & { error?: string }> {
@@ -76,6 +85,50 @@ function formatStatus(value: string) {
   return value.replace(/_/g, " ");
 }
 
+function facilityStatusLabel(status: FacilityMonitoringStatus) {
+  const labels: Record<FacilityMonitoringStatus, string> = {
+    commit_pending: "Verification Pending",
+    commit_verified: "Verified",
+    draft: "Setup Incomplete",
+    failed: "Needs Attention",
+    needs_evidence: "Needs Evidence",
+    needs_review: "Needs Review",
+    observing: "Monitoring",
+    packet_fresh: "Current",
+    packet_stale: "Needs Refresh",
+    ready_for_run: "Ready to Compute",
+    run_locked: "Run Locked",
+  };
+  return labels[status];
+}
+
+function packetStatusLabel(projection: FacilityMonitoringProjection) {
+  if (!projection.latestPacket) return "Packet Not Generated";
+
+  const labels: Record<PacketFreshnessStatus, string> = {
+    fresh: "Packet Fresh",
+    invalid: "Packet Needs Review",
+    refresh_available: "Packet Refresh Available",
+    stale: "Packet Stale",
+    superseded: "Packet Superseded",
+  };
+  return labels[projection.freshnessStatus];
+}
+
+function evidenceAnchorStatusLabel(status: SuiRootVerificationStatus) {
+  const labels: Record<SuiRootVerificationStatus, string> = {
+    committed: "Evidence Anchored",
+    committing: "Anchoring Evidence",
+    failed: "Verification Failed",
+    mismatch: "Evidence Mismatch",
+    not_started: "Evidence Anchor Pending",
+    pending: "Evidence Anchor Pending",
+    retryable: "Verification Retry Needed",
+    verified: "Evidence Verified",
+  };
+  return labels[status];
+}
+
 function formatDateTime(value: string | undefined) {
   return value ? new Date(value).toLocaleString() : "Not available";
 }
@@ -102,6 +155,7 @@ export const FacilityMonitoringPanel = ({
   getAuthHeaders,
   signerAddress,
   submission,
+  workspaceHref,
 }: FacilityMonitoringPanelProps) => {
   const featureEnabled = isRobomataFacilityMonitoringClientEnabled();
   const [projection, setProjection] = useState<FacilityMonitoringProjection | null>(null);
@@ -151,24 +205,29 @@ export const FacilityMonitoringPanel = ({
 
   if (!featureEnabled) return null;
 
+  const policyArtifact = resolveRobomataFacilityPolicyArtifact({
+    facilityId: projection?.facility.id ?? submission.facilityMonitoring?.facilityId,
+    submissionId: submission.id,
+  }).artifact;
+
   return (
     <section className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">
             <CircleStackIcon className="h-4 w-4" />
-            Facility monitor
+            Facility evidence monitor
           </div>
           {projection ? (
             <div className="mt-3 flex flex-wrap gap-2">
-              <span className={`badge ${statusBadgeClass(projection.facility.status)} capitalize`}>
-                {formatStatus(projection.facility.status)}
+              <span className={`badge ${statusBadgeClass(projection.facility.status)}`}>
+                {facilityStatusLabel(projection.facility.status)}
               </span>
-              <span className={`badge ${statusBadgeClass(projection.freshnessStatus)} capitalize`}>
-                packet {formatStatus(projection.freshnessStatus)}
+              <span className={`badge ${statusBadgeClass(projection.latestPacket ? projection.freshnessStatus : "")}`}>
+                {packetStatusLabel(projection)}
               </span>
-              <span className={`badge ${statusBadgeClass(projection.suiRootStatus)} capitalize`}>
-                Sui {formatStatus(projection.suiRootStatus)}
+              <span className={`badge ${statusBadgeClass(projection.suiRootStatus)}`}>
+                {evidenceAnchorStatusLabel(projection.suiRootStatus)}
               </span>
             </div>
           ) : null}
@@ -201,6 +260,15 @@ export const FacilityMonitoringPanel = ({
               <div className="mt-1 text-sm text-base-content/70">
                 {projection.latestRun ? `As of ${projection.latestRun.asOfDate}` : "Waiting on borrowing base"}
               </div>
+              {projection.latestRun ? (
+                <div className="mt-2 space-y-1">
+                  <span className="badge badge-ghost badge-sm">{projection.latestRun.policyVersion}</span>
+                  <div className="break-all text-xs text-base-content/50">
+                    {projection.latestRun.policyArtifactName ?? policyArtifact.name} ·{" "}
+                    {projection.latestRun.policyArtifactId ?? policyArtifact.id}
+                  </div>
+                </div>
+              ) : null}
             </div>
             <div className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
               <div className="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">Packet</div>
@@ -212,6 +280,25 @@ export const FacilityMonitoringPanel = ({
               </div>
             </div>
           </div>
+
+          <details className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
+            <summary className="cursor-pointer text-sm font-semibold text-base-content">Policy diagnostics</summary>
+            <div className="mt-4 grid gap-3 lg:grid-cols-3">
+              <EvidenceFreshnessPolicyDisclosure policyArtifact={policyArtifact} />
+              <PacketFreshnessPolicyDisclosure policyArtifact={policyArtifact} />
+              <SuiRootPolicyDisclosure policyArtifact={policyArtifact} />
+            </div>
+            <div className="mt-3 grid gap-3 lg:grid-cols-2">
+              <PolicyEvaluationSummaryPanel
+                evaluations={projection.latestRun?.policyEvaluations}
+                title="Borrowing-base rule evaluation"
+              />
+              <PolicyEvaluationSummaryPanel
+                evaluations={projection.latestPacket?.policyEvaluations}
+                title="Packet and evidence rule evaluation"
+              />
+            </div>
+          </details>
 
           {projection.warnings.length ? (
             <div className="rounded-[1.5rem] border border-warning/20 bg-warning/10 p-4">
@@ -236,28 +323,41 @@ export const FacilityMonitoringPanel = ({
 
           {projection.latestRun?.exceptions.length ? (
             <div className="rounded-[1.5rem] border border-error/20 bg-error/10 p-4">
-              <div className="flex items-center gap-2 text-sm font-semibold text-base-content">
-                <ExclamationTriangleIcon className="h-4 w-4" />
-                Open run exceptions
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-2 text-sm font-semibold text-base-content">
+                  <ExclamationTriangleIcon className="h-4 w-4" />
+                  Open run exceptions
+                </div>
+                {workspaceHref ? (
+                  <Link href={`${workspaceHref}#workspace-exceptions`} className="btn btn-xs btn-outline rounded-full">
+                    Resolve in workspace
+                  </Link>
+                ) : null}
               </div>
-              <div className="mt-3 grid gap-2">
-                {projection.latestRun.exceptions.map(exception => (
-                  <div
-                    key={exception.id}
-                    className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-error/10 bg-base-100/70 p-3 text-sm"
-                  >
-                    <div>
-                      <div className="font-semibold text-base-content">{exception.message}</div>
-                      <div className="mt-1 text-base-content/60">
-                        {exception.kind} - action {formatStatus(exception.actionStatus)}
+              <details className="mt-3">
+                <summary className="cursor-pointer text-sm text-base-content/70">
+                  {projection.latestRun.exceptions.length} exception
+                  {projection.latestRun.exceptions.length === 1 ? "" : "s"} mirrored from the operator worklist
+                </summary>
+                <div className="mt-3 grid gap-2">
+                  {projection.latestRun.exceptions.map(exception => (
+                    <div
+                      key={exception.id}
+                      className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-error/10 bg-base-100/70 p-3 text-sm"
+                    >
+                      <div>
+                        <div className="font-semibold text-base-content">{exception.message}</div>
+                        <div className="mt-1 text-base-content/60">
+                          {exception.kind} - action {formatStatus(exception.actionStatus)}
+                        </div>
                       </div>
+                      <span className={`badge ${statusBadgeClass(exception.severity)} capitalize`}>
+                        {formatStatus(exception.severity)}
+                      </span>
                     </div>
-                    <span className={`badge ${statusBadgeClass(exception.severity)} capitalize`}>
-                      {formatStatus(exception.severity)}
-                    </span>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              </details>
             </div>
           ) : null}
 
@@ -270,8 +370,8 @@ export const FacilityMonitoringPanel = ({
                   facility.
                 </div>
               </div>
-              <span className={`badge ${statusBadgeClass(projection.freshnessStatus)} capitalize`}>
-                latest packet {formatStatus(projection.freshnessStatus)}
+              <span className={`badge ${statusBadgeClass(projection.latestPacket ? projection.freshnessStatus : "")}`}>
+                {packetStatusLabel(projection)}
               </span>
             </div>
 
@@ -302,6 +402,10 @@ export const FacilityMonitoringPanel = ({
                               <span className="badge badge-ghost badge-xs">
                                 {run.exceptions.length} exception{run.exceptions.length === 1 ? "" : "s"}
                               </span>
+                              <span className="badge badge-ghost badge-xs">{run.policyVersion}</span>
+                            </div>
+                            <div className="mt-1 break-all text-xs text-base-content/50">
+                              {run.policyArtifactId ?? policyArtifact.id}
                             </div>
                           </td>
                           <td>
@@ -334,43 +438,52 @@ export const FacilityMonitoringPanel = ({
             )}
           </div>
 
-          <div className="space-y-3">
-            {projection.observations.length ? (
-              projection.observations.map(observation => (
-                <div key={observation.id} className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <div className="font-semibold capitalize text-base-content">{formatStatus(observation.kind)}</div>
-                      <div className="mt-1 text-sm text-base-content/70">
-                        {observation.source} - observed {new Date(observation.observedAt).toLocaleString()}
+          <details className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
+            <summary className="cursor-pointer text-sm font-semibold text-base-content">
+              Evidence observations and digests
+            </summary>
+            <div className="mt-4 space-y-3">
+              {projection.observations.length ? (
+                projection.observations.map(observation => (
+                  <div key={observation.id} className="rounded-[1.5rem] border border-base-300 bg-base-200/40 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="font-semibold capitalize text-base-content">
+                          {formatStatus(observation.kind)}
+                        </div>
+                        <div className="mt-1 text-sm text-base-content/70">
+                          {observation.source} - observed {new Date(observation.observedAt).toLocaleString()}
+                        </div>
                       </div>
+                      <span className={`badge ${observationBadgeClass(observation.status)} capitalize`}>
+                        {formatStatus(observation.status)}
+                      </span>
                     </div>
-                    <span className={`badge ${observationBadgeClass(observation.status)} capitalize`}>
-                      {formatStatus(observation.status)}
-                    </span>
-                  </div>
-                  <div className="mt-3 grid gap-2 text-xs text-base-content/60 sm:grid-cols-2">
-                    <div>{observationLinkSummary(observation)}</div>
-                    <div>Confidence: {formatStatus(observation.confidence)}</div>
-                    <div>Effective: {formatDateTime(observation.effectiveAt)}</div>
-                    <div>Expires: {formatDateTime(observation.expiresAt)}</div>
-                    {observation.supersedesObservationId ? (
-                      <div className="break-all">Supersedes: {observation.supersedesObservationId}</div>
+                    <div className="mt-3 grid gap-2 text-xs text-base-content/60 sm:grid-cols-2">
+                      <div>{observationLinkSummary(observation)}</div>
+                      <div>Confidence: {formatStatus(observation.confidence)}</div>
+                      <div>Effective: {formatDateTime(observation.effectiveAt)}</div>
+                      <div>Expires: {formatDateTime(observation.expiresAt)}</div>
+                      {observation.supersedesObservationId ? (
+                        <div className="break-all">Supersedes: {observation.supersedesObservationId}</div>
+                      ) : null}
+                      {observation.storageRef ? (
+                        <div className="break-all">Storage: {observation.storageRef}</div>
+                      ) : null}
+                    </div>
+                    {observation.notes ? (
+                      <div className="mt-2 text-xs text-base-content/60">{observation.notes}</div>
                     ) : null}
-                    {observation.storageRef ? <div className="break-all">Storage: {observation.storageRef}</div> : null}
+                    <div className="mt-3 break-all text-xs text-base-content/60">Digest: {observation.digest}</div>
                   </div>
-                  {observation.notes ? (
-                    <div className="mt-2 text-xs text-base-content/60">{observation.notes}</div>
-                  ) : null}
-                  <div className="mt-3 break-all text-xs text-base-content/60">Digest: {observation.digest}</div>
+                ))
+              ) : (
+                <div className="rounded-[1.5rem] border border-dashed border-base-300 p-4 text-sm text-base-content/60">
+                  No monitoring observations yet.
                 </div>
-              ))
-            ) : (
-              <div className="rounded-[1.5rem] border border-dashed border-base-300 p-4 text-sm text-base-content/60">
-                No monitoring observations yet.
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          </details>
         </div>
       ) : (
         <div className="mt-4 rounded-[1.5rem] border border-dashed border-base-300 p-4 text-sm text-base-content/60">

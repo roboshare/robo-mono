@@ -5,13 +5,28 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { hardhat } from "viem/chains";
-import { Bars3Icon, BugAntIcon, RocketLaunchIcon } from "@heroicons/react/24/outline";
+import {
+  BanknotesIcon,
+  Bars3Icon,
+  BugAntIcon,
+  ChartBarSquareIcon,
+  ClipboardDocumentCheckIcon,
+  KeyIcon,
+  RocketLaunchIcon,
+  Squares2X2Icon,
+} from "@heroicons/react/24/outline";
 import { CubeTransparentIcon, MagnifyingGlassIcon, UserGroupIcon } from "@heroicons/react/24/outline";
 import { FaucetButton, RainbowKitCustomConnectButton } from "~~/components/scaffold-eth";
 import { useOutsideClick, useTargetNetwork } from "~~/hooks/scaffold-eth";
 import { useIsAdmin } from "~~/hooks/useIsAdmin";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
-import { isRobomataWorkflowEnabled } from "~~/lib/featureFlags";
+import { getConfiguredAppHost, toConfiguredAppHref } from "~~/lib/appNavigation";
+import {
+  isRobomataRentalHostOpsClientEnabled,
+  isRobomataRentalMarketplaceClientEnabled,
+  isRobomataWorkflowEnabled,
+} from "~~/lib/featureFlags";
+import { isMarketingContentPath } from "~~/lib/marketingRoutes";
 
 type HeaderMenuLink = {
   label: string;
@@ -20,9 +35,32 @@ type HeaderMenuLink = {
   adminOnly?: boolean;
 };
 
-const DEFAULT_APP_HOST = "app.roboshare.finance";
+const DEFAULT_MARKETING_HOSTS = ["roboshare.finance", "www.roboshare.finance"];
+const configuredMarketingHosts = process.env.NEXT_PUBLIC_ROBOSHARE_MARKETING_HOSTS?.split(",")
+  .map(host => host.trim().toLowerCase())
+  .filter(Boolean);
 
-const getConfiguredAppHost = () => process.env.NEXT_PUBLIC_ROBOSHARE_APP_HOST?.trim().toLowerCase() || DEFAULT_APP_HOST;
+const marketingHosts = configuredMarketingHosts?.length ? configuredMarketingHosts : DEFAULT_MARKETING_HOSTS;
+const isMarketingHost = (host: string | null) => !!host && marketingHosts.includes(host);
+const isLocalHost = (host: string | null) => host === "localhost" || host === "127.0.0.1" || host === "::1";
+const shouldUseAppHostNavigation = (host: string | null) => !!host && !isLocalHost(host) && isMarketingHost(host);
+
+const HeaderAppAnchor = ({
+  children,
+  className,
+  href,
+}: {
+  children: React.ReactNode;
+  className: string;
+  href: string;
+}) => (
+  <a href={href} className={className}>
+    {children}
+  </a>
+);
+
+const launchAppButtonClassName =
+  "grid grid-flow-col gap-2 rounded-full border border-primary/70 bg-primary px-3 py-1.5 text-sm font-semibold text-primary-content shadow-md shadow-primary/20 hover:bg-primary/90 focus:!bg-primary active:!text-primary-content";
 
 export const menuLinks: HeaderMenuLink[] = [
   {
@@ -74,25 +112,22 @@ const HeaderProductsMenu = () => {
           }}
         >
           <li>
-            <Link href="/products/robomata" className="justify-between gap-4 rounded-xl text-sm">
+            <a href="/products/robomata" className="justify-between gap-4 rounded-xl text-sm">
               <span>Robomata</span>
-              <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-[0.12em] text-primary">
-                Active
-              </span>
-            </Link>
+            </a>
           </li>
           <li>
-            <Link href="/products/robomarkets" className="justify-between gap-4 rounded-xl text-sm">
-              <span>Robomarkets</span>
-            </Link>
-          </li>
-          <li>
-            <Link href="/products/robolend" className="justify-between gap-4 rounded-xl text-sm">
+            <a href="/products/robolend" className="justify-between gap-4 rounded-xl text-sm">
               <span>Robolend</span>
               <span className="whitespace-nowrap rounded-full bg-amber-100 px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-[0.12em] text-amber-700">
                 Soon
               </span>
-            </Link>
+            </a>
+          </li>
+          <li>
+            <a href="/products/robomarkets" className="justify-between gap-4 rounded-xl text-sm">
+              <span>Robomarkets</span>
+            </a>
           </li>
         </ul>
       </details>
@@ -100,31 +135,134 @@ const HeaderProductsMenu = () => {
   );
 };
 
+const HeaderMenuLinkItems = ({ isAdmin = false, pathname }: { isAdmin?: boolean; pathname: string | null }) => (
+  <>
+    {menuLinks
+      .filter(link => !link.adminOnly || isAdmin)
+      .map(({ label, href, icon }) => {
+        const isActive = pathname === href;
+        return (
+          <li key={href}>
+            <Link
+              href={href}
+              passHref
+              className={`${
+                isActive ? "bg-secondary shadow-md" : ""
+              } hover:bg-secondary hover:shadow-md focus:!bg-secondary active:!text-neutral py-1.5 px-3 text-sm rounded-full gap-2 grid grid-flow-col`}
+            >
+              {icon}
+              <span>{label}</span>
+            </Link>
+          </li>
+        );
+      })}
+  </>
+);
+
+const HeaderAdminMenuLinkItems = ({ pathname }: { pathname: string | null }) => {
+  const { isAdmin } = useIsAdmin();
+
+  return <HeaderMenuLinkItems isAdmin={isAdmin} pathname={pathname} />;
+};
+
+const getLaunchAppHref = () => (isRobomataWorkflowEnabled() ? "/dashboard" : "/operator");
+
+const resolveAppHostHref = ({
+  browserHost,
+  href,
+  isAppHost,
+  isHostResolved,
+}: {
+  browserHost: string | null;
+  href: string;
+  isAppHost: boolean;
+  isHostResolved: boolean;
+}) =>
+  isHostResolved && !isAppHost && shouldUseAppHostNavigation(browserHost)
+    ? toConfiguredAppHref(href, { forceDefaultHost: true })
+    : href;
+
+const HeaderLaunchAppButton = ({ href }: { href: string }) => (
+  <HeaderAppAnchor href={href} className={launchAppButtonClassName}>
+    <RocketLaunchIcon className="h-4 w-4" />
+    <span>Launch App</span>
+  </HeaderAppAnchor>
+);
+
 export const HeaderMenuLinks = () => {
   const pathname = usePathname();
-  const { isAdmin } = useIsAdmin();
   const [isAppHost, setIsAppHost] = useState(false);
   const [isHostResolved, setIsHostResolved] = useState(false);
-  const launchAppHref = isRobomataWorkflowEnabled() ? "/operator/submissions" : "/operator";
+  const [browserHost, setBrowserHost] = useState<string | null>(null);
+  const launchAppHref = getLaunchAppHref();
+  const isMarketingContent = isMarketingContentPath(pathname);
   const isOperatorPath =
     pathname === "/operator" ||
     pathname?.startsWith("/operator/") ||
     pathname === "/partner" ||
     pathname?.startsWith("/partner/");
-  const showLaunchApp = isHostResolved && !isAppHost && !isOperatorPath;
+  const showLaunchApp = (!isMarketingContent || isLocalHost(browserHost)) && !isAppHost && !isOperatorPath;
+  const showRentalMarketplace = isRobomataRentalMarketplaceClientEnabled();
+  const showRentalHostOps = isRobomataRentalHostOpsClientEnabled();
+  const showAdminLinks = !isMarketingContentPath(pathname);
+  const resolvedLaunchAppHref = resolveAppHostHref({ browserHost, href: launchAppHref, isAppHost, isHostResolved });
+  const resolvedRentalOpsHref = resolveAppHostHref({
+    browserHost,
+    href: "/operator/rentals",
+    isAppHost,
+    isHostResolved,
+  });
 
   useEffect(() => {
-    setIsAppHost(window.location.hostname.toLowerCase() === getConfiguredAppHost());
+    const host = window.location.hostname.toLowerCase();
+    setBrowserHost(host);
+    setIsAppHost(host === getConfiguredAppHost());
     setIsHostResolved(true);
   }, []);
 
-  return (
-    <>
-      <HeaderProductsMenu />
-      {menuLinks
-        .filter(link => !link.adminOnly || isAdmin)
-        .map(({ label, href, icon }) => {
-          const isActive = pathname === href;
+  if (isHostResolved && isAppHost) {
+    const robomataEnabled = isRobomataWorkflowEnabled();
+    const appLinks: HeaderMenuLink[] = [
+      {
+        label: "Dashboard",
+        href: launchAppHref,
+        icon: <Squares2X2Icon className="h-4 w-4" />,
+      },
+      ...(robomataEnabled
+        ? [
+            {
+              label: "Robomata",
+              href: "/robomata/submissions",
+              icon: <ClipboardDocumentCheckIcon className="h-4 w-4" />,
+            },
+          ]
+        : []),
+      {
+        label: "Robolend",
+        href: "/robolend",
+        icon: <BanknotesIcon className="h-4 w-4" />,
+      },
+      {
+        label: "Robomarkets",
+        href: "/markets",
+        icon: <ChartBarSquareIcon className="h-4 w-4" />,
+      },
+      ...(showRentalHostOps
+        ? [
+            {
+              label: "Rental Ops",
+              href: "/operator/rentals",
+              icon: <KeyIcon className="h-4 w-4" />,
+            },
+          ]
+        : []),
+    ];
+
+    return (
+      <>
+        {appLinks.map(({ label, href, icon }) => {
+          const isActive = pathname === href || pathname?.startsWith(`${href}/`);
+
           return (
             <li key={href}>
               <Link
@@ -140,35 +278,105 @@ export const HeaderMenuLinks = () => {
             </li>
           );
         })}
-      {showLaunchApp ? (
+      </>
+    );
+  }
+
+  return (
+    <>
+      <HeaderProductsMenu />
+      {showRentalMarketplace && (
         <li>
           <Link
-            href={launchAppHref}
+            href="/rentals"
             passHref
-            className="grid grid-flow-col gap-2 rounded-full border border-primary/70 bg-primary px-3 py-1.5 text-sm font-semibold text-primary-content shadow-md shadow-primary/20 hover:bg-primary/90 focus:!bg-primary active:!text-primary-content"
+            className={`${
+              pathname === "/rentals" ? "bg-secondary shadow-md" : ""
+            } hover:bg-secondary hover:shadow-md focus:!bg-secondary active:!text-neutral py-1.5 px-3 text-sm rounded-full gap-2 grid grid-flow-col`}
           >
-            <RocketLaunchIcon className="h-4 w-4" />
-            <span>Launch App</span>
+            <KeyIcon className="h-4 w-4" />
+            <span>Rentals</span>
           </Link>
+        </li>
+      )}
+      {showAdminLinks ? <HeaderAdminMenuLinkItems pathname={pathname} /> : <HeaderMenuLinkItems pathname={pathname} />}
+      {showRentalHostOps && (
+        <li>
+          <HeaderAppAnchor
+            href={resolvedRentalOpsHref}
+            className={`${
+              pathname === "/operator/rentals" ? "bg-secondary shadow-md" : ""
+            } hover:bg-secondary hover:shadow-md focus:!bg-secondary active:!text-neutral py-1.5 px-3 text-sm rounded-full gap-2 grid grid-flow-col`}
+          >
+            <UserGroupIcon className="h-4 w-4" />
+            <span>Rental Ops</span>
+          </HeaderAppAnchor>
+        </li>
+      )}
+      {showLaunchApp ? (
+        <li>
+          <HeaderLaunchAppButton href={resolvedLaunchAppHref} />
         </li>
       ) : null}
     </>
   );
 };
 
+const HeaderNetworkActions = () => {
+  const pathname = usePathname();
+  const { targetNetwork } = useTargetNetwork();
+  const isLocalNetwork = targetNetwork.id === hardhat.id;
+  const { isMockToken } = usePaymentToken();
+  const isRobomataWorkspace = pathname === "/robomata" || pathname?.startsWith("/robomata/");
+  const showFaucet = !isRobomataWorkspace && (isLocalNetwork || isMockToken);
+
+  return (
+    <>
+      <RainbowKitCustomConnectButton
+        accountMenuVariant={isRobomataWorkspace ? "robomata" : "default"}
+        showSummary={!isRobomataWorkspace}
+      />
+      {showFaucet && <FaucetButton />}
+    </>
+  );
+};
+
+const HeaderMarketingAction = () => {
+  const [browserHost, setBrowserHost] = useState<string | null>(null);
+  const [isAppHost, setIsAppHost] = useState(false);
+  const [isHostResolved, setIsHostResolved] = useState(false);
+  const href = resolveAppHostHref({
+    browserHost,
+    href: getLaunchAppHref(),
+    isAppHost,
+    isHostResolved,
+  });
+
+  useEffect(() => {
+    const host = window.location.hostname.toLowerCase();
+    setBrowserHost(host);
+    setIsAppHost(host === getConfiguredAppHost());
+    setIsHostResolved(true);
+  }, []);
+
+  return <HeaderLaunchAppButton href={href} />;
+};
+
 /**
  * Site header
  */
 export const Header = () => {
-  const { targetNetwork } = useTargetNetwork();
-  const isLocalNetwork = targetNetwork.id === hardhat.id;
-  const { isMockToken } = usePaymentToken();
-  const showFaucet = isLocalNetwork || isMockToken;
-
+  const pathname = usePathname();
+  const [showNetworkActions, setShowNetworkActions] = useState(false);
+  const showMarketingAction = isMarketingContentPath(pathname) && !showNetworkActions;
   const burgerMenuRef = useRef<HTMLDetailsElement>(null);
   useOutsideClick(burgerMenuRef, () => {
     burgerMenuRef?.current?.removeAttribute("open");
   });
+
+  useEffect(() => {
+    setShowNetworkActions(!isMarketingContentPath(pathname));
+  }, [pathname]);
 
   return (
     <div className="sticky lg:static top-0 navbar bg-base-100 min-h-0 shrink-0 justify-between z-20 shadow-md shadow-secondary px-0 sm:px-2">
@@ -189,6 +397,7 @@ export const Header = () => {
         <Link
           href="/"
           aria-label="Roboshare home"
+          prefetch={false}
           className="ml-1 flex h-10 w-10 items-center justify-center rounded-full text-base-content hover:bg-secondary lg:hidden"
         >
           <svg viewBox="0 0 40 40" aria-hidden="true" className="h-7 w-7" fill="none">
@@ -201,7 +410,7 @@ export const Header = () => {
             />
           </svg>
         </Link>
-        <Link href="/" passHref className="hidden lg:flex items-center gap-2 ml-4 mr-6 shrink-0">
+        <Link href="/" prefetch={false} className="hidden lg:flex items-center gap-2 ml-4 mr-6 shrink-0">
           <div className="flex flex-col">
             <Image
               src="/logo.svg"
@@ -219,7 +428,6 @@ export const Header = () => {
               className="hidden h-10 w-auto dark:block"
               priority
             />
-            <span className="pl-12 text-xs dark:text-base-content/80">Tokenized revenue streams</span>
           </div>
         </Link>
         <ul className="hidden lg:flex lg:flex-nowrap menu menu-horizontal px-1 gap-2">
@@ -227,8 +435,7 @@ export const Header = () => {
         </ul>
       </div>
       <div className="navbar-end grow mr-4">
-        <RainbowKitCustomConnectButton />
-        {showFaucet && <FaucetButton />}
+        {showNetworkActions ? <HeaderNetworkActions /> : showMarketingAction ? <HeaderMarketingAction /> : null}
       </div>
     </div>
   );

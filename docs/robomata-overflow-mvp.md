@@ -310,11 +310,16 @@ Use the flags as a matrix:
 - `ROBOMATA_PRIVY_SUI_WALLET_BINDING_ENABLED=true` and
   `NEXT_PUBLIC_ROBOMATA_PRIVY_SUI_WALLET_BINDING_ENABLED=true` let Robomata
   automatically provision and bind a Privy-managed Sui wallet for an authorized
-  signed-in partner. The wallet is created with `chain_type=sui` and owned by
-  the verified Privy user. The current execution path still keeps
-  wallet-standard Sui extensions available as the transaction-signing fallback
-  until Privy raw-sign execution is enabled with user authorization signatures
-  and a suitable Sui policy.
+  signed-in partner. The wallet is created with `chain_type=sui`; raw-sign
+  deployments should configure `ROBOMATA_PRIVY_SUI_WALLET_OWNER_ID` or
+  `ROBOMATA_PRIVY_SUI_WALLET_ADDITIONAL_SIGNER_ID` before creating new bindings.
+- `ROBOMATA_PRIVY_SUI_RAW_SIGN_ENABLED=true` and
+  `NEXT_PUBLIC_ROBOMATA_PRIVY_SUI_RAW_SIGN_ENABLED=true` let the evidence anchor
+  use the bound Privy Sui wallet directly when that wallet matches the persisted
+  facility operator. This path still uses Robomata native Sui sponsorship for
+  gas, requires `PRIVY_WALLET_AUTHORIZATION_PRIVATE_KEY`, a suitable Privy Sui
+  policy, and a server-authorized wallet owner or delegated signer. It keeps
+  wallet-standard Sui extensions available as a fallback.
 - `ROBOMATA_SUI_COMMIT_STALE_MS` optionally overrides the default ten-minute
   stale threshold for in-progress Sui commits. Stale attempts are reconciled
   against Sui `EvidenceCommitted` events before the app permits another commit
@@ -431,6 +436,30 @@ This work follows the current repo policy:
 - Do not conflate the deterministic LLM diligence memo with supervised agent
   policies, runs, actions, or events. Current agents monitor, evaluate, propose
   actions, and produce audit records; they do not execute Sui/EVM writes.
+- Do not claim lender-appointed agents are active through the operator policy
+  endpoint. Lender appointment is scoped to protected share links behind
+  `ROBOMATA_LENDER_AGENT_APPOINTMENT_ENABLED`; it records appointment provenance
+  but does not grant delegated execution. Action approval/completion is bounded
+  by the current active appointment, allowed action types, and the action's
+  recorded appointment authorization snapshot.
+- Do not claim the first delegated execution slice can mutate credit, packet,
+  evidence, Sui, or EVM state. `ROBOMATA_AGENT_EXECUTION_ENABLED` plus
+  `ROBOMATA_AGENT_ADVISORY_EXECUTION_ENABLED` only enables audit-only execution
+  for approved `evidence_review` and `sui_root_review` actions; every other
+  supervised action type remains proposal-only.
+- Do not claim non-rules agent planners generate action proposals yet.
+  `ROBOMATA_AGENT_PLANNER_PROVIDER=openai` can refine deterministic candidate
+  action copy when fully gated and configured, but current action types remain
+  rule-triggered and require operator approval before completion.
+- Do not treat `ROBOMATA_AGENT_PROVIDER` or provider API keys as sufficient to
+  activate live LLM credit review. Live review also requires
+  `ROBOMATA_LLM_REVIEW_ENABLED=true`; OpenAI review also requires
+  `ROBOMATA_AGENT_REVIEW_MODEL`. LLM memo output remains advisory, uses capped
+  exception-only inputs with `store: false`, and must fall back to deterministic
+  review output on provider errors or timeouts.
+- Do not present the current platform-default policy rules as lender-authored
+  artifacts. The visible `submission-v1` rules are a transparency baseline until
+  lender policy artifacts are implemented.
 - Do not expose raw Walrus, Seal, or Sui identifiers as the primary operator
   workflow. Technical identifiers belong behind `Advanced details`.
 - Do not treat Seal decryption UX, lender allowlists, or multi-party access

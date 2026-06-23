@@ -12,6 +12,8 @@ export type FacilitySubmissionStatus =
   | "ready_for_lender"
   | "committed";
 
+export type FacilitySubmissionSource = "rental_platform" | "external_asset_pool" | "connected_external_system";
+
 export type SubmissionStorageBackend = "walrus" | "walrus-mock";
 export type SubmissionEncryptionBackend = "none" | "seal";
 
@@ -53,6 +55,17 @@ export type SubmissionEvidence = EvidenceCommitment & {
   sealThreshold?: number;
   sealKeyServerObjectIds?: string[];
   sealKeyServerAggregatorUrl?: string;
+  derivedFacts?: SubmissionEvidenceDerivedFacts;
+};
+
+export type SubmissionEvidenceDerivedFacts = {
+  receivableIds: string[];
+  insured?: boolean;
+  titleClear?: boolean;
+  lockboxMatched?: boolean;
+  utilizationPct?: number;
+  derivedAt: string;
+  reason: string;
 };
 
 export type SubmissionException = {
@@ -72,11 +85,13 @@ export type SubmissionAuditEvent = {
     | "submission_created"
     | "submission_updated"
     | "receivables_imported"
+    | "receivables_removed"
     | "evidence_uploaded"
     | "borrowing_base_computed"
     | "receivable_excluded"
     | "receivable_updated"
     | "evidence_updated"
+    | "evidence_removed"
     | "packet_share_created"
     | "packet_share_revoked"
     | "sui_facility_assigned"
@@ -85,10 +100,28 @@ export type SubmissionAuditEvent = {
     | "tokenization_drafted"
     | "tokenization_terms_updated"
     | "tokenization_prepared"
-    | "tokenization_completed";
+    | "tokenization_completed"
+    | "policy_reviewed";
   createdAt: string;
   message: string;
   metadata?: Record<string, string | number | boolean | null>;
+};
+
+export type SubmissionPolicyReviewRole = "lender" | "operator";
+export type SubmissionPolicyReviewStatus = "accepted" | "needs_changes";
+export type SubmissionPolicyReviewSurface = "operator_submission_access" | "protected_lender_share_link";
+
+export type SubmissionPolicyReview = {
+  id: string;
+  role: SubmissionPolicyReviewRole;
+  status: SubmissionPolicyReviewStatus;
+  reviewedArtifactId: string;
+  reviewedArtifactName: string;
+  reviewedArtifactVersion: string;
+  reviewedAt: string;
+  reviewedBy: string;
+  reviewSurface: SubmissionPolicyReviewSurface;
+  rationale?: string;
 };
 
 export type SubmissionEvidenceCommit = {
@@ -179,6 +212,7 @@ export type SubmissionTokenization = {
 export type FacilitySubmission = {
   id: string;
   partnerAddress: string;
+  facilitySource: FacilitySubmissionSource;
   operatorName: string;
   facilityName: string;
   asOfDate: string;
@@ -190,6 +224,7 @@ export type FacilitySubmission = {
   evidenceCommit: SubmissionEvidenceCommit;
   tokenization: SubmissionTokenization;
   facilityMonitoring?: SubmissionFacilityMonitoringRef;
+  policyReviews?: SubmissionPolicyReview[];
   auditEvents: SubmissionAuditEvent[];
   createdAt: string;
   updatedAt: string;
@@ -197,6 +232,7 @@ export type FacilitySubmission = {
 
 export type CreateSubmissionInput = {
   partnerAddress: string;
+  facilitySource?: FacilitySubmissionSource;
   operatorName: string;
   facilityName: string;
   asOfDate: string;
@@ -226,6 +262,56 @@ export function createAuditEvent(
   };
 }
 
+export function createSubmissionPolicyReview(input: {
+  artifactId: string;
+  artifactName: string;
+  artifactVersion: string;
+  rationale?: string;
+  reviewedAt?: string;
+  reviewedBy: string;
+  reviewSurface: SubmissionPolicyReviewSurface;
+  role: SubmissionPolicyReviewRole;
+  status: SubmissionPolicyReviewStatus;
+}): SubmissionPolicyReview {
+  const reviewedAt = input.reviewedAt ?? nowIsoString();
+  return {
+    id: `policy_review_${input.role}_${input.reviewedBy}_${input.artifactId}_${input.artifactVersion}`.replace(
+      /[^a-zA-Z0-9_:-]/g,
+      "_",
+    ),
+    role: input.role,
+    status: input.status,
+    reviewedArtifactId: input.artifactId,
+    reviewedArtifactName: input.artifactName,
+    reviewedArtifactVersion: input.artifactVersion,
+    reviewedAt,
+    reviewedBy: input.reviewedBy,
+    reviewSurface: input.reviewSurface,
+    rationale: input.rationale,
+  };
+}
+
+export function upsertSubmissionPolicyReview(
+  submission: FacilitySubmission,
+  review: SubmissionPolicyReview,
+): FacilitySubmission {
+  const reviews = submission.policyReviews ?? [];
+  submission.policyReviews = [
+    review,
+    ...reviews.filter(
+      candidate =>
+        !(
+          candidate.role === review.role &&
+          candidate.reviewedArtifactId === review.reviewedArtifactId &&
+          candidate.reviewedArtifactVersion === review.reviewedArtifactVersion &&
+          candidate.reviewedBy === review.reviewedBy &&
+          candidate.reviewSurface === review.reviewSurface
+        ),
+    ),
+  ];
+  return submission;
+}
+
 export function createDefaultSubmissionTokenization(): SubmissionTokenization {
   return {
     status: "not_started",
@@ -236,6 +322,8 @@ export function createDefaultSubmissionTokenization(): SubmissionTokenization {
 }
 
 export function normalizeSubmissionTokenization(submission: FacilitySubmission): FacilitySubmission {
+  submission.facilitySource = submission.facilitySource ?? "external_asset_pool";
+  submission.policyReviews = submission.policyReviews ?? [];
   submission.tokenization = {
     ...createDefaultSubmissionTokenization(),
     ...(submission.tokenization ?? {}),
@@ -276,11 +364,51 @@ export function deriveSubmissionStatus(submission: FacilitySubmission): Facility
   return "draft";
 }
 
+type DraftDeletionSubmissionView = FacilitySubmission & {
+  evidenceCount?: number;
+  hasComputation?: boolean;
+  receivableCount?: number;
+};
+
+export function canDeleteDraftFacilitySubmission(submission: DraftDeletionSubmissionView): boolean {
+  const receivableCount =
+    typeof submission.receivableCount === "number" ? submission.receivableCount : submission.receivables.length;
+  const evidenceCount =
+    typeof submission.evidenceCount === "number" ? submission.evidenceCount : submission.evidence.length;
+  const hasComputation =
+    typeof submission.hasComputation === "boolean" ? submission.hasComputation : Boolean(submission.computation);
+  const hasEvidenceCommitArtifacts = Boolean(
+    submission.evidenceCommit.evidenceRoot?.trim() ||
+      submission.evidenceCommit.rootDigest?.trim() ||
+      submission.evidenceCommit.txDigest?.trim() ||
+      submission.evidenceCommit.commitStartedAt?.trim() ||
+      submission.evidenceCommit.committedAt?.trim(),
+  );
+  const hasPendingFacilityAssignment = Boolean(
+    submission.evidenceCommit.facilityAssignmentStartedAt?.trim() ||
+      submission.evidenceCommit.facilityAssignmentRootDigest?.trim() ||
+      submission.evidenceCommit.facilityAssignmentOperatorAddress?.trim(),
+  );
+  const hasActiveEvidenceCommit = ["committing", "committed"].includes(submission.evidenceCommit.status);
+
+  return (
+    submission.status === "draft" &&
+    receivableCount === 0 &&
+    evidenceCount === 0 &&
+    !hasComputation &&
+    !hasActiveEvidenceCommit &&
+    !hasEvidenceCommitArtifacts &&
+    !hasPendingFacilityAssignment &&
+    submission.tokenization.status === "not_started"
+  );
+}
+
 export function createSubmissionShell(input: CreateSubmissionInput): FacilitySubmission {
   const createdAt = nowIsoString();
   const shell: FacilitySubmission = {
     id: createSubmissionId(),
     partnerAddress: input.partnerAddress,
+    facilitySource: input.facilitySource ?? "external_asset_pool",
     operatorName: input.operatorName,
     facilityName: input.facilityName,
     asOfDate: input.asOfDate,
@@ -332,6 +460,13 @@ export function invalidateSubmissionArtifacts(submission: FacilitySubmission): F
     facilityAssignmentOperatorAddress: previousCommit.facilityAssignmentOperatorAddress,
     facilityAssignmentErrorMessage: previousCommit.facilityAssignmentErrorMessage,
   };
+  if (submission.facilityMonitoring) {
+    submission.facilityMonitoring = {
+      ...submission.facilityMonitoring,
+      latestPacketId: undefined,
+      latestRunId: undefined,
+    };
+  }
   submission.tokenization = createDefaultSubmissionTokenization();
   return touchSubmission(submission);
 }

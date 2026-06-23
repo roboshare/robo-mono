@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Transaction } from "@mysten/sui/transactions";
 import { fromBase64, toBase64 } from "@mysten/sui/utils";
-import { isRobomataWorkflowMutationEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
+import { createHash } from "node:crypto";
+import {
+  isRobomataPrivySuiRawSignEnabled,
+  isRobomataWorkflowMutationEnabled,
+  isRobomataWorkflowServerEnabled,
+} from "~~/lib/featureFlags";
 import { getRobomataPostgresSql } from "~~/lib/robomata/server/postgres";
+import { getPrivySuiWalletBinding, signPrivySuiTransaction } from "~~/lib/robomata/server/privySuiWallets";
+import { getPrivyUserFromRequest } from "~~/lib/robomata/server/submissionAccess";
 import { requirePartnerAddress, requireSubmissionAccess } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
 import {
@@ -221,6 +228,7 @@ type CommitEvidenceRequest = {
     | "operator_prepare_sponsored"
     | "operator_complete"
     | "operator_complete_sponsored"
+    | "operator_complete_sponsored_privy"
     | "operator_release";
   operatorSignature?: string;
   sponsorGasObjectId?: string;
@@ -259,6 +267,7 @@ async function parseCommitEvidenceRequest(request: NextRequest): Promise<CommitE
         mode === "operator_prepare_sponsored" ||
         mode === "operator_complete" ||
         mode === "operator_complete_sponsored" ||
+        mode === "operator_complete_sponsored_privy" ||
         mode === "operator_release" ||
         mode === "server"
           ? mode
@@ -645,10 +654,17 @@ async function executeSponsoredOperatorSuiCommit(input: {
   }
 }
 
-async function keepCommitInReconciliationState(input: { submission: FacilitySubmission; error: string }) {
+async function keepCommitInReconciliationState(input: {
+  submission: FacilitySubmission;
+  error: string;
+  sponsorGasObjectId?: string;
+  txDigest?: string;
+}) {
   return NextResponse.json(
     {
       submission: input.submission,
+      sponsorGasObjectId: input.sponsorGasObjectId,
+      txDigest: input.txDigest,
       error: input.error,
     },
     { status: 202 },
@@ -753,6 +769,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       "operator_prepare_sponsored",
       "operator_complete",
       "operator_complete_sponsored",
+      "operator_complete_sponsored_privy",
       "operator_release",
     ].includes(commitMode) &&
     !sponsoredOperatorCommitConfigured
@@ -786,6 +803,186 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       submissionId: reservationSubmissionId,
     });
   };
+
+  if (commitMode === "operator_complete_sponsored_privy") {
+    if (!isRobomataPrivySuiRawSignEnabled()) {
+      return NextResponse.json(
+        { error: "Privy Sui raw signing is not enabled for this app runtime." },
+        { status: 400 },
+      );
+    }
+
+    const privyUser = await getPrivyUserFromRequest(request).catch(() => null);
+    if (!privyUser) {
+      return NextResponse.json({ error: "Privy authentication is required for Privy Sui signing." }, { status: 401 });
+    }
+    const binding = await getPrivySuiWalletBinding(privyUser.id);
+    if (!binding) {
+      return NextResponse.json({ error: "No Privy Sui wallet is bound for this operator." }, { status: 400 });
+    }
+    if (binding.suiAddress.toLowerCase() !== facilityOperatorAddress.toLowerCase()) {
+      return NextResponse.json(
+        { error: "Bound Privy Sui wallet does not match the configured facility operator." },
+        { status: 400 },
+      );
+    }
+
+    let operatorCommit: Awaited<ReturnType<typeof prepareSponsoredOperatorSuiCommit>>;
+    try {
+      operatorCommit = await prepareSponsoredOperatorSuiCommit({
+        facilityObjectId,
+        facilityOperatorAddress,
+        label,
+        rootDigest,
+        submissionId: submission.id,
+      });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? "Failed to prepare Privy Sui transaction: " + error.message
+          : "Failed to prepare Privy Sui transaction.";
+      return NextResponse.json({ error: errorMessage }, { status: 500 });
+    }
+
+    const transactionBytes = operatorCommit.sponsorship?.transactionBytes ?? "";
+    const transactionDigest = createHash("sha256").update(transactionBytes).digest("hex").slice(0, 32);
+    let signed: Awaited<ReturnType<typeof signPrivySuiTransaction>>;
+    try {
+      signed = await signPrivySuiTransaction({
+        binding,
+        expectedAddress: facilityOperatorAddress,
+        idempotencyKey: `robomata-sui-commit-${submission.id}-${rootDigest}-${transactionDigest}`,
+        transactionBytes,
+      });
+    } catch (error) {
+      await releaseCurrentSponsorGasReservation(operatorCommit.sponsorship?.gasObjectId);
+      const errorMessage =
+        error instanceof Error ? "Privy Sui signing failed: " + error.message : "Privy Sui signing failed.";
+      return NextResponse.json({ error: errorMessage }, { status: 400 });
+    }
+
+    const committingSubmission = await store.beginEvidenceCommit(submission.id, rootDigest, new Date().toISOString());
+    if (!committingSubmission) {
+      await releaseCurrentSponsorGasReservation(operatorCommit.sponsorship?.gasObjectId);
+      const latest = await store.get(submission.id);
+      if (latest?.evidenceCommit.status === "committed") return NextResponse.json({ submission: latest });
+      return NextResponse.json(
+        { error: "Evidence commit is already in progress or the evidence root has changed." },
+        { status: 409 },
+      );
+    }
+
+    try {
+      const result = await executeSponsoredOperatorSuiCommit({
+        operatorSignature: signed.signature,
+        sponsorSignature: operatorCommit.sponsorship?.sponsorSignature ?? "",
+        transactionBytes,
+      });
+
+      if (result.errorMessage) {
+        if (result.uncertain) {
+          return keepCommitInReconciliationState({
+            submission: committingSubmission,
+            sponsorGasObjectId: operatorCommit.sponsorship?.gasObjectId,
+            txDigest: result.txDigest,
+            error: `${result.errorMessage} Reconcile Sui events before retrying.`,
+          });
+        }
+
+        await releaseCurrentSponsorGasReservation(operatorCommit.sponsorship?.gasObjectId);
+        return markCommitFailed({
+          store,
+          submission: committingSubmission,
+          rootDigest,
+          error: result.errorMessage,
+        });
+      }
+
+      let txDigest: string | undefined;
+      try {
+        txDigest = result.txDigest
+          ? await findCommittedEvidenceEventInTransaction({
+              txDigest: result.txDigest,
+              facilityObjectId,
+              label,
+              rootDigest,
+            })
+          : undefined;
+        txDigest ??= await findCommittedEvidenceEvent({ facilityObjectId, label, rootDigest });
+      } catch (error) {
+        if (isFailedSuiTransactionError(error)) {
+          await releaseCurrentSponsorGasReservation(operatorCommit.sponsorship?.gasObjectId);
+          const released = await store.failEvidenceCommit(submission.id, rootDigest, error.message);
+          return NextResponse.json(
+            { submission: released ?? committingSubmission, error: error.message },
+            { status: 409 },
+          );
+        }
+
+        return keepCommitInReconciliationState({
+          submission: committingSubmission,
+          sponsorGasObjectId: operatorCommit.sponsorship?.gasObjectId,
+          txDigest: result.txDigest,
+          error:
+            error instanceof Error
+              ? "Privy Sui commit requires event reconciliation, but event lookup failed: " + error.message
+              : "Privy Sui commit requires event reconciliation, but event lookup failed.",
+        });
+      }
+
+      if (!txDigest) {
+        return NextResponse.json(
+          {
+            submission: committingSubmission,
+            sponsorGasObjectId: operatorCommit.sponsorship?.gasObjectId,
+            txDigest: result.txDigest,
+            error: result.txDigest
+              ? `Privy Sui transaction ${result.txDigest} was submitted, but the matching EvidenceCommitted event is not indexed yet. Retry completion shortly.`
+              : "The matching EvidenceCommitted event is not indexed yet. Retry completion shortly.",
+          },
+          { status: 202 },
+        );
+      }
+
+      let saved: FacilitySubmission | null = null;
+      try {
+        saved = await store.completeEvidenceCommit(submission.id, rootDigest, {
+          txDigest,
+          committedAt: new Date().toISOString(),
+          facilityObjectId,
+          facilityOperatorAddress,
+          commitAuthority: "operator",
+          operatorWalletAddress: signed.walletAddress,
+          sponsorshipMode: "native_sui",
+          sponsorAddress: operatorCommit.sponsorship?.sponsorAddress,
+        });
+      } catch {
+        return keepCommitInReconciliationState({
+          submission: committingSubmission,
+          sponsorGasObjectId: operatorCommit.sponsorship?.gasObjectId,
+          txDigest,
+          error:
+            "Privy Sui commit was confirmed on-chain, but local persistence did not confirm it. Retry after reconciliation.",
+        });
+      }
+      await releaseCurrentSponsorGasReservation(operatorCommit.sponsorship?.gasObjectId);
+      if (saved) return NextResponse.json({ submission: saved });
+
+      const latest = await store.get(submission.id);
+      if (latest?.evidenceCommit.status === "committed") return NextResponse.json({ submission: latest });
+      return NextResponse.json(
+        { error: "Privy Sui commit was found, but local commit state changed before it could be saved." },
+        { status: 409 },
+      );
+    } catch (error) {
+      await releaseCurrentSponsorGasReservation(operatorCommit.sponsorship?.gasObjectId);
+      const errorMessage =
+        error instanceof Error ? "Privy Sui signing failed: " + error.message : "Privy Sui signing failed.";
+      const failed = await store.failEvidenceCommit(committingSubmission.id, rootDigest, errorMessage);
+      return NextResponse.json({ submission: failed ?? committingSubmission, error: errorMessage }, { status: 500 });
+    }
+  }
+
   let operatorWalletAddress: string | undefined;
   if (commitMode === "operator_complete" || commitMode === "operator_complete_sponsored") {
     operatorWalletAddress = requestBody.walletAddress?.toLowerCase();
@@ -889,6 +1086,16 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
         { status: 409 },
       );
     }
+    if (commitMode === "operator_complete_sponsored") {
+      await releaseCurrentSponsorGasReservation(requestBody.sponsorGasObjectId);
+      return NextResponse.json(
+        {
+          submission: released,
+          error: "Previous sponsored operator evidence commit attempt timed out before a matching Sui event was found.",
+        },
+        { status: 409 },
+      );
+    }
     submission = released;
   }
 
@@ -947,14 +1154,14 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
         { status: 400 },
       );
     }
-    if (
-      !requestBody.txDigest &&
-      (!requestBody.operatorSignature || !requestBody.sponsorSignature || !requestBody.transactionBytes)
-    ) {
+    const hasSponsoredPayload = Boolean(
+      requestBody.operatorSignature && requestBody.sponsorSignature && requestBody.transactionBytes,
+    );
+    if (!requestBody.txDigest && !hasSponsoredPayload && submission.evidenceCommit.status !== "committing") {
       return NextResponse.json(
         {
           error:
-            "Sponsored operator completion requires a transaction digest or transaction bytes plus operator and sponsor signatures.",
+            "Sponsored operator completion requires a transaction digest, an in-progress commit, or transaction bytes plus operator and sponsor signatures.",
         },
         { status: 400 },
       );
@@ -962,16 +1169,20 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
 
     const result = requestBody.txDigest
       ? ({ txDigest: requestBody.txDigest, uncertain: false } satisfies SuiCommitResult)
-      : await executeSponsoredOperatorSuiCommit({
-          operatorSignature: requestBody.operatorSignature ?? "",
-          sponsorSignature: requestBody.sponsorSignature ?? "",
-          transactionBytes: requestBody.transactionBytes ?? "",
-        });
+      : hasSponsoredPayload
+        ? await executeSponsoredOperatorSuiCommit({
+            operatorSignature: requestBody.operatorSignature ?? "",
+            sponsorSignature: requestBody.sponsorSignature ?? "",
+            transactionBytes: requestBody.transactionBytes ?? "",
+          })
+        : ({ uncertain: false } satisfies SuiCommitResult);
 
     if (result.errorMessage) {
       if (result.uncertain) {
         return keepCommitInReconciliationState({
           submission,
+          sponsorGasObjectId: requestBody.sponsorGasObjectId,
+          txDigest: result.txDigest,
           error: `${result.errorMessage} Reconcile Sui events before retrying.`,
         });
       }
@@ -1018,6 +1229,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ su
       return NextResponse.json(
         {
           submission,
+          sponsorGasObjectId: requestBody.sponsorGasObjectId,
           txDigest: result.txDigest,
           error: result.txDigest
             ? `Sponsored Sui transaction ${result.txDigest} was submitted, but the matching EvidenceCommitted event is not indexed yet. Retry completion shortly.`
