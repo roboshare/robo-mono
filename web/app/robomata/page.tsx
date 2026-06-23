@@ -1,4 +1,3 @@
-import Link from "next/link";
 import {
   ArrowRightIcon,
   BanknotesIcon,
@@ -9,6 +8,7 @@ import {
   ShieldCheckIcon,
   SparklesIcon,
 } from "@heroicons/react/24/outline";
+import { toConfiguredAppHref } from "~~/lib/appNavigation";
 import { isRobomataWorkflowEnabled, isRobomataWorkflowServerEnabled } from "~~/lib/featureFlags";
 
 const workflowSteps = [
@@ -78,12 +78,16 @@ const railCards = [
   {
     label: "Programmable commit trail",
     icon: SparklesIcon,
-    copy: "Anchors the evidence root through the Sui facility path so future lenders can monitor the same financial object over time.",
+    copy: "Anchors evidence-root state through the Sui facility path so packet history and monitoring can reference the same facility over time.",
   },
 ];
 
+const workflowColumns = [workflowSteps.slice(0, 3), workflowSteps.slice(3)];
+
 const RobomataPage = () => {
   const isSubmissionWorkflowAvailable = isRobomataWorkflowEnabled() && isRobomataWorkflowServerEnabled();
+  const submissionHref = toConfiguredAppHref(isSubmissionWorkflowAvailable ? "/robomata/submissions" : "/dashboard");
+  const dashboardHref = toConfiguredAppHref("/dashboard");
 
   return (
     <div className="flex flex-1 justify-center px-4 py-8 sm:px-6 sm:py-10">
@@ -94,28 +98,24 @@ const RobomataPage = () => {
               <div className="space-y-4">
                 <p className="text-sm font-semibold uppercase tracking-[0.3em] text-base-content/50">Robomata</p>
                 <h1 className="max-w-4xl text-4xl font-black tracking-tight text-base-content sm:text-5xl lg:text-6xl">
-                  Make fleet receivables financeable before the lender asks twice.
+                  Make asset-backed receivables financeable before the lender asks twice.
                 </h1>
                 <p className="max-w-3xl text-lg leading-relaxed text-base-content/70">
-                  Robomata helps fleet operators package receivables, evidence, exceptions, and borrowing-base output
-                  into lender-ready packets. Operators get a clearer path from monthly reporting to credit review, while
-                  lenders receive a cleaner file with eligibility, evidence status, and unresolved exceptions already
-                  organized.
+                  Robomata is the operator workspace for turning receivables, asset evidence, policy exceptions,
+                  borrowing-base runs, and facility monitoring into lender-ready packets. Deterministic rules calculate
+                  credit truth; supervised agents help operators surface gaps without exposing raw evidence.
                 </p>
               </div>
 
               <div className="flex flex-wrap gap-3">
-                <Link
-                  href={isSubmissionWorkflowAvailable ? "/operator/submissions" : "/operator"}
-                  className="btn btn-primary rounded-full"
-                >
-                  {isSubmissionWorkflowAvailable ? "Start a borrowing-base submission" : "Launch operator workflow"}
+                <a href={submissionHref} className="btn btn-primary rounded-full">
+                  {isSubmissionWorkflowAvailable ? "Open Robomata workspace" : "Open dashboard"}
                   <ArrowRightIcon className="h-4 w-4" />
-                </Link>
+                </a>
                 {isSubmissionWorkflowAvailable ? (
-                  <Link href="/operator" className="btn btn-outline rounded-full">
-                    Open operator dashboard
-                  </Link>
+                  <a href={dashboardHref} className="btn btn-outline rounded-full">
+                    Open dashboard
+                  </a>
                 ) : null}
               </div>
 
@@ -131,7 +131,7 @@ const RobomataPage = () => {
               <div className="mt-5 space-y-4">
                 <div className="rounded-2xl border border-base-300 bg-base-100/80 p-4">
                   <div className="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Prepare</div>
-                  <div className="mt-2 text-lg font-bold text-base-content">Operator-controlled workspace</div>
+                  <div className="mt-2 text-lg font-bold text-base-content">Operator-controlled credit workspace</div>
                   <p className="mt-2 text-sm leading-relaxed text-base-content/70">
                     Import receivables, attach evidence, calculate availability, and resolve exceptions before a lender
                     review starts.
@@ -139,7 +139,9 @@ const RobomataPage = () => {
                 </div>
                 <div className="rounded-2xl border border-base-300 bg-base-100/80 p-4">
                   <div className="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Share</div>
-                  <div className="mt-2 text-lg font-bold text-base-content">Lender-ready packet</div>
+                  <div className="mt-2 text-lg font-bold text-base-content">
+                    Lender-ready packet with review boundary
+                  </div>
                   <p className="mt-2 text-sm leading-relaxed text-base-content/70">
                     Send one controlled packet with borrowing-base output, exception status, and the evidence a credit
                     team needs to diligence the file.
@@ -147,7 +149,9 @@ const RobomataPage = () => {
                 </div>
                 <div className="rounded-2xl border border-base-300 bg-base-100/80 p-4">
                   <div className="text-xs font-semibold uppercase tracking-[0.2em] text-base-content/50">Monitor</div>
-                  <div className="mt-2 text-lg font-bold text-base-content">Verifiable evidence trail</div>
+                  <div className="mt-2 text-lg font-bold text-base-content">
+                    Freshness, evidence, and policy observations
+                  </div>
                   <p className="mt-2 text-sm leading-relaxed text-base-content/70">
                     Keep sensitive documents controlled while preserving a tamper-evident record of what supported the
                     borrowing-base calculation.
@@ -172,7 +176,7 @@ const RobomataPage = () => {
           })}
         </section>
 
-        <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+        <section className="space-y-6">
           <div className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-lg shadow-base-300/30 sm:p-8">
             <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">Working Flow</p>
             <h2 className="mt-2 text-3xl font-black tracking-tight text-base-content">
@@ -183,16 +187,20 @@ const RobomataPage = () => {
               credit package with clear eligibility, evidence, and exception status.
             </p>
 
-            <div className="mt-6 space-y-3">
-              {workflowSteps.map((step, index) => (
-                <div key={step.title} className="flex gap-4 rounded-2xl border border-base-300 bg-base-200/50 p-4">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-black text-primary-content">
-                    {index + 1}
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-base-content">{step.title}</h3>
-                    <p className="mt-1 text-sm leading-relaxed text-base-content/70">{step.description}</p>
-                  </div>
+            <div className="mt-6 grid gap-3 lg:grid-cols-2">
+              {workflowColumns.map((column, columnIndex) => (
+                <div key={columnIndex} className="space-y-3">
+                  {column.map((step, stepIndex) => (
+                    <div key={step.title} className="flex gap-4 rounded-2xl border border-base-300 bg-base-200/50 p-4">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-black text-primary-content">
+                        {columnIndex * 3 + stepIndex + 1}
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-base-content">{step.title}</h3>
+                        <p className="mt-1 text-sm leading-relaxed text-base-content/70">{step.description}</p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ))}
             </div>
@@ -203,7 +211,7 @@ const RobomataPage = () => {
             <h2 className="mt-2 text-3xl font-black tracking-tight text-base-content">
               Financeability first, programmable evidence underneath.
             </h2>
-            <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               {railCards.map(item => {
                 const Icon = item.icon;
 

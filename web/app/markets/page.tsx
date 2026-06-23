@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { NextPage } from "next";
 import { formatUnits } from "viem";
 import { useChainId, useChains, useReadContract, useReadContracts, useSwitchChain } from "wagmi";
@@ -28,6 +29,7 @@ import { BP_PRECISION, SECONDS_PER_YEAR } from "~~/config/units";
 import { useScaffoldWriteContract, useSelectedNetwork } from "~~/hooks/scaffold-eth";
 import { usePaymentToken } from "~~/hooks/usePaymentToken";
 import { useTransactingAccount } from "~~/hooks/useTransactingAccount";
+import { isRobomataRentalInvestorReportingClientEnabled } from "~~/lib/featureFlags";
 import { isSettledAssetStatus } from "~~/utils/assetStatus";
 import { getDeployedContract } from "~~/utils/contracts";
 import { fetchIpfsMetadata, mergeVehicleMetadata } from "~~/utils/ipfsGateway";
@@ -123,6 +125,7 @@ const MARKETS_PAGE_PREFS_KEY = "roboshare:markets-page-prefs";
 
 const MarketsPage: NextPage = () => {
   const { address } = useTransactingAccount();
+  const rentalInvestorReportingEnabled = isRobomataRentalInvestorReportingClientEnabled();
   // State
   const [listings, setListings] = useState<SubgraphListing[]>([]);
   const [primaryPools, setPrimaryPools] = useState<SubgraphPrimaryPool[]>([]);
@@ -1627,6 +1630,11 @@ const MarketsPage: NextPage = () => {
 
           {/* Right Side Controls */}
           <div className="flex items-center gap-4">
+            {rentalInvestorReportingEnabled && (
+              <Link className="btn btn-sm btn-outline shrink-0" href="/markets/rental-performance">
+                Rental performance
+              </Link>
+            )}
             {/* Holdings Toggle */}
             <div className="flex items-center gap-3">
               <BriefcaseIcon className="w-5 h-5 opacity-50" />

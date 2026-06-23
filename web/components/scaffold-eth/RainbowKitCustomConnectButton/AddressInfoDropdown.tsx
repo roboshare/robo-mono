@@ -30,7 +30,10 @@ type AddressInfoDropdownProps = {
   displayName: string;
   ensAvatar?: string;
   chainName?: string;
+  disconnectLabel?: string;
   onDisconnect?: () => void | Promise<void>;
+  showBalanceSummary?: boolean;
+  showNetworkSwitch?: boolean;
 };
 
 export const AddressInfoDropdown = ({
@@ -39,7 +42,10 @@ export const AddressInfoDropdown = ({
   displayName,
   blockExplorerAddressLink,
   chainName,
+  disconnectLabel = "Disconnect",
   onDisconnect,
+  showBalanceSummary = true,
+  showNetworkSwitch = true,
 }: AddressInfoDropdownProps) => {
   const { disconnect } = useDisconnect();
   const checkSumAddress = getAddress(address);
@@ -49,10 +55,11 @@ export const AddressInfoDropdown = ({
     symbol: paymentTokenSymbol,
     decimals: paymentTokenDecimals,
   } = usePaymentToken();
-  const { data: nativeBalance } = useWatchBalance({ address });
+  const { data: nativeBalance } = useWatchBalance({ address, watch: true });
   const { data: paymentTokenBalance } = useWatchTokenBalance({
     tokenAddress: paymentTokenAddress,
     ownerAddress: address,
+    watch: true,
   });
 
   const formattedNativeBalance =
@@ -103,30 +110,34 @@ export const AddressInfoDropdown = ({
           <ChevronDownIcon className="h-6 w-4 ml-2 sm:ml-0" />
         </summary>
         <ul className="dropdown-content menu z-2 p-2 mt-2 shadow-center shadow-accent bg-base-200 rounded-box gap-1">
-          <li className={`${selectingNetwork ? "hidden" : ""} w-full border-b border-base-300/80 px-3 py-2 sm:hidden`}>
-            <div className="pointer-events-none !flex !w-full !flex-col !items-end !justify-start !gap-0.5 !bg-transparent !px-0 !py-0 text-right leading-tight shadow-none">
-              {formattedNativeBalance !== null ? (
-                <div className="flex items-baseline justify-end gap-1 text-sm font-semibold text-base-content">
-                  <span>{formattedNativeBalance}</span>
-                  <span className="text-[11px] font-bold text-base-content/80">ETH</span>
-                </div>
-              ) : null}
-              {formattedPaymentTokenBalance !== null ? (
-                <div className="text-xs font-medium text-base-content/70">
-                  <span>
-                    {formattedPaymentTokenBalance} {paymentTokenSymbol}
-                  </span>
-                </div>
-              ) : null}
-              {chainName ? (
-                <div>
-                  <span className="text-[11px]" style={{ color: networkColor }}>
-                    {chainName}
-                  </span>
-                </div>
-              ) : null}
-            </div>
-          </li>
+          {showBalanceSummary ? (
+            <li
+              className={`${selectingNetwork ? "hidden" : ""} w-full border-b border-base-300/80 px-3 py-2 sm:hidden`}
+            >
+              <div className="pointer-events-none !flex !w-full !flex-col !items-end !justify-start !gap-0.5 !bg-transparent !px-0 !py-0 text-right leading-tight shadow-none">
+                {formattedNativeBalance !== null ? (
+                  <div className="flex items-baseline justify-end gap-1 text-sm font-semibold text-base-content">
+                    <span>{formattedNativeBalance}</span>
+                    <span className="text-[11px] font-bold text-base-content/80">ETH</span>
+                  </div>
+                ) : null}
+                {formattedPaymentTokenBalance !== null ? (
+                  <div className="text-xs font-medium text-base-content/70">
+                    <span>
+                      {formattedPaymentTokenBalance} {paymentTokenSymbol}
+                    </span>
+                  </div>
+                ) : null}
+                {chainName ? (
+                  <div>
+                    <span className="text-[11px]" style={{ color: networkColor }}>
+                      {chainName}
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+            </li>
+          ) : null}
           <NetworkOptions hidden={!selectingNetwork} />
           <li className={selectingNetwork ? "hidden" : ""}>
             <div
@@ -165,7 +176,7 @@ export const AddressInfoDropdown = ({
               </a>
             </button>
           </li>
-          {allowedNetworks.length > 1 ? (
+          {showNetworkSwitch && allowedNetworks.length > 1 ? (
             <li className={selectingNetwork ? "hidden" : ""}>
               <button
                 className="h-8 btn-sm rounded-xl! flex gap-3 py-3"
@@ -184,7 +195,7 @@ export const AddressInfoDropdown = ({
               type="button"
               onClick={handleDisconnect}
             >
-              <ArrowLeftOnRectangleIcon className="h-6 w-4 ml-2 sm:ml-0" /> <span>Disconnect</span>
+              <ArrowLeftOnRectangleIcon className="h-6 w-4 ml-2 sm:ml-0" /> <span>{disconnectLabel}</span>
             </button>
           </li>
         </ul>

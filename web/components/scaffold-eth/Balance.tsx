@@ -10,12 +10,13 @@ type BalanceProps = {
   address?: Address;
   className?: string;
   usdMode?: boolean;
+  watch?: boolean;
 };
 
 /**
  * Display (ETH & USD) balance of an ETH address.
  */
-export const Balance = ({ address, className = "", usdMode }: BalanceProps) => {
+export const Balance = ({ address, className = "", usdMode, watch = false }: BalanceProps) => {
   const { targetNetwork } = useTargetNetwork();
   const nativeCurrencyPrice = useGlobalState(state => state.nativeCurrency.price);
   const isNativeCurrencyPriceFetching = useGlobalState(state => state.nativeCurrency.isFetching);
@@ -26,6 +27,7 @@ export const Balance = ({ address, className = "", usdMode }: BalanceProps) => {
     isLoading,
   } = useWatchBalance({
     address,
+    watch,
   });
 
   const { displayUsdMode, toggleDisplayUsdMode } = useDisplayUsdMode({ defaultUsdMode: usdMode });

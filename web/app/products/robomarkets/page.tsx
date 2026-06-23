@@ -29,17 +29,17 @@ const RobomarketsPage = () => (
   <div className="flex flex-1 justify-center px-4 py-8 sm:px-6 sm:py-12">
     <div className="w-full max-w-7xl space-y-10">
       <section className="overflow-hidden rounded-[2.25rem] border border-base-300 bg-base-100 shadow-xl shadow-base-300/40">
-        <div className="grid items-stretch gap-8 px-6 py-9 sm:px-9 sm:py-12 lg:grid-cols-[1.12fr_0.88fr] lg:px-12">
-          <div className="flex h-full flex-col gap-7">
+        <div className="grid items-start gap-8 px-6 py-9 sm:px-9 sm:py-12 lg:grid-cols-[1.12fr_0.88fr] lg:px-12">
+          <div className="flex flex-col gap-7">
             <div className="space-y-4">
               <p className="text-sm font-semibold uppercase tracking-[0.32em] text-base-content/50">Robomarkets</p>
               <h1 className="max-w-4xl text-4xl font-black tracking-tight text-base-content sm:text-6xl">
-                Distribution for financeable asset exposure.
+                Distribution after credit is structured.
               </h1>
               <p className="max-w-3xl text-lg leading-relaxed text-base-content/70">
-                Robomarkets is the downstream market layer for standardized and tokenized exposure. Facilities should
-                arrive here after Robomata has organized the operator packet and capital providers have a clear path to
-                review the underlying evidence.
+                Robomarkets is the downstream market layer for standardized, tokenized exposure. Facilities should
+                arrive here after Robomata organizes the operator packet and Robolend gives capital providers a clear
+                path to review, monitor, and approve the underlying credit.
               </p>
             </div>
 
@@ -55,19 +55,36 @@ const RobomarketsPage = () => (
                 Start with Robomata
               </Link>
             </div>
+
+            <div className="grid gap-3 rounded-2xl border border-dashed border-base-300 bg-base-200/50 p-4 text-sm text-base-content/70 sm:grid-cols-3">
+              <div>
+                <div className="font-bold text-base-content">Structured</div>
+                <p className="mt-1 leading-relaxed">Borrowing-base output and exception state are ready.</p>
+              </div>
+              <div>
+                <div className="font-bold text-base-content">Reviewed</div>
+                <p className="mt-1 leading-relaxed">Capital-provider packet review has a clear boundary.</p>
+              </div>
+              <div>
+                <div className="font-bold text-base-content">Distributed</div>
+                <p className="mt-1 leading-relaxed">Primary and secondary access can follow standardization.</p>
+              </div>
+            </div>
           </div>
 
-          <div className="flex h-full flex-col rounded-[1.75rem] border border-base-300 bg-base-200/70 p-5 sm:p-6">
+          <div className="self-start rounded-[1.75rem] border border-base-300 bg-base-200/70 p-5 sm:p-6">
             <p className="text-sm font-semibold uppercase tracking-[0.24em] text-base-content/50">Market Role</p>
-            <div className="mt-5 flex flex-1 flex-col gap-4">
+            <div className="mt-5 space-y-3">
               {marketRoles.map(item => {
                 const Icon = item.icon;
 
                 return (
-                  <div key={item.title} className="flex-1 rounded-2xl border border-base-300 bg-base-100/85 p-4">
-                    <Icon className="h-6 w-6 text-primary" />
-                    <h2 className="mt-3 text-lg font-black tracking-tight text-base-content">{item.title}</h2>
-                    <p className="mt-2 text-sm leading-relaxed text-base-content/70">{item.copy}</p>
+                  <div key={item.title} className="flex gap-3 rounded-2xl border border-base-300 bg-base-100/85 p-3.5">
+                    <Icon className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+                    <div>
+                      <h2 className="text-base font-black tracking-tight text-base-content">{item.title}</h2>
+                      <p className="mt-1 text-sm leading-relaxed text-base-content/70">{item.copy}</p>
+                    </div>
                   </div>
                 );
               })}

@@ -8,6 +8,7 @@ import {
   ServerStackIcon,
   TruckIcon,
 } from "@heroicons/react/24/outline";
+import { toConfiguredAppHref } from "~~/lib/appNavigation";
 import { isRobomataWorkflowEnabled } from "~~/lib/featureFlags";
 
 const partnerCategories = [
@@ -34,7 +35,8 @@ const partnerCategories = [
 ];
 
 const PartnersPage = () => {
-  const launchAppHref = isRobomataWorkflowEnabled() ? "/operator/submissions" : "/operator";
+  const launchAppHref = isRobomataWorkflowEnabled() ? "/dashboard" : "/operator";
+  const resolvedLaunchAppHref = toConfiguredAppHref(launchAppHref);
 
   return (
     <div className="flex flex-1 justify-center px-4 py-8 sm:px-6 sm:py-10">
@@ -47,11 +49,12 @@ const PartnersPage = () => {
                   Integration Partners
                 </p>
                 <h1 className="max-w-4xl text-4xl font-black tracking-tight text-base-content sm:text-5xl lg:text-6xl">
-                  Bring real operating evidence into credit workflows.
+                  Bring operating evidence into programmable credit workflows.
                 </h1>
                 <p className="max-w-3xl text-lg leading-relaxed text-base-content/70">
-                  Roboshare partners with data, servicing, and infrastructure providers that help operators prove their
-                  receivables are eligible, monitored, and lender-ready.
+                  Roboshare partners with telematics, servicing, banking, insurance, title, and infrastructure providers
+                  so operators can prove receivables are eligible, monitored, and lender-ready without rebuilding
+                  packets by email.
                 </p>
               </div>
 
@@ -60,9 +63,9 @@ const PartnersPage = () => {
                   See Robomata
                   <ArrowRightIcon className="h-4 w-4" />
                 </Link>
-                <Link href={launchAppHref} className="btn btn-outline rounded-full sm:min-w-48">
+                <a href={resolvedLaunchAppHref} className="btn btn-outline rounded-full sm:min-w-48">
                   Launch App
-                </Link>
+                </a>
               </div>
             </div>
 
@@ -83,8 +86,8 @@ const PartnersPage = () => {
                     Evidence rails, not portals
                   </h2>
                   <p className="mt-2 text-sm leading-relaxed text-base-content/70">
-                    The integration role is to make trusted evidence available to the operator workflow, not to replace
-                    provider systems of record.
+                    Partner data becomes bounded evidence and monitoring input; providers keep their systems of record
+                    while operators control what enters the credit packet.
                   </p>
                 </div>
               </div>

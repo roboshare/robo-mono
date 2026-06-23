@@ -44,31 +44,53 @@ NEXT_PUBLIC_ROBOMATA_PRIVY_SUI_WALLET_BINDING_ENABLED=true
 
 The binding API verifies the signed Robomata partner request, verifies the Privy
 access token, finds an existing Sui wallet for the Privy user, or creates one
-with `chain_type=sui` and `owner.user_id=<Privy user id>`. It persists the
-resulting `walletId` and Sui address in the Robomata persistence backend.
+with `chain_type=sui`. By default the wallet is owned by the Privy user. For
+server-authorized raw signing, configure a Privy key-quorum owner or delegated
+additional signer before creating new bindings. The API persists the resulting
+`walletId` and Sui address in the Robomata persistence backend.
 
 Optional:
 
 ```bash
 ROBOMATA_PRIVY_SUI_WALLET_POLICY_ID=your-privy-sui-policy-id
+ROBOMATA_PRIVY_SUI_WALLET_OWNER_ID=your-privy-key-quorum-owner-id
+# or, for user-owned wallets with delegated server signing:
+ROBOMATA_PRIVY_SUI_WALLET_ADDITIONAL_SIGNER_ID=your-privy-additional-signer-id
+PRIVY_WALLET_AUTHORIZATION_PRIVATE_KEY=your-privy-wallet-api-authorization-private-key
+ROBOMATA_PRIVY_SUI_RAW_SIGN_ENABLED=true
+NEXT_PUBLIC_ROBOMATA_PRIVY_SUI_RAW_SIGN_ENABLED=true
 ROBOMATA_OPERATOR_SUI_WALLETS_FILE=/tmp/robomata-operator-sui-wallets.json
 ```
 
 `ROBOMATA_PRIVY_SUI_WALLET_POLICY_ID` attaches a Privy Sui policy to newly
-created wallets. `ROBOMATA_OPERATOR_SUI_WALLETS_FILE` is local-development only;
-deployed environments should use the existing `POSTGRES_URL` persistence path.
+created wallets. `ROBOMATA_PRIVY_SUI_WALLET_OWNER_ID` creates new wallets owned
+by a Privy key quorum that the server authorization key can authorize.
+`ROBOMATA_PRIVY_SUI_WALLET_ADDITIONAL_SIGNER_ID` keeps the Privy user as owner
+while delegating server authorization for wallet actions. Existing user-owned
+bindings without one of those server-authorized controls should be rebound
+before enabling raw-sign. `ROBOMATA_OPERATOR_SUI_WALLETS_FILE` is
+local-development only; deployed environments should use the existing
+`POSTGRES_URL` persistence path.
 
-The current Sui evidence commit UI supports wallet-standard Sui extensions for
-operator execution. Bound Privy Sui wallets become the default operator identity
-and facility-operator mapping target; raw-sign execution from those wallets
-should require a user authorization signature and an allowlisted Sui policy
-before it is enabled for production.
+When `ROBOMATA_PRIVY_SUI_RAW_SIGN_ENABLED=true` and the client companion flag is
+enabled, evidence anchoring uses the bound Privy Sui wallet when its address
+matches the submission facility operator. Robomata still sponsors native Sui gas,
+but the operator signature is produced by Privy raw-sign over the Sui transaction
+intent bytes. Raw-sign requests require `PRIVY_WALLET_AUTHORIZATION_PRIVATE_KEY`
+plus `ROBOMATA_PRIVY_SUI_WALLET_OWNER_ID` or
+`ROBOMATA_PRIVY_SUI_WALLET_ADDITIONAL_SIGNER_ID` so Privy accepts the server's
+authorization signature. If Privy raw-sign fails before a transaction is
+submitted and a compatible Sui wallet extension is connected, the client falls
+back to the extension signing path. Keep that extension fallback available unless
+the Privy Sui policy and raw-sign runtime have been verified in the target
+environment.
 
 Native Sui gas sponsorship is handled by Robomata, not by Privy/Pimlico. When
 `ROBOMATA_SUI_SPONSORSHIP_ENABLED=true`, the Robomata server prepares the
 allowlisted `commit_evidence` transaction, attaches sponsor-owned SUI gas,
-sponsor-signs the transaction bytes, asks the operator wallet to
-`sui:signTransaction`, then submits the dual-signed transaction server-side.
+sponsor-signs the transaction bytes, asks the bound Privy Sui wallet or a
+compatible operator wallet to sign, then submits the dual-signed transaction
+server-side.
 This requires `ROBOMATA_SUI_PRIVATE_KEY` and funded sponsor SUI coins in the
 target Sui network. In this mode the key signs only as gas sponsor. The same
 variable is reused as a legacy/test-only server signer only when operator-owned

@@ -1,3 +1,15 @@
+import { messageWithIntent, toSerializedSignature } from "@mysten/sui/cryptography";
+import type { PublicKey } from "@mysten/sui/cryptography";
+import type { SignatureScheme } from "@mysten/sui/cryptography";
+import { Ed25519PublicKey } from "@mysten/sui/keypairs/ed25519";
+import { Secp256k1PublicKey } from "@mysten/sui/keypairs/secp256k1";
+import { Secp256r1PublicKey } from "@mysten/sui/keypairs/secp256r1";
+import { fromBase58, fromBase64, fromHex, normalizeSuiAddress, toBase64 } from "@mysten/sui/utils";
+import { p256 } from "@noble/curves/p256";
+import { blake2b } from "@noble/hashes/blake2.js";
+import { sha256 } from "@noble/hashes/sha256.js";
+import type { WalletApiRequestSignatureInput } from "@privy-io/server-auth";
+import canonicalize from "canonicalize";
 import { eq } from "drizzle-orm";
 import { jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -14,6 +26,7 @@ export type PrivySuiWalletBinding = {
   privyUserId: string;
   walletId: string;
   suiAddress: string;
+  publicKey?: string;
   source: "privy_embedded";
   createdAt: string;
   updatedAt: string;
@@ -24,9 +37,18 @@ type PrivyWallet = {
   id: string;
   address: string;
   chain_type: string;
+  additional_signers?: Array<{ signer_id?: string | null }> | null;
   external_id?: string | null;
   owner_id?: string | null;
   public_key?: string;
+};
+
+type PrivyRawSignResponse = {
+  data?: {
+    encoding?: string;
+    signature?: string;
+  };
+  method?: string;
 };
 
 const bindingsTable = pgTable(
@@ -197,6 +219,42 @@ function getPrivyApiBaseUrl() {
   return process.env.PRIVY_API_BASE_URL ?? "https://api.privy.io";
 }
 
+function getPrivyWalletAuthorizationPrivateKey() {
+  const privateKey = process.env.PRIVY_WALLET_AUTHORIZATION_PRIVATE_KEY?.trim();
+  if (!privateKey) {
+    throw new Error("PRIVY_WALLET_AUTHORIZATION_PRIVATE_KEY is required for Privy Sui raw signing.");
+  }
+  return privateKey;
+}
+
+function normalizePrivyWalletAuthorizationPrivateKey(privateKey: string): bigint {
+  const encodedKey = privateKey.replace("wallet-auth:", "").replace("wallet-api:", "");
+  const decodedKey = Buffer.from(encodedKey, "base64");
+  const scalarMarker = Buffer.from([4, 32]);
+  const scalarOffset = decodedKey.indexOf(scalarMarker);
+  if (scalarOffset === -1) throw new Error("Invalid Privy wallet authorization private key.");
+
+  const scalarBytes = decodedKey.subarray(scalarOffset + scalarMarker.length, scalarOffset + scalarMarker.length + 32);
+  return p256.utils.normPrivateKeyToScalar(scalarBytes);
+}
+
+function signPrivyRawSignRequest(input: WalletApiRequestSignatureInput): string {
+  const serialized = canonicalize(input);
+  if (!serialized) throw new Error("Failed to canonicalize Privy wallet authorization request.");
+
+  const privateKey = normalizePrivyWalletAuthorizationPrivateKey(getPrivyWalletAuthorizationPrivateKey());
+  const signature = p256.sign(sha256(Buffer.from(serialized)), privateKey).toDERRawBytes();
+  return Buffer.from(signature).toString("base64");
+}
+
+function getPrivySuiWalletOwnerId(): string | undefined {
+  return process.env.ROBOMATA_PRIVY_SUI_WALLET_OWNER_ID?.trim() || undefined;
+}
+
+function getPrivySuiWalletAdditionalSignerId(): string | undefined {
+  return process.env.ROBOMATA_PRIVY_SUI_WALLET_ADDITIONAL_SIGNER_ID?.trim() || undefined;
+}
+
 function getPrivyAuthHeaders() {
   const appId = getPrivyAppId();
   const appSecret = process.env.PRIVY_APP_SECRET;
@@ -208,6 +266,33 @@ function getPrivyAuthHeaders() {
     authorization: `Basic ${Buffer.from(`${appId}:${appSecret}`).toString("base64")}`,
     "content-type": "application/json",
     "privy-app-id": appId,
+  };
+}
+
+function getPrivyRawSignHeaders(input: { body: unknown; idempotencyKey: string; pathName: string }) {
+  const appId = getPrivyAppId();
+  if (!appId) throw new Error("Privy app id is required for Sui raw signing.");
+  const requestExpiry = String(Date.now() + 5 * 60 * 1000);
+
+  const headers: WalletApiRequestSignatureInput["headers"] & Record<"privy-request-expiry", string> = {
+    "privy-app-id": appId,
+    "privy-idempotency-key": input.idempotencyKey,
+    "privy-request-expiry": requestExpiry,
+  };
+  const requestToSign = {
+    body: input.body,
+    headers,
+    method: "POST",
+    url: `${getPrivyApiBaseUrl()}${input.pathName}`,
+    version: 1,
+  } satisfies WalletApiRequestSignatureInput;
+  const authorizationSignature = signPrivyRawSignRequest(requestToSign);
+  if (!authorizationSignature) throw new Error("Failed to generate Privy wallet authorization signature.");
+
+  return {
+    "privy-authorization-signature": authorizationSignature,
+    "privy-idempotency-key": input.idempotencyKey,
+    "privy-request-expiry": requestExpiry,
   };
 }
 
@@ -230,6 +315,67 @@ function assertPrivyWallet(value: unknown): PrivyWallet {
   return wallet as PrivyWallet;
 }
 
+function decodePrivyPublicKeyCandidates(value: string): Uint8Array[] {
+  const trimmed = value.trim();
+  if (!trimmed) throw new Error("Privy Sui wallet response is missing public key.");
+
+  const candidates: Uint8Array[] = [];
+  const seen = new Set<string>();
+  const addCandidate = (bytes: Uint8Array) => {
+    const key = toBase64(bytes);
+    if (!seen.has(key)) {
+      seen.add(key);
+      candidates.push(bytes);
+    }
+  };
+
+  if (/^(0x)?[0-9a-f]+$/i.test(trimmed) && trimmed.replace(/^0x/i, "").length % 2 === 0) {
+    addCandidate(fromHex(trimmed));
+  }
+
+  try {
+    addCandidate(fromBase58(trimmed));
+  } catch {}
+
+  try {
+    addCandidate(fromBase64(trimmed));
+  } catch {}
+
+  if (candidates.length === 0) throw new Error("Privy Sui wallet response has an unsupported public key encoding.");
+  return candidates;
+}
+
+function hexSignatureToBytes(value: string): Uint8Array {
+  const trimmed = value.trim();
+  if (!trimmed) throw new Error("Privy raw-sign response is missing signature.");
+  return fromHex(trimmed);
+}
+
+function publicKeyCandidates(publicKeyBytes: Uint8Array): Array<{ publicKey: PublicKey; scheme: SignatureScheme }> {
+  const candidates: Array<{ publicKey: PublicKey; scheme: SignatureScheme }> = [];
+  try {
+    candidates.push({ publicKey: new Ed25519PublicKey(publicKeyBytes), scheme: "ED25519" });
+  } catch {}
+  try {
+    candidates.push({ publicKey: new Secp256k1PublicKey(publicKeyBytes), scheme: "Secp256k1" });
+  } catch {}
+  try {
+    candidates.push({ publicKey: new Secp256r1PublicKey(publicKeyBytes), scheme: "Secp256r1" });
+  } catch {}
+  return candidates;
+}
+
+function resolvePrivySuiPublicKey(input: { expectedAddress: string; publicKey: string }) {
+  const expectedAddress = normalizeSuiAddress(input.expectedAddress);
+  const match = decodePrivyPublicKeyCandidates(input.publicKey)
+    .flatMap(publicKeyCandidates)
+    .find(candidate => normalizeSuiAddress(candidate.publicKey.toSuiAddress()) === expectedAddress);
+  if (!match) {
+    throw new Error("Privy Sui wallet public key does not match the configured facility operator address.");
+  }
+  return match;
+}
+
 async function privyRequest<T>(pathName: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${getPrivyApiBaseUrl()}${pathName}`, {
     ...init,
@@ -247,6 +393,12 @@ async function privyRequest<T>(pathName: string, init?: RequestInit): Promise<T>
   }
 
   return payload as T;
+}
+
+async function getPrivyWallet(walletId: string): Promise<PrivyWallet> {
+  return assertPrivyWallet(
+    await privyRequest<unknown>(`/v1/wallets/${encodeURIComponent(walletId)}`, { method: "GET" }),
+  );
 }
 
 async function findPrivySuiWallet(privyUserId: string): Promise<PrivyWallet | null> {
@@ -273,11 +425,14 @@ async function findPrivySuiWallet(privyUserId: string): Promise<PrivyWallet | nu
 
 async function createPrivySuiWallet(privyUserId: string): Promise<PrivyWallet> {
   const policyId = process.env.ROBOMATA_PRIVY_SUI_WALLET_POLICY_ID?.trim();
+  const ownerId = getPrivySuiWalletOwnerId();
+  const additionalSignerId = getPrivySuiWalletAdditionalSignerId();
   const payload = {
     chain_type: "sui",
     display_name: "Robomata Sui operator wallet",
     external_id: externalId(privyUserId),
-    owner: { user_id: privyUserId },
+    ...(ownerId ? { owner_id: ownerId } : { owner: { user_id: privyUserId } }),
+    ...(additionalSignerId ? { additional_signers: [{ signer_id: additionalSignerId }] } : {}),
     ...(policyId ? { policy_ids: [policyId] } : {}),
   };
 
@@ -302,6 +457,7 @@ function toBinding(input: {
     privyUserId: input.privyUserId,
     walletId: input.wallet.id,
     suiAddress: input.wallet.address,
+    publicKey: input.wallet.public_key,
     source: "privy_embedded",
     createdAt: input.existing?.createdAt ?? timestamp,
     updatedAt: timestamp,
@@ -317,10 +473,12 @@ export async function ensurePrivySuiWalletBinding(input: {
   const existing = await store.getByPrivyUserId(input.privyUserId);
 
   if (existing?.walletId && existing.suiAddress) {
+    const wallet = existing.publicKey ? null : await getPrivyWallet(existing.walletId).catch(() => null);
     const timestamp = nowIsoString();
     return store.upsert({
       ...existing,
       partnerAddress: input.partnerAddress.toLowerCase(),
+      publicKey: existing.publicKey ?? wallet?.public_key,
       updatedAt: timestamp,
       lastEnsuredAt: timestamp,
     });
@@ -338,4 +496,65 @@ export async function ensurePrivySuiWalletBinding(input: {
 
 export async function getPrivySuiWalletBinding(privyUserId: string): Promise<PrivySuiWalletBinding | null> {
   return getBindingStore().getByPrivyUserId(privyUserId);
+}
+
+export async function signPrivySuiTransaction(input: {
+  binding: PrivySuiWalletBinding;
+  expectedAddress: string;
+  idempotencyKey: string;
+  transactionBytes: string;
+}): Promise<{ signature: string; walletAddress: string; walletId: string }> {
+  const wallet = await getPrivyWallet(input.binding.walletId);
+  const ownerId = getPrivySuiWalletOwnerId();
+  const additionalSignerId = getPrivySuiWalletAdditionalSignerId();
+  const walletSignerIds = wallet.additional_signers?.flatMap(signer =>
+    typeof signer.signer_id === "string" ? [signer.signer_id] : [],
+  );
+  const serverAuthorized =
+    (ownerId && wallet.owner_id === ownerId) || (additionalSignerId && walletSignerIds?.includes(additionalSignerId));
+  if (!serverAuthorized) {
+    throw new Error(
+      "Bound Privy Sui wallet is not configured for server-authorized raw signing. Configure ROBOMATA_PRIVY_SUI_WALLET_OWNER_ID or ROBOMATA_PRIVY_SUI_WALLET_ADDITIONAL_SIGNER_ID, then rebind the operator Sui wallet.",
+    );
+  }
+  const publicKey = input.binding.publicKey ?? wallet?.public_key;
+  if (!publicKey) throw new Error("Privy Sui wallet public key is required for Sui signature serialization.");
+
+  const { publicKey: suiPublicKey, scheme } = resolvePrivySuiPublicKey({
+    expectedAddress: input.expectedAddress,
+    publicKey,
+  });
+  const transactionBytes = fromBase64(input.transactionBytes);
+  const intentMessage = messageWithIntent("TransactionData", transactionBytes);
+  const rawSignPath = `/v1/wallets/${encodeURIComponent(input.binding.walletId)}/raw_sign`;
+  const rawSignBody = {
+    params: {
+      bytes: toBase64(intentMessage),
+      encoding: "base64",
+      hash_function: "blake2b256",
+    },
+  };
+  const response = await privyRequest<PrivyRawSignResponse>(rawSignPath, {
+    method: "POST",
+    headers: getPrivyRawSignHeaders({
+      body: rawSignBody,
+      idempotencyKey: input.idempotencyKey,
+      pathName: rawSignPath,
+    }),
+    body: JSON.stringify(rawSignBody),
+  });
+  const rawSignature = hexSignatureToBytes(response.data?.signature ?? "");
+  const expectedDigest = blake2b(intentMessage, { dkLen: 32 });
+  const valid = await suiPublicKey.verify(expectedDigest, rawSignature).catch(() => false);
+  if (!valid) throw new Error("Privy Sui wallet returned a signature that failed local verification.");
+
+  return {
+    signature: toSerializedSignature({
+      signature: rawSignature,
+      signatureScheme: scheme,
+      publicKey: suiPublicKey,
+    }),
+    walletAddress: normalizeSuiAddress(input.binding.suiAddress),
+    walletId: input.binding.walletId,
+  };
 }

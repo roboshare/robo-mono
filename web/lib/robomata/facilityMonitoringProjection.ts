@@ -9,6 +9,14 @@ import {
   type RobomataFacility,
   type SuiRootVerificationStatus,
 } from "~~/lib/robomata/facilityMonitoring";
+import {
+  buildBorrowingBasePolicyEvaluation,
+  buildEvidenceFreshnessPolicyEvaluation,
+  buildPacketFreshnessPolicyEvaluation,
+  buildSuiRootPolicyEvaluation,
+  resolveRobomataFacilityPolicyArtifact,
+  summarizeRobomataPolicyEvaluations,
+} from "~~/lib/robomata/policyRules";
 import type { FacilitySubmission, SubmissionEvidence } from "~~/lib/robomata/submissions";
 
 function facilityIdForSubmission(submission: FacilitySubmission): string {
@@ -91,13 +99,14 @@ function packetFreshness(submission: FacilitySubmission, observations: FacilityO
 function suiRootStatus(submission: FacilitySubmission): SuiRootVerificationStatus {
   if (submission.evidenceCommit.status === "failed") return "failed";
   if (submission.evidenceCommit.status === "committing") return "committing";
-  if (submission.evidenceCommit.status === "committed") return "verified";
+  if (submission.evidenceCommit.status === "committed") return "committed";
   if (submission.evidenceCommit.status === "ready") return "pending";
   return "not_started";
 }
 
 function buildLatestRun(submission: FacilitySubmission, facilityId: string, observations: FacilityObservation[]) {
   if (!submission.computation) return undefined;
+  const policyArtifact = resolveRobomataFacilityPolicyArtifact({ facilityId, submissionId: submission.id }).artifact;
 
   const status: BorrowingBaseRun["status"] =
     submission.evidenceCommit.status === "committed"
@@ -112,7 +121,16 @@ function buildLatestRun(submission: FacilitySubmission, facilityId: string, obse
     runNumber: 1,
     asOfDate: submission.asOfDate,
     status,
-    policyVersion: "submission-v1",
+    policyArtifactId: policyArtifact.id,
+    policyArtifactName: policyArtifact.name,
+    policyEvaluations: [
+      buildBorrowingBasePolicyEvaluation({
+        artifact: policyArtifact,
+        borrowingBase: submission.computation.borrowingBase,
+        evaluatedAt: submission.computation.computedAt,
+      }),
+    ],
+    policyVersion: policyArtifact.version,
     inputObservationIds: observations.map(observation => observation.id),
     inputDigest: submission.evidenceCommit.evidenceRoot ?? submission.computation.evidenceAnchor.evidenceRoot,
     borrowingBase: submission.computation.borrowingBase,
@@ -131,8 +149,35 @@ function buildLatestPacket(
   facilityId: string,
   run: BorrowingBaseRun | undefined,
   freshnessStatus: PacketFreshnessStatus,
+  suiRootVerificationStatus: SuiRootVerificationStatus,
+  observations: FacilityObservation[],
 ) {
   if (!run || !submission.computation) return undefined;
+  const policyArtifact = resolveRobomataFacilityPolicyArtifact({
+    facilityId,
+    submissionId: submission.id,
+  }).artifact;
+  const policyEvaluations = [
+    buildEvidenceFreshnessPolicyEvaluation({
+      artifact: policyArtifact,
+      evaluatedAt: submission.computation.computedAt,
+      observations: observations,
+    }),
+    buildPacketFreshnessPolicyEvaluation({
+      artifact: policyArtifact,
+      evaluatedAt: submission.computation.computedAt,
+      freshnessStatus,
+      hasComputation: Boolean(submission.computation),
+      observations,
+      openExceptionCount: submission.exceptions.filter(exception => exception.actionStatus === "open").length,
+    }),
+    buildSuiRootPolicyEvaluation({
+      artifact: policyArtifact,
+      evaluatedAt: submission.computation.computedAt,
+      suiRootStatus: suiRootVerificationStatus,
+    }),
+  ];
+  const policyEvaluationSummary = summarizeRobomataPolicyEvaluations(policyEvaluations);
 
   return {
     id: submission.facilityMonitoring?.latestPacketId ?? `packet_${submission.id}`,
@@ -142,6 +187,7 @@ function buildLatestPacket(
     generatedAt: submission.computation.computedAt,
     freshnessStatus,
     evidenceObservationIds: run.inputObservationIds,
+    policyEvaluations,
     publicMetadata: {
       facilityName: submission.facilityName,
       operatorName: submission.operatorName,
@@ -149,6 +195,12 @@ function buildLatestPacket(
       grossReceivablesCents: submission.computation.borrowingBase.grossReceivablesCents,
       availableBorrowingBaseCents: submission.computation.borrowingBase.availableBorrowingBaseCents,
       exceptionCount: submission.computation.borrowingBase.exceptionCount,
+      policyArtifactId: policyArtifact.id,
+      policyArtifactName: policyArtifact.name,
+      policyArtifactVersion: policyArtifact.version,
+      policyEvaluationFailedCount: policyEvaluationSummary.failedCount,
+      policyEvaluationSummary: policyEvaluationSummary.summary,
+      policyEvaluationWarningCount: policyEvaluationSummary.warningCount,
     },
     lenderPacket: submission.computation.lenderPacket,
   } satisfies PacketManifest;
@@ -172,10 +224,17 @@ function buildWarnings(submission: FacilitySubmission, observations: FacilityObs
 export function buildFacilityMonitoringProjection(submission: FacilitySubmission): FacilityMonitoringProjection {
   const facilityId = facilityIdForSubmission(submission);
   const observations = buildObservations(submission, facilityId);
-  const freshnessStatus =
-    submission.facilityMonitoring?.packetFreshnessStatus ?? packetFreshness(submission, observations);
+  const freshnessStatus = packetFreshness(submission, observations);
+  const suiRootVerificationStatus = suiRootStatus(submission);
   const latestRun = buildLatestRun(submission, facilityId, observations);
-  const latestPacket = buildLatestPacket(submission, facilityId, latestRun, freshnessStatus);
+  const latestPacket = buildLatestPacket(
+    submission,
+    facilityId,
+    latestRun,
+    freshnessStatus,
+    suiRootVerificationStatus,
+    observations,
+  );
 
   const facility: RobomataFacility = {
     id: facilityId,
@@ -201,7 +260,7 @@ export function buildFacilityMonitoringProjection(submission: FacilitySubmission
     suiRootCommits: [],
     observations,
     freshnessStatus,
-    suiRootStatus: suiRootStatus(submission),
+    suiRootStatus: suiRootVerificationStatus,
     warnings: buildWarnings(submission, observations),
   };
 }
