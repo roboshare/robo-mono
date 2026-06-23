@@ -82,15 +82,24 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (!["pending_payment_authorization", "host_review"].includes(current.state)) {
       return NextResponse.json({ error: `Booking cannot be confirmed from state ${current.state}.` }, { status: 409 });
     }
+    if (current.state === "host_review") {
+      return NextResponse.json({ booking: current });
+    }
+    let hostReviewRequiredByControls = false;
     if (isRobomataRentalInventoryEnabled()) {
       const vehicle = await getRentalInventoryStore().getVehicle(current.platformVehicleId);
       if (!vehicle) return NextResponse.json({ error: "Rental vehicle not found." }, { status: 404 });
       if (vehicle.operationalStatus !== "listed") {
         return NextResponse.json({ error: "Rental vehicle is no longer available for confirmation." }, { status: 409 });
       }
+      hostReviewRequiredByControls = vehicle.hostControls?.bookingReview.requireManualApproval === true;
     }
 
-    const booking = await getRentalBookingStore().confirmBooking(bookingId, { ...body, paymentAuthorized: true });
+    const booking = await getRentalBookingStore().confirmBooking(bookingId, {
+      ...body,
+      hostReviewRequired: body.hostReviewRequired === true || hostReviewRequiredByControls,
+      paymentAuthorized: true,
+    });
     if (!booking) return NextResponse.json({ error: "Rental booking not found." }, { status: 404 });
     return NextResponse.json({ booking });
   } catch (error) {

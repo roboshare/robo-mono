@@ -28,6 +28,7 @@ const ConnectedWalletSummary = ({ address, chainName }: { address: Address; chai
   const { data: paymentTokenBalance } = useWatchTokenBalance({
     tokenAddress: paymentTokenAddress,
     ownerAddress: address,
+    watch: true,
   });
 
   const formattedPaymentTokenBalance =
@@ -40,7 +41,7 @@ const ConnectedWalletSummary = ({ address, chainName }: { address: Address; chai
 
   return (
     <div className="hidden sm:block mr-2 text-right leading-tight">
-      <Balance address={address} className="min-h-0 h-auto p-0 justify-end ml-auto" />
+      <Balance address={address} watch className="min-h-0 h-auto p-0 justify-end ml-auto" />
       {formattedPaymentTokenBalance !== null ? (
         <span className="block text-xs font-medium text-base-content/70">
           {formattedPaymentTokenBalance} {paymentTokenSymbol}
@@ -57,18 +58,22 @@ const ConnectedWalletSummary = ({ address, chainName }: { address: Address; chai
 
 type ConnectedWalletContentProps = {
   address: Address;
+  accountMenuVariant?: "default" | "robomata";
   chainName?: string;
   displayName: string;
   ensAvatar?: string;
   onDisconnect?: () => void | Promise<void>;
+  showSummary?: boolean;
 };
 
 const ConnectedWalletContent = ({
   address,
+  accountMenuVariant = "default",
   chainName,
   displayName,
   ensAvatar,
   onDisconnect,
+  showSummary = true,
 }: ConnectedWalletContentProps) => {
   const { targetNetwork } = useTargetNetwork();
   const blockExplorerAddressLink = getBlockExplorerAddressLink(targetNetwork, address);
@@ -77,14 +82,17 @@ const ConnectedWalletContent = ({
     <>
       <div className="flex flex-col items-end">
         <div className="flex items-center">
-          <ConnectedWalletSummary address={address} chainName={chainName} />
+          {showSummary ? <ConnectedWalletSummary address={address} chainName={chainName} /> : null}
           <AddressInfoDropdown
             address={address}
             displayName={displayName}
             ensAvatar={ensAvatar}
             blockExplorerAddressLink={blockExplorerAddressLink}
             chainName={chainName}
+            disconnectLabel={accountMenuVariant === "robomata" ? "Sign out" : "Disconnect"}
             onDisconnect={onDisconnect}
+            showBalanceSummary={showSummary}
+            showNetworkSwitch={accountMenuVariant !== "robomata"}
           />
         </div>
       </div>
@@ -93,7 +101,15 @@ const ConnectedWalletContent = ({
   );
 };
 
-const LegacyRainbowKitConnectButton = () => {
+type RainbowKitCustomConnectButtonProps = {
+  accountMenuVariant?: "default" | "robomata";
+  showSummary?: boolean;
+};
+
+const LegacyRainbowKitConnectButton = ({
+  accountMenuVariant = "default",
+  showSummary = true,
+}: RainbowKitCustomConnectButtonProps) => {
   const { targetNetwork } = useTargetNetwork();
 
   return (
@@ -113,15 +129,22 @@ const LegacyRainbowKitConnectButton = () => {
               }
 
               if (chain.unsupported || chain.id !== targetNetwork.id) {
-                return <WrongNetworkDropdown />;
+                return (
+                  <WrongNetworkDropdown
+                    disconnectLabel={accountMenuVariant === "robomata" ? "Sign out" : "Disconnect"}
+                    showNetworkOptions={accountMenuVariant !== "robomata"}
+                  />
+                );
               }
 
               return (
                 <ConnectedWalletContent
                   address={account.address as Address}
+                  accountMenuVariant={accountMenuVariant}
                   chainName={chain.name}
                   displayName={account.displayName}
                   ensAvatar={account.ensAvatar}
+                  showSummary={showSummary}
                 />
               );
             })()}
@@ -132,7 +155,10 @@ const LegacyRainbowKitConnectButton = () => {
   );
 };
 
-const PrivyConnectButton = () => {
+const PrivyConnectButton = ({
+  accountMenuVariant = "default",
+  showSummary = true,
+}: RainbowKitCustomConnectButtonProps) => {
   const { targetNetwork } = useTargetNetwork();
   const { chain, connector } = useAccount();
   const { address: transactingAddress, chainId: transactingChainId } = useTransactingAccount();
@@ -219,18 +245,26 @@ const PrivyConnectButton = () => {
   }
 
   if (chain.id !== targetNetwork.id) {
-    return <WrongNetworkDropdown onDisconnect={handleDisconnect} />;
+    return (
+      <WrongNetworkDropdown
+        disconnectLabel={accountMenuVariant === "robomata" ? "Sign out" : "Disconnect"}
+        onDisconnect={handleDisconnect}
+        showNetworkOptions={accountMenuVariant !== "robomata"}
+      />
+    );
   }
 
   return (
     <ConnectedWalletContent
       address={transactingAddress}
+      accountMenuVariant={accountMenuVariant}
       chainName={transactingChainName}
       displayName={
         getPrivyIdentityLabel({ address: transactingAddress, connectorName: connector?.name, user }) ||
         `${transactingAddress.slice(0, 6)}...${transactingAddress.slice(-4)}`
       }
       onDisconnect={handleDisconnect}
+      showSummary={showSummary}
     />
   );
 };
@@ -238,6 +272,13 @@ const PrivyConnectButton = () => {
 /**
  * Custom Wagmi Connect Button (watch balance + custom design)
  */
-export const RainbowKitCustomConnectButton = () => {
-  return isPrivyEnabled() ? <PrivyConnectButton /> : <LegacyRainbowKitConnectButton />;
+export const RainbowKitCustomConnectButton = ({
+  accountMenuVariant = "default",
+  showSummary = true,
+}: RainbowKitCustomConnectButtonProps) => {
+  return isPrivyEnabled() ? (
+    <PrivyConnectButton accountMenuVariant={accountMenuVariant} showSummary={showSummary} />
+  ) : (
+    <LegacyRainbowKitConnectButton accountMenuVariant={accountMenuVariant} showSummary={showSummary} />
+  );
 };

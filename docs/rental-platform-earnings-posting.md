@@ -16,6 +16,7 @@ Initial posting APIs:
 
 - `POST /api/robomata/rental-revenue/posting-batches`
 - `GET /api/robomata/rental-revenue/posting-batches/:batchId`
+- `POST /api/robomata/rental-revenue/posting-batches/:batchId/mark-failed`
 - `POST /api/robomata/rental-revenue/posting-batches/:batchId/mark-posted`
 
 These APIs require `ROBOMATA_RENTAL_REVENUE_POSTING_ENABLED=true`. Writes also require `ROBOMATA_WORKFLOW_MUTATIONS_ENABLED=true`.
@@ -50,6 +51,26 @@ The service emits a `distributeEarnings` request shape with:
 - attestation metadata
 
 The request is the handoff to the protocol execution layer. `mark-posted` records the protocol transaction hash after execution.
+
+When `postingAssetId` is a uint256-compatible odd protocol asset ID and the posting target includes a validated
+`protocolInvestorShareBps`, the request also includes an executable `protocolCall` payload for
+`EarningsManager.distributeEarnings(uint256,uint256,bool)`, which is the current deployed execution path for posting
+earnings into Treasury accounting. Amounts are converted from USD cents into 6-decimal payment-token base units.
+
+`protocolInvestorShareBps` must represent the effective investor slice from protocol asset metadata: the lower of the
+asset revenue-share cap and the currently investor-held revenue-token supply share. If that metadata is absent, or if the
+estimated investor amount is below the protocol 1 USDC minimum, the batch remains metadata-only. Zero-net, sub-minimum,
+nonnumeric, and even revenue-token IDs do not emit executable calldata because the protocol call would revert.
+
+The platform does not submit protocol transactions implicitly. The signer boundary is:
+
+- the posting API prepares the batch, attestation, idempotency key, and calldata
+- an authorized operator or execution service submits the protocol transaction using the intended wallet policy
+- `mark-posted` requires `protocolTxHash`, `chainId`, and `confirmationMode`
+- `chainId` must match the authenticated `x-robomata-chain-id` request header used for partner authorization
+- `confirmationMode=operator_confirmed` is used when a human/operator confirms an externally submitted transaction
+- `confirmationMode=submitted` is used only when an approved executor submits and observes a successful transaction
+- failed or reverted submissions must use `mark-failed` with an actionable `errorMessage`; the batch remains unposted
 
 ## Posting Target
 

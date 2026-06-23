@@ -44,6 +44,14 @@ export function isRobomataPrivySuiWalletBindingClientEnabled(): boolean {
   return isEnabled(process.env.NEXT_PUBLIC_ROBOMATA_PRIVY_SUI_WALLET_BINDING_ENABLED);
 }
 
+export function isRobomataPrivySuiRawSignEnabled(): boolean {
+  return isEnabled(process.env.ROBOMATA_PRIVY_SUI_RAW_SIGN_ENABLED);
+}
+
+export function isRobomataPrivySuiRawSignClientEnabled(): boolean {
+  return isEnabled(process.env.NEXT_PUBLIC_ROBOMATA_PRIVY_SUI_RAW_SIGN_ENABLED);
+}
+
 export function isRobomataShareLinksEnabled(): boolean {
   return isEnabled(process.env.ROBOMATA_SHARE_LINKS_ENABLED);
 }
@@ -88,8 +96,40 @@ export function isRobomataAgentRefreshEnabled(): boolean {
   return isEnabled(process.env.ROBOMATA_AGENT_REFRESH_ENABLED);
 }
 
+export function isRobomataAgentPlannerEnabled(): boolean {
+  return isEnabled(process.env.ROBOMATA_AGENT_PLANNER_ENABLED);
+}
+
+export function isRobomataAgentExecutionEnabled(): boolean {
+  return isEnabled(process.env.ROBOMATA_AGENT_EXECUTION_ENABLED);
+}
+
+export function isRobomataAgentExecutionClientEnabled(): boolean {
+  return isEnabled(process.env.NEXT_PUBLIC_ROBOMATA_AGENT_EXECUTION_ENABLED);
+}
+
+export function isRobomataAgentAdvisoryExecutionEnabled(): boolean {
+  return isEnabled(process.env.ROBOMATA_AGENT_ADVISORY_EXECUTION_ENABLED);
+}
+
+export function isRobomataAgentMemoryEnabled(): boolean {
+  return isEnabled(process.env.ROBOMATA_AGENT_MEMORY_ENABLED);
+}
+
+export function isRobomataLenderAgentAppointmentEnabled(): boolean {
+  return isEnabled(process.env.ROBOMATA_LENDER_AGENT_APPOINTMENT_ENABLED);
+}
+
+export function isRobomataLlmReviewEnabled(): boolean {
+  return isEnabled(process.env.ROBOMATA_LLM_REVIEW_ENABLED);
+}
+
 export function isRobomataRentalInventoryEnabled(): boolean {
   return isEnabled(process.env.ROBOMATA_RENTAL_INVENTORY_ENABLED);
+}
+
+export function isRobomataRentalMarketplaceClientEnabled(): boolean {
+  return isEnabled(process.env.NEXT_PUBLIC_ROBOMATA_RENTAL_MARKETPLACE_ENABLED);
 }
 
 export function isRobomataRentalInventoryScheduledSyncEnabled(): boolean {
@@ -98,6 +138,10 @@ export function isRobomataRentalInventoryScheduledSyncEnabled(): boolean {
 
 export function isRobomataRentalPaymentsEnabled(): boolean {
   return isEnabled(process.env.ROBOMATA_RENTAL_PAYMENTS_ENABLED);
+}
+
+export function isRobomataRentalBridgePaymentsEnabled(): boolean {
+  return isEnabled(process.env.ROBOMATA_RENTAL_BRIDGE_ENABLED);
 }
 
 export function isRobomataRentalRenterAccountsEnabled(): boolean {
@@ -114,6 +158,14 @@ export function isRobomataRentalRevenuePostingEnabled(): boolean {
 
 export function isRobomataRentalInvestorReportingEnabled(): boolean {
   return isEnabled(process.env.ROBOMATA_RENTAL_INVESTOR_REPORTING_ENABLED);
+}
+
+export function isRobomataRentalHostOpsClientEnabled(): boolean {
+  return isEnabled(process.env.NEXT_PUBLIC_ROBOMATA_RENTAL_HOST_OPS_ENABLED);
+}
+
+export function isRobomataRentalInvestorReportingClientEnabled(): boolean {
+  return isEnabled(process.env.NEXT_PUBLIC_ROBOMATA_RENTAL_INVESTOR_REPORTING_ENABLED);
 }
 
 export function isRobomataLenderMonitoringShareEnabled(): boolean {

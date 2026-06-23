@@ -15,8 +15,28 @@ export type LenderPacket = {
   borrowerCoverageLine: string;
   certificationStatement: string;
   deliveryChecklist: string[];
+  reviewBoundary?: Pick<
+    AgentReview,
+    | "generatedAt"
+    | "inputDigest"
+    | "model"
+    | "outputDigest"
+    | "outputSchemaVersion"
+    | "policyArtifactId"
+    | "policyArtifactVersion"
+    | "providerInputControls"
+    | "providerInputDigest"
+    | "promptVersion"
+    | "provider"
+    | "providerStatus"
+    | "reviewInputId"
+    | "reviewMode"
+    | "sourceOfTruth"
+    | "sourceDataDigest"
+  >;
   memoSummary: string;
   exceptionSections: LenderPacketSection[];
+  diligenceQuestions: string[];
   borrowerRequests: string[];
 };
 
@@ -91,10 +111,29 @@ export function buildLenderPacket(
       `Evidence root ready for controlled sharing: ${evidenceAnchor.evidenceRoot.slice(0, 24)}...`,
       `Sui facility path prepared: ${evidenceAnchor.suiPackagePath}`,
     ],
+    reviewBoundary: {
+      generatedAt: agentReview.generatedAt,
+      inputDigest: agentReview.inputDigest,
+      model: agentReview.model,
+      outputDigest: agentReview.outputDigest,
+      outputSchemaVersion: agentReview.outputSchemaVersion,
+      policyArtifactId: agentReview.policyArtifactId,
+      policyArtifactVersion: agentReview.policyArtifactVersion,
+      providerInputControls: agentReview.providerInputControls,
+      providerInputDigest: agentReview.providerInputDigest,
+      promptVersion: agentReview.promptVersion,
+      provider: agentReview.provider,
+      providerStatus: agentReview.providerStatus,
+      reviewInputId: agentReview.reviewInputId,
+      reviewMode: agentReview.reviewMode,
+      sourceOfTruth: agentReview.sourceOfTruth,
+      sourceDataDigest: agentReview.sourceDataDigest,
+    },
     memoSummary: agentReview.memo,
     exceptionSections: [receivableExceptions, evidenceExceptions, agentExceptions].filter(
       (section): section is LenderPacketSection => Boolean(section && section.count > 0),
     ),
+    diligenceQuestions: agentReview.diligenceQuestions,
     borrowerRequests: agentReview.nextActions,
   };
 }

@@ -9,6 +9,7 @@ import { getFacilityMonitoringStore } from "~~/lib/robomata/server/facilityMonit
 import { getPrivyUserFromRequest, requirePartnerAddress } from "~~/lib/robomata/server/submissionAccess";
 import { getSubmissionStore } from "~~/lib/robomata/server/submissionStore";
 import { ensureSubmissionSuiFacility } from "~~/lib/robomata/server/suiFacilityAssignment";
+import type { FacilitySubmissionSource } from "~~/lib/robomata/submissions";
 
 export const runtime = "nodejs";
 
@@ -28,6 +29,14 @@ function normalizeRequiredString(value: unknown, field: string): string {
   }
 
   return value.trim();
+}
+
+function normalizeFacilitySource(value: unknown): FacilitySubmissionSource {
+  if (value === "rental_platform" || value === "external_asset_pool" || value === "connected_external_system") {
+    return value;
+  }
+
+  return "external_asset_pool";
 }
 
 export async function GET(request: NextRequest) {
@@ -50,19 +59,20 @@ export async function POST(request: NextRequest) {
     const partnerAddress = await requirePartnerAddress(request);
     if (partnerAddress instanceof NextResponse) return partnerAddress;
 
-    const body = (await request.json()) as {
-      operatorName?: unknown;
-      facilityName?: unknown;
-      asOfDate?: unknown;
-    };
+    const body = (await request.json()) as unknown;
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ error: "Submission create payload must be a JSON object." }, { status: 400 });
+    }
+    const fields = body as Record<string, unknown>;
 
     let operatorName: string;
     let facilityName: string;
     let asOfDate: string;
+    const facilitySource = normalizeFacilitySource(fields.facilitySource);
     try {
-      operatorName = normalizeRequiredString(body.operatorName, "operatorName");
-      facilityName = normalizeRequiredString(body.facilityName, "facilityName");
-      asOfDate = normalizeRequiredString(body.asOfDate, "asOfDate");
+      operatorName = normalizeRequiredString(fields.operatorName, "operatorName");
+      facilityName = normalizeRequiredString(fields.facilityName, "facilityName");
+      asOfDate = normalizeRequiredString(fields.asOfDate, "asOfDate");
     } catch (error) {
       return NextResponse.json(
         { error: error instanceof Error ? error.message : "Invalid submission create fields." },
@@ -73,6 +83,7 @@ export async function POST(request: NextRequest) {
     const store = getSubmissionStore();
     const submission = await store.create({
       partnerAddress,
+      facilitySource,
       operatorName,
       facilityName,
       asOfDate,

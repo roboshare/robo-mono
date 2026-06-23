@@ -131,6 +131,13 @@ export type RentalVehicleMaintenanceHold = RentalVehicleDateRange & {
   expectedReturnToServiceAt?: string;
 };
 
+export type RentalVehicleSafetyTakedown = {
+  occurredAt: string;
+  reason?: string;
+  status: "suspended";
+  supportCaseId?: string;
+};
+
 export type RentalVehicleBookingReviewRules = {
   autoAcceptEnabled: boolean;
   requireManualApproval?: boolean;
@@ -144,6 +151,7 @@ export type RentalVehicleHostControls = {
   blackoutRanges: RentalVehicleDateRange[];
   maintenanceHolds: RentalVehicleMaintenanceHold[];
   bookingReview: RentalVehicleBookingReviewRules;
+  safetyTakedown?: RentalVehicleSafetyTakedown;
   updatedAt: string;
 };
 
@@ -157,6 +165,7 @@ export type RentalVehicleHostControlsUpdate = {
     "listed" | "reserved" | "in_trip" | "turnaround" | "maintenance" | "suspended" | "delisted" | "retired"
   >;
   pricing?: RentalVehiclePricingSetup;
+  safetyTakedown?: RentalVehicleSafetyTakedown;
 };
 
 export type FacilityInventoryVehicle = {

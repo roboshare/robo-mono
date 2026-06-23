@@ -16,7 +16,8 @@ Initial investor reporting API:
 
 - `POST /api/robomata/rental-investor/dashboard`
 
-The route requires `ROBOMATA_RENTAL_INVESTOR_REPORTING_ENABLED=true`.
+The route requires `ROBOMATA_RENTAL_INVESTOR_REPORTING_ENABLED=true`. The investor UI entrypoint under
+`/markets/rental-performance` requires `NEXT_PUBLIC_ROBOMATA_RENTAL_INVESTOR_REPORTING_ENABLED=true`.
 
 It accepts attribution, period metrics, revenue ledger entries, and posting batches, then returns:
 
