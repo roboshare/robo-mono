@@ -123,7 +123,7 @@ export async function POST(request: NextRequest) {
       ];
       const paymentStore = getRentalPaymentStore();
       const initialReferencedPayments = await paymentStore.listPaymentsByReferences({ bookingIds, paymentIntentIds });
-      return revenueStore.withPaymentBackedPostingLock(
+      return await revenueStore.withPaymentBackedPostingLock(
         initialReferencedPayments.map(payment => payment.id),
         async () => {
           const referencedPayments = await paymentStore.listPaymentsByReferences({ bookingIds, paymentIntentIds });

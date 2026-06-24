@@ -2227,11 +2227,17 @@ async function main() {
     "Payment-backed revenue exceeds captured payment amount.",
   );
 
+  const postingAmountCents =
+    paymentIntentPayload.payment?.revenueEligibleAmountCents ?? paymentIntentPayload.payment?.authorizedAmountCents;
+  if (typeof postingAmountCents !== "number") {
+    throw new Error(`Expected payment amount for posting smoke, got ${JSON.stringify(paymentIntentPayload)}`);
+  }
+
   const postingBody = {
     entries: [
       {
         id: "rle_stripe_smoke",
-        amountCents: 1000,
+        amountCents: postingAmountCents,
         createdAt: new Date().toISOString(),
         currency: "USD",
         facilityAssetId,
