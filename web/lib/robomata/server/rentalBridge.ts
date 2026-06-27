@@ -288,7 +288,7 @@ export function verifyBridgeWebhookPayload(input: {
   signatureHeader: string | null;
 }): BridgeWebhookEvent {
   const publicKey = bridgeWebhookPublicKey();
-  if (!publicKey && process.env.NODE_ENV === "development") return JSON.parse(input.payload) as BridgeWebhookEvent;
+  if (!publicKey && isBridgeMockEnabled()) return JSON.parse(input.payload) as BridgeWebhookEvent;
   if (!publicKey) throw new Error("BRIDGE_WEBHOOK_PUBLIC_KEY is required for Bridge webhook verification.");
   if (!input.signatureHeader) throw new Error("Missing Bridge signature header.");
 

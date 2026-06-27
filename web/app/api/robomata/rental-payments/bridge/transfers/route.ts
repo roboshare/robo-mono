@@ -66,13 +66,12 @@ function paymentUpdatedTime(payment: { updatedAt: string }) {
   return Number.isFinite(updatedAt) ? updatedAt : 0;
 }
 
-function activeStripePaymentStatus(status: string) {
+function stripePaymentBlocksBridgeCheckout(payment: RentalPaymentRecord) {
   return (
-    status === "requires_payment_method" ||
-    status === "requires_confirmation" ||
-    status === "requires_capture" ||
-    status === "captured" ||
-    status === "failed"
+    payment.status === "requires_payment_method" ||
+    payment.status === "requires_confirmation" ||
+    payment.status === "requires_capture" ||
+    payment.status === "captured"
   );
 }
 
@@ -160,7 +159,7 @@ async function stripePaymentsBlockingBridgeCheckout(input: {
 }) {
   const blockers = [];
   for (const payment of input.payments) {
-    if (payment.provider !== "stripe" || !activeStripePaymentStatus(payment.status)) continue;
+    if (payment.provider !== "stripe" || !stripePaymentBlocksBridgeCheckout(payment)) continue;
     const paymentIntentId = payment.providerReference.paymentIntentId;
     if (!paymentIntentId) continue;
     const snapshot = await retrieveStripeRentalPaymentIntent(paymentIntentId);

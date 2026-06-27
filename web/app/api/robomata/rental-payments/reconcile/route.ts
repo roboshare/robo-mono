@@ -32,7 +32,7 @@ function requireRentalPaymentReconciliation(request: NextRequest) {
   }
 
   const secret = process.env.ROBOMATA_RENTAL_PAYMENT_CONFIRMATION_SECRET?.trim();
-  if (!secret && process.env.NODE_ENV === "development") return null;
+  if (!secret && process.env.ROBOMATA_RENTAL_STRIPE_MOCK === "true") return null;
   if (!secret) return NextResponse.json({ error: "Rental payment reconciliation is not configured." }, { status: 503 });
 
   const provided = request.headers.get("x-robomata-payment-confirmation")?.trim();

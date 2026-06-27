@@ -1,6 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import "server-only";
 import type { RentalBookingRecord } from "~~/lib/robomata/rentalBookings";
+import { getRentalBookingStore } from "~~/lib/robomata/server/rentalBookingStore";
 import { getRentalPaymentStore } from "~~/lib/robomata/server/rentalPaymentStore";
 import type { StripePaymentIntentSnapshot } from "~~/lib/robomata/server/rentalPaymentStore";
 
@@ -154,8 +155,9 @@ export async function retrieveStripeRentalPaymentIntent(paymentIntentId: string)
   if (isStripeMockEnabled()) {
     const status = process.env.ROBOMATA_RENTAL_STRIPE_MOCK_RECONCILE_STATUS ?? "requires_capture";
     const existingPayment = await getRentalPaymentStore().getPaymentByPaymentIntent(paymentIntentId);
-    const amount = existingPayment?.authorizedAmountCents ?? 1_000;
     const bookingId = /^pi_mock_(rb_[0-9a-f-]+)(?:_[0-9a-f]{10})?$/.exec(paymentIntentId)?.[1];
+    const booking = !existingPayment && bookingId ? await getRentalBookingStore().getBooking(bookingId) : undefined;
+    const amount = existingPayment?.authorizedAmountCents ?? booking?.paymentPlan.totalDueAtAuthorizationCents ?? 1_000;
     return {
       amount,
       amount_capturable: status === "requires_capture" ? amount : 0,
@@ -173,9 +175,16 @@ export async function retrieveStripeRentalPaymentIntent(paymentIntentId: string)
               platformVehicleId: existingPayment.platformVehicleId,
               ...(existingPayment.vehicleAssetId ? { vehicleAssetId: existingPayment.vehicleAssetId } : {}),
             }
-          : bookingId
-            ? { bookingId }
-            : {}),
+          : booking
+            ? {
+                bookingId: booking.id,
+                facilityAssetId: booking.facilityAssetId,
+                platformVehicleId: booking.platformVehicleId,
+                ...(booking.vehicleAssetId ? { vehicleAssetId: booking.vehicleAssetId } : {}),
+              }
+            : bookingId
+              ? { bookingId }
+              : {}),
       },
       status,
     };
@@ -215,7 +224,7 @@ export function verifyStripeWebhookPayload(input: {
   signatureHeader: string | null;
 }): StripeWebhookEvent {
   const secret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
-  if (!secret && process.env.NODE_ENV === "development") return JSON.parse(input.payload) as StripeWebhookEvent;
+  if (!secret && isStripeMockEnabled()) return JSON.parse(input.payload) as StripeWebhookEvent;
   if (!secret) throw new Error("STRIPE_WEBHOOK_SECRET is required for Stripe webhook verification.");
   if (!input.signatureHeader) throw new Error("Missing Stripe signature header.");
 

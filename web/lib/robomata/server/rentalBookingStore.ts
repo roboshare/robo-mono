@@ -187,6 +187,9 @@ function assertNoOverlappingActiveBooking(
 
 function confirmedBooking(current: RentalBookingRecord, input: RentalBookingConfirmationInput): RentalBookingRecord {
   assertNoProhibitedRentalPersistenceFields(input, "rental booking confirmation");
+  if (input.paymentAuthorized !== true) {
+    throw new RentalBookingConflictError("Booking cannot be confirmed before payment authorization.");
+  }
   const now = new Date().toISOString();
   const state = current.state === "host_review" || !input.hostReviewRequired ? "confirmed" : "host_review";
   const events = [

@@ -244,6 +244,7 @@ function monotonicPaymentStatus(input: {
   eventKind: RentalPaymentProviderEventKind;
   existing?: RentalPaymentRecord;
   nextStatus: RentalPaymentIntentStatus;
+  occurredAt?: string;
   refundId?: string;
   disputeId?: string;
 }): RentalPaymentIntentStatus {
@@ -262,7 +263,11 @@ function monotonicPaymentStatus(input: {
     return "refunded";
   }
   if (input.existing.status === "requires_capture" && input.eventKind === "payment_failed") {
-    return "requires_capture";
+    const eventTime = Date.parse(input.occurredAt ?? "");
+    const authorizedTime = Date.parse(input.existing.authorizedAt ?? "");
+    if (Number.isFinite(eventTime) && Number.isFinite(authorizedTime) && eventTime <= authorizedTime) {
+      return "requires_capture";
+    }
   }
   if (
     input.existing.status === "requires_capture" &&
@@ -469,6 +474,7 @@ function paymentRecordFromEvent(
     eventKind: input.eventKind,
     existing,
     nextStatus,
+    occurredAt: input.occurredAt,
     refundId: input.refundId,
   });
   const reference = providerReference(input);
@@ -543,6 +549,7 @@ function paymentRecordFromBridgeEvent(
     eventKind: input.eventKind,
     existing,
     nextStatus,
+    occurredAt: input.occurredAt,
     refundId: input.refundId,
   });
   const reference = bridgeProviderReference(input);
