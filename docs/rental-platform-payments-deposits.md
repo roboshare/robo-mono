@@ -96,7 +96,7 @@ The `POST /api/robomata/rental-bookings/:bookingId/approve` route validates paym
 3. Vehicle must be `listed` (when inventory is enabled).
 4. `confirmBooking` enforces `paymentAuthorized=true` as a hard assertion.
 
-For Stripe, the stored payment must be in `requires_capture` or `captured` status. For Bridge, the stored payment must be in `captured` status. Approvals on bookings with expired, canceled, or failed payment records are rejected with HTTP 409.
+For Stripe, the stored payment must be in `requires_capture` or `captured` status. The approve route also re-fetches the live Stripe snapshot and gates on `requires_capture` or `succeeded` (the Stripe API status for captured payments). For Bridge, the stored payment must be in `captured` status. Approvals on bookings with expired, canceled, or failed payment records are rejected with HTTP 409.
 
 ## Checkout Flow
 

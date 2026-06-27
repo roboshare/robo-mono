@@ -15,13 +15,26 @@ Shared booking types live in `web/lib/robomata/rentalBookings.ts`. Persistence l
 
 ## API
 
-Booking read APIs:
+### Checkout
 
 - `POST /api/robomata/rental-bookings/checkout` — create a new booking
+
+Checkout requires:
+
+- `ROBOMATA_RENTAL_BOOKINGS_ENABLED=true`
+- `ROBOMATA_RENTAL_INVENTORY_ENABLED=true`
+- `ROBOMATA_RENTAL_PAYMENTS_ENABLED=true`
+- `ROBOMATA_RENTER_ACCOUNTS_ENABLED=true`
+- `ROBOMATA_WORKFLOW_MUTATIONS_ENABLED=true`
+
+### Read APIs
+
 - `GET /api/robomata/rental-bookings/:bookingId` — read booking state
 - `GET /api/robomata/rental-bookings/:bookingId/trip` — read trip state for a booking
 
-Booking write APIs (all require `ROBOMATA_WORKFLOW_MUTATIONS_ENABLED=true`):
+### Booking write APIs
+
+All require `ROBOMATA_RENTAL_BOOKINGS_ENABLED=true` and `ROBOMATA_WORKFLOW_MUTATIONS_ENABLED=true`:
 
 - `POST /api/robomata/rental-bookings/:bookingId/confirm` — confirm a booking (moves to `confirmed` or `host_review`)
 - `POST /api/robomata/rental-bookings/:bookingId/approve` — host approval (moves `host_review` → `confirmed`)
@@ -31,7 +44,11 @@ Booking write APIs (all require `ROBOMATA_WORKFLOW_MUTATIONS_ENABLED=true`):
 - `POST /api/robomata/rental-bookings/:bookingId/claims` — create a damage claim on a booking
 - `POST /api/robomata/rental-bookings/:bookingId/incidents` — record a support incident on a booking
 
-All booking routes require `ROBOMATA_RENTAL_BOOKINGS_ENABLED=true`. Write routes also require `ROBOMATA_WORKFLOW_MUTATIONS_ENABLED=true`. Local development may use `ROBOMATA_RENTAL_BOOKINGS_FILE` when `POSTGRES_URL` is absent.
+Local development may use `ROBOMATA_RENTAL_BOOKINGS_FILE` when `POSTGRES_URL` is absent.
+
+### Confirm
+
+Confirms a booking after payment authorization. Requires `x-robomata-payment-confirmation` with `ROBOMATA_RENTAL_PAYMENT_CONFIRMATION_SECRET` (server-to-server route, not client-callable). Moves the booking to `confirmed` or `host_review` depending on vehicle `requireManualApproval` setting.
 
 ### Approve
 
@@ -59,7 +76,7 @@ See [Rental Platform Cancellations And Support](./rental-platform-cancellations-
 
 ### Check-in
 
-Moves a booking to `in_trip`. Available when the booking is in `confirmed` or `check_in_open` state. Records trip check-in timestamp and odometer reading when provided. Updates vehicle operational status to `in_trip`.
+Moves a booking to `in_trip`. Available when the booking is in `confirmed` or `check_in_open` state. Records trip check-in timestamp and odometer reading when provided. Updates vehicle operational status to `in_trip` (when inventory is enabled).
 
 ### Check-out
 
