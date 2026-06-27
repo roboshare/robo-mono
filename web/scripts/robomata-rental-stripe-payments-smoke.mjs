@@ -448,6 +448,7 @@ async function main() {
     ROBOMATA_RENTAL_REVENUE_POSTING_ENABLED: "true",
     ROBOMATA_RENTAL_STRIPE_MOCK: "true",
     ROBOMATA_RENTAL_STRIPE_MOCK_RECONCILE_STATUS: "succeeded",
+    ROBOMATA_RENTAL_STRIPE_MOCK_RECONCILE_STATUS_FILE: path.join(tempDir, "stripe-mock-status-override.json"),
     ROBOMATA_RENTER_ACCOUNTS_ENABLED: "true",
     ROBOMATA_RENTER_ACCOUNTS_FILE: path.join(tempDir, "renters.json"),
     ROBOMATA_WORKFLOW_MUTATIONS_ENABLED: "true",
@@ -1018,6 +1019,86 @@ async function main() {
     409,
     "valid payment authorization",
   );
+
+  const expiredAuthCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
+    body: JSON.stringify({
+      dateFrom: new Date(Date.now() + (2 * 24 + 12) * 60 * 60 * 1_000).toISOString(),
+      dateTo: new Date(Date.now() + (2 * 24 + 14) * 60 * 60 * 1_000).toISOString(),
+      platformVehicleId: manualReviewPlatformVehicleId,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const expiredAuthBookingId = expiredAuthCheckoutPayload.booking?.id;
+  const expiredAuthCheckoutAccessToken = expiredAuthCheckoutPayload.checkoutAccessToken;
+  if (!expiredAuthBookingId || !expiredAuthCheckoutAccessToken) {
+    throw new Error(`Expected expired-auth booking, got ${JSON.stringify(expiredAuthCheckoutPayload)}`);
+  }
+  const expiredAuthIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
+    body: JSON.stringify({
+      bookingId: expiredAuthBookingId,
+      checkoutAccessToken: expiredAuthCheckoutAccessToken,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const expiredAuthPaymentIntentId = expiredAuthIntentPayload.payment?.providerReference?.paymentIntentId;
+  if (!expiredAuthPaymentIntentId) {
+    throw new Error(`Expected expired-auth PaymentIntent, got ${JSON.stringify(expiredAuthIntentPayload)}`);
+  }
+  const expiredAuthCapturableWebhookBody = JSON.stringify({
+    id: "evt_payment_expired_auth_capturable_smoke",
+    created: Math.floor(Date.now() / 1000),
+    type: "payment_intent.amount_capturable_updated",
+    data: {
+      object: {
+        id: expiredAuthPaymentIntentId,
+        amount: expiredAuthIntentPayload.payment.authorizedAmountCents,
+        amount_capturable: expiredAuthIntentPayload.payment.authorizedAmountCents,
+        amount_received: 0,
+        capture_method: "manual",
+        currency: "usd",
+        latest_charge: "ch_stripe_smoke_expired_auth",
+        metadata: { bookingId: expiredAuthBookingId },
+        status: "requires_capture",
+      },
+    },
+  });
+  await fetchJson(`${baseUrl}/api/robomata/rental-payments/stripe/webhook`, {
+    body: expiredAuthCapturableWebhookBody,
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": stripeSignatureHeader(expiredAuthCapturableWebhookBody),
+    },
+    method: "POST",
+  });
+  const expiredAuthPendingPayload = await fetchJson(
+    `${baseUrl}/api/robomata/rental-bookings/${expiredAuthBookingId}`,
+    {
+      headers: await authHeaders("GET", `/api/robomata/rental-bookings/${expiredAuthBookingId}`),
+      method: "GET",
+    },
+  );
+  if (expiredAuthPendingPayload.booking?.state !== "host_review") {
+    throw new Error(
+      `Expected expired-auth booking in host_review, got ${JSON.stringify(expiredAuthPendingPayload)}`,
+    );
+  }
+  const mockStatusOverrideFile = path.join(tempDir, "stripe-mock-status-override.json");
+  await writeFile(mockStatusOverrideFile, JSON.stringify({ [expiredAuthPaymentIntentId]: "requires_payment_method" }), "utf8");
+  const expiredAuthApprovePath = `/api/robomata/rental-bookings/${expiredAuthBookingId}/approve`;
+  await expectJsonFailure(
+    `${baseUrl}${expiredAuthApprovePath}`,
+    {
+      headers: await authHeaders("POST", expiredAuthApprovePath),
+      method: "POST",
+    },
+    409,
+    "valid payment authorization",
+  );
+  await writeFile(mockStatusOverrideFile, JSON.stringify({}), "utf8");
 
   await expectJsonFailure(
     `${baseUrl}/api/robomata/rental-payments/payment-intents`,

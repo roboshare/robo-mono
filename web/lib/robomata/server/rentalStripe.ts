@@ -1,4 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import "server-only";
 import type { RentalBookingRecord } from "~~/lib/robomata/rentalBookings";
 import { getRentalBookingStore } from "~~/lib/robomata/server/rentalBookingStore";
@@ -153,7 +154,18 @@ export async function cancelStripeRentalPaymentIntent(paymentIntentId: string): 
 
 export async function retrieveStripeRentalPaymentIntent(paymentIntentId: string): Promise<StripePaymentIntentSnapshot> {
   if (isStripeMockEnabled()) {
-    const status = process.env.ROBOMATA_RENTAL_STRIPE_MOCK_RECONCILE_STATUS ?? "requires_capture";
+    let status = process.env.ROBOMATA_RENTAL_STRIPE_MOCK_RECONCILE_STATUS ?? "requires_capture";
+    const statusOverrideFile = process.env.ROBOMATA_RENTAL_STRIPE_MOCK_RECONCILE_STATUS_FILE;
+    if (statusOverrideFile) {
+      try {
+        const overrides = JSON.parse(await readFile(statusOverrideFile, "utf8")) as Record<string, string>;
+        if (overrides[paymentIntentId]) {
+          status = overrides[paymentIntentId];
+        }
+      } catch {
+        // Fall back to env var default when override file is missing or invalid.
+      }
+    }
     const existingPayment = await getRentalPaymentStore().getPaymentByPaymentIntent(paymentIntentId);
     const bookingId = /^pi_mock_(rb_[0-9a-f-]+)(?:_[0-9a-f]{10})?$/.exec(paymentIntentId)?.[1];
     const booking = !existingPayment && bookingId ? await getRentalBookingStore().getBooking(bookingId) : undefined;

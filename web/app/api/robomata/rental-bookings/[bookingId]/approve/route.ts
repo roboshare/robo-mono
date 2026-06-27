@@ -134,6 +134,14 @@ async function requireValidApprovalPayment(input: {
       eventKind: stripeApprovalSyncEventKind(snapshot),
       snapshot,
     });
+    // The monotonic guard may preserve a stale local status (e.g. requires_capture
+    // when Stripe has moved to requires_payment_method), so gate on live status.
+    if (snapshot.status !== "requires_capture" && snapshot.status !== "succeeded") {
+      return NextResponse.json(
+        { error: "Booking cannot be approved without a valid payment authorization." },
+        { status: 409 },
+      );
+    }
   } else if (payment.provider === "bridge") {
     const transferId = input.paymentProviderReference.transferId;
     if (!transferId) {
@@ -149,6 +157,13 @@ async function requireValidApprovalPayment(input: {
       eventKind: bridgeApprovalSyncEventKind(snapshot),
       snapshot,
     });
+    // Mirror the Stripe live status gate: only payment_processed is approvable.
+    if (snapshot.state !== "payment_processed") {
+      return NextResponse.json(
+        { error: "Booking cannot be approved without a valid payment authorization." },
+        { status: 409 },
+      );
+    }
   }
 
   if (!paymentCanApproveBooking(payment)) {
@@ -184,14 +199,29 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     const paymentStore = getRentalPaymentStore();
     return await paymentStore.withBookingPaymentRailLock(bookingId, async () => {
+      const lockedBooking = await getRentalBookingStore().getBooking(bookingId);
+      if (!lockedBooking) return NextResponse.json({ error: "Rental booking not found." }, { status: 404 });
+      if (lockedBooking.state !== "host_review") {
+        return NextResponse.json(
+          { error: `Booking cannot be approved from state ${lockedBooking.state}.` },
+          { status: 409 },
+        );
+      }
+      if (!lockedBooking.paymentProviderReference) {
+        return NextResponse.json(
+          { error: "Booking cannot be approved before payment authorization." },
+          { status: 409 },
+        );
+      }
+
       const paymentError = await requireValidApprovalPayment({
-        bookingId: current.id,
-        paymentProviderReference: current.paymentProviderReference!,
+        bookingId: lockedBooking.id,
+        paymentProviderReference: lockedBooking.paymentProviderReference,
       });
       if (paymentError) return paymentError;
 
       if (isRobomataRentalInventoryEnabled()) {
-        const vehicle = await getRentalInventoryStore().getVehicle(current.platformVehicleId);
+        const vehicle = await getRentalInventoryStore().getVehicle(lockedBooking.platformVehicleId);
         if (!vehicle) return NextResponse.json({ error: "Rental vehicle not found." }, { status: 404 });
         if (vehicle.operationalStatus !== "listed") {
           return NextResponse.json({ error: "Rental vehicle is no longer available for approval." }, { status: 409 });
