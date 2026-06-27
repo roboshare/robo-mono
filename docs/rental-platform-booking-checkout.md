@@ -59,15 +59,15 @@ See [Rental Platform Cancellations And Support](./rental-platform-cancellations-
 
 ### Check-in
 
-Moves a booking from `check_in_open` to `in_trip`. Records trip check-in timestamp and odometer reading when provided. Requires the booking to be in `check_in_open` state.
+Moves a booking to `in_trip`. Available when the booking is in `confirmed` or `check_in_open` state. Records trip check-in timestamp and odometer reading when provided.
 
 ### Check-out
 
-Moves a booking from `in_trip` to `return_pending`. Records trip check-out timestamp and odometer reading when provided. Requires the booking to be in `in_trip` state.
+Moves a booking to `completed` (or `disputed` if a trip exception is reported). Available when the booking is in `in_trip` or `return_pending` state. Records trip check-out timestamp and odometer reading when provided. Updates vehicle operational status to `turnaround` on clean completion or `suspended` on exception.
 
 ### Claims
 
-Creates a damage claim on a booking. Available when the booking is in `check_in_open`, `confirmed`, `in_trip`, `return_pending`, or `completed` state. Creating a claim moves the booking to `disputed`. See [Rental Platform Claims And Safety](./rental-platform-claims-safety.md) for claim workflow details.
+Creates a damage claim on a booking. Can be created from any booking state — the booking moves to `disputed` when the current state is `check_in_open`, `confirmed`, `in_trip`, `return_pending`, or `completed`; otherwise the booking state is preserved. See [Rental Platform Claims And Safety](./rental-platform-claims-safety.md) for claim workflow details.
 
 ### Incidents
 

@@ -74,13 +74,16 @@ Local and CI smoke tests can set `ROBOMATA_RENTAL_BRIDGE_MOCK=true` to exercise 
 
 `bridge/webhook` verifies Bridge's `X-Webhook-Signature` using `BRIDGE_WEBHOOK_PUBLIC_KEY` or `ROBOMATA_RENTAL_BRIDGE_WEBHOOK_PUBLIC_KEY` outside local development. It stores selected transfer IDs, states, amounts, timestamps, event references, and transaction hashes only. It handles awaiting-funds, in-review, funds-received, submitted, processed, cancelled, returned, refunded, and failed transfer states.
 
-`reconcile` re-fetches Stripe state by `paymentIntentId` and requires `x-robomata-payment-confirmation` with `ROBOMATA_RENTAL_PAYMENT_CONFIRMATION_SECRET` outside local development. In local development (`NODE_ENV=development`), the secret check is skipped when the env var is absent.
+`reconcile` re-fetches Stripe state by `paymentIntentId` and requires `x-robomata-payment-confirmation` with `ROBOMATA_RENTAL_PAYMENT_CONFIRMATION_SECRET` outside local development. When mock mode is enabled (`ROBOMATA_RENTAL_STRIPE_MOCK=true`), the secret check is skipped when the env var is absent.
 
 ## Mock And Testing Overrides
 
 Local and CI environments can control mock behavior with these additional variables:
 
 - `ROBOMATA_RENTAL_STRIPE_MOCK_RECONCILE_STATUS` — override the status returned by mock `retrieveStripeRentalPaymentIntent`. Defaults to `requires_capture`. Useful for testing expired-authorisation or canceled-payment flows without calling Stripe.
+- `ROBOMATA_RENTAL_STRIPE_MOCK_RECONCILE_STATUS_FILE` — JSON file mapping `paymentIntentId` to status override. Per-intent overrides take priority over the env var default.
+- `ROBOMATA_RENTAL_BRIDGE_MOCK_RECONCILE_STATE` — override the state returned by mock `retrieveBridgeRentalTransfer`. Defaults to deriving state from existing payment status.
+- `ROBOMATA_RENTAL_BRIDGE_MOCK_RECONCILE_STATE_FILE` — JSON file mapping `transferId` to state override. Per-transfer overrides take priority over the env var default.
 
 Smoke tests exercise the full payment lifecycle by setting `ROBOMATA_RENTAL_STRIPE_MOCK=true` and `ROBOMATA_RENTAL_BRIDGE_MOCK=true` together with the above overrides.
 
