@@ -1,6 +1,10 @@
 import { createHash, createVerify } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import "server-only";
 import type { RentalBookingRecord } from "~~/lib/robomata/rentalBookings";
+import type { RentalPaymentIntentStatus } from "~~/lib/robomata/rentalPayments";
+import { getRentalBookingStore } from "~~/lib/robomata/server/rentalBookingStore";
+import { getRentalPaymentStore } from "~~/lib/robomata/server/rentalPaymentStore";
 import type { BridgeTransferSnapshot } from "~~/lib/robomata/server/rentalPaymentStore";
 
 const BRIDGE_API_BASE = "https://api.bridge.xyz/v0";
@@ -162,6 +166,97 @@ function mockCancelledBridgeTransfer(input: {
   };
 }
 
+function bridgeStateFromPaymentStatus(status: RentalPaymentIntentStatus): string {
+  switch (status) {
+    case "captured":
+      return "payment_processed";
+    case "cancelled":
+      return "canceled";
+    case "refunded":
+      return "refunded";
+    case "processing":
+      return "payment_submitted";
+    case "failed":
+      return "error";
+    case "awaiting_funds":
+    default:
+      return "awaiting_funds";
+  }
+}
+
+function mockBridgeDestinationFields() {
+  const sourceRail = configuredRail("ROBOMATA_RENTAL_BRIDGE_SOURCE_RAIL", "base");
+  const sourceCurrency = configuredRail("ROBOMATA_RENTAL_BRIDGE_SOURCE_CURRENCY", "usdc");
+  const destinationRail = configuredRail("ROBOMATA_RENTAL_BRIDGE_DESTINATION_RAIL", sourceRail);
+  const destinationCurrency = configuredRail("ROBOMATA_RENTAL_BRIDGE_DESTINATION_CURRENCY", sourceCurrency);
+  const destinationAddress = process.env.ROBOMATA_RENTAL_BRIDGE_DESTINATION_ADDRESS?.trim() || "0xbridgeMockTreasury";
+  return {
+    destination: {
+      currency: destinationCurrency,
+      payment_rail: destinationRail,
+      to_address: destinationAddress,
+    },
+    destinationAddress,
+    sourceCurrency,
+    sourceRail,
+  };
+}
+
+async function mockBridgeTransferSnapshot(transferId: string): Promise<BridgeTransferSnapshot> {
+  const existingPayment = await getRentalPaymentStore().getPaymentByPaymentIntent(transferId);
+  const bookingId = existingPayment?.bookingId ?? /^bt_mock_(rb_[0-9a-f-]+)(?:_[0-9a-f]{10})?$/.exec(transferId)?.[1];
+  const booking = bookingId ? await getRentalBookingStore().getBooking(bookingId) : undefined;
+  const amountCents =
+    existingPayment?.authorizedAmountCents ?? booking?.paymentPlan.totalDueAtAuthorizationCents ?? 1_000;
+  const amount = centsToDecimal(amountCents);
+  const { destination, destinationAddress, sourceCurrency, sourceRail } = mockBridgeDestinationFields();
+  let state = process.env.ROBOMATA_RENTAL_BRIDGE_MOCK_RECONCILE_STATE?.trim();
+  const stateOverrideFile = process.env.ROBOMATA_RENTAL_BRIDGE_MOCK_RECONCILE_STATE_FILE;
+  if (stateOverrideFile) {
+    try {
+      const overrides = JSON.parse(await readFile(stateOverrideFile, "utf8")) as Record<string, string>;
+      if (overrides[transferId]) {
+        state = overrides[transferId];
+      }
+    } catch {
+      // Fall back to payment status or env default when override file is missing or invalid.
+    }
+  }
+  if (!state) {
+    state = existingPayment ? bridgeStateFromPaymentStatus(existingPayment.status) : "awaiting_funds";
+  }
+  const updatedAt = new Date().toISOString();
+  return {
+    amount,
+    client_reference_id: bookingId,
+    created_at: existingPayment?.createdAt ?? updatedAt,
+    currency: existingPayment?.currency.toLowerCase() ?? "usd",
+    destination,
+    id: transferId,
+    on_behalf_of: bridgeCustomerId() ?? "bridge_mock_customer",
+    receipt:
+      state === "payment_processed"
+        ? {
+            destination_tx_hash: existingPayment?.providerReference.destinationTxHash ?? `0xmock_${transferId}`,
+            final_amount: amount,
+            source_tx_hash: existingPayment?.providerReference.sourceTxHash ?? `0xmock_source_${transferId}`,
+          }
+        : undefined,
+    source: {
+      currency: sourceCurrency,
+      payment_rail: sourceRail,
+    },
+    source_deposit_instructions: {
+      amount,
+      currency: sourceCurrency,
+      payment_rail: sourceRail,
+      to_address: destinationAddress,
+    },
+    state,
+    updated_at: updatedAt,
+  };
+}
+
 export async function createBridgeRentalTransfer(input: {
   booking: RentalBookingRecord;
   fromAddress?: string;
@@ -242,11 +337,7 @@ export async function cancelBridgeRentalTransfer(input: {
 
 export async function retrieveBridgeRentalTransfer(transferId: string): Promise<BridgeTransferSnapshot> {
   if (isBridgeMockEnabled()) {
-    return {
-      id: transferId,
-      state: "awaiting_funds",
-      updated_at: new Date().toISOString(),
-    };
+    return mockBridgeTransferSnapshot(transferId);
   }
   const transfer = await bridgeRequest(`/transfers/${encodeURIComponent(transferId)}`, {
     headers: bridgeHeaders(),

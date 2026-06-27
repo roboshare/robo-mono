@@ -419,7 +419,11 @@ async function readStoredPayment(filePath, providerReferenceId) {
 async function main() {
   tempDir = await mkdtemp(path.join(tmpdir(), "robomata-rental-stripe-smoke-"));
   const inventoryFile = path.join(tempDir, "inventory.json");
+  const mockStatusOverrideFile = path.join(tempDir, "stripe-mock-status-override.json");
+  const mockBridgeStateOverrideFile = path.join(tempDir, "bridge-mock-state-override.json");
   await seedInventory(inventoryFile);
+  await writeFile(mockStatusOverrideFile, "{}", "utf8");
+  await writeFile(mockBridgeStateOverrideFile, "{}", "utf8");
 
   const env = {
     ...process.env,
@@ -444,11 +448,12 @@ async function main() {
     ROBOMATA_RENTAL_BRIDGE_DESTINATION_ADDRESS: "0xbridgeSmokeTreasury",
     ROBOMATA_RENTAL_BRIDGE_ENABLED: "true",
     ROBOMATA_RENTAL_BRIDGE_MOCK: "true",
+    ROBOMATA_RENTAL_BRIDGE_MOCK_RECONCILE_STATE_FILE: mockBridgeStateOverrideFile,
     ROBOMATA_RENTAL_REVENUE_FILE: path.join(tempDir, "revenue.json"),
     ROBOMATA_RENTAL_REVENUE_POSTING_ENABLED: "true",
     ROBOMATA_RENTAL_STRIPE_MOCK: "true",
     ROBOMATA_RENTAL_STRIPE_MOCK_RECONCILE_STATUS: "succeeded",
-    ROBOMATA_RENTAL_STRIPE_MOCK_RECONCILE_STATUS_FILE: path.join(tempDir, "stripe-mock-status-override.json"),
+    ROBOMATA_RENTAL_STRIPE_MOCK_RECONCILE_STATUS_FILE: mockStatusOverrideFile,
     ROBOMATA_RENTER_ACCOUNTS_ENABLED: "true",
     ROBOMATA_RENTER_ACCOUNTS_FILE: path.join(tempDir, "renters.json"),
     ROBOMATA_WORKFLOW_MUTATIONS_ENABLED: "true",
@@ -1086,7 +1091,6 @@ async function main() {
       `Expected expired-auth booking in host_review, got ${JSON.stringify(expiredAuthPendingPayload)}`,
     );
   }
-  const mockStatusOverrideFile = path.join(tempDir, "stripe-mock-status-override.json");
   await writeFile(mockStatusOverrideFile, JSON.stringify({ [expiredAuthPaymentIntentId]: "requires_payment_method" }), "utf8");
   const expiredAuthApprovePath = `/api/robomata/rental-bookings/${expiredAuthBookingId}/approve`;
   await expectJsonFailure(
@@ -1098,7 +1102,176 @@ async function main() {
     409,
     "valid payment authorization",
   );
-  await writeFile(mockStatusOverrideFile, JSON.stringify({}), "utf8");
+  await writeFile(mockStatusOverrideFile, "{}", "utf8");
+
+  const bridgeManualReviewCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
+    body: JSON.stringify({
+      dateFrom: new Date(Date.now() + (2 * 24 + 15) * 60 * 60 * 1_000).toISOString(),
+      dateTo: new Date(Date.now() + (2 * 24 + 17) * 60 * 60 * 1_000).toISOString(),
+      platformVehicleId: manualReviewPlatformVehicleId,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const bridgeManualReviewBookingId = bridgeManualReviewCheckoutPayload.booking?.id;
+  const bridgeManualReviewCheckoutAccessToken = bridgeManualReviewCheckoutPayload.checkoutAccessToken;
+  if (!bridgeManualReviewBookingId || !bridgeManualReviewCheckoutAccessToken) {
+    throw new Error(
+      `Expected Bridge manual-review booking, got ${JSON.stringify(bridgeManualReviewCheckoutPayload)}`,
+    );
+  }
+  const bridgeManualReviewTransferPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/transfers`, {
+    body: JSON.stringify({
+      bookingId: bridgeManualReviewBookingId,
+      checkoutAccessToken: bridgeManualReviewCheckoutAccessToken,
+      fromAddress: "0xbridgeSmokeManualReviewRenter",
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const bridgeManualReviewTransferId = bridgeManualReviewTransferPayload.payment?.providerReference?.transferId;
+  if (!bridgeManualReviewTransferId) {
+    throw new Error(
+      `Expected Bridge manual-review transfer, got ${JSON.stringify(bridgeManualReviewTransferPayload)}`,
+    );
+  }
+  const bridgeManualReviewProcessedWebhookBody = JSON.stringify({
+    event_category: "transfer",
+    event_created_at: new Date().toISOString(),
+    event_id: "evt_bridge_manual_review_processed_smoke",
+    event_object: {
+      ...bridgeManualReviewTransferPayload.transfer,
+      receipt: {
+        destination_tx_hash: "0xbridgeManualReviewDestinationSmoke",
+        final_amount: bridgeManualReviewTransferPayload.transfer.amount,
+        source_tx_hash: "0xbridgeManualReviewSourceSmoke",
+      },
+      state: "payment_processed",
+      updated_at: new Date().toISOString(),
+    },
+    event_type: "transfer.updated",
+  });
+  await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/webhook`, {
+    body: bridgeManualReviewProcessedWebhookBody,
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const bridgeManualReviewPendingPayload = await fetchJson(
+    `${baseUrl}/api/robomata/rental-bookings/${bridgeManualReviewBookingId}`,
+    {
+      headers: await authHeaders("GET", `/api/robomata/rental-bookings/${bridgeManualReviewBookingId}`),
+      method: "GET",
+    },
+  );
+  if (
+    bridgeManualReviewPendingPayload.booking?.state !== "host_review" ||
+    bridgeManualReviewPendingPayload.booking.paymentProviderReference?.transferId !== bridgeManualReviewTransferId
+  ) {
+    throw new Error(
+      `Expected Bridge manual-review booking to wait for host approval, got ${JSON.stringify(
+        bridgeManualReviewPendingPayload,
+      )}`,
+    );
+  }
+  const bridgeManualReviewApprovePath = `/api/robomata/rental-bookings/${bridgeManualReviewBookingId}/approve`;
+  const bridgeManualReviewApprovedPayload = await fetchJson(`${baseUrl}${bridgeManualReviewApprovePath}`, {
+    headers: await authHeaders("POST", bridgeManualReviewApprovePath),
+    method: "POST",
+  });
+  if (
+    bridgeManualReviewApprovedPayload.booking?.state !== "confirmed" ||
+    bridgeManualReviewApprovedPayload.booking.paymentProviderReference?.transferId !== bridgeManualReviewTransferId
+  ) {
+    throw new Error(
+      `Expected Bridge manual-review approval to confirm booking, got ${JSON.stringify(
+        bridgeManualReviewApprovedPayload,
+      )}`,
+    );
+  }
+
+  const bridgeRefundedGuardCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
+    body: JSON.stringify({
+      dateFrom: new Date(Date.now() + (2 * 24 + 18) * 60 * 60 * 1_000).toISOString(),
+      dateTo: new Date(Date.now() + (2 * 24 + 20) * 60 * 60 * 1_000).toISOString(),
+      platformVehicleId: manualReviewPlatformVehicleId,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const bridgeRefundedGuardBookingId = bridgeRefundedGuardCheckoutPayload.booking?.id;
+  const bridgeRefundedGuardCheckoutAccessToken = bridgeRefundedGuardCheckoutPayload.checkoutAccessToken;
+  if (!bridgeRefundedGuardBookingId || !bridgeRefundedGuardCheckoutAccessToken) {
+    throw new Error(
+      `Expected Bridge refunded-guard booking, got ${JSON.stringify(bridgeRefundedGuardCheckoutPayload)}`,
+    );
+  }
+  const bridgeRefundedGuardTransferPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/transfers`, {
+    body: JSON.stringify({
+      bookingId: bridgeRefundedGuardBookingId,
+      checkoutAccessToken: bridgeRefundedGuardCheckoutAccessToken,
+      fromAddress: "0xbridgeSmokeManualReviewRefundGuard",
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const bridgeRefundedGuardTransferId = bridgeRefundedGuardTransferPayload.payment?.providerReference?.transferId;
+  if (!bridgeRefundedGuardTransferId) {
+    throw new Error(
+      `Expected Bridge refunded-guard transfer, got ${JSON.stringify(bridgeRefundedGuardTransferPayload)}`,
+    );
+  }
+  await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/webhook`, {
+    body: JSON.stringify({
+      event_category: "transfer",
+      event_created_at: new Date().toISOString(),
+      event_id: "evt_bridge_manual_review_refund_guard_processed_smoke",
+      event_object: {
+        ...bridgeRefundedGuardTransferPayload.transfer,
+        receipt: {
+          destination_tx_hash: "0xbridgeManualReviewRefundGuardDestinationSmoke",
+          final_amount: bridgeRefundedGuardTransferPayload.transfer.amount,
+          source_tx_hash: "0xbridgeManualReviewRefundGuardSourceSmoke",
+        },
+        state: "payment_processed",
+        updated_at: new Date().toISOString(),
+      },
+      event_type: "transfer.updated",
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const bridgeRefundedGuardPendingPayload = await fetchJson(
+    `${baseUrl}/api/robomata/rental-bookings/${bridgeRefundedGuardBookingId}`,
+    {
+      headers: await authHeaders("GET", `/api/robomata/rental-bookings/${bridgeRefundedGuardBookingId}`),
+      method: "GET",
+    },
+  );
+  if (bridgeRefundedGuardPendingPayload.booking?.state !== "host_review") {
+    throw new Error(
+      `Expected Bridge refunded-guard booking in host_review, got ${JSON.stringify(bridgeRefundedGuardPendingPayload)}`,
+    );
+  }
+  await writeFile(
+    mockBridgeStateOverrideFile,
+    JSON.stringify({ [bridgeRefundedGuardTransferId]: "refunded" }),
+    "utf8",
+  );
+  const bridgeRefundedGuardApprovePath = `/api/robomata/rental-bookings/${bridgeRefundedGuardBookingId}/approve`;
+  await expectJsonFailure(
+    `${baseUrl}${bridgeRefundedGuardApprovePath}`,
+    {
+      headers: await authHeaders("POST", bridgeRefundedGuardApprovePath),
+      method: "POST",
+    },
+    409,
+    "valid payment authorization",
+  );
+  await writeFile(mockBridgeStateOverrideFile, "{}", "utf8");
 
   await expectJsonFailure(
     `${baseUrl}/api/robomata/rental-payments/payment-intents`,
