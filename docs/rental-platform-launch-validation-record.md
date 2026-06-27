@@ -1,7 +1,7 @@
 # Rental Platform Launch Validation Record
 
 Status: Pending external approvals
-Date: June 12, 2026
+Date: June 27, 2026
 Owner: Legal + Compliance + Product
 Linear: ROB-231
 

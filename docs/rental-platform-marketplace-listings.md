@@ -1,7 +1,7 @@
 # Rental Platform Marketplace Listing Model
 
 Status: Draft
-Date: June 11, 2026
+Date: June 27, 2026
 Owner: Product + Marketplace
 
 ## Summary

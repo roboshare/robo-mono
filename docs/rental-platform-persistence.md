@@ -1,7 +1,7 @@
 # Rental Platform Persistence And Retention
 
 Status: Draft
-Date: June 11, 2026
+Date: June 27, 2026
 Owner: Product + Engineering
 
 ## Purpose
@@ -31,7 +31,7 @@ The script executes `web/scripts/sql/robomata-rental-persistence.sql` and create
 ## Environment Rules
 
 - `POSTGRES_URL` is required outside local development when any rental store is enabled.
-- `ROBOMATA_RENTAL_INVENTORY_FILE`, `ROBOMATA_RENTER_ACCOUNTS_FILE`, `ROBOMATA_RENTAL_BOOKINGS_FILE`, `ROBOMATA_RENTAL_TRIPS_FILE`, `ROBOMATA_RENTAL_SUPPORT_FILE`, `ROBOMATA_RENTAL_CLAIMS_FILE`, and `ROBOMATA_RENTAL_REVENUE_FILE` are local-development fallbacks only.
+- `ROBOMATA_RENTAL_INVENTORY_FILE`, `ROBOMATA_RENTER_ACCOUNTS_FILE`, `ROBOMATA_RENTAL_BOOKINGS_FILE`, `ROBOMATA_RENTAL_TRIPS_FILE`, `ROBOMATA_RENTAL_SUPPORT_FILE`, `ROBOMATA_RENTAL_CLAIMS_FILE`, `ROBOMATA_RENTAL_PAYMENTS_FILE`, and `ROBOMATA_RENTAL_REVENUE_FILE` are local-development fallbacks only.
 - Preview and production environments should run the bootstrap after database provisioning and before turning on rental feature flags.
 
 ## Privacy And Retention Boundaries

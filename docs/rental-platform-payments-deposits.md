@@ -1,7 +1,7 @@
 # Rental Platform Payments And Deposits
 
 Status: Draft
-Date: June 11, 2026
+Date: June 27, 2026
 Owner: Product + Revenue Operations
 
 ## Summary
@@ -70,11 +70,30 @@ Public paid-rental launch must leave `ROBOMATA_RENTAL_STRIPE_MOCK` unset or `fal
 - `ROBOMATA_RENTAL_BRIDGE_DESTINATION_CURRENCY`
 - `ROBOMATA_RENTAL_BRIDGE_DESTINATION_ADDRESS`
 
-Local and CI smoke tests can set `ROBOMATA_RENTAL_BRIDGE_MOCK=true` to exercise the same payment persistence path without calling Bridge.
+Local and CI smoke tests can set `ROBOMATA_RENTAL_BRIDGE_MOCK=true` to exercise the same payment persistence path without calling Bridge. When mock mode is enabled, `retrieveBridgeRentalTransfer` returns a full mock snapshot that derives transfer state from existing payment records instead of calling the Bridge API.
 
 `bridge/webhook` verifies Bridge's `X-Webhook-Signature` using `BRIDGE_WEBHOOK_PUBLIC_KEY` or `ROBOMATA_RENTAL_BRIDGE_WEBHOOK_PUBLIC_KEY` outside local development. It stores selected transfer IDs, states, amounts, timestamps, event references, and transaction hashes only. It handles awaiting-funds, in-review, funds-received, submitted, processed, cancelled, returned, refunded, and failed transfer states.
 
-`reconcile` re-fetches Stripe state by `paymentIntentId` and requires `x-robomata-payment-confirmation` with `ROBOMATA_RENTAL_PAYMENT_CONFIRMATION_SECRET` outside local development.
+`reconcile` re-fetches Stripe state by `paymentIntentId` and requires `x-robomata-payment-confirmation` with `ROBOMATA_RENTAL_PAYMENT_CONFIRMATION_SECRET` outside local development. In local development (`NODE_ENV=development`), the secret check is skipped when the env var is absent.
+
+## Mock And Testing Overrides
+
+Local and CI environments can control mock behavior with these additional variables:
+
+- `ROBOMATA_RENTAL_STRIPE_MOCK_RECONCILE_STATUS` — override the status returned by mock `retrieveStripeRentalPaymentIntent`. Defaults to `requires_capture`. Useful for testing expired-authorisation or canceled-payment flows without calling Stripe.
+
+Smoke tests exercise the full payment lifecycle by setting `ROBOMATA_RENTAL_STRIPE_MOCK=true` and `ROBOMATA_RENTAL_BRIDGE_MOCK=true` together with the above overrides.
+
+## Approval Payment Validation
+
+The `POST /api/robomata/rental-bookings/:bookingId/approve` route validates payment state before allowing host approval:
+
+1. Booking must be in `host_review` state.
+2. Booking must have a `paymentProviderReference`.
+3. Vehicle must be `listed` (when inventory is enabled).
+4. `confirmBooking` enforces `paymentAuthorized=true` as a hard assertion.
+
+For Stripe, the stored payment must be in `requires_capture` or `captured` status. For Bridge, the stored payment must be in `captured` status. Approvals on bookings with expired, canceled, or failed payment records are rejected with HTTP 409.
 
 ## Checkout Flow
 

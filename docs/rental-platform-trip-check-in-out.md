@@ -1,7 +1,7 @@
 # Rental Platform Trip Check-In And Check-Out
 
 Status: Draft
-Date: June 11, 2026
+Date: June 27, 2026
 Owner: Product + Trip Operations
 
 ## Summary

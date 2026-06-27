@@ -1,7 +1,7 @@
 # Rental Platform State Models
 
 Status: Draft
-Date: June 11, 2026
+Date: June 27, 2026
 Owner: Product + Protocol
 
 ## Summary
@@ -79,6 +79,10 @@ Default allowed transitions:
 - `pending_renter_verification` -> `pending_payment_authorization`, `cancelled`
 - `pending_payment_authorization` -> `host_review`, `confirmed`, `cancelled`
 - `host_review` -> `confirmed`, `cancelled`
+
+The `approve` route validates payment state before allowing `host_review` → `confirmed`. Stripe payments must be in `requires_capture` or `captured` status; Bridge payments must be in `captured` status. See [Rental Platform Payments And Deposits](./rental-platform-payments-deposits.md) for details.
+
+`confirmed` requires `paymentAuthorized=true` as a hard assertion in the booking store.
 - `confirmed` -> `check_in_open`, `cancelled`, `disputed`
 - `cancelled` -> `closed`, `disputed`
 - `check_in_open` -> `in_trip`, `cancelled`, `disputed`
