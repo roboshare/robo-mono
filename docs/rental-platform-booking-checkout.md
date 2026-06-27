@@ -29,6 +29,8 @@ Checkout requires:
 
 ### Read APIs
 
+All require `ROBOMATA_RENTAL_BOOKINGS_ENABLED=true`:
+
 - `GET /api/robomata/rental-bookings/:bookingId` — read booking state
 - `GET /api/robomata/rental-bookings/:bookingId/trip` — read trip state for a booking
 
@@ -80,7 +82,7 @@ Moves a booking to `in_trip`. Available when the booking is in `confirmed` or `c
 
 ### Check-out
 
-Moves a booking to `completed` (or `disputed` if a trip exception is reported). Available when the booking is in `in_trip` or `return_pending` state. Records trip check-out timestamp and odometer reading when provided. Updates vehicle operational status to `turnaround` on clean completion or `suspended` on exception.
+Moves a booking to `completed` (or `disputed` if a trip exception is reported). Available when the booking is in `in_trip` or `return_pending` state. Records trip check-out timestamp and odometer reading when provided. Updates vehicle operational status to `turnaround` on clean completion or `suspended` on exception (when inventory is enabled).
 
 ### Claims
 

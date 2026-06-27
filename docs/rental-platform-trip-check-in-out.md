@@ -37,7 +37,7 @@ Check-in accepts:
 - notes
 - actor
 
-The booking must be `confirmed` or `check_in_open`. Successful check-in creates a trip record and moves the booking to `in_trip` with a `check_in_completed` event.
+The booking must be `confirmed` or `check_in_open`. Successful check-in creates a trip record and moves the booking to `in_trip` with a `check_in_completed` event. Vehicle operational status updates to `in_trip` (when inventory is enabled).
 
 ## Check-Out
 
@@ -49,7 +49,7 @@ Check-out accepts the same condition report fields and optional exception metada
 - claim recommendation
 - dispute recommendation
 
-If no exception is present, check-out completes the trip and moves the booking to `completed` with a `trip_completed` event. If an exception is present, the trip moves to `exception` and the booking moves to `disputed` with a `trip_exception_reported` event.
+If no exception is present, check-out completes the trip and moves the booking to `completed` with a `trip_completed` event. If an exception is present, the trip moves to `exception` and the booking moves to `disputed` with a `trip_exception_reported` event. Vehicle operational status updates to `turnaround` on clean completion or `suspended` on exception (when inventory is enabled).
 
 Completed-trip events include `platformVehicleId`, `facilityAssetId`, optional `vehicleAssetId`, and `tripId` so reconciliation can create ledger entries against the correct financing target.
 
