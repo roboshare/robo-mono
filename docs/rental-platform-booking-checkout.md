@@ -59,7 +59,7 @@ See [Rental Platform Cancellations And Support](./rental-platform-cancellations-
 
 ### Check-in
 
-Moves a booking to `in_trip`. Available when the booking is in `confirmed` or `check_in_open` state. Records trip check-in timestamp and odometer reading when provided.
+Moves a booking to `in_trip`. Available when the booking is in `confirmed` or `check_in_open` state. Records trip check-in timestamp and odometer reading when provided. Updates vehicle operational status to `in_trip`.
 
 ### Check-out
 
