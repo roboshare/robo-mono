@@ -26,8 +26,8 @@ Booking write APIs (all require `ROBOMATA_WORKFLOW_MUTATIONS_ENABLED=true`):
 - `POST /api/robomata/rental-bookings/:bookingId/confirm` — confirm a booking (moves to `confirmed` or `host_review`)
 - `POST /api/robomata/rental-bookings/:bookingId/approve` — host approval (moves `host_review` → `confirmed`)
 - `POST /api/robomata/rental-bookings/:bookingId/cancel` — cancel a booking
-- `POST /api/robomata/rental-bookings/:bookingId/check-in` — renter check-in (moves `check_in_open` → `in_trip`)
-- `POST /api/robomata/rental-bookings/:bookingId/check-out` — trip check-out (moves `in_trip` → `return_pending`)
+- `POST /api/robomata/rental-bookings/:bookingId/check-in` — renter check-in (moves `confirmed` or `check_in_open` → `in_trip`)
+- `POST /api/robomata/rental-bookings/:bookingId/check-out` — trip check-out (moves `in_trip` or `return_pending` → `completed`/`disputed`)
 - `POST /api/robomata/rental-bookings/:bookingId/claims` — create a damage claim on a booking
 - `POST /api/robomata/rental-bookings/:bookingId/incidents` — record a support incident on a booking
 
