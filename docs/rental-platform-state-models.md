@@ -1,7 +1,7 @@
 # Rental Platform State Models
 
 Status: Draft
-Date: June 11, 2026
+Date: June 27, 2026
 Owner: Product + Protocol
 
 ## Summary
@@ -87,6 +87,10 @@ Default allowed transitions:
 - `completed` -> `closed`, `disputed`
 - `disputed` -> `closed`
 - `closed` has no forward transition
+
+The `approve` route validates payment state before allowing `host_review` → `confirmed`. Stripe payments must be in `requires_capture` or `captured` status; Bridge payments must be in `captured` status. See [Rental Platform Payments And Deposits](./rental-platform-payments-deposits.md) for details.
+
+`confirmed` requires `paymentAuthorized=true` as a hard assertion in the booking store.
 
 Dispute, cancellation-after-check-in, and completed-trip reopening transitions require an attributable override.
 

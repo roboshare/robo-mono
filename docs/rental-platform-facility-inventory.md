@@ -1,7 +1,7 @@
 # Rental Platform Facility Inventory Boundary
 
 Status: Draft
-Date: June 11, 2026
+Date: June 27, 2026
 Owner: Product + Protocol
 
 ## Summary
@@ -79,6 +79,14 @@ The initial ingestion APIs are:
 - `POST /api/robomata/rental-inventory/facility-registry-sync`
 - `GET /api/robomata/rental-inventory/ingestion-runs`
 - `GET /api/robomata/rental-inventory/vehicles`
+
+Vehicle management APIs:
+
+- `GET /api/robomata/rental-inventory/vehicles/:platformVehicleId/setup` — read host setup state
+- `PATCH /api/robomata/rental-inventory/vehicles/:platformVehicleId/setup` — update host setup (photos, description, rules, pickup/dropoff)
+- `GET /api/robomata/rental-inventory/vehicles/:platformVehicleId/controls` — read host controls
+- `PATCH /api/robomata/rental-inventory/vehicles/:platformVehicleId/controls` — update host controls (pricing, availability, booking review, blackout ranges, maintenance holds)
+- `POST /api/robomata/rental-inventory/vehicles/:platformVehicleId/safety-takedown` — emergency safety takedown (moves vehicle to `suspended` with actor attribution and reason)
 
 These APIs require `ROBOMATA_RENTAL_INVENTORY_ENABLED=true`. Writes also require the existing Robomata mutation gate.
 
