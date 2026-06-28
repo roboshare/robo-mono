@@ -21,31 +21,55 @@
       "type": "mapping(address => mapping(uint256 => uint256))"
     },
     {
-      "label": "_currentEpochBurnActive",
+      "label": "_tokenMetadataURIs",
       "slot": "3",
       "offset": 0,
+      "type": "mapping(uint256 => string)"
+    },
+    {
+      "label": "positionManager",
+      "slot": "4",
+      "offset": 0,
+      "type": "contract IPositionManager"
+    },
+    {
+      "label": "_currentEpochBurnActive",
+      "slot": "4",
+      "offset": 20,
       "type": "bool"
     },
     {
       "label": "_currentEpochBurnHolder",
-      "slot": "3",
-      "offset": 1,
+      "slot": "5",
+      "offset": 0,
       "type": "address"
     },
     {
       "label": "_currentEpochBurnTokenId",
-      "slot": "4",
+      "slot": "6",
       "offset": 0,
       "type": "uint256"
     }
   ],
   "types": [
     {
+      "label": "contract IPositionManager",
+      "encoding": "inplace",
+      "numberOfBytes": "20"
+    },
+    {
       "label": "mapping(address => mapping(uint256 => uint256))",
       "encoding": "mapping",
       "numberOfBytes": "32",
       "key": "address",
       "value": "mapping(uint256 => uint256)"
+    },
+    {
+      "label": "mapping(uint256 => string)",
+      "encoding": "mapping",
+      "numberOfBytes": "32",
+      "key": "uint256",
+      "value": "string"
     },
     {
       "label": "mapping(uint256 => struct TokenLib.TokenInfo)",

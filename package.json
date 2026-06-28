@@ -10,6 +10,7 @@
     ]
   },
   "scripts": {
+    "ci": "./scripts/ci.sh",
     "dev": "./scripts/start-dev.sh",
     "dev:reset": "./scripts/start-dev.sh --reset",
     "dev:kill": "./scripts/start-dev.sh --kill",
