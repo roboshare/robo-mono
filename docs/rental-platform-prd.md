@@ -1,7 +1,7 @@
 # Roboshare Rental Platform PRD
 
 Status: Draft
-Date: June 11, 2026
+Date: June 27, 2026
 Owner: Product + Protocol
 
 ## 1. Summary

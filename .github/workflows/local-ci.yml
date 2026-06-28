@@ -1,0 +1,13 @@
+name: Local CI Only
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  notice:
+    runs-on: ubuntu-latest
+    steps:
+      - name: CI Notice
+        run: echo "This repository uses gh-signoff for local CI. Please run 'yarn ci' locally and then 'gh signoff'."

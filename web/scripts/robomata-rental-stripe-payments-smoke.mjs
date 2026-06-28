@@ -20,6 +20,7 @@ const partnerAccount = privateKeyToAccount("0x59c6995e998f97a5a0044966f094538b29
 const platformVehicleId = "pv_stripe_smoke";
 const longTripPlatformVehicleId = "pv_stripe_smoke_long_trip";
 const bridgePlatformVehicleId = "pv_stripe_smoke_bridge";
+const manualReviewPlatformVehicleId = "pv_stripe_smoke_manual_review";
 const facilityAssetId = "facility-stripe-smoke-asset";
 const otherFacilityAssetId = "facility-stripe-smoke-other";
 
@@ -323,6 +324,51 @@ async function seedInventory(filePath) {
             platformVehicleId: bridgePlatformVehicleId,
             updatedAt: now,
           },
+          {
+            display: {
+              bodyType: "hatchback",
+              fuelType: "electric",
+              imageUris: [],
+              make: "Nissan",
+              model: "Leaf",
+              seats: 5,
+              transmission: "automatic",
+              year: 2026,
+            },
+            facilityAssetId,
+            facilityName: "Stripe Smoke Fleet",
+            hostControls: {
+              availability: { instantBookEnabled: true, timezone: "America/Chicago" },
+              blackoutRanges: [],
+              bookingReview: { autoAcceptEnabled: false, requireManualApproval: true },
+              maintenanceHolds: [],
+              pricing: { currency: "USD", dailyRateCents: 5900, minimumTripDays: 1 },
+              updatedAt: now,
+            },
+            hostSetup: {
+              checklist: {
+                availability: true,
+                description: true,
+                photos: true,
+                pickup_dropoff: true,
+                pricing: true,
+                rules: true,
+              },
+              completedAt: now,
+              photoUris: [],
+              pickupDropoff: { city: "Austin", country: "US", region: "TX" },
+              publicDescription: "Stripe smoke-test manual review EV.",
+              rules: { mileageLimitPerDay: 200, petsAllowed: false, smokingAllowed: false },
+              status: "complete",
+              updatedAt: now,
+              validationErrors: [],
+            },
+            inventoryManifestDigest: "0x6666666666666666666666666666666666666666666666666666666666666666",
+            operationalStatus: "listed",
+            operatorName: "Stripe Smoke Fleet",
+            platformVehicleId: manualReviewPlatformVehicleId,
+            updatedAt: now,
+          },
         ],
       },
       null,
@@ -373,7 +419,11 @@ async function readStoredPayment(filePath, providerReferenceId) {
 async function main() {
   tempDir = await mkdtemp(path.join(tmpdir(), "robomata-rental-stripe-smoke-"));
   const inventoryFile = path.join(tempDir, "inventory.json");
+  const mockStatusOverrideFile = path.join(tempDir, "stripe-mock-status-override.json");
+  const mockBridgeStateOverrideFile = path.join(tempDir, "bridge-mock-state-override.json");
   await seedInventory(inventoryFile);
+  await writeFile(mockStatusOverrideFile, "{}", "utf8");
+  await writeFile(mockBridgeStateOverrideFile, "{}", "utf8");
 
   const env = {
     ...process.env,
@@ -398,10 +448,12 @@ async function main() {
     ROBOMATA_RENTAL_BRIDGE_DESTINATION_ADDRESS: "0xbridgeSmokeTreasury",
     ROBOMATA_RENTAL_BRIDGE_ENABLED: "true",
     ROBOMATA_RENTAL_BRIDGE_MOCK: "true",
+    ROBOMATA_RENTAL_BRIDGE_MOCK_RECONCILE_STATE_FILE: mockBridgeStateOverrideFile,
     ROBOMATA_RENTAL_REVENUE_FILE: path.join(tempDir, "revenue.json"),
     ROBOMATA_RENTAL_REVENUE_POSTING_ENABLED: "true",
     ROBOMATA_RENTAL_STRIPE_MOCK: "true",
     ROBOMATA_RENTAL_STRIPE_MOCK_RECONCILE_STATUS: "succeeded",
+    ROBOMATA_RENTAL_STRIPE_MOCK_RECONCILE_STATUS_FILE: mockStatusOverrideFile,
     ROBOMATA_RENTER_ACCOUNTS_ENABLED: "true",
     ROBOMATA_RENTER_ACCOUNTS_FILE: path.join(tempDir, "renters.json"),
     ROBOMATA_WORKFLOW_MUTATIONS_ENABLED: "true",
@@ -716,9 +768,7 @@ async function main() {
     missedWebhookBookingPayload.booking.paymentProviderReference?.paymentIntentId !== missedWebhookPaymentIntentId
   ) {
     throw new Error(
-      `Expected reused successful PaymentIntent to confirm booking, got ${JSON.stringify(
-        missedWebhookBookingPayload,
-      )}`,
+      `Expected reused successful PaymentIntent to confirm booking, got ${JSON.stringify(missedWebhookBookingPayload)}`,
     );
   }
 
@@ -794,6 +844,435 @@ async function main() {
     );
   }
 
+  const manualReviewCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
+    body: JSON.stringify({
+      dateFrom: new Date(Date.now() + (2 * 24 + 6) * 60 * 60 * 1_000).toISOString(),
+      dateTo: new Date(Date.now() + (2 * 24 + 8) * 60 * 60 * 1_000).toISOString(),
+      platformVehicleId: manualReviewPlatformVehicleId,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const manualReviewBookingId = manualReviewCheckoutPayload.booking?.id;
+  const manualReviewCheckoutAccessToken = manualReviewCheckoutPayload.checkoutAccessToken;
+  if (!manualReviewBookingId || !manualReviewCheckoutAccessToken) {
+    throw new Error(`Expected manual-review booking, got ${JSON.stringify(manualReviewCheckoutPayload)}`);
+  }
+  const manualReviewIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
+    body: JSON.stringify({
+      bookingId: manualReviewBookingId,
+      checkoutAccessToken: manualReviewCheckoutAccessToken,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const manualReviewPaymentIntentId = manualReviewIntentPayload.payment?.providerReference?.paymentIntentId;
+  if (!manualReviewPaymentIntentId) {
+    throw new Error(`Expected manual-review PaymentIntent, got ${JSON.stringify(manualReviewIntentPayload)}`);
+  }
+  const manualReviewCapturableWebhookBody = JSON.stringify({
+    id: "evt_payment_manual_review_capturable_smoke",
+    created: Math.floor(Date.now() / 1000),
+    type: "payment_intent.amount_capturable_updated",
+    data: {
+      object: {
+        id: manualReviewPaymentIntentId,
+        amount: manualReviewIntentPayload.payment.authorizedAmountCents,
+        amount_capturable: manualReviewIntentPayload.payment.authorizedAmountCents,
+        amount_received: 0,
+        capture_method: "manual",
+        currency: "usd",
+        latest_charge: "ch_stripe_smoke_manual_review",
+        metadata: { bookingId: manualReviewBookingId },
+        status: "requires_capture",
+      },
+    },
+  });
+  await fetchJson(`${baseUrl}/api/robomata/rental-payments/stripe/webhook`, {
+    body: manualReviewCapturableWebhookBody,
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": stripeSignatureHeader(manualReviewCapturableWebhookBody),
+    },
+    method: "POST",
+  });
+  const manualReviewPendingPayload = await fetchJson(
+    `${baseUrl}/api/robomata/rental-bookings/${manualReviewBookingId}`,
+    {
+      headers: await authHeaders("GET", `/api/robomata/rental-bookings/${manualReviewBookingId}`),
+      method: "GET",
+    },
+  );
+  if (
+    manualReviewPendingPayload.booking?.state !== "host_review" ||
+    manualReviewPendingPayload.booking.paymentProviderReference?.paymentIntentId !== manualReviewPaymentIntentId
+  ) {
+    throw new Error(
+      `Expected authorized manual-review booking to wait for host approval, got ${JSON.stringify(
+        manualReviewPendingPayload,
+      )}`,
+    );
+  }
+  const manualReviewApprovePath = `/api/robomata/rental-bookings/${manualReviewBookingId}/approve`;
+  const manualReviewApprovedPayload = await fetchJson(`${baseUrl}${manualReviewApprovePath}`, {
+    headers: await authHeaders("POST", manualReviewApprovePath),
+    method: "POST",
+  });
+  if (
+    manualReviewApprovedPayload.booking?.state !== "confirmed" ||
+    manualReviewApprovedPayload.booking.paymentProviderReference?.paymentIntentId !== manualReviewPaymentIntentId
+  ) {
+    throw new Error(
+      `Expected manual-review approval to confirm booking, got ${JSON.stringify(manualReviewApprovedPayload)}`,
+    );
+  }
+
+  const canceledManualReviewCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
+    body: JSON.stringify({
+      dateFrom: new Date(Date.now() + (2 * 24 + 9) * 60 * 60 * 1_000).toISOString(),
+      dateTo: new Date(Date.now() + (2 * 24 + 11) * 60 * 60 * 1_000).toISOString(),
+      platformVehicleId: manualReviewPlatformVehicleId,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const canceledManualReviewBookingId = canceledManualReviewCheckoutPayload.booking?.id;
+  const canceledManualReviewCheckoutAccessToken = canceledManualReviewCheckoutPayload.checkoutAccessToken;
+  if (!canceledManualReviewBookingId || !canceledManualReviewCheckoutAccessToken) {
+    throw new Error(
+      `Expected canceled manual-review booking, got ${JSON.stringify(canceledManualReviewCheckoutPayload)}`,
+    );
+  }
+  const canceledManualReviewIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
+    body: JSON.stringify({
+      bookingId: canceledManualReviewBookingId,
+      checkoutAccessToken: canceledManualReviewCheckoutAccessToken,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const canceledManualReviewPaymentIntentId =
+    canceledManualReviewIntentPayload.payment?.providerReference?.paymentIntentId;
+  if (!canceledManualReviewPaymentIntentId) {
+    throw new Error(
+      `Expected canceled manual-review PaymentIntent, got ${JSON.stringify(canceledManualReviewIntentPayload)}`,
+    );
+  }
+  const canceledManualReviewCapturableWebhookBody = JSON.stringify({
+    id: "evt_payment_manual_review_cancel_guard_capturable_smoke",
+    created: Math.floor(Date.now() / 1000),
+    type: "payment_intent.amount_capturable_updated",
+    data: {
+      object: {
+        id: canceledManualReviewPaymentIntentId,
+        amount: canceledManualReviewIntentPayload.payment.authorizedAmountCents,
+        amount_capturable: canceledManualReviewIntentPayload.payment.authorizedAmountCents,
+        amount_received: 0,
+        capture_method: "manual",
+        currency: "usd",
+        latest_charge: "ch_stripe_smoke_manual_review_cancel_guard",
+        metadata: { bookingId: canceledManualReviewBookingId },
+        status: "requires_capture",
+      },
+    },
+  });
+  await fetchJson(`${baseUrl}/api/robomata/rental-payments/stripe/webhook`, {
+    body: canceledManualReviewCapturableWebhookBody,
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": stripeSignatureHeader(canceledManualReviewCapturableWebhookBody),
+    },
+    method: "POST",
+  });
+  const canceledManualReviewCancelWebhookBody = JSON.stringify({
+    id: "evt_payment_manual_review_cancel_guard_cancelled_smoke",
+    created: Math.floor(Date.now() / 1000),
+    type: "payment_intent.canceled",
+    data: {
+      object: {
+        id: canceledManualReviewPaymentIntentId,
+        amount: canceledManualReviewIntentPayload.payment.authorizedAmountCents,
+        amount_capturable: 0,
+        amount_received: 0,
+        capture_method: "manual",
+        currency: "usd",
+        latest_charge: "ch_stripe_smoke_manual_review_cancel_guard",
+        metadata: { bookingId: canceledManualReviewBookingId },
+        status: "canceled",
+      },
+    },
+  });
+  await fetchJson(`${baseUrl}/api/robomata/rental-payments/stripe/webhook`, {
+    body: canceledManualReviewCancelWebhookBody,
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": stripeSignatureHeader(canceledManualReviewCancelWebhookBody),
+    },
+    method: "POST",
+  });
+  const canceledManualReviewApprovePath = `/api/robomata/rental-bookings/${canceledManualReviewBookingId}/approve`;
+  await expectJsonFailure(
+    `${baseUrl}${canceledManualReviewApprovePath}`,
+    {
+      headers: await authHeaders("POST", canceledManualReviewApprovePath),
+      method: "POST",
+    },
+    409,
+    "valid payment authorization",
+  );
+
+  const expiredAuthCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
+    body: JSON.stringify({
+      dateFrom: new Date(Date.now() + (2 * 24 + 12) * 60 * 60 * 1_000).toISOString(),
+      dateTo: new Date(Date.now() + (2 * 24 + 14) * 60 * 60 * 1_000).toISOString(),
+      platformVehicleId: manualReviewPlatformVehicleId,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const expiredAuthBookingId = expiredAuthCheckoutPayload.booking?.id;
+  const expiredAuthCheckoutAccessToken = expiredAuthCheckoutPayload.checkoutAccessToken;
+  if (!expiredAuthBookingId || !expiredAuthCheckoutAccessToken) {
+    throw new Error(`Expected expired-auth booking, got ${JSON.stringify(expiredAuthCheckoutPayload)}`);
+  }
+  const expiredAuthIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
+    body: JSON.stringify({
+      bookingId: expiredAuthBookingId,
+      checkoutAccessToken: expiredAuthCheckoutAccessToken,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const expiredAuthPaymentIntentId = expiredAuthIntentPayload.payment?.providerReference?.paymentIntentId;
+  if (!expiredAuthPaymentIntentId) {
+    throw new Error(`Expected expired-auth PaymentIntent, got ${JSON.stringify(expiredAuthIntentPayload)}`);
+  }
+  const expiredAuthCapturableWebhookBody = JSON.stringify({
+    id: "evt_payment_expired_auth_capturable_smoke",
+    created: Math.floor(Date.now() / 1000),
+    type: "payment_intent.amount_capturable_updated",
+    data: {
+      object: {
+        id: expiredAuthPaymentIntentId,
+        amount: expiredAuthIntentPayload.payment.authorizedAmountCents,
+        amount_capturable: expiredAuthIntentPayload.payment.authorizedAmountCents,
+        amount_received: 0,
+        capture_method: "manual",
+        currency: "usd",
+        latest_charge: "ch_stripe_smoke_expired_auth",
+        metadata: { bookingId: expiredAuthBookingId },
+        status: "requires_capture",
+      },
+    },
+  });
+  await fetchJson(`${baseUrl}/api/robomata/rental-payments/stripe/webhook`, {
+    body: expiredAuthCapturableWebhookBody,
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": stripeSignatureHeader(expiredAuthCapturableWebhookBody),
+    },
+    method: "POST",
+  });
+  const expiredAuthPendingPayload = await fetchJson(
+    `${baseUrl}/api/robomata/rental-bookings/${expiredAuthBookingId}`,
+    {
+      headers: await authHeaders("GET", `/api/robomata/rental-bookings/${expiredAuthBookingId}`),
+      method: "GET",
+    },
+  );
+  if (expiredAuthPendingPayload.booking?.state !== "host_review") {
+    throw new Error(
+      `Expected expired-auth booking in host_review, got ${JSON.stringify(expiredAuthPendingPayload)}`,
+    );
+  }
+  await writeFile(mockStatusOverrideFile, JSON.stringify({ [expiredAuthPaymentIntentId]: "requires_payment_method" }), "utf8");
+  const expiredAuthApprovePath = `/api/robomata/rental-bookings/${expiredAuthBookingId}/approve`;
+  await expectJsonFailure(
+    `${baseUrl}${expiredAuthApprovePath}`,
+    {
+      headers: await authHeaders("POST", expiredAuthApprovePath),
+      method: "POST",
+    },
+    409,
+    "valid payment authorization",
+  );
+  await writeFile(mockStatusOverrideFile, "{}", "utf8");
+
+  const bridgeManualReviewCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
+    body: JSON.stringify({
+      dateFrom: new Date(Date.now() + (2 * 24 + 15) * 60 * 60 * 1_000).toISOString(),
+      dateTo: new Date(Date.now() + (2 * 24 + 17) * 60 * 60 * 1_000).toISOString(),
+      platformVehicleId: manualReviewPlatformVehicleId,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const bridgeManualReviewBookingId = bridgeManualReviewCheckoutPayload.booking?.id;
+  const bridgeManualReviewCheckoutAccessToken = bridgeManualReviewCheckoutPayload.checkoutAccessToken;
+  if (!bridgeManualReviewBookingId || !bridgeManualReviewCheckoutAccessToken) {
+    throw new Error(
+      `Expected Bridge manual-review booking, got ${JSON.stringify(bridgeManualReviewCheckoutPayload)}`,
+    );
+  }
+  const bridgeManualReviewTransferPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/transfers`, {
+    body: JSON.stringify({
+      bookingId: bridgeManualReviewBookingId,
+      checkoutAccessToken: bridgeManualReviewCheckoutAccessToken,
+      fromAddress: "0xbridgeSmokeManualReviewRenter",
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const bridgeManualReviewTransferId = bridgeManualReviewTransferPayload.payment?.providerReference?.transferId;
+  if (!bridgeManualReviewTransferId) {
+    throw new Error(
+      `Expected Bridge manual-review transfer, got ${JSON.stringify(bridgeManualReviewTransferPayload)}`,
+    );
+  }
+  const bridgeManualReviewProcessedWebhookBody = JSON.stringify({
+    event_category: "transfer",
+    event_created_at: new Date().toISOString(),
+    event_id: "evt_bridge_manual_review_processed_smoke",
+    event_object: {
+      ...bridgeManualReviewTransferPayload.transfer,
+      receipt: {
+        destination_tx_hash: "0xbridgeManualReviewDestinationSmoke",
+        final_amount: bridgeManualReviewTransferPayload.transfer.amount,
+        source_tx_hash: "0xbridgeManualReviewSourceSmoke",
+      },
+      state: "payment_processed",
+      updated_at: new Date().toISOString(),
+    },
+    event_type: "transfer.updated",
+  });
+  await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/webhook`, {
+    body: bridgeManualReviewProcessedWebhookBody,
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const bridgeManualReviewPendingPayload = await fetchJson(
+    `${baseUrl}/api/robomata/rental-bookings/${bridgeManualReviewBookingId}`,
+    {
+      headers: await authHeaders("GET", `/api/robomata/rental-bookings/${bridgeManualReviewBookingId}`),
+      method: "GET",
+    },
+  );
+  if (
+    bridgeManualReviewPendingPayload.booking?.state !== "host_review" ||
+    bridgeManualReviewPendingPayload.booking.paymentProviderReference?.transferId !== bridgeManualReviewTransferId
+  ) {
+    throw new Error(
+      `Expected Bridge manual-review booking to wait for host approval, got ${JSON.stringify(
+        bridgeManualReviewPendingPayload,
+      )}`,
+    );
+  }
+  const bridgeManualReviewApprovePath = `/api/robomata/rental-bookings/${bridgeManualReviewBookingId}/approve`;
+  const bridgeManualReviewApprovedPayload = await fetchJson(`${baseUrl}${bridgeManualReviewApprovePath}`, {
+    headers: await authHeaders("POST", bridgeManualReviewApprovePath),
+    method: "POST",
+  });
+  if (
+    bridgeManualReviewApprovedPayload.booking?.state !== "confirmed" ||
+    bridgeManualReviewApprovedPayload.booking.paymentProviderReference?.transferId !== bridgeManualReviewTransferId
+  ) {
+    throw new Error(
+      `Expected Bridge manual-review approval to confirm booking, got ${JSON.stringify(
+        bridgeManualReviewApprovedPayload,
+      )}`,
+    );
+  }
+
+  const bridgeRefundedGuardCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
+    body: JSON.stringify({
+      dateFrom: new Date(Date.now() + (2 * 24 + 18) * 60 * 60 * 1_000).toISOString(),
+      dateTo: new Date(Date.now() + (2 * 24 + 20) * 60 * 60 * 1_000).toISOString(),
+      platformVehicleId: manualReviewPlatformVehicleId,
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const bridgeRefundedGuardBookingId = bridgeRefundedGuardCheckoutPayload.booking?.id;
+  const bridgeRefundedGuardCheckoutAccessToken = bridgeRefundedGuardCheckoutPayload.checkoutAccessToken;
+  if (!bridgeRefundedGuardBookingId || !bridgeRefundedGuardCheckoutAccessToken) {
+    throw new Error(
+      `Expected Bridge refunded-guard booking, got ${JSON.stringify(bridgeRefundedGuardCheckoutPayload)}`,
+    );
+  }
+  const bridgeRefundedGuardTransferPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/transfers`, {
+    body: JSON.stringify({
+      bookingId: bridgeRefundedGuardBookingId,
+      checkoutAccessToken: bridgeRefundedGuardCheckoutAccessToken,
+      fromAddress: "0xbridgeSmokeManualReviewRefundGuard",
+      renterId,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const bridgeRefundedGuardTransferId = bridgeRefundedGuardTransferPayload.payment?.providerReference?.transferId;
+  if (!bridgeRefundedGuardTransferId) {
+    throw new Error(
+      `Expected Bridge refunded-guard transfer, got ${JSON.stringify(bridgeRefundedGuardTransferPayload)}`,
+    );
+  }
+  await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/webhook`, {
+    body: JSON.stringify({
+      event_category: "transfer",
+      event_created_at: new Date().toISOString(),
+      event_id: "evt_bridge_manual_review_refund_guard_processed_smoke",
+      event_object: {
+        ...bridgeRefundedGuardTransferPayload.transfer,
+        receipt: {
+          destination_tx_hash: "0xbridgeManualReviewRefundGuardDestinationSmoke",
+          final_amount: bridgeRefundedGuardTransferPayload.transfer.amount,
+          source_tx_hash: "0xbridgeManualReviewRefundGuardSourceSmoke",
+        },
+        state: "payment_processed",
+        updated_at: new Date().toISOString(),
+      },
+      event_type: "transfer.updated",
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const bridgeRefundedGuardPendingPayload = await fetchJson(
+    `${baseUrl}/api/robomata/rental-bookings/${bridgeRefundedGuardBookingId}`,
+    {
+      headers: await authHeaders("GET", `/api/robomata/rental-bookings/${bridgeRefundedGuardBookingId}`),
+      method: "GET",
+    },
+  );
+  if (bridgeRefundedGuardPendingPayload.booking?.state !== "host_review") {
+    throw new Error(
+      `Expected Bridge refunded-guard booking in host_review, got ${JSON.stringify(bridgeRefundedGuardPendingPayload)}`,
+    );
+  }
+  await writeFile(
+    mockBridgeStateOverrideFile,
+    JSON.stringify({ [bridgeRefundedGuardTransferId]: "refunded" }),
+    "utf8",
+  );
+  const bridgeRefundedGuardApprovePath = `/api/robomata/rental-bookings/${bridgeRefundedGuardBookingId}/approve`;
+  await expectJsonFailure(
+    `${baseUrl}${bridgeRefundedGuardApprovePath}`,
+    {
+      headers: await authHeaders("POST", bridgeRefundedGuardApprovePath),
+      method: "POST",
+    },
+    409,
+    "valid payment authorization",
+  );
+  await writeFile(mockBridgeStateOverrideFile, "{}", "utf8");
+
   await expectJsonFailure(
     `${baseUrl}/api/robomata/rental-payments/payment-intents`,
     {
@@ -853,17 +1332,14 @@ async function main() {
       },
     },
   });
-  const staleCapturableAfterCancelPayload = await fetchJson(
-    `${baseUrl}/api/robomata/rental-payments/stripe/webhook`,
-    {
-      body: staleCapturableAfterCancelWebhookBody,
-      headers: {
-        "content-type": "application/json",
-        "stripe-signature": stripeSignatureHeader(staleCapturableAfterCancelWebhookBody),
-      },
-      method: "POST",
+  const staleCapturableAfterCancelPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/stripe/webhook`, {
+    body: staleCapturableAfterCancelWebhookBody,
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": stripeSignatureHeader(staleCapturableAfterCancelWebhookBody),
     },
-  );
+    method: "POST",
+  });
   if (
     staleCapturableAfterCancelPayload.payment?.status !== "cancelled" ||
     !staleCapturableAfterCancelPayload.payment.postingBlocked
@@ -942,7 +1418,11 @@ async function main() {
     throw new Error(`Expected route-cancel booking, got ${JSON.stringify(routeCancelCheckoutPayload)}`);
   }
   const routeCancelPaymentIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
-    body: JSON.stringify({ bookingId: routeCancelBookingId, checkoutAccessToken: routeCancelCheckoutAccessToken, renterId }),
+    body: JSON.stringify({
+      bookingId: routeCancelBookingId,
+      checkoutAccessToken: routeCancelCheckoutAccessToken,
+      renterId,
+    }),
     headers: { "content-type": "application/json" },
     method: "POST",
   });
@@ -968,7 +1448,9 @@ async function main() {
   }
   const storedCancelledPayment = await readStoredPayment(env.ROBOMATA_RENTAL_PAYMENTS_FILE, routeCancelPaymentIntentId);
   if (storedCancelledPayment?.status !== "cancelled" || !storedCancelledPayment.postingBlocked) {
-    throw new Error(`Expected stored route-cancel payment to be cancelled, got ${JSON.stringify(storedCancelledPayment)}`);
+    throw new Error(
+      `Expected stored route-cancel payment to be cancelled, got ${JSON.stringify(storedCancelledPayment)}`,
+    );
   }
   const routeCancelRetryPayload = await fetchJson(`${baseUrl}${routeCancelPath}`, {
     body: JSON.stringify({
@@ -979,7 +1461,9 @@ async function main() {
     method: "POST",
   });
   if (routeCancelRetryPayload.booking?.state !== "cancelled" || !Array.isArray(routeCancelRetryPayload.payments)) {
-    throw new Error(`Expected cancelled booking route retry to remain idempotent, got ${JSON.stringify(routeCancelRetryPayload)}`);
+    throw new Error(
+      `Expected cancelled booking route retry to remain idempotent, got ${JSON.stringify(routeCancelRetryPayload)}`,
+    );
   }
 
   const bridgeCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
@@ -1027,7 +1511,9 @@ async function main() {
     bridgeTransferPayload.payment.providerReference.paymentIntentId ||
     bridgeTransferPayload.payment.status !== "awaiting_funds"
   ) {
-    throw new Error(`Expected Bridge transfer without Stripe PaymentIntent id, got ${JSON.stringify(bridgeTransferPayload)}`);
+    throw new Error(
+      `Expected Bridge transfer without Stripe PaymentIntent id, got ${JSON.stringify(bridgeTransferPayload)}`,
+    );
   }
   const activeBridgeRetryPayload = await expectJsonFailure(
     `${baseUrl}/api/robomata/rental-payments/bridge/transfers`,
@@ -1085,7 +1571,9 @@ async function main() {
     method: "POST",
   });
   if (unrelatedBridgeWebhookPayload.ignored !== true) {
-    throw new Error(`Expected unrelated Bridge webhook to be ignored, got ${JSON.stringify(unrelatedBridgeWebhookPayload)}`);
+    throw new Error(
+      `Expected unrelated Bridge webhook to be ignored, got ${JSON.stringify(unrelatedBridgeWebhookPayload)}`,
+    );
   }
   const processedBridgeWebhookBody = JSON.stringify({
     event_category: "transfer",
@@ -1112,7 +1600,9 @@ async function main() {
     processedBridgePayload.payment?.status !== "captured" ||
     processedBridgePayload.payment.providerReference.destinationTxHash !== "0xbridgeDestinationReceiptSmoke"
   ) {
-    throw new Error(`Expected processed Bridge webhook to capture with receipt hash, got ${JSON.stringify(processedBridgePayload)}`);
+    throw new Error(
+      `Expected processed Bridge webhook to capture with receipt hash, got ${JSON.stringify(processedBridgePayload)}`,
+    );
   }
   const duplicateProcessedBridgePayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/webhook`, {
     body: processedBridgeWebhookBody,
@@ -1134,7 +1624,9 @@ async function main() {
     storedBridgePayment?.providerReference?.destinationTxHash !== "0xbridgeDestinationReceiptSmoke" ||
     storedBridgePayment.providerReference.paymentIntentId
   ) {
-    throw new Error(`Expected stored Bridge payment to keep transfer id separate, got ${JSON.stringify(storedBridgePayment)}`);
+    throw new Error(
+      `Expected stored Bridge payment to keep transfer id separate, got ${JSON.stringify(storedBridgePayment)}`,
+    );
   }
   const bridgeBookingPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/${bridgeBookingId}`, {
     headers: await authHeaders("GET", `/api/robomata/rental-bookings/${bridgeBookingId}`),
@@ -1144,7 +1636,9 @@ async function main() {
     bridgeBookingPayload.booking?.state !== "confirmed" ||
     bridgeBookingPayload.booking.paymentProviderReference?.transferId !== bridgeTransferId
   ) {
-    throw new Error(`Expected processed Bridge transfer to confirm booking, got ${JSON.stringify(bridgeBookingPayload)}`);
+    throw new Error(
+      `Expected processed Bridge transfer to confirm booking, got ${JSON.stringify(bridgeBookingPayload)}`,
+    );
   }
   await expectJsonFailure(
     `${baseUrl}/api/robomata/rental-bookings/${bridgeBookingId}/cancel`,
@@ -1217,14 +1711,19 @@ async function main() {
     !returnedBridgePayload.payment.postingBlocked ||
     returnedBridgePayload.payment.refundedAmountCents !== 0
   ) {
-    throw new Error(`Expected returned Bridge transfer to remain blocked, got ${JSON.stringify(returnedBridgePayload)}`);
+    throw new Error(
+      `Expected returned Bridge transfer to remain blocked, got ${JSON.stringify(returnedBridgePayload)}`,
+    );
   }
   const staleProcessedBridgePayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/webhook`, {
     body: processedBridgeWebhookBody,
     headers: { "content-type": "application/json" },
     method: "POST",
   });
-  if (staleProcessedBridgePayload.payment?.status !== "processing" || !staleProcessedBridgePayload.payment.postingBlocked) {
+  if (
+    staleProcessedBridgePayload.payment?.status !== "processing" ||
+    !staleProcessedBridgePayload.payment.postingBlocked
+  ) {
     throw new Error(
       `Expected stale processed Bridge transfer to preserve return block, got ${JSON.stringify(staleProcessedBridgePayload)}`,
     );
@@ -1250,23 +1749,28 @@ async function main() {
     method: "POST",
   });
   if (refundedBridgePayload.payment?.status !== "refunded" || refundedBridgePayload.payment.postingBlocked) {
-    throw new Error(`Expected refunded Bridge transfer to close the return, got ${JSON.stringify(refundedBridgePayload)}`);
+    throw new Error(
+      `Expected refunded Bridge transfer to close the return, got ${JSON.stringify(refundedBridgePayload)}`,
+    );
   }
-  const staleFundsReceivedAfterRefundPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/webhook`, {
-    body: JSON.stringify({
-      event_category: "transfer",
-      event_created_at: new Date().toISOString(),
-      event_id: "evt_bridge_funds_received_after_refund_smoke",
-      event_object: {
-        ...bridgeTransferPayload.transfer,
-        state: "funds_received",
-        updated_at: new Date().toISOString(),
-      },
-      event_type: "updated",
-    }),
-    headers: { "content-type": "application/json" },
-    method: "POST",
-  });
+  const staleFundsReceivedAfterRefundPayload = await fetchJson(
+    `${baseUrl}/api/robomata/rental-payments/bridge/webhook`,
+    {
+      body: JSON.stringify({
+        event_category: "transfer",
+        event_created_at: new Date().toISOString(),
+        event_id: "evt_bridge_funds_received_after_refund_smoke",
+        event_object: {
+          ...bridgeTransferPayload.transfer,
+          state: "funds_received",
+          updated_at: new Date().toISOString(),
+        },
+        event_type: "updated",
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    },
+  );
   if (
     staleFundsReceivedAfterRefundPayload.payment?.status !== "refunded" ||
     staleFundsReceivedAfterRefundPayload.payment.postingBlocked
@@ -1368,18 +1872,23 @@ async function main() {
   const bridgeBlockedCancelBookingId = bridgeBlockedCancelCheckoutPayload.booking?.id;
   const bridgeBlockedCancelToken = bridgeBlockedCancelCheckoutPayload.checkoutAccessToken;
   if (!bridgeBlockedCancelBookingId || !bridgeBlockedCancelToken) {
-    throw new Error(`Expected Bridge cancellation-block booking, got ${JSON.stringify(bridgeBlockedCancelCheckoutPayload)}`);
+    throw new Error(
+      `Expected Bridge cancellation-block booking, got ${JSON.stringify(bridgeBlockedCancelCheckoutPayload)}`,
+    );
   }
-  const bridgeBlockedCancelTransferPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/transfers`, {
-    body: JSON.stringify({
-      bookingId: bridgeBlockedCancelBookingId,
-      checkoutAccessToken: bridgeBlockedCancelToken,
-      fromAddress: "0xbridgeSmokeRenter",
-      renterId,
-    }),
-    headers: { "content-type": "application/json" },
-    method: "POST",
-  });
+  const bridgeBlockedCancelTransferPayload = await fetchJson(
+    `${baseUrl}/api/robomata/rental-payments/bridge/transfers`,
+    {
+      body: JSON.stringify({
+        bookingId: bridgeBlockedCancelBookingId,
+        checkoutAccessToken: bridgeBlockedCancelToken,
+        fromAddress: "0xbridgeSmokeRenter",
+        renterId,
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    },
+  );
   await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/webhook`, {
     body: JSON.stringify({
       event_category: "transfer",
@@ -1554,7 +2063,9 @@ async function main() {
     lateBridgeSettlementPayload.payment?.status !== "captured" ||
     !lateBridgeSettlementPayload.payment.postingBlocked
   ) {
-    throw new Error(`Expected late Bridge settlement to be captured but posting-blocked, got ${JSON.stringify(lateBridgeSettlementPayload)}`);
+    throw new Error(
+      `Expected late Bridge settlement to be captured but posting-blocked, got ${JSON.stringify(lateBridgeSettlementPayload)}`,
+    );
   }
   const staleLateBridgeCreatedPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/webhook`, {
     body: JSON.stringify({
@@ -1607,9 +2118,7 @@ async function main() {
     headers: { "content-type": "application/json" },
     method: "POST",
   });
-  const underfundedFinalAmount = (
-    Number(underfundedBridgeTransferPayload.transfer.amount) - 0.01
-  ).toFixed(2);
+  const underfundedFinalAmount = (Number(underfundedBridgeTransferPayload.transfer.amount) - 0.01).toFixed(2);
   const underfundedBridgeSettlementPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/webhook`, {
     body: JSON.stringify({
       event_category: "transfer",
@@ -1668,7 +2177,9 @@ async function main() {
   const failedStripeBeforeBridgeBookingId = failedStripeBeforeBridgeCheckoutPayload.booking?.id;
   const failedStripeBeforeBridgeToken = failedStripeBeforeBridgeCheckoutPayload.checkoutAccessToken;
   if (!failedStripeBeforeBridgeBookingId || !failedStripeBeforeBridgeToken) {
-    throw new Error(`Expected failed-Stripe-before-Bridge booking, got ${JSON.stringify(failedStripeBeforeBridgeCheckoutPayload)}`);
+    throw new Error(
+      `Expected failed-Stripe-before-Bridge booking, got ${JSON.stringify(failedStripeBeforeBridgeCheckoutPayload)}`,
+    );
   }
   const failedStripeInitialIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
     body: JSON.stringify({
@@ -1710,7 +2221,7 @@ async function main() {
     },
     method: "POST",
   });
-  await expectJsonFailure(
+  const failedStripeBridgeFallbackPayload = await fetchJson(
     `${baseUrl}/api/robomata/rental-payments/bridge/transfers`,
     {
       body: JSON.stringify({
@@ -1722,28 +2233,22 @@ async function main() {
       headers: { "content-type": "application/json" },
       method: "POST",
     },
-    409,
-    "active Stripe PaymentIntent",
   );
-  const failedStripeRetryIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
-    body: JSON.stringify({
-      bookingId: failedStripeBeforeBridgeBookingId,
-      checkoutAccessToken: failedStripeBeforeBridgeToken,
-      renterId,
-    }),
-    headers: { "content-type": "application/json" },
-    method: "POST",
-  });
-  if (failedStripeRetryIntentPayload.payment?.providerReference?.paymentIntentId !== failedStripeInitialIntentId) {
+  if (
+    failedStripeBridgeFallbackPayload.payment?.provider !== "bridge" ||
+    !failedStripeBridgeFallbackPayload.payment.providerReference?.transferId
+  ) {
     throw new Error(
-      `Expected failed Stripe retry to reuse the original intent, got ${JSON.stringify(failedStripeRetryIntentPayload)}`,
+      `Expected failed Stripe payment to allow Bridge fallback, got ${JSON.stringify(
+        failedStripeBridgeFallbackPayload,
+      )}`,
     );
   }
 
   const failedBridgeCardFallbackCheckoutPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/checkout`, {
     body: JSON.stringify({
       dateFrom: new Date(Date.now() + (5 * 24 + 21) * 60 * 60 * 1_000).toISOString(),
-      dateTo: new Date(Date.now() + (6 * 24) * 60 * 60 * 1_000).toISOString(),
+      dateTo: new Date(Date.now() + 6 * 24 * 60 * 60 * 1_000).toISOString(),
       platformVehicleId: bridgePlatformVehicleId,
       renterId,
     }),
@@ -1753,7 +2258,9 @@ async function main() {
   const failedBridgeCardFallbackBookingId = failedBridgeCardFallbackCheckoutPayload.booking?.id;
   const failedBridgeCardFallbackToken = failedBridgeCardFallbackCheckoutPayload.checkoutAccessToken;
   if (!failedBridgeCardFallbackBookingId || !failedBridgeCardFallbackToken) {
-    throw new Error(`Expected failed Bridge card fallback booking, got ${JSON.stringify(failedBridgeCardFallbackCheckoutPayload)}`);
+    throw new Error(
+      `Expected failed Bridge card fallback booking, got ${JSON.stringify(failedBridgeCardFallbackCheckoutPayload)}`,
+    );
   }
   const failedBridgeCardFallbackTransferPayload = await fetchJson(
     `${baseUrl}/api/robomata/rental-payments/bridge/transfers`,
@@ -1787,26 +2294,29 @@ async function main() {
   if (failedBridgePayload.payment?.status !== "failed" || !failedBridgePayload.payment.postingBlocked) {
     throw new Error(`Expected failed Bridge transfer to block posting, got ${JSON.stringify(failedBridgePayload)}`);
   }
-  const staleProcessedAfterFailedBridgePayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/bridge/webhook`, {
-    body: JSON.stringify({
-      event_category: "transfer",
-      event_created_at: new Date().toISOString(),
-      event_id: "evt_bridge_stale_processed_after_failed_smoke",
-      event_object: {
-        ...failedBridgeCardFallbackTransferPayload.transfer,
-        receipt: {
-          destination_tx_hash: "0xbridgeFailedDestinationReceiptSmoke",
-          final_amount: failedBridgeCardFallbackTransferPayload.transfer.amount,
-          source_tx_hash: "0xbridgeFailedSourceReceiptSmoke",
+  const staleProcessedAfterFailedBridgePayload = await fetchJson(
+    `${baseUrl}/api/robomata/rental-payments/bridge/webhook`,
+    {
+      body: JSON.stringify({
+        event_category: "transfer",
+        event_created_at: new Date().toISOString(),
+        event_id: "evt_bridge_stale_processed_after_failed_smoke",
+        event_object: {
+          ...failedBridgeCardFallbackTransferPayload.transfer,
+          receipt: {
+            destination_tx_hash: "0xbridgeFailedDestinationReceiptSmoke",
+            final_amount: failedBridgeCardFallbackTransferPayload.transfer.amount,
+            source_tx_hash: "0xbridgeFailedSourceReceiptSmoke",
+          },
+          state: "payment_processed",
+          updated_at: new Date().toISOString(),
         },
-        state: "payment_processed",
-        updated_at: new Date().toISOString(),
-      },
-      event_type: "updated",
-    }),
-    headers: { "content-type": "application/json" },
-    method: "POST",
-  });
+        event_type: "updated",
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    },
+  );
   if (
     staleProcessedAfterFailedBridgePayload.payment?.status !== "failed" ||
     !staleProcessedAfterFailedBridgePayload.payment.postingBlocked
@@ -1910,7 +2420,9 @@ async function main() {
   const stripeFirstBridgeBookingId = stripeFirstBridgeCheckoutPayload.booking?.id;
   const stripeFirstBridgeToken = stripeFirstBridgeCheckoutPayload.checkoutAccessToken;
   if (!stripeFirstBridgeBookingId || !stripeFirstBridgeToken) {
-    throw new Error(`Expected Stripe-first Bridge guard booking, got ${JSON.stringify(stripeFirstBridgeCheckoutPayload)}`);
+    throw new Error(
+      `Expected Stripe-first Bridge guard booking, got ${JSON.stringify(stripeFirstBridgeCheckoutPayload)}`,
+    );
   }
   await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
     body: JSON.stringify({
@@ -2039,7 +2551,9 @@ async function main() {
     authorizedBookingPayload.booking?.state !== "confirmed" ||
     authorizedBookingPayload.booking.paymentProviderReference?.paymentIntentId !== paymentIntentId
   ) {
-    throw new Error(`Expected authorization webhook to confirm booking, got ${JSON.stringify(authorizedBookingPayload)}`);
+    throw new Error(
+      `Expected authorization webhook to confirm booking, got ${JSON.stringify(authorizedBookingPayload)}`,
+    );
   }
 
   const staleCreatedWebhookBody = JSON.stringify({
@@ -2227,11 +2741,17 @@ async function main() {
     "Payment-backed revenue exceeds captured payment amount.",
   );
 
+  const postingAmountCents =
+    paymentIntentPayload.payment?.revenueEligibleAmountCents ?? paymentIntentPayload.payment?.authorizedAmountCents;
+  if (typeof postingAmountCents !== "number") {
+    throw new Error(`Expected payment amount for posting smoke, got ${JSON.stringify(paymentIntentPayload)}`);
+  }
+
   const postingBody = {
     entries: [
       {
         id: "rle_stripe_smoke",
-        amountCents: 1000,
+        amountCents: postingAmountCents,
         createdAt: new Date().toISOString(),
         currency: "USD",
         facilityAssetId,
@@ -2491,25 +3011,20 @@ async function main() {
       },
     },
   });
-  const delayedAuthorizedFailurePayload = await fetchJson(
-    `${baseUrl}/api/robomata/rental-payments/stripe/webhook`,
-    {
-      body: delayedAuthorizedFailureWebhookBody,
-      headers: {
-        "content-type": "application/json",
-        "stripe-signature": stripeSignatureHeader(delayedAuthorizedFailureWebhookBody),
-      },
-      method: "POST",
+  const delayedAuthorizedFailurePayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/stripe/webhook`, {
+    body: delayedAuthorizedFailureWebhookBody,
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": stripeSignatureHeader(delayedAuthorizedFailureWebhookBody),
     },
-  );
+    method: "POST",
+  });
   if (
     !delayedAuthorizedFailurePayload.payment?.postingBlocked ||
     delayedAuthorizedFailurePayload.payment.status !== "requires_capture"
   ) {
     throw new Error(
-      `Expected delayed failure to preserve authorized status, got ${JSON.stringify(
-        delayedAuthorizedFailurePayload,
-      )}`,
+      `Expected delayed failure to preserve authorized status, got ${JSON.stringify(delayedAuthorizedFailurePayload)}`,
     );
   }
 
@@ -2606,7 +3121,9 @@ async function main() {
         entries: [
           {
             ...postingBody.entries[0],
-            amountCents: 1,
+            id: "rle_stripe_smoke_over_captured_after_posting",
+            amountCents: 999_999_999,
+            occurredAt: new Date(Date.now() + 30 * 60 * 60 * 1_000).toISOString(),
             source: { bookingId, paymentIntentId },
           },
         ],
@@ -2628,7 +3145,9 @@ async function main() {
         entries: [
           {
             ...postingBody.entries[0],
+            amountCents: 999_999_999,
             id: "rle_stripe_smoke_prior_posting_reuse",
+            occurredAt: new Date(Date.now() + 30 * 60 * 60 * 1_000).toISOString(),
             source: { bookingId, paymentIntentId },
           },
         ],
@@ -2687,17 +3206,14 @@ async function main() {
       },
     },
   });
-  const delayedSuccessAfterDisputePayload = await fetchJson(
-    `${baseUrl}/api/robomata/rental-payments/stripe/webhook`,
-    {
-      body: delayedSuccessAfterDisputeWebhookBody,
-      headers: {
-        "content-type": "application/json",
-        "stripe-signature": stripeSignatureHeader(delayedSuccessAfterDisputeWebhookBody),
-      },
-      method: "POST",
+  const delayedSuccessAfterDisputePayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/stripe/webhook`, {
+    body: delayedSuccessAfterDisputeWebhookBody,
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": stripeSignatureHeader(delayedSuccessAfterDisputeWebhookBody),
     },
-  );
+    method: "POST",
+  });
   if (
     !delayedSuccessAfterDisputePayload.payment?.postingBlocked ||
     delayedSuccessAfterDisputePayload.payment.status !== "disputed"
@@ -2942,10 +3458,14 @@ async function main() {
         entries: [
           {
             ...postingBody.entries[0],
+            amountCents: 999_999_999,
             id: "rle_stripe_smoke_over_captured",
+            occurredAt: new Date(Date.now() + 18 * 60 * 60 * 1_000).toISOString(),
             source: { bookingId, paymentIntentId },
           },
         ],
+        periodEnd: new Date(Date.now() + 20 * 60 * 60 * 1_000).toISOString(),
+        periodStart: new Date(Date.now() + 16 * 60 * 60 * 1_000).toISOString(),
       }),
       headers: await authHeaders("POST", postingPath, { "content-type": "application/json" }),
       method: "POST",
@@ -2961,7 +3481,7 @@ async function main() {
         entries: [
           {
             ...postingBody.entries[0],
-            amountCents: 450,
+            amountCents: 999_999_999,
             id: "rle_stripe_smoke_refund_adjusted",
             source: { bookingId, paymentIntentId },
           },
@@ -3004,7 +3524,9 @@ async function main() {
     refundFailedPayload.payment.status !== "refunded" ||
     refundFailedPayload.payment.refundedAmountCents !== 550
   ) {
-    throw new Error(`Expected stale refund.failed to preserve refund success, got ${JSON.stringify(refundFailedPayload)}`);
+    throw new Error(
+      `Expected stale refund.failed to preserve refund success, got ${JSON.stringify(refundFailedPayload)}`,
+    );
   }
 
   const failedRefundReconciliationPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/reconcile`, {
@@ -3065,7 +3587,11 @@ async function main() {
   }
 
   const unavailablePaymentIntentPayload = await fetchJson(`${baseUrl}/api/robomata/rental-payments/payment-intents`, {
-    body: JSON.stringify({ bookingId: unavailableBookingId, checkoutAccessToken: unavailableCheckoutAccessToken, renterId }),
+    body: JSON.stringify({
+      bookingId: unavailableBookingId,
+      checkoutAccessToken: unavailableCheckoutAccessToken,
+      renterId,
+    }),
     headers: { "content-type": "application/json" },
     method: "POST",
   });
@@ -3120,13 +3646,10 @@ async function main() {
     },
     method: "POST",
   });
-  const unavailableBookingPayload = await fetchJson(
-    `${baseUrl}/api/robomata/rental-bookings/${unavailableBookingId}`,
-    {
-      headers: await authHeaders("GET", `/api/robomata/rental-bookings/${unavailableBookingId}`),
-      method: "GET",
-    },
-  );
+  const unavailableBookingPayload = await fetchJson(`${baseUrl}/api/robomata/rental-bookings/${unavailableBookingId}`, {
+    headers: await authHeaders("GET", `/api/robomata/rental-bookings/${unavailableBookingId}`),
+    method: "GET",
+  });
   if (unavailableBookingPayload.booking?.state !== "pending_payment_authorization") {
     throw new Error(
       `Expected unavailable vehicle authorization to leave booking pending, got ${JSON.stringify(

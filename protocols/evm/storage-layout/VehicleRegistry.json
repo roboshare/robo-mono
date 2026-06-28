@@ -27,10 +27,10 @@
       "type": "mapping(uint256 => struct VehicleLib.Vehicle)"
     },
     {
-      "label": "vinExists",
+      "label": "vinHashExists",
       "slot": "4",
       "offset": 0,
-      "type": "mapping(string => bool)"
+      "type": "mapping(bytes32 => bool)"
     }
   ],
   "types": [
@@ -50,10 +50,10 @@
       "numberOfBytes": "20"
     },
     {
-      "label": "mapping(string => bool)",
+      "label": "mapping(bytes32 => bool)",
       "encoding": "mapping",
       "numberOfBytes": "32",
-      "key": "string",
+      "key": "bytes32",
       "value": "bool"
     },
     {
