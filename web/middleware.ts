@@ -76,6 +76,12 @@ export function middleware(request: NextRequest) {
     return redirectToHost(request, appHost);
   }
 
+  if (isAppHost && pathname === "/") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/dashboard";
+    return NextResponse.redirect(url);
+  }
+
   if (isAppHost && isMarketingOnlyPath(pathname)) {
     return redirectToHost(request, primaryMarketingHost);
   }
