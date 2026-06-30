@@ -28,6 +28,11 @@ for arg in "$@"; do
   esac
 done
 
+if [ -z "$SIGNOFF_NAME" ]; then
+  echo "Error: signoff name required (evm, web, sui)"
+  exit 1
+fi
+
 if [ "$FORCE" = false ] && [ "$CI_INTERNAL" = false ]; then
   if [ ! -f "$CI_MARKER" ]; then
     echo "Error: CI marker not found at $CI_MARKER"
