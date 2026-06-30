@@ -103,6 +103,46 @@ Repo-specific guidance:
 - If behavior changes, update docs that describe the affected flow.
 - If a change belongs to later migration or hardening work, note it and keep it out of the current branch unless the user explicitly expands scope.
 
+## Local CI And Signoff
+
+This repository uses `gh-signoff` for local CI. Do not call `gh signoff` directly.
+
+**Required workflow:**
+
+1. Run `yarn ci` — executes the relevant checks (EVM, Web, Sui) based on changed files and signs off each category.
+2. `yarn ci` writes a CI marker (`.git/ci-run`) with the current commit SHA after all checks pass.
+3. `scripts/signoff.sh` gates signoffs behind that marker. Calling `gh signoff` directly will fail with an error.
+
+**If CI was already run and you only need to re-signoff** (e.g., after a review fix that didn't change code):
+
+```sh
+yarn ci
+```
+
+To sign off a specific category directly:
+
+```sh
+./scripts/signoff.sh evm
+./scripts/signoff.sh web
+./scripts/signoff.sh sui
+```
+
+**Force bypass** (use sparingly):
+
+```sh
+./scripts/signoff.sh -f
+```
+
+**What runs per category:**
+
+| Category | Trigger paths | Checks |
+|----------|--------------|--------|
+| `evm` | `protocols/evm/`, `package.json`, `yarn.lock`, `.yarnrc.yml`, `.yarn/` | lint, storage-layout, compile, test |
+| `web` | `web/`, `protocols/evm/subgraph/`, `package.json`, `yarn.lock`, `.yarnrc.yml`, `.yarn/` | lint, typecheck, build |
+| `sui` | `protocols/sui/` | build, test (requires `sui` CLI) |
+
+If no relevant paths changed, the category is skipped and signed off without running tests.
+
 ## Release And Deployment Notes
 
 - `main` is the stable production branch.

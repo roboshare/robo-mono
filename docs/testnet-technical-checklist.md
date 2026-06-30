@@ -2,21 +2,21 @@
 
 ## Summary
 
-This document is the non-sensitive operator checklist for Roboshare's first public testnet release.
+This document is the non-sensitive operator checklist for Roboshare's public testnet releases.
 It focuses on deploy, verify, indexing, frontend wiring, seeded data, and smoke-test readiness for the supported launch networks.
 
 Status:
 
-- historical checklist for the `release/testnet-v0.2.0` line
-- `release/testnet-v0.2.0` has been merged into `main`
-- Monad Testnet was added later in the `v0.2.x` line; see `docs/releases/v0.2.4-internal.5.md`
+- `release/testnet-v0.2.0` has been shipped and merged into `main`
+- Active release line: `v0.3.x`
+- Monad Testnet was added in the `v0.2.x` line; see `docs/releases/v0.2.4-internal.5.md`
 
-Original rollout assumptions:
+Rollout networks:
 
-- first active quiet-beta chain: `Sepolia` (default)
-- originally planned follow-on deployments in this release line:
-  - `Polygon Amoy`
-  - `Arbitrum Sepolia`
+- `Sepolia` (default)
+- `Polygon Amoy`
+- `Arbitrum Sepolia`
+- `Monad Testnet`
 
 Deferred:
 
@@ -25,11 +25,11 @@ Deferred:
 ## Release Foundations Checklist
 
 - [ ] Confirm the release branch name:
-  - `release/testnet-v0.2.0`
+  - `release/testnet-<version>`
 - [ ] Confirm the launch-stage tags:
-  - `v0.2.0-internal.1`
-  - `v0.2.0-beta.1`
-  - `v0.2.0-testnet.1`
+  - `<version>-internal.1`
+  - `<version>-beta.1`
+  - `<version>-testnet.1`
 - [ ] Confirm the release-note template includes:
   - commit SHA
   - default chain
@@ -147,7 +147,7 @@ Cross-chain:
 
 ## Public Launch Readiness
 
-- [ ] tag `v0.2.0-testnet.1`
+- [ ] tag `<version>-testnet.1`
 - [ ] publish the GitHub release from that tag
 - [ ] confirm the public app deploy maps to the tagged commit
 - [ ] confirm the public docs match the actual activated launch scope

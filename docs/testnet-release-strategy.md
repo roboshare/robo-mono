@@ -2,21 +2,20 @@
 
 ## Summary
 
-This document captures the non-sensitive release strategy for Roboshare's first public testnet cycle.
+This document captures the non-sensitive release strategy for Roboshare's public testnet cycles.
 It covers phase ordering, release gates, branching, versioning, and launch messaging at a level that should stay versioned with the codebase.
 
 Current release defaults:
 
 - Default chain: `Sepolia`
-- Historical first release line: `release/testnet-v0.2.0`
-- Current status: `release/testnet-v0.2.0` has been merged into `main`
-- Follow-on deployment added in this release line: `Monad Testnet`
-- Earlier planned follow-on deployments in this release line: `Polygon Amoy`, `Arbitrum Sepolia`
+- First release line: `release/testnet-v0.2.0` (shipped, merged into `main`)
+- Active release line: `v0.3.x`
+- Deployed testnets: `Sepolia`, `Polygon Amoy`, `Arbitrum Sepolia`, `Monad Testnet`
 - Deferred to a later release line: `Base Sepolia`
 - Repo posture: private-source, all rights reserved
 - Launch sequence: `internal hardening -> quiet beta -> public testnet launch`
 - Indexing: managed The Graph deployment path
-- Incentives: none in the first public testnet cycle
+- Incentives: none in the current testnet cycle
 
 ## Release Principles
 
@@ -34,11 +33,11 @@ Current release defaults:
 - Keep day-to-day development on `dev`.
 - Create short-lived feature or fix branches from `dev`.
 - Prepare the active release branch:
-  - `release/testnet-v0.2.0`
+  - `release/testnet-<version>`
 - Use pre-release tags for launch stages on that same release line:
-  - `v0.2.0-internal.1`
-  - `v0.2.0-beta.1`
-  - `v0.2.0-testnet.1`
+  - `<version>-internal.1`
+  - `<version>-beta.1`
+  - `<version>-testnet.1`
 - Define the release-note format before beta begins.
 
 ### Phase 2: Technical Readiness
@@ -53,8 +52,8 @@ Current release defaults:
 
 ### Phase 3: Quiet Beta
 
-- Cut `release/testnet-v0.2.0` only from a green `dev` commit.
-- Tag the first beta build as `v0.2.0-beta.1`.
+- Cut `release/testnet-<version>` only from a green `dev` commit.
+- Tag the first beta build as `<version>-beta.1`.
 - Deploy quiet beta only from the tagged release branch.
 - Start with partners and trusted users through direct outreach.
 - Treat `Sepolia` as the only active beta path until quiet-beta exit criteria are met.
@@ -63,7 +62,7 @@ Current release defaults:
 
 ### Phase 4: Public Testnet Launch
 
-- Tag the public launch commit as `v0.2.0-testnet.1`.
+- Tag the public launch commit as `<version>-testnet.1`.
 - Publish the matching GitHub release from that exact tag.
 - Announce only after quiet beta exit criteria are met.
 - Sequence launch channels:
@@ -116,9 +115,9 @@ Public launch is ready only when:
 
 - Use pre-release SemVer tags for the testnet lifecycle.
 - Promote the active release line through the launch stages:
-  - `v0.2.0-internal.1`
-  - `v0.2.0-beta.1`
-  - `v0.2.0-testnet.1`
+  - `<version>-internal.1`
+  - `<version>-beta.1`
+  - `<version>-testnet.1`
 - Use patch bumps for launch fixes.
 - Use minor bumps for meaningful user-facing capability changes before mainnet.
 - Treat the `release/robomata-overflow-v0.1.x` series as a separate Robomata
@@ -194,9 +193,8 @@ Keep these materials in a private ops system, such as a Linear doc:
 ## Assumptions
 
 - `Sepolia` remains the primary/default launch network.
-- `Base Sepolia` is out of scope for the first public launch.
-- The repo remains private-source for this cycle; third-party dependencies keep
+- `Base Sepolia` is out of scope for the current testnet cycle.
+- The repo remains private-source; third-party dependencies keep
   their own license terms.
-- Managed The Graph indexing is available for the supported first-launch testnets.
+- Managed The Graph indexing is available for the supported testnets.
 - Smart-wallet work is not on the critical path unless the base wallet UX proves inadequate.
-- There is only one active public testnet release line at a time.

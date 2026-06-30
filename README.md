@@ -1,8 +1,10 @@
 # Roboshare
 
-Roboshare is a marketplace for tokenized revenue streams built as an EVM dApp.
-This repository contains the smart contracts, subgraph, and web application used for Roboshare's public testnet release.
-It was originally bootstrapped on top of Scaffold-ETH 2 and still builds on that foundation heavily.
+Agent-supervised programmable credit rails for asset-backed finance, lender review, and downstream distribution.
+
+This repository contains the smart contracts, subgraph, and web application for the Roboshare platform.
+It is a production application running on testnet.
+It was originally bootstrapped on top of Scaffold-ETH 2 and still builds on that foundation.
 
 Core stack:
 
@@ -14,12 +16,25 @@ Core stack:
 - `The Graph`
 - `TypeScript`
 
+## Products
+
+Roboshare is organized around a layered product model:
+
+- **Robomata** (live on testnet)
+  The operator workspace. Helps operators turn receivables, asset evidence, policy exceptions, and monitoring signals into lender-ready borrowing-base packets with verifiable evidence rails. Also provides the protected lender packet review surface via share links.
+- **Markets** (live on testnet)
+  Primary and secondary market browsing for tokenized revenue-stream positions. Includes on-chain acquisition, earnings claims, liquidity redemption, and secondary listing management.
+- **Rental Platform** (in development)
+  A vehicle rental marketplace built on top of Robomata. Covers bookings, trips, payments, claims, host tooling, investor reporting, and renter verification. Currently behind feature flags.
+- **Robolend** (planned)
+  The capital-provider workspace for packet review, monitoring, and credit decisions. Not yet started.
+
 ## Protocol Overview
 
-Roboshare is structured around a small set of core protocol components:
+Roboshare is structured around a set of core protocol components:
 
 - `RoboshareTokens`
-  - manages asset and revenue-token positions
+  - manages asset and revenue-token positions (ERC-1155)
 - `PartnerManager`
   - manages partner authorization
 - `RegistryRouter`
@@ -28,18 +43,33 @@ Roboshare is structured around a small set of core protocol components:
   - handles collateral, settlements, earnings, and payout flows
 - `Marketplace`
   - manages primary and secondary market flows
-- asset registries such as `VehicleRegistry`
-  - define how specific asset classes are registered and managed
+- `EarningsManager`
+  - manages earnings distribution and claiming
+- `PositionManager`
+  - manages token position accounting
+- `VehicleRegistry`
+  - defines how vehicle assets are registered and managed
+- `FacilityRegistry`
+  - defines how facility assets are registered and managed
+- `Libraries`
+  - shared library code
 
-The repository is also organized as a monorepo so the project can evolve beyond the current EVM implementation.
-Today, the active protocol implementation lives under `protocols/evm`, but the top-level `protocols/*` structure leaves room for additional protocol backends or chain families in the future without forcing the whole project into a single implementation boundary.
+Interfaces:
+
+- `IAssetRegistry`
+- `IEarningsManager`
+- `IMarketplace`
+- `IPositionManager`
+- `ITreasury`
+
+The repository is organized as a monorepo. The active EVM protocol implementation lives under `protocols/evm`. A Sui Move package for the Overflow MVP lives under `protocols/sui`. The `protocols/*` structure supports additional protocol backends in the future.
 
 ## Extending the Protocol
 
 The main protocol extension point is `IAssetRegistry`.
 
 That interface is designed so Roboshare can support multiple asset-specific registries, not only vehicles.
-The current `VehicleRegistry` is one concrete implementation, but the same protocol shape can support additional registry types such as equipment, real estate, or other asset categories.
+The current `VehicleRegistry` and `FacilityRegistry` are concrete implementations, but the same protocol shape can support additional registry types such as equipment, real estate, or other asset categories.
 
 If you want to add a new registry type, the relevant pieces are:
 
@@ -61,8 +91,8 @@ At a high level, a new registry implementation should:
 
 Before you begin, you need to install the following tools:
 
-- [Node (>= v20.18.3)](https://nodejs.org/en/download/)
-- Yarn ([v1](https://classic.yarnpkg.com/en/docs/install/) or [v2+](https://yarnpkg.com/getting-started/install))
+- [Node (>= 24, < 25)](https://nodejs.org/en/download/)
+- [Yarn (v3+)](https://yarnpkg.com/getting-started/install)
 - [Git](https://git-scm.com/downloads)
 
 ## Local Development
@@ -122,23 +152,15 @@ Notes:
   subgraph env vars are still missing from the injected environment and should
   be added in Vercel
 
-Useful commands:
+### Deployment Targets
 
-- `yarn evm:test`
-- `yarn web:check-types`
-- `yarn web:build`
-- `yarn evm:verify <network>`
+Contracts are deployed on the following networks:
 
-Key paths:
-
-- contracts: `protocols/evm/contracts`
-- deploy scripts: `protocols/evm/script`
-- subgraph: `protocols/evm/subgraph`
-- web app: `web`
-
-Launch sequencing and release-management policy are tracked in [docs/testnet-release-strategy.md](docs/testnet-release-strategy.md).
-Embedded-wallet setup notes are tracked in [docs/privy-wallet-setup.md](docs/privy-wallet-setup.md).
-Marketing/app route ownership and persona language are tracked in [docs/roboshare-marketing-app-ia.md](docs/roboshare-marketing-app-ia.md).
+- `Sepolia` (primary testnet)
+- `Arbitrum Sepolia`
+- `Polygon Amoy`
+- `Monad Testnet`
+- `Anvil` (local development)
 
 ## Indexing and Subgraph Development
 
@@ -179,17 +201,45 @@ For public testnet environments, Roboshare uses managed The Graph deployments ra
 
 Useful root-level commands:
 
-- `yarn chain`
-- `yarn deploy`
-- `yarn start`
-- `yarn evm:test`
-- `yarn evm:compile`
-- `yarn evm:verify <network>`
-- `yarn web:check-types`
-- `yarn web:build`
-- `yarn subgraph:run-node`
-- `yarn subgraph:local-ship`
-- `yarn subgraph:test`
+| Command | Description |
+|---------|-------------|
+| `yarn dev` | Start the web app in development mode |
+| `yarn chain` | Start a local Foundry network |
+| `yarn deploy` | Deploy contracts locally |
+| `yarn start` | Start the web app |
+| `yarn test` | Run EVM contract tests |
+| `yarn evm:test` | Run EVM contract tests |
+| `yarn evm:compile` | Compile contracts |
+| `yarn evm:lint` | Lint Solidity contracts |
+| `yarn evm:verify <network>` | Verify contracts on a block explorer |
+| `yarn evm:coverage` | Run contract test coverage |
+| `yarn web:check-types` | Run TypeScript type checking |
+| `yarn web:build` | Build the web app |
+| `yarn web:lint` | Lint the web app |
+| `yarn format` | Format code (web + EVM) |
+| `yarn lint` | Lint all packages |
+| `yarn subgraph:run-node` | Start local graph node |
+| `yarn subgraph:local-ship` | Build and deploy local subgraph |
+| `yarn subgraph:test` | Run subgraph tests |
+| `yarn robomata:local-smoke` | Run Robomata local smoke tests |
+| `yarn ci` | Run CI checks locally |
+
+## Key Paths
+
+- EVM contracts: `protocols/evm/contracts`
+- EVM deploy scripts: `protocols/evm/script`
+- Sui package: `protocols/sui`
+- Subgraph: `protocols/evm/subgraph`
+- Web app: `web`
+
+## Further Reading
+
+- [Testnet Release Strategy](docs/testnet-release-strategy.md) — branching, versioning, and launch sequencing
+- [Testnet Technical Checklist](docs/testnet-technical-checklist.md) — deploy, verify, and readiness checklist
+- [Privy Wallet Setup](docs/privy-wallet-setup.md) — embedded wallet and smart-wallet configuration
+- [Marketing and App IA](docs/roboshare-marketing-app-ia.md) — route ownership, persona language, and host routing
+- [Rental Platform PRD](docs/rental-platform-prd.md) — rental platform product spec
+- [EVM Token Metadata Boundary](docs/evm-token-metadata-boundary.md) — token metadata model
 
 ## Contributing
 
