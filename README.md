@@ -91,7 +91,7 @@ At a high level, a new registry implementation should:
 
 Before you begin, you need to install the following tools:
 
-- [Node (>= 24)](https://nodejs.org/en/download/)
+- [Node (>= 24, < 25)](https://nodejs.org/en/download/)
 - [Yarn (v3+)](https://yarnpkg.com/getting-started/install)
 - [Git](https://git-scm.com/downloads)
 

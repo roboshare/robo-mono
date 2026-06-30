@@ -25,7 +25,11 @@ for arg in "$@"; do
     -f) FORCE=true; SIGNOFF_ARGS+=("$arg") ;;
     --ci) CI_INTERNAL=true ;;
     -*) echo "Error: unknown flag '$arg'"; exit 1 ;;
-    *)  SIGNOFF_NAME="$arg" ;;
+    *)  if [ -n "$SIGNOFF_NAME" ]; then
+          echo "Error: unexpected argument '$arg'"
+          exit 1
+        fi
+        SIGNOFF_NAME="$arg" ;;
   esac
 done
 
