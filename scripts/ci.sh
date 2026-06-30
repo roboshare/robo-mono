@@ -5,8 +5,9 @@ set -e
 SIGNOFF_ARGS=("$@")
 
 # ci.sh writes the marker after all checks pass, so its own signoff calls
-# must bypass the marker check (the marker doesn't exist yet at call time).
-CI_SIGNOFF_ARGS=("--ci")
+# must bypass both the marker check (doesn't exist yet) and gh-signoff's
+# dirty-tree check (untracked files are expected).
+CI_SIGNOFF_ARGS=("--ci" "-f")
 for arg in "${SIGNOFF_ARGS[@]}"; do
   CI_SIGNOFF_ARGS+=("$arg")
 done
