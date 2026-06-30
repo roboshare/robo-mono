@@ -24,6 +24,7 @@ for arg in "$@"; do
   case "$arg" in
     -f) FORCE=true; SIGNOFF_ARGS+=("$arg") ;;
     --ci) CI_INTERNAL=true ;;
+    -*) echo "Error: unknown flag '$arg'"; exit 1 ;;
     *)  SIGNOFF_NAME="$arg" ;;
   esac
 done
