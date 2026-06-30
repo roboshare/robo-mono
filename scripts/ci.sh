@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -e
 
-# Pass any flags like -f down to gh signoff
+# Pass any flags like -f down to the signoff wrapper
 SIGNOFF_ARGS=("$@")
+
+SIGNOFF_SCRIPT="$(dirname "$0")/signoff.sh"
 
 echo "Running local CI checks and conditional signoffs..."
 
@@ -19,6 +21,9 @@ check_path() {
   echo "$CHANGED_FILES" | grep -qE "$pattern"
 }
 
+# Write CI marker after all checks pass so signoff.sh can verify CI was run
+git rev-parse HEAD > .git/ci-run
+
 # 1. EVM
 if check_path "^(\.github/workflows/|package\.json|yarn\.lock|\.yarnrc\.yml|\.yarn/|protocols/evm/)"; then
   echo "======================"
@@ -28,12 +33,12 @@ if check_path "^(\.github/workflows/|package\.json|yarn\.lock|\.yarnrc\.yml|\.ya
   yarn evm:storage-layout:check
   yarn compile
   yarn test
-  gh signoff evm "${SIGNOFF_ARGS[@]}"
+  bash "$SIGNOFF_SCRIPT" evm "${SIGNOFF_ARGS[@]}"
 else
   echo "======================"
   echo "EVM: No changes detected. Skipping tests and signing off."
   echo "======================"
-  gh signoff evm "${SIGNOFF_ARGS[@]}"
+  bash "$SIGNOFF_SCRIPT" evm "${SIGNOFF_ARGS[@]}"
 fi
 
 # 2. Web
@@ -45,12 +50,12 @@ if check_path "^(\.github/workflows/|package\.json|yarn\.lock|\.yarnrc\.yml|\.ya
   yarn web:check-types
   export NODE_OPTIONS="--max-old-space-size=4096"
   yarn web:build
-  gh signoff web "${SIGNOFF_ARGS[@]}"
+  bash "$SIGNOFF_SCRIPT" web "${SIGNOFF_ARGS[@]}"
 else
   echo "======================"
   echo "Web: No changes detected. Skipping tests and signing off."
   echo "======================"
-  gh signoff web "${SIGNOFF_ARGS[@]}"
+  bash "$SIGNOFF_SCRIPT" web "${SIGNOFF_ARGS[@]}"
 fi
 
 # 3. Sui
@@ -62,7 +67,7 @@ if check_path "^(\.github/workflows/|protocols/sui/)"; then
     if command -v sui &> /dev/null; then
       sui move build --path protocols/sui --lint --warnings-are-errors
       sui move test --path protocols/sui --warnings-are-errors
-      gh signoff sui "${SIGNOFF_ARGS[@]}"
+      bash "$SIGNOFF_SCRIPT" sui "${SIGNOFF_ARGS[@]}"
     else
       echo "Warning: 'sui' command not found, failing."
       exit 1
@@ -71,13 +76,13 @@ if check_path "^(\.github/workflows/|protocols/sui/)"; then
     echo "======================"
     echo "Sui package not found. Skipping tests and signing off."
     echo "======================"
-    gh signoff sui "${SIGNOFF_ARGS[@]}"
+    bash "$SIGNOFF_SCRIPT" sui "${SIGNOFF_ARGS[@]}"
   fi
 else
   echo "======================"
   echo "Sui: No changes detected. Skipping tests and signing off."
   echo "======================"
-  gh signoff sui "${SIGNOFF_ARGS[@]}"
+  bash "$SIGNOFF_SCRIPT" sui "${SIGNOFF_ARGS[@]}"
 fi
 
 echo "======================"

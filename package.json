@@ -11,6 +11,7 @@
   },
   "scripts": {
     "ci": "./scripts/ci.sh",
+    "ci:signoff": "./scripts/signoff.sh",
     "dev": "./scripts/start-dev.sh",
     "dev:reset": "./scripts/start-dev.sh --reset",
     "dev:kill": "./scripts/start-dev.sh --kill",
