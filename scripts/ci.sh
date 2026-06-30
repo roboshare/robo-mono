@@ -21,9 +21,6 @@ check_path() {
   echo "$CHANGED_FILES" | grep -qE "$pattern"
 }
 
-# Write CI marker after all checks pass so signoff.sh can verify CI was run
-git rev-parse HEAD > .git/ci-run
-
 # 1. EVM
 if check_path "^(\.github/workflows/|package\.json|yarn\.lock|\.yarnrc\.yml|\.yarn/|protocols/evm/)"; then
   echo "======================"
@@ -84,6 +81,9 @@ else
   echo "======================"
   bash "$SIGNOFF_SCRIPT" sui "${SIGNOFF_ARGS[@]}"
 fi
+
+# Write CI marker after all checks pass so signoff.sh can verify CI was run
+git rev-parse HEAD > .git/ci-run
 
 echo "======================"
 echo "All local CI checks completed successfully! ✅"

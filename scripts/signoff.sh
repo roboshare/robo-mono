@@ -20,7 +20,7 @@ SIGNOFF_NAME=""
 for arg in "$@"; do
   case "$arg" in
     -f) FORCE=true; SIGNOFF_ARGS+=("$arg") ;;
-    *)  SIGNOFF_NAME="$arg"; SIGNOFF_ARGS+=("$arg") ;;
+    *)  SIGNOFF_NAME="$arg" ;;
   esac
 done
 
@@ -41,4 +41,4 @@ if [ "$FORCE" = false ]; then
   fi
 fi
 
-gh signoff $SIGNOFF_NAME "${SIGNOFF_ARGS[@]}"
+gh signoff "$SIGNOFF_NAME" "${SIGNOFF_ARGS[@]}"

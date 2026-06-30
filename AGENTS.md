@@ -119,7 +119,15 @@ This repository uses `gh-signoff` for local CI. Do not call `gh signoff` directl
 yarn ci
 ```
 
-**Force bypass** (use sparingly, requires `-f` on both scripts):
+To sign off a specific category directly:
+
+```sh
+./scripts/signoff.sh evm
+./scripts/signoff.sh web
+./scripts/signoff.sh sui
+```
+
+**Force bypass** (use sparingly):
 
 ```sh
 ./scripts/signoff.sh -f
