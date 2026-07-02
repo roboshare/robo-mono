@@ -58,10 +58,10 @@ Revenue token metadata describes the revenue/claim-unit token:
 
 The same JSON document should not be reused for both token IDs by default. A shared document is acceptable only when it is intentionally designed as a typed multi-view document and consumers can reliably distinguish the asset view from the revenue-token view.
 
-## Transitional dependencies
+## Completed integrations
 
-- ROB-84 owns updating web registration payloads and reads to the new metadata-pointer shape. Until ROB-84 lands, web incompatibility on this integration branch is expected.
-- ROB-85 owns updating subgraph ABI/event handling for the slimmed registry metadata model. Until ROB-85 lands, subgraph incompatibility on this integration branch is expected.
+- ROB-84 updated web registration payloads and reads to the new metadata-pointer shape.
+- ROB-85 updated subgraph ABI/event handling for the slimmed registry metadata model.
 
 ## Why this split
 

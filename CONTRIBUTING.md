@@ -2,19 +2,17 @@
 
 Thank you for contributing to Roboshare.
 
-This repository contains the smart contracts, subgraph, and web application for the Roboshare testnet release.
-Read [README.md](README.md) first for product context and supported testnets.
+This repository contains the smart contracts, subgraph, and web application for the Roboshare platform.
+Read [README.md](README.md) first for product context and supported networks.
 
 ## Project Status
 
-The project is under active development and currently focused on a staged public testnet launch.
+The project is in active development with products at different stages:
 
-Current priorities:
-
-- release reliability
-- Sepolia-first product quality
-- launch documentation
-- partner and tester feedback loops
+- **Robomata** — live on testnet. Operator workflow and lender packet review surface.
+- **Markets** — live on testnet. Primary and secondary market browsing.
+- **Rental Platform** — in development. Vehicle rental marketplace built on Robomata.
+- **Robolend** — planned. Capital-provider workspace. Not yet started.
 
 ## How to Contribute
 
@@ -50,15 +48,15 @@ We follow a fork-and-pull workflow.
 
 Recommended process:
 
-1. branch from the current target branch
-2. keep the PR focused on a single concern
-3. include validation steps in the PR description
-4. update docs if the user-facing behavior changed
-5. respond to review comments and resolve conversations clearly
+1. branch from the current target branch (`dev`)
+2. use a descriptive branch name: `feat/...`, `fix/...`, `docs/...`, `chore/...`
+3. keep the PR focused on a single concern
+4. include validation steps in the PR description
+5. update docs if the user-facing behavior changed
+6. respond to review comments and resolve conversations clearly
 
 PR guidance:
 
-- prefer descriptive branch names with the existing repo conventions
 - use clear commit messages
 - include screenshots for UI changes when relevant
 - avoid mixing unrelated refactors into launch-critical work
@@ -70,11 +68,19 @@ Merge policy:
 
 ## Validation Expectations
 
-At minimum, contributors should run the checks relevant to their change, such as:
+At minimum, contributors should run the checks relevant to their change:
 
 - `yarn evm:test`
+- `yarn evm:lint`
 - `yarn web:check-types`
 - `yarn web:build`
-- `yarn evm:lint`
+- `yarn lint`
+- `yarn format`
+
+For Robomata-related changes, also consider running:
+
+- `yarn robomata:local-smoke`
 
 If a change affects deploy, verify, or release behavior, mention that explicitly in the PR.
+
+See [AGENTS.md](AGENTS.md) for detailed branch policy, PR conventions, and agent workflow guidance.
